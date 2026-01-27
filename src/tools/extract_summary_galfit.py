@@ -4,6 +4,39 @@ import os
 import re
 from pyparsing import Any
 
+def extract_galfit_fit_log(log_file_path):
+    fit_result_dict = {}
+    def is_separator(line):
+        stripped_line = line.strip()
+        return stripped_line and all(c == '-' for c in stripped_line) and len(stripped_line) > 20
+            
+    try:
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            lines = [line.rstrip('\n') for line in f.readlines()]  
+                
+        current_fit = []  
+        for line in lines:
+            if is_separator(line):
+                if current_fit:
+                    clean_fit = [l for l in current_fit if l.strip() != ''] 
+                    if clean_fit:
+                        fit_text = '\n'.join(clean_fit)  
+                        fit_key = None
+                        for l in clean_fit:
+                            if l.strip().startswith('Init. par. file :'):
+                                full_path = l.split('Init. par. file :')[-1].strip()
+                                fit_key = os.path.basename(full_path)
+                                break
+                        if fit_key is not None:
+                            fit_result_dict[fit_key] = fit_text
+                current_fit = []
+            else:
+                current_fit.append(line)
+                    
+        return fit_result_dict
+
+    except:
+        return {}
 
 def safe_float(value: str) -> float | None:
     """Safely convert a string to float, handling malformed scientific notation.
@@ -202,38 +235,220 @@ def extract_fits_metadata(fits_file: str) -> dict[str, Any]:
 
     return metadata
 
+def parse_model_hdu_header(header) -> dict[str, Any]:
+    """Parse GALFIT model HDU header to extract components and statistics.
 
-def extract_summary_from_galfit(fits_file: str, log_output: str) -> str | None:
-    """Extract comprehensive summary information from GALFIT output.
-    
-    Combines information from:
-    - fit.log: Final parameters, uncertainties, chi-squared statistics
-    - FITS headers: Observation metadata, WCS information
+    The model HDU header contains:
+    - Component info: COMP_1, COMP_2, ... followed by parameter keys like 1_XC, 1_YC, 1_MAG, etc.
+    - Statistics: CHISQ, NDOF, NFREE, NFIX, CHI2NU
+
+    Component parameter format in header:
+    - Fitted parameters: 'value +/- error' e.g., '199.9807 +/- 0.1175'
+    - Fixed parameters: '[value]' e.g., '[200.5000]' (error is 0)
+
+    Component parameter mapping (example for Sersic):
+    - XC, YC: center position
+    - MAG: magnitude
+    - RE: effective radius
+    - N: Sersic index
+    - AR: axis ratio
+    - PA: position angle
+
+    For sky component:
+    - XC, YC: center position
+    - SKY: sky background
+    - DSDX: dSky/dx
+    - DSDY: dSky/dy
+    """
+    result = {
+        "init": None,
+        "components": [],
+        "statistics": {}
+    }
+
+    try:
+        if "INIT" in header:
+            result["init"] = header["INIT"]
+        # Extract statistics
+        if "CHISQ" in header:
+            result["statistics"]["chi2"] = safe_float(str(header["CHISQ"]))
+        if "NDOF" in header:
+            result["statistics"]["ndof"] = int(header["NDOF"]) if header["NDOF"] is not None else None
+        if "NFREE" in header:
+            result["statistics"]["nfree"] = int(header["NFREE"]) if header["NFREE"] is not None else None
+        if "NFIX" in header:
+            result["statistics"]["nfix"] = int(header["NFIX"]) if header["NFIX"] is not None else None
+        if "CHI2NU" in header:
+            result["statistics"]["chi2_nu"] = safe_float(str(header["CHI2NU"]))
+
+        # Find all component headers (COMP_1, COMP_2, etc.)
+        comp_numbers = []
+        for key in header.keys():
+            key_str = str(key)
+            if key_str.startswith("COMP_"):
+                try:
+                    comp_num = int(key_str.split("_")[1])
+                    comp_numbers.append(comp_num)
+                except (ValueError, IndexError):
+                    continue
+
+        # Sort component numbers
+        comp_numbers.sort()
+
+        # Determine component type based on available parameters
+        comp_type_map = {
+            # Sersic component has: XC, YC, MAG, RE, N, AR, PA
+            ("XC", "YC", "MAG", "RE", "N", "AR", "PA"): "sersic",
+            # Exponential disk has: XC, YC, MAG, RE (similar to Sersic but treated differently)
+            ("XC", "YC", "MAG"): "expdisk",
+            # Sky component has: XC, YC, SKY, DSDX, DSDY
+            ("XC", "YC", "SKY", "DSDX", "DSDY"): "sky",
+        }
+
+        # Map parameter names to the names used in the old format
+        param_name_map = {
+            "XC": "x",
+            "YC": "y",
+            "MAG": "magnitude",
+            "RE": "R_e",
+            "N": "n",
+            "AR": "b/a",
+            "PA": "PA",
+            "SKY": "sky",
+            "DSDX": "dsky/dx",
+            "DSDY": "dsky/dy",
+        }
+
+        # Extract each component's parameters
+        for comp_num in comp_numbers:
+            comp_data = {
+                "parameters": {},
+                "uncertainties": {}
+            }
+
+            # Get all parameter keys for this component (e.g., 1_XC, 1_YC, 1_MAG, etc.)
+            prefix = f"{comp_num}_"
+            param_keys = []
+            for key in header.keys():
+                key_str = str(key)
+                if key_str.startswith(prefix):
+                    param_name = key_str[len(prefix):]
+                    param_keys.append(param_name)
+
+            # Determine component type based on available parameters
+            comp_type = "unknown"
+            for type_params, type_name in comp_type_map.items():
+                if all(p in param_keys for p in type_params):
+                    comp_type = type_name
+                    break
+            comp_data["type"] = comp_type
+
+            # Extract parameter values (format: "value +/- error" or "[value]")
+            for param_key in param_keys:
+                old_param_name = param_name_map.get(param_key, param_key.lower())
+                value_str = str(header[prefix + param_key])
+
+                # Check if it's a fixed parameter in brackets [value]
+                bracket_match = re.match(r'\[([^\]]+)\]', value_str)
+                if bracket_match:
+                    # Fixed parameter: extract value from brackets, error is 0
+                    value = safe_float(bracket_match.group(1))
+                    if value is not None:
+                        comp_data["parameters"][old_param_name] = value
+                        comp_data["uncertainties"][old_param_name] = 0.0
+                    continue
+
+                # Parse fitted parameter: "value +/- error"
+                # Match scientific notation: e.g., "1.350e-04 +/- 7.181e-05"
+                pm_match = re.match(r'([-+]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*\+/-\s*([-+]?\d*\.?\d+(?:[eE][+-]?\d+)?)', value_str)
+                if pm_match:
+                    value = safe_float(pm_match.group(1))
+                    error = safe_float(pm_match.group(2))
+                    if value is not None:
+                        comp_data["parameters"][old_param_name] = value
+                    if error is not None:
+                        comp_data["uncertainties"][old_param_name] = error
+                    continue
+
+                # Try to parse as plain number
+                value = safe_float(value_str)
+                if value is not None:
+                    comp_data["parameters"][old_param_name] = value
+
+            result["components"].append(comp_data)
+
+    except Exception as e:
+        result["parse_error"] = str(e)
+
+    return result
+
+
+def extract_summary_from_galfit(fits_file: str, config_file: str = None) -> str | None:
+    """Extract comprehensive summary information from GALFIT FITS output file.
+
+    Reads all information from the FITS file header (model HDU):
+    - Component parameters and uncertainties
+    - Chi-squared statistics (CHISQ, NDOF, CHI2NU)
+    - Observation metadata, WCS information
+
+    This is more reliable than reading from fit.log because:
+    - Each FITS file contains its own fitting results
+    - Multiple GALFIT runs can be executed in parallel
+    - No issues with log file being overwritten/append
 
     Returns the path to the saved summary Markdown file or None if failed.
     """
     try:
+        from astropy.io import fits
+
         fits_dir = os.path.dirname(fits_file)
         base_name = os.path.splitext(os.path.basename(fits_file))[0]
 
-        # Parse fit.log for final parameters and statistics
-        fit_results = parse_fit_log(fits_dir)
+        # Find the model HDU (OBJECT = 'model')
+        fit_results = None
+        metadata = {}
 
-        # Extract FITS metadata
-        metadata = extract_fits_metadata(fits_file)
+        with fits.open(fits_file) as hdul:
+            for hdu in hdul:
+                header = hdu.header
+                object_name = header.get("OBJECT", "")
 
-        # Add iteration info from log output
-        lines = log_output.split('\n')
-        iterations = []
-        for line in lines:
-            iter_match = re.search(r'Iteration\s*:\s*(\d+)\s+Chi2nu:\s*([-+]?\d*\.?\d+(?:[eE][+-]?\d+)?)', line)
-            if iter_match:
-                chi2nu_val = safe_float(iter_match.group(2))
-                if chi2nu_val is not None:
-                    iterations.append({
-                        "number": int(iter_match.group(1)),
-                        "chi2_nu": chi2nu_val
-                    })
+                # Model HDU - contains fitting results
+                if object_name == "model":
+                    fit_results = parse_model_hdu_header(header)
+
+                # Original data HDU - contains observation metadata
+                if object_name and "[" in object_name:
+                    metadata["object"] = object_name
+                    metadata["telescope"] = header.get("TELESCOP", "Unknown")
+                    metadata["instrument"] = header.get("INSTRUME", "Unknown")
+                    metadata["filter"] = header.get("FILTER", "Unknown")
+                    metadata["exptime"] = header.get("EXPTIME", "Unknown")
+                    metadata["date_obs"] = header.get("DATE-OBS", "Unknown")
+
+                    # Image dimensions
+                    if hasattr(hdu, "data") and hdu.data is not None:
+                        metadata["image_size"] = {
+                            "width": hdu.data.shape[1] if len(hdu.data.shape) > 1 else 1,
+                            "height": hdu.data.shape[0]
+                        }
+
+                    # WCS information
+                    metadata["wcs"] = {
+                        "crpix1": header.get("CRPIX1"),
+                        "crpix2": header.get("CRPIX2"),
+                        "crval1": header.get("CRVAL1"),
+                        "crval2": header.get("CRVAL2"),
+                        "cd1_1": header.get("CD1_1"),
+                        "cd1_2": header.get("CD1_2"),
+                        "cd2_1": header.get("CD2_1"),
+                        "cd2_2": header.get("CD2_2"),
+                        "ctype1": header.get("CTYPE1"),
+                        "ctype2": header.get("CTYPE2"),
+                    }
+
+        if fit_results is None:
+            raise ValueError("Could not find model HDU in FITS file")
 
         # Build Markdown content
         md_lines = []
@@ -244,86 +459,24 @@ def extract_summary_from_galfit(fits_file: str, log_output: str) -> str | None:
         md_lines.append(f"**Output File:** `{fits_file}`")
         md_lines.append("")
 
-        # Statistics section
+        # input configuration
         md_lines.append("---")
         md_lines.append("")
-        md_lines.append("## Fit Statistics")
+        md_lines.append("## Init. par. file Content")
         md_lines.append("")
+        if config_file:
+            with open(config_file) as f: 
+                md_lines.append(f.read())
 
-        stats = fit_results.get("statistics", {})
-        if stats:
-            chi2 = stats.get("chi2")
-            ndof = stats.get("ndof")
-            chi2_nu = stats.get("chi2_nu")
+        fit_log_path = os.path.join(os.path.dirname(config_file) if config_file else ".", "fit.log")    
+        if os.path.exists(fit_log_path):
+            fit_log = extract_galfit_fit_log(fit_log_path)
+            fit_result = fit_log.get(os.path.abspath(config_file), None) or \
+                fit_log.get(config_file, None) or fit_log.get(os.path.basename(config_file), None)
 
-            md_lines.append("| Metric | Value |")
-            md_lines.append("|--------|-------|")
-            if chi2 is not None:
-                md_lines.append(f"| Chi² | {chi2:.5f} |")
-            if ndof is not None:
-                md_lines.append(f"| Degrees of Freedom | {ndof} |")
-            if chi2_nu is not None:
-                md_lines.append(f"| Chi²/ν (reduced) | {chi2_nu:.5f} |")
-            md_lines.append("")
-
-        # Iterations
-        if iterations:
-            md_lines.append(f"**Total Iterations:** {len(iterations)}")
-            md_lines.append("")
-
-        # Components section
-        md_lines.append("---")
-        md_lines.append("")
-        md_lines.append("## Fitted Components")
-        md_lines.append("")
-
-        components = fit_results.get("components", [])
-        for i, comp in enumerate(components, 1):
-            comp_type = comp.get("type", "unknown")
-            md_lines.append(f"### Component {i}: {comp_type.upper()}")
-            md_lines.append("")
-
-            params = comp.get("parameters", {})
-            uncerts = comp.get("uncertainties", {})
-
-            # Parameter table
-            md_lines.append("| Parameter | Value | Uncertainty |")
-            md_lines.append("|-----------|-------|-------------|")
-
-            # Common parameter names and their display names
-            param_display_names = {
-                "x": "Position X",
-                "y": "Position Y",
-                "magnitude": "Magnitude",
-                "R_e": "R_e (pix)",
-                "R_s": "R_s (pix)",
-                "n": "Sersic n",
-                "b/a": "Axis Ratio (b/a)",
-                "PA": "Position Angle (°)",
-                "sky": "Sky Background",
-                "dsky/dx": "dSky/dx",
-                "dsky/dy": "dSky/dy",
-            }
-
-            for param_key, param_value in params.items():
-                display_name = param_display_names.get(param_key, param_key)
-                uncert = uncerts.get(param_key)
-
-                # Format value
-                if isinstance(param_value, float):
-                    value_str = f"{param_value:.5f}"
-                else:
-                    value_str = str(param_value)
-
-                # Format uncertainty
-                if uncert is not None:
-                    uncert_str = f"±{uncert:.5f}"
-                else:
-                    uncert_str = "—"
-
-                md_lines.append(f"| {display_name} | {value_str} | {uncert_str} |")
-
-            md_lines.append("")
+            if fit_result:
+                md_lines.append("## Fit log Content")
+                md_lines.append(fit_result)
 
         # Observation metadata section
         md_lines.append("---")
@@ -389,3 +542,11 @@ def extract_summary_from_galfit(fits_file: str, log_output: str) -> str | None:
         except:
             return None
 
+
+if __name__ == '__main__':
+    result = extract_summary_from_galfit(
+        fits_file="/home/jiangbo/galfit/galfit_examples_0128/goodsn_5536/archives/20260130T134751/goodsn_5536_f160w_galfit.fits",
+        config_file="/home/jiangbo/galfit/galfit_examples_0128/goodsn_5536/archives/20260130T134751/goodsn_5536_f160w.feedme"
+    )
+
+    print(result)

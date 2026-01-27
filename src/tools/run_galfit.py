@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 from typing import Any, Annotated
 import numpy as np
@@ -8,6 +9,8 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from astropy.io import fits
+import datetime
+import glob
 
 from .extract_summary_galfit import extract_summary_from_galfit
 
@@ -26,6 +29,7 @@ def _parse_galfit_config(config_file: str) -> dict[str, str]:
         "constraint": "",
     }
 
+    config_file = os.path.abspath(config_file)
     with open(config_file) as f:
         content = f.read()
 
@@ -44,6 +48,8 @@ def _parse_galfit_config(config_file: str) -> dict[str, str]:
         if match:
             value = match.group(1).strip()
             if value.lower() not in ("none", ""):
+                # Relative paths in the configuration file are all resolved relative to the configuration file itself.
+                value = value if os.path.isabs(value) else os.path.join(os.path.dirname(config_file), value)
                 paths[key] = value
 
     return paths
@@ -286,6 +292,7 @@ async def run_galfit(
     the residual image as base64-encoded PNG.
     """
     galfit_bin = os.getenv("GALFIT_BIN", "galfit")
+    config_file = os.path.abspath(config_file)
     command = [galfit_bin, config_file]
 
     # Parse config file for additional paths
@@ -346,12 +353,25 @@ async def run_galfit(
     comparison_png_path = create_comparison_png(output_file, sigma_file, mask_file)
 
     # Extract summary information
-    summary = extract_summary_from_galfit(output_file, full_output)
+    summary = extract_summary_from_galfit(output_file, config_file)
+
+    # Cleanup the workspace
+    ws_dir = os.path.dirname(output_file)
+    ar_dir = os.path.join(ws_dir, "archives", datetime.datetime.now().strftime("%Y%m%dT%H%M%S"))
+    os.makedirs(ar_dir, exist_ok=True)
+    shutil.move(os.path.join(working_dir, "fit.log"), ar_dir)
+    shutil.move(output_file, ar_dir)
+    shutil.move(comparison_png_path, ar_dir)
+    shutil.move(summary, ar_dir)
+    matched_galfit_files = glob.glob(os.path.join(working_dir, "galfit.[0-9]*"))
+    for galfit_file in matched_galfit_files:
+        shutil.move(galfit_file, ar_dir)
+    shutil.copy(config_file, ar_dir)    
 
     return {
         "status": "success",
-        "message": "GALFIT completed successfully. optimized_fits_file contains the optimized FITS data with original, model, and residual extensions; image_file is a 1-row 3-column image showing original | model | residual for visual comparison; summary_file is a JSON file containing fitted parameters and their numerical values.",
-        "optimized_fits_file": output_file,
-        "image_file": comparison_png_path,
-        "summary_file": summary,
+        "message": "GALFIT completed successfully. optimized_fits_file contains the optimized FITS data with original, model, and residual extensions; image_file is a 1-row 3-column image showing original | model | residual for visual comparison (NOTE blue overlay means masked pixels); summary_file is a JSON file containing fitted parameters and their numerical values.",
+        "optimized_fits_file": os.path.join(ar_dir, os.path.basename(output_file)),
+        "image_file": os.path.join(ar_dir, os.path.basename(comparison_png_path)),
+        "summary_file": os.path.join(ar_dir, os.path.basename(summary)),
     }

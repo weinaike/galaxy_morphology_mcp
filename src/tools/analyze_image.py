@@ -2,9 +2,14 @@
 import os
 import base64
 from typing import Annotated, Optional, Any
-from openai import OpenAI
 import dotenv
 from . import prompt
+try:
+    from ..llms import LLMBase, create_llm_client
+except:
+    import sys
+    sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+    from llms import LLMBase, create_llm_client
 
 
 # 加载环境变量
@@ -69,32 +74,35 @@ def read_file_content(file_path: str) -> Optional[str]:
         return None
 
 
-def create_vllm_client() -> tuple[Optional[OpenAI], Optional[str]]:
+def create_vllm_client(
+    llm_type: str = "openai",
+    config: Optional[dict] = None
+) -> tuple[Optional[LLMBase], Optional[str]]:
     """
-    Create and initialize the VLLM (OpenAI-compatible) client.
+    Create and initialize the LLM client.
+
+    Args:
+        llm_type: Type of LLM to create. Supported values:
+            - "openai": OpenAI GPT models
+            - "glm": Zhipu AI GLM models
+        config: Optional configuration dict for the LLM
 
     Returns:
-        tuple[Optional[OpenAI], Optional[str]]: 
-            - OpenAI client instance if successful, None otherwise
+        tuple[Optional[LLMBase], Optional[str]]:
+            - LLM client instance if successful, None otherwise
             - Error message if failed, None otherwise
     """
-    # Get API key from environment variable
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return None, "OPENAI_API_KEY environment variable is not set. Please set it in your environment or .env file."
-
-    # Initialize OpenAI client
-    base_url = os.getenv("OPENAI_BASE_URL")
-    if base_url:
-        client = OpenAI(api_key=api_key, base_url=base_url)
-    else:
-        client = OpenAI(api_key=api_key)
-
-    return client, None
+    try:
+        client = create_llm_client(llm_type=llm_type, config=config)
+        return client, None
+    except ValueError as e:
+        return None, str(e)
+    except Exception as e:
+        return None, f"Error creating LLM client: {str(e)}"
 
 
 def call_vllm_api(
-    client: OpenAI,
+    client: LLMBase,
     base64_image: str,
     additional_content: list[dict[str, Any]],
     system_message: str,
@@ -104,14 +112,14 @@ def call_vllm_api(
     additional_images: Optional[list[dict[str, str]]] = None
 ) -> tuple[Optional[str], Optional[str]]:
     """
-    Call the VLLM multimodal API with an image and additional content.
+    Call the LLM multimodal API with an image and additional content.
 
     Args:
-        client (OpenAI): The initialized OpenAI client.
+        client (LLMBase): The initialized LLM client.
         base64_image (str): Base64-encoded string of the primary image.
         additional_content (list[dict[str, Any]]): Additional text content to include in the message.
         system_message (str): System message to set the model's behavior.
-        model (Optional[str]): Model name. If None, reads from OPENAI_MODEL environment variable.
+        model (Optional[str]): Model name. If None, uses the client's default model.
         max_tokens (int): Maximum tokens in the response. Default is 9600.
         temperature (float): Sampling temperature. Lower values produce more deterministic responses. Default is 0.3.
         additional_images (Optional[list[dict[str, str]]]): List of additional images to include. Each dict should have 'base64' and 'description' keys.
@@ -121,64 +129,34 @@ def call_vllm_api(
             - The analysis response if successful, None otherwise
             - Error message if failed, None otherwise
     """
-    # Get model from environment variable or use default
-    if model is None:
-        model = os.getenv("OPENAI_MODEL", "gpt-5.2")  # gpt-5.2 supports multimodal
-
-    # Build the user message content
-    user_content = []
-    user_content.extend(additional_content)
-    user_content.append({
-        "type": "image_url",
-        "image_url": {
-            "url": f"data:image/png;base64,{base64_image}"
-        }
-    })
-
-    # Add additional images if provided
-    if additional_images:
-        for img in additional_images:
-            user_content.append({
-                "type": "text",
-                "text": f"\n\nAdditional image: {img['description']}",
-            })
-            user_content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{img['base64']}"
-                }
-            })
-
     try:
-        response = client.chat.completions.create(
+        # Call the LLM using the unified chat_with_image interface
+        # Each LLM subclass handles its own message format internally
+        result = client.chat_with_image(
+            base64_image=base64_image,
+            user_text_content=additional_content,
+            system_message=system_message,
             model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_message
-                },
-                {
-                    "role": "user",
-                    "content": user_content
-                }
-            ],
             max_tokens=max_tokens,
             temperature=temperature,
+            additional_images=additional_images
         )
 
         # Extract the analysis
-        analysis = response.choices[0].message.content
+        analysis = result.get("content")
         return analysis, None
 
     except Exception as e:
-        return None, f"Error calling VLLM API: {str(e)}"
+        return None, f"Error calling LLM API: {str(e)}"
 
 
 # Galfit 专用的分析接口
 
 def galfit_analyze_by_vllm(
     image_file: Annotated[str, "Path to the combined image file [png file] containing three stamps displayed horizontally: original, model, residual"],
-    summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"]
+    summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
+    llm_type: Annotated[str, "LLM provider type: 'openai' or 'glm'"] = "openai",
+    llm_config: Annotated[Optional[dict], "Optional LLM configuration"] = None
 ) -> dict[str, Any]:
     """
     Analyze the optimization results from GALFIT using a multimodal model.
@@ -201,6 +179,8 @@ def galfit_analyze_by_vllm(
                           - Fitted parameter values and their uncertainties
                           - Chi-squared statistics and goodness-of-fit metrics
                           - Component descriptions and parameter bounds
+        llm_type (str): LLM provider type. Supported: "openai", "glm". Default is "openai".
+        llm_config (dict, optional): Additional LLM configuration parameters.
 
     Returns:
         dict[str, Any]: A dictionary containing the analysis results:
@@ -208,8 +188,8 @@ def galfit_analyze_by_vllm(
             - analysis (str, optional): The comprehensive analysis report (only on success)
             - analysis_file (str, optional): Path to the saved analysis markdown file (only on success)
     """
-    # Create VLLM client
-    client, error = create_vllm_client()
+    # Create LLM client
+    client, error = create_vllm_client(llm_type=llm_type, config=llm_config)
     if error:
         return {
             "status": "failure",
@@ -298,7 +278,9 @@ def galfit_analyze_by_vllm(
 def galfits_analyze_by_vllm(
     image_file: Annotated[str, "Path to the combined image file [png file] containing three stamps displayed horizontally: original, model, residual"],
     sed_file: Annotated[str, "Path to the SED model file generated by GalfitS"],
-    summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"]
+    summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
+    llm_type: Annotated[str, "LLM provider type: 'openai' or 'glm'"] = "openai",
+    llm_config: Annotated[Optional[dict], "Optional LLM configuration"] = None
 ) -> dict[str, Any]:
     """
     Analyze the multi-band optimization results from GalfitS using a multimodal model.
@@ -330,6 +312,8 @@ def galfits_analyze_by_vllm(
                           - SED parameters specific to each band
                           - Chi-squared statistics per band and combined goodness-of-fit metrics
                           - Component descriptions and parameter bounds
+        llm_type (str): LLM provider type. Supported: "openai", "glm". Default is "openai".
+        llm_config (dict, optional): Additional LLM configuration parameters.
 
     Returns:
         dict[str, Any]: A dictionary containing the analysis results:
@@ -341,8 +325,8 @@ def galfits_analyze_by_vllm(
         This function should be used for GalfitS results which perform multi-band fitting with SED modeling.
         For single-band GALFIT results without SED information, use `galfit_analyze_by_vllm` instead.
     """
-    # Create VLLM client
-    client, error = create_vllm_client()
+    # Create LLM client
+    client, error = create_vllm_client(llm_type=llm_type, config=llm_config)
     if error:
         return {
             "status": "failure",

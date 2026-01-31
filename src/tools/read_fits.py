@@ -1,8 +1,5 @@
-from astropy.io import fits
-import base64
 import os
 from typing import Any, Annotated
-from io import BytesIO
 from PIL import Image
 import numpy as np
 
@@ -11,7 +8,7 @@ def get_image_from_fits(
     target: Annotated[str, "original|model|residual"]
 ):    
     """get the image (encoded as base64) from the fits file"""
-    
+    from astropy.io import fits
     try:
         if not os.path.exists(fits_file):
             return None

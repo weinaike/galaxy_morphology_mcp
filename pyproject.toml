@@ -12,7 +12,7 @@ license = {text = "MIT"}
 authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
-keywords = ["astronomy", "galfit", "fits", "mcp", "galaxy", "morphology"]
+keywords = ["galfits", "galfit", "mcp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -44,10 +44,6 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5",
 ]
-docker = [
-    "uvicorn>=0.31.1",
-]
-
 # Placeholder for future extensions (currently unused by code)
 extras = [
     "toml>=0.10.2",

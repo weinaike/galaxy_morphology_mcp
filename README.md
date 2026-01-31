@@ -40,11 +40,6 @@
 pip install -e .
 ```
 
-### 使用 Docker
-
-```bash
-docker-compose up -d
-```
 
 ## 配置
 
@@ -80,12 +75,12 @@ python -m mcp_server --transport http --port 38507
 
 ### 配置 Claude Desktop
 
-在 Claude Desktop 配置文件中添加：
+在 Claude Code 配置文件.mcp.json中添加：
 
 ```json
 {
   "mcpServers": {
-    "galaxy-morphology": {
+    "galmcp": {
       "command": "python",
       "args": [
         "src/mcp_server.py",

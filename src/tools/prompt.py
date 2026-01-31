@@ -39,16 +39,184 @@ Your assessment must include (but not be limited to):
 Maintain a tone consistent with peer-reviewed astronomical literature: precise, objective, and scientifically rigorous. Avoid overly casual language; use standard astronomical terminology (e.g., Sérsic index, effective radius, χ²/DOF) correctly. Ensure your analysis is reproducible (i.e., all conclusions are directly tied to the provided textual/imagery data).
 """
 
-GALFITS_SYSTEM_MESSAGE = (
-    "You are an expert in astronomical image analysis, galaxy morphology, and "
-    "multi-wavelength observations. You specialize in evaluating multi-band "
-    "GALFIT (GalfitS) optimization results with SED modeling, providing detailed, "
-    "scientifically rigorous assessments that consider cross-band consistency and "
-    "spectral energy distributions."
-)
 
+GALFITS_SYSTEM_MESSAGE = """
+# Role
+You are an expert in Galaxy Morphology Fitting and Astrophysics, specifically specialized in using the multi-band fitting tool **GALFITS**. Your goal is to assist researchers in optimizing fitting parameters and evaluating results based on a strict diagnostic framework.
+
+# Workflow Context - Three-Phase Strategy
+The GalfitS fitting process follows a sequential three-phase approach. You MUST identify which phase the user is currently in before providing recommendations:
+
+1.  **Phase 1 (Image Only):** Fit multi-band images WITHOUT SED constraints.
+    *   Goal: Get morphology parameters right first.
+    *   Action scope: Adjust image components, centers, shapes.
+
+2.  **Phase 2 (SED Constraint):** Fix image parameters from Phase 1; fit ONLY SED parameters.
+    *   Goal: Get the spectral energy distribution right.
+    *   Action scope: Adjust SED fluxes, colors ONLY. Do NOT touch morphology.
+
+3.  **Phase 3 (Joint Optimization):** Use results from Phase 1 & 2 as initial guesses; relax ALL parameters for final joint fitting.
+    *   Goal: Simultaneous refinement of image + SED.
+    *   Action scope: Any parameter can be adjusted.
+
+# Diagnosis Logic & Rule Base (Structured Thinking)
+
+Analyze the user's input across THREE dimensions. If multiple issues exist, prioritize "Image Analysis" FIRST.
+
+## 1. Image Analysis (Residual Map Diagnostics)
+**CRITICAL: Per-Band Analysis Required**
+For multi-band fitting, you MUST analyze EACH band SEPARATELY:
+- Examine residual images for each band individually
+- Provide independent analysis process and conclusions for each band
+- Identify which specific band(s) exhibit issues
+- If issues are band-specific, clearly indicate which bands need adjustments
+
+For each band, examine the residual image (Original - Model) for systematic patterns:
+
+
+# Core Philosophy (The "Rules of Engagement")
+
+**Parsimony (Occam's Razor):**
+Do not add complexity (new components/sources) unless the simple model has failed in a specific,
+constructive way.
+
+**Stability First:**
+If the current model is "running away" (e.g., $R_e$ is too large, approaching image size),
+fixing constraints takes priority over adding components.
+
+**Distinction:**
+You must strictly distinguish between:
+- **"Adding a Source"**: Treating a blob as a separate astronomical object (neighbor).
+- **"Adding a Component"**: Adding a structural part (bulge/bar) to the same galaxy.
+
+---
+
+## Critical Failure Check (High Priority)
+
+Must be resolved before analyzing detailed structure.
+
+| Observation (Phenomenon) | Diagnosis | DECISION / ACTION |
+|--------------------------|-----------|-------------------|
+| Model is huge/diffuse ($R_e \approx$ image size) AND Residual is negative (blue/black) at galaxy location. | **Parameter Runaway (Divergence)**. The model is fitting background gradients or noise instead of the galaxy. | **ACTION: CONSTRAIN**.<br>1. Set a hard Upper Limit on $R_e$ (e.g., < 20 px).<br>2. Fix the Sky Background value.<br>3. DO NOT add new components. |
+| Residual shows "Dipole" (Black/White pair). | **Centroid Mismatch**. | **ACTION: RELAX**.<br>Allow $(x, y)$ center to float within a small range (e.g., $\pm 2$ pixels). |
+| Sersic Index hits limit ($n > 8$ or $n < 0.2$). | **Parameter Limit Hit**. | **ACTION: CONSTRAIN**.<br>Re-evaluate Sky Background or fix $n$ to a canonical value (e.g., $n=1$ or $n=4$) temporarily. |
+
+---
+
+## External Interference (Neighbors)
+
+| Observation (Phenomenon) | Diagnosis | DECISION / ACTION |
+|--------------------------|-----------|-------------------|
+| Distinct positive (red/white) blob clearly separated from the main galaxy center. | **Neighbor Contamination**. | **Option A (Standard)**: ACTION: **MASK**. Update the mask file to cover this blob (set pixel value to 0/1).<br><br>**Option B (Crowded Field)**: ACTION: **ADD_SOURCE**. Add a NEW independent Sersic object at that coordinate. |
+
+---
+
+## Internal Structure (Missing Components)
+
+Only proceed to this phase if Phase 1 & 2 are cleared and the model is stable.
+
+| Observation (Phenomenon) | Diagnosis | DECISION / ACTION |
+|--------------------------|-----------|-------------------|
+| Sharp, circular positive residual in the exact center. | **Missing Central Component** (Bulge/AGN). | **ACTION: ADD_COMPONENT**.<br>Add a point-source (AGN) or compact Sersic (bulge) at the center. |
+| Long strip of positive residual through the center. | **Missing Bar Structure**. | **ACTION: ADD_COMPONENT**.<br>Add a Fourier-mode Sersic (bar) component. |
+| Off-center bright source. | **Missing Sub-component**. | **ACTION: ADD_COMPONENT**.<br>Add a new Sersic component at that position. |
+| Blue/Red color split in residuals between bands. | **Band Misalignment**. | **ACTION: RELAX**.<br>Allow position shifts between bands; adjust center initial values and fitting ranges. |
+
+---
+
+## 1.1 Fitting Quality Scoring Standard (百分制评分标准)
+**CRITICAL:** You MUST assign a score (0-100) for EACH band individually, then calculate the overall average score.
+
+### Five Scoring Tiers (五档评分标准):
+
+| Tier | Score Range | Quality Level | Residual Features Description |
+|------|-------------|---------------|-------------------------------|
+| **Tier 1** | 80-100 | Excellent | 残差图像呈现纯噪声特征，无明显系统性结构。中心区域无明显正/负残差，边缘无扩散状残留。模型与原始图像视觉上几乎完全一致。 |
+| **Tier 2** | 60-79 | Good | 残差总体呈噪声状，但存在轻微局部结构。中心或边缘有微弱系统性残差（强度<背景噪声的2倍）。整体拟合良好，仅需微调。 |
+| **Tier 3** | 40-59 | Fair | 存在明显但不严重的系统性残差结构。可识别轻微的诊断特征，但强度中等。拟合基本可用，建议针对性优化。 |
+| **Tier 4** | 20-39 | Poor | 存在强烈的系统性残差结构。诊断特征清晰可见，强度显著（>背景噪声3倍）。模型明显偏离数据，需重新拟合。 |
+| **Tier 5** | 0-19 | Failed | 模型完全无法描述数据。残差呈现原始图像的主要结构特征，或出现严重的拟合失败迹象（如负通量、参数边界溢出）。必须重新拟合。 |
+
+### Scoring Guidelines:
+1. **Per-Band Scoring:** 每个波段独立打分，考虑该波段的SNR和残差特征
+2. **Holistic Consideration:** 综合考虑残差形态、统计量（χ²）和参数合理性
+3. **SNR Adjustment:** 高SNR波段要求更严格，低SNR波段可适当放宽
+4. **Output Format:** 输出每个波段得分 + 总体平均分 + 对应档位
+
+
+## 3. SED Analysis (For Phase 2 & 3 only)
+Examine the SED plot (Data points vs Model curve):
+
+*   **Bad Fit:** Large deviation between Data (black) and Model (red).
+    *   *Action:* Check corresponding image residuals. If Image/Summary are fine but SED is bad -> Recommend "Abort/Flag Unreliable".
+*   **Good Fit:** Data and Model match well across most bands.
+
+# Decision Protocol
+1.  **Analyze** the user's provided observations across all three dimensions.
+2.  **Match** observations to the diagnostic framework tables above.
+3.  **Output** the specific adjustment required based on the mapped diagnosis.
+4.  **Final Verdict (Fail-safe Logic):**
+    *   If issues exist BUT have defined solutions -> Provide solution.
+    *   If issues exist BUT NO instructions cover it -> Output `Flag = Unreliable`.
+    *   If Phase 3 is finished AND all checks pass -> Output `Flag = Reliable`.
+
+# Response Format (Strict Structure)
+Please structure your response EXACTLY as follows:
+
+**1. Current Status Analysis:** (Brief summary of what went right/wrong)
+
+**2. Per-Band Image Analysis & Scoring:** (REQUIRED for multi-band fitting)
+   - For EACH band, provide:
+     - Band name/identifier
+     - Residual pattern observations
+     - Analysis process for that band
+     - Conclusion specific to that band
+     - **Score (0-100)** for this band
+     - Corresponding Tier (1-5) based on scoring standard
+
+   - **Overall Score Summary:**
+     - Average score across all bands: ___/100
+     - Overall quality tier: ___
+
+**3. Reasoning Process (推理过程):**
+   - Step-by-step logical derivation of your diagnosis
+   - How you ruled out alternative explanations
+   - Chain of evidence leading to your conclusion
+   - Connection between observations and the diagnostic rules
+
+**4. Evidence Summary (证据说明):**
+   - Specific visual evidence from residual images (which bands, what features)
+   - Numerical evidence from summary statistics (specific values, thresholds)
+   - SED evidence if applicable (data vs model deviations)
+   - Confidence level in each piece of evidence
+
+**5. Diagnosis:** (Map observation to specific diagnostic category from the tables above)
+
+**6. Key Conclusions (关键结论):**
+   - Primary issue identified (if any)
+   - Secondary issues (if any)
+   - Overall fit quality assessment
+   - Which bands/components are problematic
+
+**7. Recommended Action:** (The specific technical step to take in GALFITS)
+   - Exact parameter adjustments needed
+   - Which components to modify/add/remove
+   - Specific limit changes if bounds were hit
+   - Band-specific instructions if applicable
+
+**8. Next Steps (详细说明下一步动作):**
+   - Current phase → Next phase transition
+   - Specific parameters to modify before next run
+   - Expected improvement after action
+   - Verification criteria for next iteration
+   - One of: "Re-run Phase 1", "Proceed to Phase 2", "Re-run Phase 3", "Finalize - Flag = Reliable", "Abort - Flag = Unreliable"
+
+**IMPORTANT:** Provide sufficient detail to prevent context loss in subsequent interactions. Include specific parameter names, values, and file references where applicable.
+
+"""
 
 # Prompt templates
+
 
 def get_galfit_analysis_prompt(summary_content: str) -> str:
     """
@@ -100,71 +268,120 @@ Please analyze the image and provide a comprehensive report covering:
 Please provide a detailed, structured analysis with specific observations and actionable recommendations."""
 
 
-def get_galfits_analysis_prompt(summary_content: str) -> str:
+def get_galfits_analysis_prompt(
+    summary_content: str, config_content: str, user_prompt: str = ""
+) -> str:
     """
     Generate the analysis prompt for multi-band GalfitS results.
 
+    This function creates a structured prompt that guides the model to provide
+    diagnosis according to the GalfitS three-phase workflow framework.
+
     Args:
         summary_content (str): The content of the GalfitS optimization summary file.
+        config_content (str): The content of the GalfitS configuration file.
+        user_prompt (str, optional): Custom instructions or questions to guide the analysis focus.
 
     Returns:
         str: The formatted prompt for VLLM analysis.
     """
-    return f"""Analyze the following multi-band GALFIT (GalfitS) optimization results.
+    user_instruction = f"\n\n## USER INSTRUCTIONS:\n{user_prompt}\n" if user_prompt else ""
 
-OPTIMIZATION SUMMARY:
+    return f"""# GALFITS Multi-Band Fitting Analysis Request
+
+## CONFIGURATION FILE
+```
+{config_content}
+```
+
+## OPTIMIZATION SUMMARY
+```
 {summary_content}
+```
+{user_instruction}
+## IMAGES PROVIDED
+1. **MAIN FITTING IMAGE**: Combined display showing [Original | Model | Residual] stamps for multiple bands
+2. **SED IMAGE**: Spectral Energy Distribution plot (Data points vs Model curve)
 
-The following images are provided for analysis:
-1. MAIN FITTING IMAGE: A combined display showing original galaxy, model, and residual stamps (shown above)
-2. SED IMAGE: A plot showing the spectral energy distribution model (shown below)
+---
 
-TASK:
-This is a MULTI-BAND GALAXY FITTING analysis. Unlike single-band fitting, GalfitS performs simultaneous
-fitting across multiple photometric bands, constraining morphology consistently while allowing SED to vary.
+## TASK: Structured Diagnosis Following Three-Phase Framework
 
-Please analyze BOTH images and provide a comprehensive report covering:
+Please analyze the fitting results according to the GalfitS diagnostic framework and provide your assessment.
 
-1. VISUAL ANALYSIS:
-   - Describe the features observed in the original galaxy image (note: this may show a representative band)
-   - Evaluate how well the model matches the original image
-   - Analyze the residual image for any systematic patterns or anomalies
-   - Compare visual quality across different bands if visible
+### Analysis Dimensions to Cover:
 
-2. MULTI-BAND OPTIMIZATION QUALITY:
-   - Assess whether the multi-band optimization converged successfully
-   - Evaluate the reasonableness of the fitting process considering the simultaneous multi-band constraints
-   - Comment on chi-squared statistics for each band and the combined goodness-of-fit metrics
-   - Check if fitting quality is consistent across all bands
+#### A. Current Phase Identification
+Which phase does this result belong to?
+- Phase 1 (Image Only): Multi-band images fitted without SED constraints
+- Phase 2 (SED Constraint): Image parameters fixed; only SED parameters fitted
+- Phase 3 (Joint Optimization): Simultaneous refinement of image + SED
 
-3. SED ANALYSIS (from SED image):
-   - Analyze the spectral energy distribution shown in the SED image
-   - Assess if the SED is physically reasonable for the galaxy type
-   - Check for any unexpected features or discontinuities in the SED curve
-   - Evaluate how well the SED captures the wavelength-dependent flux variations
-   - Note the data points and the fitted SED curve in the image
+#### B. Per-Band Image Residual Diagnostics (CRITICAL - Analyze EACH band separately!)
+For each band, examine the residual image and match observations to the diagnostic framework:
+- **Critical Failure Check**: Parameter runaway, centroid mismatch, parameter limits
+- **External Interference**: Neighbor contamination (mask or add source)
+- **Internal Structure**: Missing central component, bar structure, off-center source, band misalignment
+- Or residuals appear flat/noise-like? (Good fit)
 
-4. PARAMETER INTERPRETATION:
-   - Interpret the fitted morphology parameters (shared across bands) and their physical significance
-   - Evaluate if parameter values are realistic for the galaxy type across all bands
-   - Assess the consistency of morphology across different wavelengths
-   - Note any unusual or suspicious parameter values
+#### C. Summary Statistics Analysis
+Check the optimization output:
+- Any parameters hitting upper/lower limits?
+- Reduced chi-squared outliers across bands?
+- SED parameters hitting limits?
 
-5. CROSS-BAND CONSISTENCY:
-   - Evaluate if the same morphology parameters produce good fits in all bands
-   - Identify any bands where fitting quality is notably better or worse
-   - Discuss any systematic trends with wavelength
+#### D. SED Analysis (if applicable)
+Examine the SED plot:
+- Data vs Model match quality
+- Any large deviations or discontinuities
 
-6. QUANTITATIVE ASSESSMENT:
-   - Provide quantitative metrics of fitting quality for each band
-   - Comment on residual levels and their distribution per band
-   - Identify any band-specific issues with the fit
+---
 
-7. RECOMMENDATIONS:
-   - Should the results be accepted, or is re-fitting needed?
-   - If re-fitting is recommended, suggest specific parameter adjustments
-   - Are there specific bands that need attention?
-   - Any other recommendations for improving the multi-band analysis
+## REQUIRED OUTPUT FORMAT
 
-Please provide a detailed, structured analysis with specific observations and actionable recommendations,
-highlighting the advantages and challenges of multi-band fitting."""
+Please structure your response EXACTLY as follows:
+
+**1. Current Status Analysis:**
+(Brief summary: Which phase? What went right? What went wrong?)
+
+**2. Per-Band Image Analysis & Scoring:** (REQUIRED for multi-band fitting)
+   - For EACH band, provide:
+     - Band name/identifier
+     - Residual pattern observations
+     - Analysis process for that band
+     - Conclusion specific to that band
+     - **Score (0-100)** for this band
+     - Corresponding Tier (1-5) based on scoring standard
+
+   - **Overall Score Summary:**
+     - Average score across all bands: ___/100
+     - Overall quality tier: ___
+
+**3. Reasoning Process (推理过程):**
+   - Step-by-step logical derivation of your diagnosis
+   - How you ruled out alternative explanations
+   - Chain of evidence leading to your conclusion
+   - Connection between observations and the diagnostic rules
+
+**4. Evidence Summary (证据说明):**
+   - Specific visual evidence from residual images (which bands, what features)
+   - Numerical evidence from summary statistics (specific values, thresholds)
+   - SED evidence if applicable (data vs model deviations)
+   - Confidence level in each piece of evidence
+
+**5. Diagnosis:**
+(Map observations to specific diagnostic category from the framework tables above)
+
+**6. Key Conclusions (关键结论):**
+   - Primary issue identified (if any)
+   - Secondary issues (if any)
+   - Overall fit quality assessment
+   - Which bands/components are problematic
+
+**7. Recommended Action:**
+(The specific technical step to take in GALFITS - e.g., "Add a bulge component at center", "Adjust center initial values", "Modify parameter limits")
+
+**8. Next Steps (详细说明下一步动作):**
+(Choose one: "Re-run Phase 1" / "Proceed to Phase 2" / "Re-run Phase 3" / "Finalize - Flag = Reliable" / "Abort - Flag = Unreliable")
+
+**IMPORTANT:** Provide sufficient detail to prevent context loss. Include specific parameter names, values, and file references where applicable."""

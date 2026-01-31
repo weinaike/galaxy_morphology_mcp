@@ -13,6 +13,7 @@ import shlex
 import importlib.util
 from typing import Any
 from mcp.server import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits
 from tools.analyze_image import galfit_analyze_by_vllm, galfits_analyze_by_vllm
@@ -169,7 +170,7 @@ def setup_http_routes():
 def run_stdio_mode():
     """运行 stdio 模式 (用于本地 MCP 客户端连接)"""
     logger.info("Starting Galaxy Morphology MCP Server in STDIO mode...")
-    logger.info("Tools available: run_galfit, run_galfits, analyze_by_vllm")
+    
     app.run(transport='stdio')
 
 
@@ -180,6 +181,26 @@ def run_http_mode(host='0.0.0.0', port=38507, path='/mcp'):
     app.settings.host = host
     app.settings.port = port
     app.settings.streamable_http_path = path
+
+    # Configure transport security to allow all hosts for remote access
+    # Get allowed hosts from environment variable or allow all
+    allowed_hosts_env = os.getenv("MCP_ALLOWED_HOSTS", "*").split(",")
+    if allowed_hosts_env == ["*"]:
+        # Disable DNS rebinding protection to allow all hosts
+        app.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
+            allowed_hosts=[],
+            allowed_origins=[]
+        )
+        logger.info("DNS rebinding protection disabled - allowing all hosts")
+    else:
+        # Allow specific hosts from environment variable
+        app.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[h.strip() for h in allowed_hosts_env],
+            allowed_origins=[]
+        )
+        logger.info(f"Allowed hosts: {app.settings.transport_security.allowed_hosts}")
 
     logger.info("Starting Galaxy Morphology MCP Server in HTTP mode...")
     logger.info(f"Server endpoints:")

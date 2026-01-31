@@ -25,11 +25,12 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+examples
+results
 # PyInstaller
 *.manifest
 *.spec
-
+*.tar.gz
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -95,3 +96,5 @@ config.toml
 Thumbs.db
 
 .mcp.json
+test_output
+gs_data

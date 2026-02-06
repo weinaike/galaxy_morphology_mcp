@@ -14,6 +14,7 @@ import importlib.util
 from typing import Any
 from mcp.server import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from tools.modify_feedme import add_components
 from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits
 from tools.analyze_image import galfit_analyze_by_vllm, galfits_analyze_by_vllm
@@ -28,6 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastMCP(name='galaxy-morphology-mcp')
+app.add_tool(add_components)
 app.add_tool(run_galfit)
 app.add_tool(run_galfits)
 app.add_tool(galfit_analyze_by_vllm)

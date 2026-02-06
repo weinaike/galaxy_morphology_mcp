@@ -261,7 +261,6 @@ Please analyze the image and provide a comprehensive report covering:
    - Re-Fitting Guidance (if recommended):
       - Provide the **full, complete content** of the revised GALFIT Initial Parameter (Init par) file, with all parameters adjusted to address the identified fitting issues (e.g., updated Sérsic index, effective radius, or mask settings).
       - Note it is recommended not to alter the fitting region.
-      - Note it is recommended not to alter the number of components.‌
       - For each modified parameter in the Init par file, include a brief justification (e.g., "Increased Sérsic index from 1.0 to 4.0 to better model the bulge-dominated galaxy" or "Expanded the fitting region to exclude masked pixels overlapping with the galaxy’s disk").
    - Additional Recommendations: List specific, actionable suggestions to improve the overall analysis (e.g., adjustments to mask design, choice of fitting model, data preprocessing steps, or parameter constraint settings in GALFIT).
 

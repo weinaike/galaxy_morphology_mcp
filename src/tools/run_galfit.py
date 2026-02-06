@@ -182,6 +182,7 @@ def create_comparison_png(
         # GalfitS uses: immin = 5*sky_std, immax = max(image), and subtracts sky
         orig_data_sky_sub = original_data - sky_median
         orig_display = np.flipud(orig_data_sky_sub)
+        orig_display = np.flipud(orig_data_sky_sub)
         immin = 5 * sky_std
         immax = np.nanmax(orig_data_sky_sub)
         orig_norm = _normimg_galfit(orig_display, immin, immax, frac=0.4)
@@ -194,7 +195,8 @@ def create_comparison_png(
         ax2 = fig.add_subplot(gs[0, 1])
         if model_data is not None:
             model_data_sky_sub = model_data - sky_median
-            model_display = np.flipud(model_data_sky_sub)
+            #model_display = np.flipud(model_data_sky_sub)
+            model_display = model_data_sky_sub
             model_norm = _normimg_galfit(model_display, immin, immax, frac=0.4)
             ax2.imshow(model_norm, cmap='seismic', vmin=-1, vmax=1, origin='lower', interpolation='nearest')
         else:
@@ -207,7 +209,8 @@ def create_comparison_png(
         ax3 = fig.add_subplot(gs[0, 2])
         im3 = None
         if residual_data is not None:
-            resid_display = np.flipud(residual_data.copy())
+            #resid_display = np.flipud(residual_data.copy())
+            resid_display = residual_data.copy()
 
             # Normalize by sigma to get significance map (GalfitS style)
             if sigma is not None:
@@ -248,7 +251,8 @@ def create_comparison_png(
 
         # === Overlay mask on data and residual panels (not on model) ===
         if mask is not None:
-            mask_display = np.flipud(mask)
+            #mask_display = np.flipud(mask)
+            mask_display = mask
             for ax in [ax1, ax3]:
                 ax.imshow(mask_display, cmap='Blues', origin='lower',
                          alpha=0.5 * mask_display, interpolation='nearest')

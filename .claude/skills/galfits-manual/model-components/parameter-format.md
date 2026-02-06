@@ -16,24 +16,45 @@ All parameters in GalfitS follow a standard five-value array format:
 |---------|-------------|---------|
 | **initial_value** | Starting value for the parameter | 2.5 |
 | **minimum_value** | Lower bound for the parameter | 0.1 |
-| **maximum_value** | Upper bound for the parameter | 10.0 |
+| **maximum_value** | Upper bound for the parameter, which must be strictly larger than the lower bound| 10.0 |
 | **typical_step** | Typical variation step (useful for MCMC) | 0.1 |
 | **vary_flag** | Whether parameter is free (1) or fixed (0) | 1 |
 
 ### Examples
 
 ```text
-# Free parameter with range 0.5-5.0
-[2.5, 0.5, 5.0, 0.1, 1]
-
-# Fixed parameter (will not vary during fitting)
-[1.0, 0.5, 2.0, 0.1, 0]
-
-# Parameter with very wide range
-[10.0, -100, 100, 1.0, 1]
-
-# Small variation step for precise parameter
-[0.8, 0.6, 1.0, 0.01, 1]
+Pa1) bulge # Component type, must be one of [bulge, disk, bar, ring] (bulge for nuclear spheroid)
+Pa2) sersic # Profile model for bulge, must be sersic (only supported for bulge component)
+Pa3) [0.0, -0.5, 0.5, 0.01, 0] # X center offset (pixels), 5-elements list [init, min, max, step, vary]
+Pa4) [0.0, -0.5, 0.5, 0.01, 0] # Y center offset (pixels), 5-elements list [init, min, max, step, vary]
+Pa5) [1.2, 0.1, 8.0, 0.05, 1] # Effective radius Re (arcsec), 5-elements list [init, min, max, step, vary] (core parameter)
+Pa6) [2.5, 0.5, 6.0, 0.1, 1] # Sersic index n, 5-elements list [init, min, max, step, vary] (bulge key parameter, n>1 for compact bulge)
+Pa7) [0.0, 0.0, 360.0, 1.0, 0] # Position angle (deg), 5-elements list [init, min, max, step, vary] (0=North, 90=East)
+Pa8) [0.7, 0.1, 0.99, 0.01, 1] # Axis ratio q (b/a), 5-elements list [init, min, max, step, vary] (q<1 for elliptical, q≈0.3-0.7 for bulge)
+Pa9) [[-2.0, -8.0, 0.0, 0.1, 0],[-2.0, -8.0, 0.0, 0.1, 0],[-2.0, -8.0, 0.0, 0.1, 1],[-2.0, -8.0, 0.0, 0.1, 0],[-2.0, -8.0, 0.0, 0.1, 0]] # Multi-band flux parameters, list of 5-elements lists (1 list per band, [init, min, max, step, vary])
+Pa10) [0 , 0.1 , 0.1934935972615947 , 0.3743977218123221 , 0.7244356200001203 , 1.4017365409825697] # Sersic profile radial sampling nodes (normalized radius), fixed array (DO NOT MODIFY, built-in for model calculation)
+Pa11) [[0.05, 0.01, 0.5, 0.01, 0]] # Compact core scale (arcsec), list of 5-elements list [[init, min, max, step, vary]] 
+Pa12) [[3.0, 1.0, 8.0, 0.1, 0]] # Compact core Sersic index, list of 5-elements list [[init, min, max, step, vary]]
+Pa13) [100.0, 40.0, 200.0, 1.0, 0] # Dust extinction parameter, 5-elements list [init, min, max, step, vary] (fixed for initial fitting)
+Pa14) [0.0, 0.0, 10.0, 0.1, 0] # Bar length scale, 5-elements list [init, min, max, step, vary] (unused for pure bulge, fixed to 0)
+Pa15) bins | conti  # bins
+Pa16) [0.0, 0.0, 360.0, 1.0, 0] # Bar position angle (deg), 5-elements list [init, min, max, step, vary] (unused for pure bulge)
+Pa17) [0.5, 0.1, 0.99, 0.01, 0] # Bar axis ratio, 5-elements list [init, min, max, step, vary] (unused for pure bulge)
+Pa18) [0.0, 0.0, 20.0, 0.5, 0] # Ring radius (arcsec), 5-elements list [init, min, max, step, vary] (unused for pure bulge, fixed to 0)
+Pa19) [0.0, 0.0, 5.0, 0.1, 0] # Ring width, 5-elements list [init, min, max, step, vary] (unused for pure bulge, fixed to 0)
+Pa20) [0.0, 0.0, 360.0, 1.0, 0] # Ring position angle (deg), 5-elements list [init, min, max, step, vary] (unused for pure bulge)
+Pa21) [0.5, 0.1, 0.99, 0.01, 0] # Ring axis ratio, 5-elements list [init, min, max, step, vary] (unused for pure bulge)
+Pa22) [0.0, 0.0, 1.0, 0.05, 0] # Star formation efficiency, 5-elements list [init, min, max, step, vary] (fixed for structural fitting)
+Pa23) [0.0, 0.0, 10.0, 0.5, 0] # Gas mass scale, 5-elements list [init, min, max, step, vary] (fixed for structural fitting)
+Pa24) [0.0, 0.0, 5.0, 0.1, 0] # Metallicity scale, 5-elements list [init, min, max, step, vary] (fixed for structural fitting)
+Pa25) [0.0, 0.0, 1.0, 0.05, 0] # Age scale (Gyr), 5-elements list [init, min, max, step, vary] (fixed for structural fitting)
+Pa26) [0.0, 0.0, 0.5, 0.01, 0] # Internal extinction Av, 5-elements list [init, min, max, step, vary] (fixed for initial fitting)
+Pa27) 0 # only zero is acceptable.
+Pa28) [0.0, 0.0, 1.0, 0.05, 0] # Dust cover factor, 5-elements list [init, min, max, step, vary] (fixed for initial fitting)
+Pa29) [0.0, 0.0, 10.0, 0.5, 0] # AGN obscuration factor, 5-elements list [init, min, max, step, vary] (unused for bulge, fixed to 0)
+Pa30) [0.0, 0.0, 5.0, 0.1, 0] # Velocity dispersion (km/s), 5-elements list [init, min, max, step, vary] (fixed for structural fitting)
+Pa31) [0.0, 0.0, 200.0, 5.0, 0] # Stellar mass (1e10 Msun), 5-elements list [init, min, max, step, vary] (fixed for structural fitting)
+Pa32) [1.0, 0.5, 1.5, 0.01, 1] # PSF convolution fine-tune factor, 5-elements list [init, min, max, step, vary] (final flux correction)
 ```
 
 ## Phase-Specific Configuration

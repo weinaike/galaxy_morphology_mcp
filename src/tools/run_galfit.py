@@ -181,8 +181,8 @@ def create_comparison_png(
         ax1 = fig.add_subplot(gs[0, 0])
         # GalfitS uses: immin = 5*sky_std, immax = max(image), and subtracts sky
         orig_data_sky_sub = original_data - sky_median
-        orig_display = np.flipud(orig_data_sky_sub)
-        orig_display = np.flipud(orig_data_sky_sub)
+        #orig_display = np.flipud(orig_data_sky_sub)
+        orig_display = orig_data_sky_sub
         immin = 5 * sky_std
         immax = np.nanmax(orig_data_sky_sub)
         orig_norm = _normimg_galfit(orig_display, immin, immax, frac=0.4)

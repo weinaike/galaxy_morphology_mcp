@@ -64,6 +64,21 @@ The GalfitS fitting process follows a sequential three-phase approach. You MUST 
 Analyze the user's input across THREE dimensions. If multiple issues exist, prioritize "Image Analysis" FIRST.
 
 ## 1. Image Analysis (Residual Map Diagnostics)
+
+### 1.1 Data Image Diagnostics
+**CRITICAL: Per-Band Analysis Required**
+For multi-band fitting, you MUST analyze EACH band SEPARATELY:
+- Do we see contamination sources in the image that are neither fitted nor mask? If yes, we need to request to add a mask and consider if this is the main reason of the bad fitting.
+- Do we see spiral-like pattern in the galaxy? If yes, we need to include a disk component and may add a bulge, a bar, or both. 
+- Do we see a bar-like pattern in the center of the galaxy? If yes, we need to add a bar component in the fitting.
+- Do we see PSF like pattern in the center of the source? If yes, we may try to include a PSF model in the center.
+
+**Global evaluation**
+- Compare the common and special features of the individual bands
+- If the data quality of some individual bands are particularly bad, ignore them in the residual evaluation
+
+
+### 1.2 Residual Map Diagnostics
 **CRITICAL: Per-Band Analysis Required**
 For multi-band fitting, you MUST analyze EACH band SEPARATELY:
 - Examine residual images for each band individually
@@ -118,7 +133,7 @@ Only proceed to this phase if Phase 1 & 2 are cleared and the model is stable.
 | Observation (Phenomenon) | Diagnosis | DECISION / ACTION |
 |--------------------------|-----------|-------------------|
 | Sharp, circular positive residual in the exact center. | **Missing Central Component** (Bulge/AGN). | **ACTION: ADD_COMPONENT**.<br>Add a point-source (AGN) or compact Sersic (bulge) at the center. |
-| Long strip of positive residual through the center. | **Missing Bar Structure**. | **ACTION: ADD_COMPONENT**.<br>Add a Fourier-mode Sersic (bar) component. |
+| Axisymmetric (e.g. doughnut-like) residual or long strip of positive residual through center. | **Missing Bar Structure**. | **ACTION: ADD_COMPONENT**.<br>Add a Sersic (bar) component. |
 | Off-center bright source. | **Missing Sub-component**. | **ACTION: ADD_COMPONENT**.<br>Add a new Sersic component at that position. |
 | Blue/Red color split in residuals between bands. | **Band Misalignment**. | **ACTION: RELAX**.<br>Allow position shifts between bands; adjust center initial values and fitting ranges. |
 
@@ -139,7 +154,7 @@ Only proceed to this phase if Phase 1 & 2 are cleared and the model is stable.
 
 ### Scoring Guidelines:
 1. **Per-Band Scoring:** 每个波段独立打分，考虑该波段的SNR和残差特征
-2. **Holistic Consideration:** 综合考虑残差形态、统计量（χ²）和参数合理性
+2. **Holistic Consideration:** 综合考虑残差形态、统计量（χ²）和参数合理性；注意，在没有用很多模型成分的情况下，χ²小于1是可以接受的。
 3. **SNR Adjustment:** 高SNR波段要求更严格，低SNR波段可适当放宽
 4. **Output Format:** 输出每个波段得分 + 总体平均分 + 对应档位
 
@@ -168,6 +183,7 @@ Please structure your response EXACTLY as follows:
 **2. Per-Band Image Analysis & Scoring:** (REQUIRED for multi-band fitting)
    - For EACH band, provide:
      - Band name/identifier
+     - Galaxy morphology description in that band (e.g., "bulge-dominated", "disk-dominated", "irregular")
      - Residual pattern observations
      - Analysis process for that band
      - Conclusion specific to that band
@@ -346,6 +362,7 @@ Please structure your response EXACTLY as follows:
 **2. Per-Band Image Analysis & Scoring:** (REQUIRED for multi-band fitting)
    - For EACH band, provide:
      - Band name/identifier
+     - Galaxy morphology description in that band (e.g., "bulge-dominated", "disk-dominated", "irregular")
      - Residual pattern observations
      - Analysis process for that band
      - Conclusion specific to that band

@@ -40,7 +40,7 @@ Pa4) [0,-5,5,0.1,1]                             # y-center [arcsec]
 
 - Bar shows flat inner brightness profile
 - Bar has sharp outer edge
-- Fourier Sersic doesn't capture bar shape adequately
+- Sersic doesn't capture bar shape adequately
 
 ---
 
@@ -170,8 +170,8 @@ Pa5) [0.5,0.1,2,0.01,1]                         # sigma [arcsec]
 |-------------|---------------------|-------------|
 | Elliptical galaxy | `sersic` (n=4) | - |
 | Spiral disk | `sersic` (n=1) | - |
-| Bar with flat core | `ferrer` | `sersic_f` (m=2) |
-| Bar/spiral arms | `sersic_f` (m=2) | - |
+| Bar with flat core | `sersic` (n=0.5) | `ferrer` |
+| Spiral arms | `sersic_f` (m=2) | - |
 | Ring structure | `GauRing` | - |
 | Edge-on disk | `edgeondisk` | `sersic` with high flattening |
 | Unresolved source | `Gaussian` | AGN component |
@@ -190,6 +190,6 @@ Pa5) [0.5,0.1,2,0.01,1]                         # sigma [arcsec]
 ## See Also
 
 - [Sersic Profile](profile-sersic.md) - Standard Sersic profile
-- [Fourier Sersic Profile](profile-fourier.md) - For bars and spiral arms
+- [Fourier Sersic Profile](profile-fourier.md) - For spiral arms
 - [Galaxy Configuration](galaxy.md) - How to combine into galaxies
 - [Parameter Format & Combining](parameter-format.md) - General parameter information

@@ -85,8 +85,8 @@ Pb2) sersic
 # ... disk parameters ...
 
 Pc1) bar
-Pc2) sersic_f                                  # Fourier mode for bar
-# ... bar parameters including Fourier modes ...
+Pc2) sersic
+# ... bar parameters fix n=0.5 (vary=0) ...
 
 # Combine all three
 Ga1) host
@@ -110,7 +110,7 @@ Ga2) ['a', 'b', 'c']  # bulge, disk, and bar
 |-------------|-------------------|------------------------|
 | Elliptical | Single Sersic | n = 4-8 |
 | Spiral (bulge+disk) | Two Sersic | bulge n=4, disk n=1 |
-| Spiral with bar | Sersic + Sersic + Fourier | bulge n=4, disk n=1, bar with Fourier |
+| Spiral with bar | Three Sersic | bulge n=4, disk n=1, bar n=0.5 |
 | Lenticular | Sersic + Sersic | bulge n=2-4, disk n=1 |
 | Irregular | Multiple Fourier profiles | Varies |
 

@@ -24,7 +24,7 @@ This section provides detailed documentation for all model components available 
 
 | Profile Type | Value for Pa2 | Use Case |
 |-------------|---------------|----------|
-| Sersic | `sersic` | Standard galaxy bulge/disk, elliptical profile |
+| Sersic | `sersic` | Standard galaxy bulge/disk/bar, elliptical profile |
 | Fourier Sersic | `sersic_f` | Non-axisymmetric profile with spiral/boxy/disky features |
 | Ferrer Bar | `ferrer` | Ferrer profile bar |
 | Edge-on Disk | `edgeondisk` | Edge-on disk profile |
@@ -35,8 +35,8 @@ This section provides detailed documentation for all model components available 
 ## Documentation Files
 
 - **[Galaxy Configuration](galaxy.md)** - How to define galaxy models that combine profile components
-- **[Sersic Profile](profile-sersic.md)** - Standard Sersic profile for bulges and disks
-- **[Fourier Sersic Profile](profile-fourier.md)** - Fourier mode profiles for spiral arms and bars
+- **[Sersic Profile](profile-sersic.md)** - Standard Sersic profile for bulges, disks, and bars
+- **[Fourier Sersic Profile](profile-fourier.md)** - Fourier mode profiles for spiral arms
 - **[Other Profile Types](profile-other.md)** - Ferrer, edge-on disk, Gaussian ring, constant, Gaussian
 - **[Nuclei/AGN](nuclei-agn.md)** - AGN component with full SED model
 - **[Foreground Star](foreground-star.md)** - Foreground star modeling

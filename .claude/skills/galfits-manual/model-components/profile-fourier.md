@@ -1,11 +1,11 @@
 # Fourier Sersic Profile
 
-The Fourier Sersic profile extends the standard Sersic profile with Fourier modes for non-axisymmetric features like spiral arms, bars, and boxy/disky distortions. It is defined by setting `Pa2) sersic_f`.
+The Fourier Sersic profile extends the standard Sersic profile with Fourier modes for non-axisymmetric features like spiral arms and boxy/disky distortions. It is defined by setting `Pa2) sersic_f`.
 
 ## Overview
 
 - **Profile Type**: `sersic_f`
-- **Use Case**: Non-axisymmetric profiles with spiral/boxy/disky features, bars, spiral arms
+- **Use Case**: Non-axisymmetric profiles with spiral/boxy/disky features, spiral arms
 - **Parameters**: 32 parameters total (Pa1-Pa24, Pa27-Pa32)
 - **Additional Parameters**: Pb17-Pb24 for Fourier modes (not in standard Sersic)
 
@@ -18,7 +18,6 @@ The Fourier Sersic profile adds:
 
 This allows modeling of:
 - Spiral arms (m=2 or higher)
-- Bars (m=2 with specific orientation)
 - Boxy/disky isophotes
 - Any non-axisymmetric structure
 
@@ -30,7 +29,7 @@ Same as standard Sersic profile - see [Sersic Profile](profile-sersic.md) for de
 
 | Parameter | Description | Typical Values |
 |-----------|-------------|----------------|
-| **Pa1** | Component name (e.g., 'spiral', 'bar', 'arm') | string |
+| **Pa1** | Component name (e.g., 'spiral', 'arm') | string |
 | **Pa2** | Profile type - must be `sersic_f` | 'sersic_f' |
 | **Pa3-Pa16** | Same as Sersic profile | - |
 
@@ -97,7 +96,7 @@ Pb32) [0.1, 0, 1.0, 0.1, 1]                     # gamma
 |---------|----------|-------------|
 | m = 0 | Axisymmetric | Reduces to standard Sersic |
 | m = 1 | Lopsided | One-sided distortion |
-| m = 2 | Bar/Two-armed spiral | Bar or two spiral arms |
+| m = 2 | Two-armed spiral | Two spiral arms |
 | m = 3 | Three-armed spiral | Three spiral arms |
 | m = 4+ | Multi-arm | Multiple spiral arms |
 
@@ -114,31 +113,15 @@ Pb32) [0.1, 0, 1.0, 0.1, 1]                     # gamma
 
 - **am = 0**: No Fourier distortion (axisymmetric)
 - **am = 0.1-0.3**: Mild non-axisymmetry
-- **am = 0.3-0.6**: Moderate (typical bars)
+- **am = 0.3-0.6**: Moderate
 - **am > 0.6**: Strong (prominent spiral arms)
 
 ### Angle Parameters
 
-- **theta_m (Pa23)**: Position angle of the Fourier mode (orientation of bar/spiral arms)
+- **theta_m (Pa23)**: Position angle of the Fourier mode (orientation of spiral arms)
 - **i_m (Pa24)**: Projection/inclination angle of the mode
 
 ## Common Use Cases
-
-### Bar Modeling
-
-```text
-Pb1) bar
-Pb2) sersic_f
-# ... standard Sersic parameters ...
-Pb17) [0.5, 0.1, 2, 0.1, 1]                    # Bar starts near center
-Pb18) [3, 1, 6, 0.1, 1]                         # Bar extends outward
-Pb19) [1, 0.5, 3, 0.1, 1]                       # Smooth rotation
-Pb20) [90, 30, 150, 1, 1]                       # Bar has structure
-Pb21) 2                                         # Two-fold symmetry (bar)
-Pb22) [0.4, 0.1, 0.8, 0.01, 1]                  # Moderate amplitude
-Pb23) [45, 0, 180, 1, 1]                        # Bar PA = 45 degrees
-Pb24) [30, 0, 60, 1, 1]                         # Moderate inclination
-```
 
 ### Two-Armed Spiral
 
@@ -162,14 +145,13 @@ Pb24) [20, 0, 45, 1, 1]                         # Slight inclination
 2. **Fix SED parameters**: When optimizing structural parameters, fix SED to reduce degeneracy
 3. **Constraint r_in < r_out**: Always ensure inner radius is smaller than outer radius
 4. **Initial amplitude**: Start with small am (~0.1-0.3) and increase if needed
-5. **Mode number**: Use m=2 for most bars and spiral arms; higher modes may be unstable
+5. **Mode number**: Use m=2 for spiral arms; higher modes may be unstable
 
 ## When to Use Fourier Sersic vs Standard Sersic
 
 | Residual Pattern | Recommended Action |
 |------------------|-------------------|
 | Smooth, axisymmetric | Standard Sersic is sufficient |
-| Bar-like positive residual | Add Fourier Sersic with m=2 |
 | Spiral arm patterns | Add Fourier Sersic with m=2 or higher |
 | Boxy/disky isophotes | Add Fourier Sersic with m=4 |
 | Off-center features | Consider separate component instead |

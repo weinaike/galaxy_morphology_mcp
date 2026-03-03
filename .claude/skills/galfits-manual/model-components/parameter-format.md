@@ -101,7 +101,7 @@ Pb2) sersic
 ... (disk parameters)
 
 Pc1) bar
-Pb2) sersic_f
+Pb2) sersic
 ... (bar parameters)
 
 # Combine into a galaxy

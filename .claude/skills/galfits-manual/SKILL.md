@@ -19,8 +19,8 @@ To create a new GalfitS config file:
 2. **Configure data input** (Region → Images → Spectra → Atlas)
 3. **Define model components**:
    - **Profile components (P)**: Galaxy structural components with types specified by `Pa2` parameter
-     - `sersic` - Standard bulge/disk profile
-     - `sersic_f` - Fourier mode profile (spiral arms, bars, etc.)
+     - `sersic` - Standard bulge/disk/bar profile
+     - `sersic_f` - Fourier mode profile (spiral arms)
      - `ferrer`, `edgeondisk`, `GauRing`, `const`, `Gaussian` - Other profiles
    - **Nuclei/AGN components (N)**: AGN with full SED model
    - **Foreground stars (F)**: Stellar sources with blackbody SED
@@ -92,8 +92,8 @@ Model Components
 
 | Profile Type | Pa2 Value | Use When You See... | Documentation |
 |-------------|-----------|--------------------|---------------|
-| **Sersic** | `sersic` | Elliptical galaxy, bulge, disk, any axisymmetric structure | [profile-sersic.md](model-components/profile-sersic.md) |
-| **Fourier Sersic** | `sersic_f` | Spiral arms, bar, non-axisymmetric features | [profile-fourier.md](model-components/profile-fourier.md) |
+| **Sersic** | `sersic` | Elliptical galaxy, bulge, disk, bar, any axisymmetric structure | [profile-sersic.md](model-components/profile-sersic.md) |
+| **Fourier Sersic** | `sersic_f` | Spiral arms, non-axisymmetric features | [profile-fourier.md](model-components/profile-fourier.md) |
 | **Ferrer Bar** | `ferrer` | Bar with flat inner core | [profile-other.md](model-components/profile-other.md) |
 | **Edge-on Disk** | `edgeondisk` | Galaxy viewed edge-on | [profile-other.md](model-components/profile-other.md) |
 | **Gaussian Ring** | `GauRing` | Ring or lens structure | [profile-other.md](model-components/profile-other.md) |
@@ -108,9 +108,10 @@ Model Components
 
 | Your Goal | Which Component? |
 |-----------|------------------|
+| **Just the disk or elliptical (like a bulge) component** | Single Profile (P) component |
 | **A galaxy with bulge + disk** | Galaxy (G) containing 2+ Profile (P) components |
-| **Just the bulge or disk** | Single Profile (P) component |
-| **Spiral arms or a bar** | Profile with `Pa2) sersic_f` |
+| **Bar** | Profile with `Pa2) sersic` and the Sersic index fixed to n=0.5|
+| **Spiral arms** | Profile with `Pa2) sersic_f` |
 | **An AGN / central black hole** | Nuclei/AGN (N) component |
 | **A star in the field** | Foreground Star (F) component |
 | **Multiple galaxies** | Multiple Galaxy (G) components: Ga, Gb... |
@@ -131,7 +132,8 @@ Model Components
 # All three are Sersic profiles, just with different parameters
 Pa1) bulge    Pa2) sersic
 Pb1) disk     Pb2) sersic     ← Same type!
-Pc1) bar      Pc2) sersic_f   ← Different type (Fourier)
+Pc1) bar      Pc2) sersic     ← Same type (but Pc6 fixed to 0.5)!
+Pd1) spiral   Pd2) sersic_f     ← Different type (Fourier)
 
 # AGN is a DIFFERENT component type (N prefix, not P)
 Na1) AGN      (not Pa1)       ← Separate component type
@@ -178,7 +180,7 @@ For detailed command-line arguments, fitting methods, and usage examples, see **
 | Band misalignment | Set `Ia13) 1` and adjust `Ia14)` shift ranges |
 | Off-center residual | Add new component at that position |
 | Circular center residual | Add bulge/AGN component |
-| Bar-like residual | Add bar component (set `Pa2) sersic_f`) |
+| Bar-like residual | Add bar component (set `Pa2) sersic`) |
 | Fitting fails to converge | See [running-galfits.md](running-galfits.md) for troubleshooting |
 
 ## File Structure
@@ -229,8 +231,8 @@ To use this configuration guide, refer to the detailed documentation files:
 ### Model Components Quick Links
 
 - **[Galaxy](model-components/galaxy.md)** - Combine profile components into galaxies
-- **[Sersic Profile](model-components/profile-sersic.md)** - Standard bulge/disk profile
-- **[Fourier Sersic](model-components/profile-fourier.md)** - Bars and spiral arms
+- **[Sersic Profile](model-components/profile-sersic.md)** - Standard bulge/disk/bar profile
+- **[Fourier Sersic](model-components/profile-fourier.md)** - Spiral arms
 - **[Other Profiles](model-components/profile-other.md)** - Ferrer, edge-on, ring, Gaussian
 - **[Nuclei/AGN](model-components/nuclei-agn.md)** - AGN with full SED model
 - **[Foreground Star](model-components/foreground-star.md)** - Stellar sources

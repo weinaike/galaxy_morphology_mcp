@@ -23,7 +23,22 @@
 
 Analyze the user's input across THREE dimensions. If multiple issues exist, prioritize "Image Analysis" FIRST.
 
-## 1. Image Analysis (Residual Map Diagnostics)
+## 1. Image Analysis 
+
+### 1.1 Data Image Diagnostics
+**CRITICAL: Per-Band Analysis Required**
+For multi-band fitting, you MUST analyze EACH band SEPARATELY:
+- Do we see contamination sources in the image that are neither fitted nor mask? If yes, we need to request to add a mask and consider if this is the main reason of the bad fitting.
+- Do we see spiral-like pattern in the galaxy? If yes, we need to include a disk component and may add a bulge, a bar, or both. 
+- Do we see a bar-like pattern in the center of the galaxy? If yes, we need to add a bar component in the fitting.
+- Do we see PSF like pattern in the center of the source? If yes, we may try to include a PSF model in the center.
+
+**Global evaluation**
+- Compare the common and special features of the individual bands
+- If the data quality of some individual bands are particularly bad, ignore them in the residual evaluation
+
+
+### 1.2 Residual Map Diagnostics
 **CRITICAL: Per-Band Analysis Required**
 For multi-band fitting, you MUST analyze EACH band SEPARATELY:
 - Examine residual images for each band individually
@@ -40,9 +55,9 @@ For each band, examine the residual image (Original - Model) for systematic patt
 *   **Case B:** Off-center bright source in residuals.
     *   *Action:* Add a new Sersic component at that position.
     *   *Band-specific:* Note if the off-center source appears in specific bands only
-*   **Case C:** Long strip of positive residual through center.
-    *   *Action:* Add a 'bar' component to the model.
-    *   *Band-specific:* Check if the bar feature is visible across all bands
+*   **Case C:** Axisymmetric (e.g. doughnut-like) residual or long strip of positive residual through center.
+    *   *Action:* Add a 'bar' component to the model (Sersic profile with n=0.5).
+    *   *Band-specific:* Check if a bar-like feature is visible in the galaxy center across all bands
 *   **Case D:** Circular positive residual in center.
     *   *Action:* Add a 'bulge' or 'AGN' point-source component.
     *   *Band-specific:* Determine which bands show the central excess
@@ -56,10 +71,10 @@ For each band, examine the residual image (Original - Model) for systematic patt
 
 *Important Note:* IGNORE spiral arm or ring features. These are complex structures beyond current scope. Do NOT recommend adding ring components.
 
-## 1.1 Fitting Quality Scoring Standard (百分制评分标准)
+### 1.3 Fitting Quality Scoring Standard (百分制评分标准)
 **CRITICAL:** You MUST assign a score (0-100) for EACH band individually, then calculate the overall average score.
 
-### Five Scoring Tiers (五档评分标准):
+#### Five Scoring Tiers (五档评分标准):
 
 | Tier | Score Range | Quality Level | Residual Features Description |
 |------|-------------|---------------|-------------------------------|
@@ -69,9 +84,9 @@ For each band, examine the residual image (Original - Model) for systematic patt
 | **Tier 4** | 20-39 | Poor | 存在强烈的系统性残差结构。Case A-E特征清晰可见，强度显著（>背景噪声3倍）。模型明显偏离数据，需重新拟合。 |
 | **Tier 5** | 0-19 | Failed | 模型完全无法描述数据。残差呈现原始图像的主要结构特征，或出现严重的拟合失败迹象（如负通量、参数边界溢出）。必须重新拟合。 |
 
-### Scoring Guidelines:
+#### Scoring Guidelines:
 1. **Per-Band Scoring:** 每个波段独立打分，考虑该波段的SNR和残差特征
-2. **Holistic Consideration:** 综合考虑残差形态、统计量（χ²）和参数合理性
+2. **Holistic Consideration:** 综合考虑残差形态、统计量（χ²）和参数合理性；注意，在没有用很多模型成分的情况下，χ²小于1是可以接受的。
 3. **SNR Adjustment:** 高SNR波段要求更严格，低SNR波段可适当放宽
 4. **Output Format:** 输出每个波段得分 + 总体平均分 + 对应档位
 
@@ -79,7 +94,7 @@ For each band, examine the residual image (Original - Model) for systematic patt
 Check the optimization output for numerical issues:
 
 *   **Check A:** Any parameter hit upper/lower limits?
-    *   *Action:* Adjust the limit bounds (ensure radius < image size).
+    *   *Action:* Expand the limit bounds (ensure radius < image size).
 *   **Check B:** `reduced chisq` in one band >> median of others?
     *   *Action:* Flag as problematic; cross-reference with Image/SED issues.
 *   **Check C:** SED parameters hit limits?
@@ -182,12 +197,15 @@ When editing .lyric files, Claude Code MUST:
 **Example: Adding a bar component**
 ```text
 # Before: Use SKILL to understand format
-/skill galfits-manual → model-components/profile-fourier.md
+/skill galfits-manual → model-components/profile-sersic.md
 
 # Action: Edit config.lyric
 Pc1) bar      # Component name
-Pc2) sersic_f # Profile type (Fourier mode for bars)
+Pc2) sersic # Profile type (Sersic mode for bars)
 Pc3) [0,-5,5,0.1,1]  # x-center
+Pc4) [0,-5,5,0.1,1]  # y-center
+Pc5) [2.69,0.67,10.75,0.1,1]  # Re of the bar
+Pc6) [0.5,1,6,0.1,0] # **important** Fix the Sersic index to 0.5 for the bar
 ...
 
 # Update Galaxy to include new component
@@ -210,6 +228,10 @@ result = mcp__galmcp__run_galfits(
 galfits config.lyric --work ./output --num_steps 5000
 ```
 
+*Important Note* 
+1. Only use "--fit_method=ES" to run GalfitS.
+2. Always try to use *Method 1*; If not possible, provide the reason and ask if proceed with Method 2.
+
 ### Action: Analyze Results
 
 **Method 1: MCP Analysis (Recommended)**
@@ -229,6 +251,8 @@ analysis = mcp__galmcp__galfits_analyze_by_vllm(
 - Apply Case A-E diagnostic framework
 - Score each band 0-100
 
+*Important Note* Always try to use *Method 1*; If not possible, provide the reason and ask if proceed with Method 2.
+
 ### Quick Reference for Actions
 
 | Action | Tool/SKILL | Command/Method |
@@ -246,7 +270,7 @@ analysis = mcp__galmcp__galfits_analyze_by_vllm(
 | Edit Task | SKILL Reference | Key Parameters |
 |-----------|-----------------|----------------|
 | **Add Sersic bulge** | model-components/profile-sersic.md | Pa1-Pa32, set Pa2=sersic |
-| **Add Fourier bar** | model-components/profile-fourier.md | Pa1-Pa32, set Pa2=sersic_f |
+| **Add Sersic bar** | model-components/profile-sersic.md | Pa1-Pa32, set Pa2=sersic |
 | **Add AGN** | model-components/nuclei-agn.md | Na1-Na27 |
 | **Fix band misalignment** | running-galfits.md → Troubleshooting | Ia13=1, Ia14 ranges |
 | **Enable SED fitting** | SKILL.md → Phase-Specific | Ia15=1, Pa9-Pa16 vary=1 |
@@ -396,12 +420,12 @@ Claude Code autonomously implements the complete workflow:
 **Claude Code Actions:**
 
 1. **READ**: Read config.lyric, view residual images
-2. **SKILL**: `/skill galfits-manual` → profile-fourier.md
+2. **SKILL**: `/skill galfits-manual` → profile-sersic.md
 3. **EDIT**:
    ```text
    # Add to config.lyric
    Pc1) bar
-   Pc2) sersic_f
+   Pc2) sersic
    Pc3) [0,-5,5,0.1,1]
    ...
    Ga2) ['a','b','c']  # Update to include bar

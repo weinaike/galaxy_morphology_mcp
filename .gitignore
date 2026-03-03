@@ -98,3 +98,5 @@ Thumbs.db
 .mcp.json
 test_output
 gs_data
+tests-js/*
+.cline/*

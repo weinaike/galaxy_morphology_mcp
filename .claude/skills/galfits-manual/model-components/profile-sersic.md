@@ -77,6 +77,33 @@ Pa31) [1.0, 1.0, 3.0, 0.1, 0]                   # alpha
 Pa32) [0.1, 0, 1.0, 0.1, 1]                     # gamma
 ```
 
+```text
+# Profile A - Sersic bulge
+Pa1) bar                                        # name of the component
+Pa2) sersic                                     # profile type
+Pa3) [0,-5,5,0.1,1]                             # x-center [arcsec]
+Pa4) [0,-5,5,0.1,1]                             # y-center [arcsec]
+Pa5) [2.296,0.023,4.592,0.01,1]                 # Re [arcsec]
+Pa6) [0.5,1,6,0.1,0]                            # Sersic index fixed to 0.5 for the bar
+Pa7) [0,-90,90,1,1]                             # position angle (PA) [degree]
+Pa8) [0.1,0.0,0.5,0.01,1]                       # Bar's axis ratio tends to be small
+Pa9) [[-4,-8,-1,0.1,1]]                         # specific star formation rate
+Pa10) [[0.5,0.01,11,0.1,1]]                     # bar stellar age [Gyr]
+Pa11) [0.02,0.001,0.04,0.001,1]                 # metallicity [Z=0.02=Solar]
+Pa12) [0.7,0.3,5.1,0.1,1]                       # Av dust extinction [mag]
+Pa13) [100,40,200,1,0]                          # stellar velocity dispersion [km/s]
+Pa14) [10.14,8.5,12,0.1,1]                      # log stellar mass [solar mass]
+Pa15) burst                                     # star formation history type
+Pa16) [-2,-4,-2,0.1,0]                          # logU nebular ionization parameter
+Pa26) [3,0,5,0.1,0]                             # amplitude of the 2175A bump
+Pa27) 0                                         # SED model type (full)
+Pa28) [8.14,4.5,10,0.1,1]                       # log cold dust mass
+Pa29) [1.0, 0.1, 50, 0.1, 0]                    # Umin
+Pa30) [1.0, 0.47, 7.32, 0.1, 0]                 # qPAH
+Pa31) [1.0, 1.0, 3.0, 0.1, 0]                   # alpha
+Pa32) [0.1, 0, 1.0, 0.1, 1]                     # gamma
+```
+
 ## Common Sersic Index Values
 
 | Component Type | Typical n Range | Description |
@@ -86,6 +113,9 @@ Pa32) [0.1, 0, 1.0, 0.1, 1]                     # gamma
 | Core/Sersic | n > 4 | Brightest cluster galaxies, cores |
 | Pseudo-bulge | n = 1-2 | Disk-like bulges |
 | Elliptical | n = 4-8 | Elliptical galaxies |
+| Bars | n = 0.5 | Fixed to 0.5 |
+
+*Important note* The bulge value can be from 0.5 to 8.
 
 ## Phase-Specific Configuration
 

@@ -18,6 +18,7 @@ from tools.modify_feedme import add_components
 from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits
 from tools.analyze_image import galfit_analyze_by_vllm, galfits_analyze_by_vllm
+from tools.multi_thresh_plot import multi_thresh_plot
 from tools.pix2radec import pix2radec
 from starlette.responses import Response, JSONResponse
 from dotenv import load_dotenv

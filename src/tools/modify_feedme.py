@@ -224,6 +224,16 @@ def add_components(
             t = item.lower().strip()
             if t == "sersic":
                 bt = first_sersic_block
+            elif t in ["bar", "disk", "bulge"]:
+                bt = first_sersic_block
+                # update attributes
+                n_pattern = r"(^\s*5\))\s+[-+]?\d*\.?\d+"
+                if t == "bar":
+                    bt = re.sub(n_pattern, r"\1 0.5", bt, flags=re.MULTILINE)
+                elif t == "disk":
+                    bt = re.sub(n_pattern, r"\1 1.0", bt, flags=re.MULTILINE)
+                elif t == "bulge":
+                    bt = re.sub(n_pattern, r"\1 4.0", bt, flags=re.MULTILINE)    
             elif t == "psf":
                 bt = _make_psf_from_first_sersic(blocks, delta_mag=1.5)
             else:
@@ -238,6 +248,16 @@ def add_components(
                     #n_pattern = r"(^\s*5\))\s+[-+]?\d*\.\d+|\d+"
                     n_pattern = r"^(\s*5\))\s+[-+]?\d*\.?\d+"
                     bt = re.sub(n_pattern, r"\1 " + str(index), bt, flags=re.MULTILINE)
+            elif t in ["bar", "disk", "bulge"]:
+                bt = first_sersic_block
+                # update attributes
+                n_pattern = r"(^\s*5\))\s+[-+]?\d*\.?\d+"
+                if t == "bar":
+                    bt = re.sub(n_pattern, r"\1 0.5", bt, flags=re.MULTILINE)
+                elif t == "disk":
+                    bt = re.sub(n_pattern, r"\1 1.0", bt, flags=re.MULTILINE)
+                elif t == "bulge":
+                    bt = re.sub(n_pattern, r"\1 4.0", bt, flags=re.MULTILINE)        
             elif t == "psf":
                 delta = float(item.get("delta_mag", 1.5))
                 bt = _make_psf_from_first_sersic(blocks, delta_mag=delta)
@@ -276,13 +296,14 @@ if __name__ == "__main__":
     feedme_file = "galfit_multicomponent/goodsn_9076/round_5/goodsn_9076_f160w.feedme"
     new_feedme_file = "/tmp/new.feedme"
 
-    #new_components = ["sersic"] #insert_list
-    new_components = [
-        {
-            "type": "sersic",
-            "n": "1.333"
-        }
-    ]
+    # new_components = ["sersic"] #insert_list
+    # new_components = [
+    #     {
+    #         "type": "sersic",
+    #         "n": "1.333"
+    #     }
+    # ]
+    new_components = ["bar", "disk", "bulge", {"type": "psf", "delta_mag": 2.0}]
     new_text = add_components(feedme_file, new_components)
     with open(new_feedme_file, "w") as f:
         f.write(new_text)

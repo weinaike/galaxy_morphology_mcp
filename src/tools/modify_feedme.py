@@ -6,6 +6,7 @@ from pathlib import Path
 
 # ---------- regex ----------
 HEADER_RE = re.compile(r"(?m)^#\s*(Object|Component)\s*number:\s*(\d+)\s*$")
+HEADER_RE = re.compile(r"(?m)^\s*#\s*(Component|Object)\s*number:\s*(\d+)")
 COMP_TYPE_RE  = re.compile(r"(?m)^\s*0\)\s*([A-Za-z_]+)\b")
 POS_RE        = re.compile(r"(?m)^\s*1\)\s*([+-]?\d+(?:\.\d+)?)\s+([+-]?\d+(?:\.\d+)?)\b")
 MAG_RE        = re.compile(r"(?m)^\s*3\)\s*([+-]?\d+(?:\.\d+)?)\b")
@@ -281,30 +282,74 @@ def add_components(
     # Renumber and output
     return _renumber_and_join(prefix, blocks, start_num=1)
 
+def delete_components(
+    feedme_file: Annotated[str, "Path to feedme file or raw feedme text"],
+    component_ids: Annotated[List[int], "List of component numbers to DELETE (1-based)"]
+) -> Annotated[str, "New feedme text after deletion"]:
+    """
+    Delete one or more components by their 1-based component ID.
+    - Will NOT delete the sky component (enforced).
+    - Automatically renumbers remaining components 1,2,3...
+    - Sky remains last.
+    """
+    p = Path(feedme_file)
+    if p.is_file():
+        feedme_file = p.read_text(encoding="utf-8", errors="ignore")
+
+    prefix, blocks = _split_prefix_and_blocks(feedme_file)
+
+    sky_idxs = [i for i, b in enumerate(blocks) if b.comp_type == "sky"]
+    if len(sky_idxs) == 0:
+        raise ValueError("No sky component found. Requirement: exactly one sky.")
+    if len(sky_idxs) > 1:
+        raise ValueError(f"Found {len(sky_idxs)} sky components. Requirement: exactly one sky.")
+
+    sky_idx = sky_idxs[0]
+    sky_block = blocks[sky_idx]
+    non_sky_blocks = [b for i, b in enumerate(blocks) if i != sky_idx]
+
+    total = len(non_sky_blocks)
+    for cid in component_ids:
+        if not isinstance(cid, int) or cid < 1 or cid > total:
+            raise ValueError(f"Invalid component ID: {cid}. Must be 1..{total}")
+
+    keep_idxs = [i for i in range(total) if (i + 1) not in component_ids]
+    kept_non_sky = [non_sky_blocks[i] for i in keep_idxs]
+
+    new_blocks = kept_non_sky + [sky_block]
+
+    return _renumber_and_join(prefix, new_blocks, start_num=1)
+
+def TEST_add_components():
+    feedme_file = "galfit_multicomponent/goodsn_9076/round_5/goodsn_9076_f160w.feedme"
+    new_feedme_file = "/tmp/new.feedme"
+
+    # new_components = ["sersic"] #insert_list
+    new_components = [
+        {
+            "type": "sersic",
+            "n": "1.333"
+        }
+    ]
+    # new_components = ["bar", "disk", "bulge", {"type": "psf", "delta_mag": 2.0}]
+    new_text = add_components(feedme_file, new_components)
+    with open(new_feedme_file, "w") as f:
+        f.write(new_text)
+    print(f"Feedme file {new_feedme_file} created successfully.")
+
+def TEST_delete_components():
+    feedme_file = "/home/jiangbo/galaxy_morphology_mcp/galfit_multicomponent/galfits_40_f227w/archives/20260402T160904.b480df99/galfits_40_iter1.feedme"
+    new_feedme_file = "/tmp/new.feedme"
+    new_text = delete_components(feedme_file, component_ids=[1])
+    with open(new_feedme_file, "w") as f:
+        f.write(new_text)
+    print(f"Feedme file {new_feedme_file} created successfully.")
+
 # ---------- public main ----------
 # insert_list supports:
 #   "sersic" -> duplicate first sersic block
 #   "psf"    -> build psf using first sersic x/y and mag+1.5
 #   dict like {"type":"psf","delta_mag":2.0}  (optional customization)
 if __name__ == "__main__":
-
-    # feedme_file = "test_data/goodsn_8758_f160w_standard.feedme"
-    # new_feedme_file = "test_data/goodsn_8758_f160w.feedme"
-    # feedme_file = sys.argv[1]
-    # new_feedme_file = sys.argv[2]
-
-    feedme_file = "galfit_multicomponent/goodsn_9076/round_5/goodsn_9076_f160w.feedme"
-    new_feedme_file = "/tmp/new.feedme"
-
-    # new_components = ["sersic"] #insert_list
-    # new_components = [
-    #     {
-    #         "type": "sersic",
-    #         "n": "1.333"
-    #     }
-    # ]
-    new_components = ["bar", "disk", "bulge", {"type": "psf", "delta_mag": 2.0}]
-    new_text = add_components(feedme_file, new_components)
-    with open(new_feedme_file, "w") as f:
-        f.write(new_text)
-    print(f"Feedme file {new_feedme_file} created successfully.")
+    # TEST_delete_components()
+    TEST_add_components()

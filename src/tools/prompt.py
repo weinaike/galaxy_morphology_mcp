@@ -21,3 +21,5 @@ get_galfit_analysis_prompt = prompts.get_galfit_analysis_prompt
 get_galfits_analysis_prompt = prompts.get_galfits_analysis_prompt
 CLASSIFICATION_SYSTEM_MESSAGE = prompts.get_classification_system_message()
 get_classification_prompt = prompts.get_classification_prompt
+RESIDUAL_ANALYSIS_SYSTEM_MESSAGE = prompts.get_residual_analysis_system_message()
+get_residual_analysis_prompt = prompts.get_residual_analysis_prompt

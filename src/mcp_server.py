@@ -19,6 +19,7 @@ from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits
 from tools.analyze_image import galfit_analyze_by_vlm
 from tools.analyze_image import galfits_analyze_by_vlm
+from tools.residual_analysis import residual_analysis_by_vlm
 from tools.view_original_image import view_original_image
 from tools.pix2radec import pix2radec
 from starlette.responses import Response, JSONResponse
@@ -52,6 +53,7 @@ def _register_tools():
 
     # Shared tools — always available
     app.add_tool(view_original_image)
+    app.add_tool(residual_analysis_by_vlm)
     app.add_tool(pix2radec)
 
     if not has_galfit and not has_galfits:

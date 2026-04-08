@@ -62,6 +62,14 @@ class Prompts(metaclass=SingletonMeta):
         filename = "classification_prompt.md"
         return self._read_prompt(filename=filename)
 
+    def get_residual_analysis_system_message(self):
+        filename = "residual_analysis_message.md"
+        return self._read_prompt(filename=filename)
+
+    def get_residual_analysis_prompt(self, summary_content):
+        filename = "residual_analysis_prompt.md"
+        return self._read_prompt_and_render(filename, summary_content=summary_content)
+
     @property
     def GALFIT_SYSTEM_MESSAGE(self):
         return self.get_galfit_system_message()

@@ -16,18 +16,20 @@ import glob
 from .extract_summary_galfit import extract_summary_from_galfit
 
 
-def _parse_galfit_config(config_file: str) -> dict[str, str]:
-    """Parse GALFIT configuration file to extract file paths.
+def _parse_galfit_config(config_file: str) -> dict[str, Any]:
+    """Parse GALFIT configuration file to extract file paths and fitting region.
 
-    Returns dict with keys: input, output, sigma, mask, psf, constraint
+    Returns dict with keys: input, output, sigma, mask, psf, constraint,
+    and fit_region (tuple of (xmin, xmax, ymin, ymax) in 1-indexed pixels, or None).
     """
-    paths = {
+    paths: dict[str, Any] = {
         "input": "",
         "output": "",
         "sigma": "",
         "mask": "",
         "psf": "",
         "constraint": "",
+        "fit_region": None,
     }
 
     config_file = os.path.abspath(config_file)
@@ -52,6 +54,16 @@ def _parse_galfit_config(config_file: str) -> dict[str, str]:
                 # Relative paths in the configuration file are all resolved relative to the configuration file itself.
                 value = value if os.path.isabs(value) else os.path.join(os.path.dirname(config_file), value)
                 paths[key] = value
+
+    # Parse fitting region H) xmin xmax ymin ymax (1-indexed)
+    match_h = re.search(r"^H\)\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*#", content, re.MULTILINE)
+    if match_h:
+        paths["fit_region"] = (
+            int(match_h.group(1)),  # xmin
+            int(match_h.group(2)),  # xmax
+            int(match_h.group(3)),  # ymin
+            int(match_h.group(4)),  # ymax
+        )
 
     return paths
 
@@ -104,10 +116,37 @@ def _normimg_galfit(image: np.ndarray, immin: float, immax: float,
     return result
 
 
+def _crop_to_fit_region(full_data: np.ndarray, fit_region: tuple[int, int, int, int] | None,
+                        target_shape: tuple[int, ...]) -> np.ndarray:
+    """Crop full-frame data to match GALFIT output using the fitting region from feedme.
+
+    Args:
+        full_data: Full-frame image array.
+        fit_region: (xmin, xmax, ymin, ymax) in 1-indexed pixels from feedme H) parameter,
+                    or None to fall back to center crop.
+        target_shape: Expected output shape (ny, nx) to crop to.
+
+    Returns:
+        Cropped array matching target_shape.
+    """
+    if fit_region is not None:
+        xmin, xmax, ymin, ymax = fit_region
+        # Convert 1-indexed feedme coords to 0-indexed Python slice
+        cropped = full_data[ymin - 1:ymax, xmin - 1:xmax]
+        if cropped.shape == target_shape:
+            return cropped
+        # Fall through to center crop if shape doesn't match (shouldn't happen)
+    # Fallback: center crop
+    dy, dx = (full_data.shape[0] - target_shape[0]) // 2, \
+             (full_data.shape[1] - target_shape[1]) // 2
+    return full_data[dy:dy + target_shape[0], dx:dx + target_shape[1]]
+
+
 def create_comparison_png(
     fits_file: str,
     sigma_file: str | None = None,
     mask_file: str | None = None,
+    fit_region: tuple[int, int, int, int] | None = None,
 ) -> str | None:
     """Create a scientific comparison plot with original, model, and normalized residual.
 
@@ -119,7 +158,8 @@ def create_comparison_png(
     Args:
         fits_file: Path to GALFIT output FITS file (contains original, model, residual)
         sigma_file: Path to sigma image for residual normalization
-        mask_file: Path to mask image (0=bad, 1=good)
+        mask_file: Path to mask image (0=good, non-zero=masked/bad)
+        fit_region: (xmin, xmax, ymin, ymax) in 1-indexed pixels from feedme H) parameter.
 
     Returns:
         Path to saved PNG file or None if failed.
@@ -143,15 +183,13 @@ def create_comparison_png(
             if original_data is None:
                 return None
 
-        # Load mask if provided (GalfitS uses 0=bad, 1=good convention)
+        # Load mask if provided (GALFIT convention: 0=good, non-zero=masked/bad)
         mask = None
         if mask_file and os.path.exists(mask_file):
             mask_full = fits.getdata(mask_file)
-            # Crop to matching region if needed
+            # Crop to matching region using fit_region from feedme
             if mask_full.shape != original_data.shape:
-                dy, dx = (mask_full.shape[0] - original_data.shape[0]) // 2, \
-                         (mask_full.shape[1] - original_data.shape[1]) // 2
-                mask = mask_full[dy:dy+original_data.shape[0], dx:dx+original_data.shape[1]]
+                mask = _crop_to_fit_region(mask_full, fit_region, original_data.shape)
             else:
                 mask = mask_full
             # Normalize mask to 0-1 range for display
@@ -163,15 +201,20 @@ def create_comparison_png(
         if sigma_file and os.path.exists(sigma_file):
             sigma_full = fits.getdata(sigma_file)
             if sigma_full.shape != original_data.shape:
-                dy, dx = (sigma_full.shape[0] - original_data.shape[0]) // 2, \
-                         (sigma_full.shape[1] - original_data.shape[1]) // 2
-                sigma = sigma_full[dy:dy+original_data.shape[0], dx:dx+original_data.shape[1]]
+                sigma = _crop_to_fit_region(sigma_full, fit_region, original_data.shape)
             else:
                 sigma = sigma_full
 
         # Calculate sky statistics for normalization (GalfitS style)
         from astropy.stats import sigma_clipped_stats
         _, sky_median, sky_std = sigma_clipped_stats(original_data, sigma=3.0, maxiters=5)
+
+        # Compute extent for real pixel coordinates from fit_region
+        if fit_region is not None:
+            xmin, xmax, ymin, ymax = fit_region
+            plot_extent = [xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5]
+        else:
+            plot_extent = None
 
         # Create figure with custom layout
         fig = plt.figure(figsize=(15, 6))
@@ -187,7 +230,8 @@ def create_comparison_png(
         immin = 5 * sky_std
         immax = np.nanmax(orig_data_sky_sub)
         orig_norm = _normimg_galfit(orig_display, immin, immax, frac=0.4)
-        ax1.imshow(orig_norm, cmap='seismic', vmin=-1, vmax=1, origin='lower', interpolation='nearest')
+        ax1.imshow(orig_norm, cmap='seismic', vmin=-1, vmax=1, origin='lower',
+                   extent=plot_extent, interpolation='nearest', aspect='auto')
         ax1.set_title('Original Data', fontsize=14, fontweight='bold')
         ax1.set_xlabel('X (pixels)', fontsize=12)
         ax1.set_ylabel('Y (pixels)', fontsize=12)
@@ -199,7 +243,8 @@ def create_comparison_png(
             #model_display = np.flipud(model_data_sky_sub)
             model_display = model_data_sky_sub
             model_norm = _normimg_galfit(model_display, immin, immax, frac=0.4)
-            ax2.imshow(model_norm, cmap='seismic', vmin=-1, vmax=1, origin='lower', interpolation='nearest')
+            ax2.imshow(model_norm, cmap='seismic', vmin=-1, vmax=1, origin='lower',
+                       extent=plot_extent, interpolation='nearest', aspect='auto')
         else:
             ax2.text(0.5, 0.5, 'No Model', ha='center', va='center', transform=ax2.transAxes)
         ax2.set_title('GALFIT Model', fontsize=14, fontweight='bold')
@@ -223,7 +268,8 @@ def create_comparison_png(
                 resid_norm = resid_display / rms if rms > 0 else resid_display
 
             im3 = ax3.imshow(resid_norm, cmap='seismic', vmin=-10, vmax=10,
-                           origin='lower', interpolation='nearest')
+                           origin='lower', extent=plot_extent, interpolation='nearest',
+                           aspect='auto')
 
             # Add statistics text (GalfitS style)
             resid_valid = resid_norm[~np.isnan(resid_norm)]
@@ -231,7 +277,7 @@ def create_comparison_png(
                 rms_val = np.std(resid_valid)
                 max_val = np.max(np.abs(resid_valid))
                 stats_text = f'rms: {rms_val:.2f}\nmax: {max_val:.2f}'
-                ax3.text(3, 3, stats_text, transform=ax3.transAxes,
+                ax3.text(0.03, 0.03, stats_text, transform=ax3.transAxes,
                         va='bottom', ha='left', fontsize=11, color='blue',
                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
         else:
@@ -256,7 +302,8 @@ def create_comparison_png(
             mask_display = mask
             for ax in [ax1, ax3]:
                 ax.imshow(mask_display, cmap='Blues', origin='lower',
-                         alpha=0.5 * mask_display, interpolation='nearest')
+                         extent=plot_extent, alpha=0.5 * mask_display,
+                         interpolation='nearest', aspect='auto')
 
         # Add mask legend/explanation at top-left of figure
         if mask is not None:
@@ -289,13 +336,25 @@ def create_comparison_png(
 
 
 async def run_galfit(
-    config_file: Annotated[str, "the path to the GALFIT configuration file"],
+    config_file: Annotated[str, "absolute path to the GALFIT configuration file"],
     options: Annotated[List[str], "options that control how galfit runs"] = []
 ) -> dict[str, Any]:
-    """Execute GALFIT with the given configuration file.
+    """Execute GALFIT single-band fitting with the given configuration file.
 
-    Runs GALFIT as a subprocess and returns the results including
-    the residual image as base64-encoded PNG.
+    **Execution Process:**
+    1. Parses the GALFIT feedme configuration file to extract file paths and fitting region
+    2. Executes GALFIT as a subprocess with 5-minute timeout protection
+    3. Generates a professional 3-panel comparison image (Original | Model | Residual)
+    4. Extracts fitting parameters and statistics to JSON summary
+    5. Archives all output files to a timestamped directory with config backup
+
+    **Input Parameters:**
+    - config_file (str): Absolute path to GALFIT feedme configuration file
+      - Must contain standard GALFIT parameters (A-H sections)
+      - Relative paths in config are resolved relative to config file location
+    - options (List[str], optional): GALFIT command-line options
+      - Example: ["-o"] for overwrite mode, ["-v"] for verbose output
+
     """
     galfit_bin = os.getenv("GALFIT_BIN", "galfit")
     config_file = os.path.abspath(config_file)
@@ -359,7 +418,8 @@ async def run_galfit(
     # Create comparison PNG with sigma and mask if available
     sigma_file = config_paths.get("sigma") or None
     mask_file = config_paths.get("mask") or None
-    comparison_png_path = create_comparison_png(output_file, sigma_file, mask_file)
+    fit_region = config_paths.get("fit_region")
+    comparison_png_path = create_comparison_png(output_file, sigma_file, mask_file, fit_region)
 
     # Extract summary information
     summary = extract_summary_from_galfit(output_file, config_file)

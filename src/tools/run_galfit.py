@@ -12,6 +12,7 @@ from matplotlib.gridspec import GridSpec
 from astropy.io import fits
 import datetime
 import glob
+from .fitlog_analysis import analyze_fitlog
 
 from .extract_summary_galfit import extract_summary_from_galfit
 
@@ -428,20 +429,47 @@ async def run_galfit(
     ws_dir = os.path.dirname(output_file)
     ar_dir = os.path.join(ws_dir, "archives", "%s.%s" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S"), hashlib.md5(config_file.encode("utf-8")).hexdigest()[:8]))
     os.makedirs(ar_dir, exist_ok=True)
-    shutil.move(os.path.join(working_dir, "fit.log"), ar_dir)
-    shutil.move(output_file, ar_dir)
-    shutil.move(comparison_png_path, ar_dir)
-    shutil.move(summary, ar_dir)
+    # Save stdout+stderr to file for diagnose
+    console_log_path = os.path.join(ar_dir, "console.log")
+    with open(console_log_path, "w", encoding="utf-8") as f:
+        f.write(full_output)
+    fit_log_path = os.path.join(working_dir, "fit.log")
+    if os.path.exists(fit_log_path):
+        shutil.move(fit_log_path, ar_dir)
+    if os.path.exists(output_file):        
+        shutil.move(output_file, ar_dir)
+        output_file = os.path.join(ar_dir, os.path.basename(output_file))
+    if comparison_png_path:
+        shutil.move(comparison_png_path, ar_dir)
+        comparison_png_path = os.path.join(ar_dir, os.path.basename(comparison_png_path))
+    if summary:
+        shutil.move(summary, ar_dir)
+        summary = os.path.join(ar_dir, os.path.basename(summary))    
+
     matched_galfit_files = glob.glob(os.path.join(working_dir, "galfit.[0-9]*"))
-    for galfit_file in matched_galfit_files:
-        shutil.move(galfit_file, ar_dir)
+    latest_galfit = "galfit.01"
+    if matched_galfit_files:
+        latest_galfit = max(matched_galfit_files, key=lambda f: int(f.rsplit(".", 1)[-1]))
+        shutil.copy(latest_galfit, ar_dir)
     shutil.copy(config_file, ar_dir)    
 
+    message = (
+        "GALFIT completed successfully.\n"
+        "- input_param_file: the input feedme configuration file used for this run.\n"
+        "- output_param_file: the latest GALFIT output parameter file.\n"
+        "- optimized_fits_file: FITS file with original, model, and residual image extensions.\n"
+        "- image_file: 1-row 3-column PNG showing original | model | residual (blue overlay = masked pixels).\n"
+        "- summary_file: Markdown file containing fitted parameters, chi-squared statistics, and observation metadata.\n"
+        "- console_log_file: GALFIT console log from this run.\n"
+        "  Tip: Use analyze_fitlog tool with console_log_file to check for parameter anomalies (degeneracy, uncertainty, boundary hits, unphysical results)."
+    )
     return {
         "status": "success",
-        "message": "GALFIT completed successfully. optimized_fits_file contains the optimized FITS data with original, model, and residual extensions; image_file is a 1-row 3-column image showing original | model | residual for visual comparison (NOTE blue overlay means masked pixels); summary_file is a JSON file containing fitted parameters and their numerical values.",
-        "optimized_fits_file": os.path.join(ar_dir, os.path.basename(output_file)),
-        "image_file": os.path.join(ar_dir, os.path.basename(comparison_png_path)),
-        "summary_file": os.path.join(ar_dir, os.path.basename(summary)),
-        "log_file": os.path.join(ar_dir, "fit.log"),
+        "message": message,
+        "input_param_file": config_file,
+        "output_param_file": latest_galfit,  
+        "optimized_fits_file": output_file,      
+        "image_file": comparison_png_path,
+        "summary_file": summary ,
+        "console_log_file": console_log_path,
     }

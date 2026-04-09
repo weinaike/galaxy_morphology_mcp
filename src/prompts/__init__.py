@@ -30,9 +30,14 @@ class Prompts(metaclass=SingletonMeta):
             return content
 
     def _read_prompt_and_render(self, filename, **kwargs):
-        filename = self._get_file_path(filename)        
+        filename = self._get_file_path(filename)
         prompt = self._read_prompt(filename)
-        return prompt.format(**kwargs)        
+        # Use str.replace instead of str.format to avoid interpreting
+        # literal braces in the template (e.g. JSON examples) as format
+        # placeholders.
+        for key, value in kwargs.items():
+            prompt = prompt.replace('{' + key + '}', str(value) if value is not None else '')
+        return prompt        
 
     def get_galfit_system_message(self):
         filename = "galfit_system_message.md"    
@@ -70,6 +75,25 @@ class Prompts(metaclass=SingletonMeta):
         filename = "residual_analysis_prompt.md"
         return self._read_prompt_and_render(filename, summary_content=summary_content)
 
+    def get_component_specification_galfit(self):
+        filename = "component_specification_galfit.md"
+        return self._read_prompt(filename=filename)
+
+    def get_component_specification_galfits(self):
+        filename = "component_specification_galfits.md"
+        return self._read_prompt(filename=filename)
+
+    def get_fitlog_system_message(self):
+        filename = "fitlog_analysis_system_message.md"
+        return self._read_prompt(filename=filename)
+
+    def get_fitlog_analysis_prompt(self, console_content, summary):
+        filename = "fitlog_analysis_prompt.md"
+        return self._read_prompt_and_render(filename,
+            console_content=console_content,            
+            summary=summary
+        )
+
     @property
     def GALFIT_SYSTEM_MESSAGE(self):
         return self.get_galfit_system_message()
@@ -77,6 +101,10 @@ class Prompts(metaclass=SingletonMeta):
     @property
     def GALFITS_SYSTEM_MESSAGE(self):
         return self.get_galfits_system_message()
+
+    @property
+    def FITLOG_SYSTEM_MESSAGE(self):
+        return self.get_fitlog_system_message()
 
 prompts = Prompts()        
 

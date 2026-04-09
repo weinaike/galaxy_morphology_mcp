@@ -9,6 +9,7 @@ from .analyze_image import create_vlm_client, encode_image_to_base64, call_vlm_a
 def view_original_image(
     image_file: Annotated[str, "Path to the galaxy image file [png/jpg] to be classified"],
     source_id: Annotated[str, "Identifier for the source/galaxy in the image"] = "",
+    custom_instructions: Annotated[str, "Optional custom instructions to guide the VLM classification"] = "",
 ) -> dict[str, Any]:
     """
     Analyze an original galaxy image to extract galaxy morphological classification
@@ -29,6 +30,7 @@ def view_original_image(
         image_file (str): Path to the galaxy image file to analyze.
                          Supports common image formats (PNG, JPG).
         source_id (str): Identifier for the source/galaxy. Default is empty string.
+        custom_instructions (str): Optional custom instructions to guide the VLM classification.
 
     Returns:
         dict[str, Any]: A dictionary containing the classification results:
@@ -64,10 +66,13 @@ def view_original_image(
     system_message = prompt.CLASSIFICATION_SYSTEM_MESSAGE
 
     # Inject source_id into the prompt context
+    prompt_text = f"source_id: {source_id}\n\n{classification_prompt}"
+    if custom_instructions:
+        prompt_text += f"\n\n--- Additional requirements ---\n{custom_instructions}"
     additional_content = [
         {
             "type": "text",
-            "text": f"source_id: {source_id}\n\n{classification_prompt}"
+            "text": prompt_text
         }
     ]
 
@@ -81,7 +86,7 @@ def view_original_image(
         temperature=0.2
     )
 
-    if error:
+    if error or not classification:
         return {
             "status": "failure",
             "error": error
@@ -101,6 +106,6 @@ def view_original_image(
 
     return {
         "status": "success",
-        "classification": classification,
+        "classification": classification + '\n该结果仅供参考，实际成分需要结合残差图和拟合结果进行综合判断。',
         "classification_file": output_file
     }

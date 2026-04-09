@@ -155,6 +155,7 @@ def call_vlm_api(
 def galfit_analyze_by_vlm(
     image_file: Annotated[str, "Path to the combined image file [png file] containing three stamps displayed horizontally: original, model, residual"],
     summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
+    custom_instructions: Annotated[str, "Optional custom instructions to guide the VLM analysis"] = "",
 ) -> dict[str, Any]:
     """
     Analyze the optimization results from GALFIT using a multimodal model.
@@ -163,20 +164,6 @@ def galfit_analyze_by_vlm(
     visual inspection with quantitative evaluation from the optimization summary. The multimodal model
     examines the image stamps and optimization parameters to assess the quality and reasonableness
     of the fitting process.
-
-    Args:
-        image_file (str): Path to the combined image file containing three stamps displayed horizontally:
-                        - Original galaxy image (source galaxy)
-                        - Model image (fitted model)
-                        - Residual image (difference between original and model)
-                        These stamps are arranged side-by-side to facilitate visual comparison and
-                        analysis by the multimodal model.
-        summary_file (str): Path to the optimization summary file containing detailed information
-                          about the fitting process, including:
-                          - Optimization iterations and convergence status
-                          - Fitted parameter values and their uncertainties
-                          - Chi-squared statistics and goodness-of-fit metrics
-                          - Component descriptions and parameter bounds
 
     Returns:
         dict[str, Any]: A dictionary containing the analysis results:
@@ -222,6 +209,9 @@ def galfit_analyze_by_vlm(
 
     # Create the prompt for the multimodal model
     analysis_prompt = prompt.get_galfit_analysis_prompt(summary_content)
+
+    if custom_instructions:
+        analysis_prompt += f"\n\n--- Additional requirements ---\n{custom_instructions}"
 
     # Prepare additional content
     additional_content = [

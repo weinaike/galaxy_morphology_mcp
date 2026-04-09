@@ -16,6 +16,8 @@ dotenv.load_dotenv()
 def residual_analysis_by_vlm(
     image_file: Annotated[str, "Path to the combined residual image file [png file] containing three stamps: original, model, residual"],
     summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
+    mode: Annotated[str, "Fitting mode: 'single-band' for GALFIT or 'multi-band' for GalfitS"],
+    custom_instructions: Annotated[str, "Optional custom instructions to guide the residual analysis"] = "",
 ) -> dict[str, Any]:
     """
     Analyze the residual images from galaxy fitting using a multimodal model.
@@ -35,6 +37,8 @@ def residual_analysis_by_vlm(
                           - Fitted parameter values and their uncertainties
                           - Chi-squared statistics and goodness-of-fit metrics
                           - Component descriptions
+        mode (str): 'single-band' for GALFIT or 'multi-band' for GalfitS.
+        custom_instructions (str): Optional additional instructions to guide the analysis,
 
     Returns:
         dict[str, Any]: A dictionary containing:
@@ -67,6 +71,17 @@ def residual_analysis_by_vlm(
     analysis_prompt = prompt.get_residual_analysis_prompt(summary_content)
     system_message = prompt.RESIDUAL_ANALYSIS_SYSTEM_MESSAGE
 
+    # Append component specification based on mode
+    if mode == "multi-band":
+        component_spec = prompt.get_component_specification_galfits()
+    else:
+        component_spec = prompt.get_component_specification_galfit()
+
+    if component_spec:
+        system_message = system_message + "\n\n" + component_spec
+
+    if custom_instructions:
+        analysis_prompt += f"\n\n--- Additional requirements ---\n{custom_instructions}"
     additional_content = [{"type": "text", "text": analysis_prompt}]
 
     # Call VLM

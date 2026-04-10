@@ -30,9 +30,14 @@ class Prompts(metaclass=SingletonMeta):
             return content
 
     def _read_prompt_and_render(self, filename, **kwargs):
-        filename = self._get_file_path(filename)        
+        filename = self._get_file_path(filename)
         prompt = self._read_prompt(filename)
-        return prompt.format(**kwargs)        
+        # Use str.replace instead of str.format to avoid interpreting
+        # literal braces in the template (e.g. JSON examples) as format
+        # placeholders.
+        for key, value in kwargs.items():
+            prompt = prompt.replace('{' + key + '}', str(value) if value is not None else '')
+        return prompt        
 
     def get_galfit_system_message(self):
         filename = "galfit_system_message.md"    
@@ -60,6 +65,22 @@ class Prompts(metaclass=SingletonMeta):
 
     def get_classification_prompt(self):
         filename = "classification_prompt.md"
+        return self._read_prompt(filename=filename)
+
+    def get_residual_analysis_system_message(self):
+        filename = "residual_analysis_message.md"
+        return self._read_prompt(filename=filename)
+
+    def get_residual_analysis_prompt(self, summary_content):
+        filename = "residual_analysis_prompt.md"
+        return self._read_prompt_and_render(filename, summary_content=summary_content)
+
+    def get_component_specification_galfit(self):
+        filename = "component_specification_galfit.md"
+        return self._read_prompt(filename=filename)
+
+    def get_component_specification_galfits(self):
+        filename = "component_specification_galfits.md"
         return self._read_prompt(filename=filename)
 
     @property

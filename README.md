@@ -1,17 +1,18 @@
 # 星系形态学 MCP 工具
 
-一个用于星系形态学分析的 MCP (Model Context Protocol) 服务器，封装了 GALFIT 和 GalfitS 工具，支持单波段和多波段星系图像拟合与分析。
+一个用于星系形态学分析的 MCP (Model Context Protocol) 服务器，封装了 GALFIT 和 GalfitS 工具，支持单波段和多波段星系图像拟合与分析。同时提供基于 FastAPI + Celery 的 HTTP 服务接口，支持异步任务提交。
 
 ## 功能特性
 
 ### 核心工具
 
-| 工具名称 | 功能描述 |
-|---------|---------|
-| `run_galfit` | 执行 GALFIT 单波段拟合，返回优化的 FITS 文件、对比图像和拟合摘要 |
-| `run_galfits` | 执行 GalfitS 多波段同时拟合，返回摘要文件、图像、SED 模型等结果 |
-| `galfit_analyze_by_vlm` | 使用多模态大模型分析 GALFIT 拟合结果（图像 + 摘要） |
-| `galfits_analyze_by_vlm` | 使用多模态大模型分析 GalfitS 多波段拟合结果（图像 + SED + 摘要） |
+| 工具名称 | 功能描述 | 可用条件 |
+|---------|---------|---------|
+| `run_galfit` | 执行 GALFIT 单波段拟合，返回优化的 FITS 文件、对比图像和拟合摘要 | 需设置 `GALFIT_BIN` |
+| `run_galfits` | 执行 GalfitS 多波段同时拟合，返回摘要文件、图像、SED 模型等结果 | 需设置 `GALFITS_BIN` |
+| `galfits_analyze_by_vlm` | 使用多模态大模型分析 GalfitS 多波段拟合结果（图像 + SED + 摘要） | 需设置 `GALFITS_BIN` |
+| `view_original_image` | 分析原始星系图像，提取形态分类和结构组件信息 | 要求提供2 panel图 |
+| `component_analysis` | 分析拟合残差图像，诊断缺失或配置不当的物理组件（bulge、disk、bar、AGN 等） | 始终可用 |
 
 ### 输出说明
 
@@ -26,13 +27,22 @@
 - `sedmodel_pngs`: SED (光谱能量分布) 模型图
 - `result_fits`: 最佳拟合 FITS 结果文件
 
+### HTTP 服务接口
+
+除 MCP 协议外，还提供基于 FastAPI + Celery 的 HTTP 服务，支持异步拟合任务提交：
+
+- `POST /api/fitting/` — 提交拟合任务（支持 image fitting / pure sed fitting / image sed fitting 三种模式）
+- `GET /api/fitting-status/{task_id}` — 查询任务状态
+- `GET /health` — MCP 服务健康检查
+- `GET /api/tools` — 列出当前可用的 MCP 工具
+
 ## 安装
 
 ### 环境要求
 
 - Python >= 3.10
-- GALFIT (用于单波段拟合)
-- GalfitS (用于多波段拟合，可选)
+- GALFIT（用于单波段拟合，可选）
+- GalfitS（用于多波段拟合，可选）
 
 ### 通过 pip 安装
 
@@ -40,13 +50,22 @@
 pip install -e .
 ```
 
+### Docker 部署
+
+```bash
+docker-compose up -d
+```
+
+服务包含两个容器：
+- **fastapi**: Web 服务 (端口 8000)，负责任务提交和状态查询
+- **celery**: 异步任务 Worker，执行后台拟合计算
 
 ## 配置
 
 创建 `.env` 文件（参考 `.env.example`）：
 
 ```bash
-# OpenAI API 配置（用于多模态分析）
+# LLM API 配置（用于多模态分析）
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=           # 可选，默认使用官方端点
 OPENAI_MODEL=gpt-4o        # 可选，默认 gpt-4o
@@ -57,13 +76,16 @@ GALFIT_BIN=/path/to/galfit  # GALFIT 可执行文件路径
 # GalfitS 配置
 GALFITS_BIN=/path/to/galfits       # GalfitS 命令或 Python 模块路径
 GS_DATA_PATH=/path/to/gs_data      # GalfitS 数据目录
+
+# HTTP 服务（可选）
+MCP_ALLOWED_HOSTS=*                # 允许的主机，默认允许所有
 ```
 
 ## 使用方法
 
 ### 启动 MCP 服务器
 
-**STDIO 模式**（本地 MCP 客户端，如 Claude Desktop）：
+**STDIO 模式**（本地 MCP 客户端，如 Claude Code）：
 ```bash
 python -m mcp_server --transport stdio
 ```
@@ -73,9 +95,18 @@ python -m mcp_server --transport stdio
 python -m mcp_server --transport http --port 38507
 ```
 
-### 配置 Claude Desktop
+支持的启动参数：
 
-在 Claude Code 配置文件.mcp.json中添加：
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--transport, -t` | 传输模式：stdio 或 http | stdio |
+| `--host, -H` | HTTP 监听地址 | 0.0.0.0 |
+| `--port, -p` | HTTP 监听端口 | 38507 |
+| `--path, -P` | MCP 协议路径 | /mcp |
+
+### 配置 Claude Code
+
+在项目的 `.mcp.json` 中添加：
 
 ```json
 {
@@ -89,8 +120,8 @@ python -m mcp_server --transport http --port 38507
       ],
       "env": {
         "GALFIT_BIN": "/usr/bin/galfit",
-        "GALFITS_BIN": "/home/wnk/miniconda3/envs/galfits/bin/python /home/wnk/code/GalfitS/src/galfits/galfitS.py",
-        "GS_DATA_PATH": "/home/wnk/code/GalfitS",
+        "GALFITS_BIN": "python /path/to/GalfitS/src/galfits/galfitS.py",
+        "GS_DATA_PATH": "/path/to/GalfitS",
         "OPENAI_API_KEY": "your-apikey",
         "OPENAI_BASE_URL": "https://open.bigmodel.cn/api/coding/paas/v4",
         "OPENAI_MODEL": "glm-4.6v"
@@ -98,84 +129,35 @@ python -m mcp_server --transport http --port 38507
     }
   }
 }
-
 ```
 
-### 使用工具示例
+## 项目结构
 
-**运行 GALFIT 拟合：**
 ```
-调用 run_galfit，传入配置文件路径
+src/
+├── mcp_server.py          # MCP 服务主入口，工具注册与传输配置
+├── tools/
+│   ├── run_galfit.py      # GALFIT 单波段拟合执行
+│   ├── run_galfits.py     # GalfitS 多波段拟合执行
+│   ├── analyze_image.py   # VLM 多模态分析（GALFIT/GalfitS 结果）
+│   ├── view_original_image.py  # 原始星系图像形态分类
+│   ├── component_analysis.py   # 残差分析与组件诊断
+│   ├── modify_feedme.py   # GALFIT feedme 配置文件修改
+│   ├── extract_summary_galfit.py  # GALFIT 参数摘要提取
+│   ├── pix2radec.py       # 像素坐标转赤经赤纬
+│   ├── read_fits.py       # FITS 文件读取工具
+│   ├── multi_thresh_plot.py  # 多阈值可视化
+│   └── prompt.py          # 工作流 Prompt 定义
+├── service/
+│   ├── main.py            # FastAPI 应用，HTTP 任务提交接口
+│   ├── tasks.py           # Celery 异步任务定义
+│   └── file_manager.py    # 文件与工作空间管理
+├── llms/
+│   ├── base.py            # LLM 客户端基类
+│   ├── openai_llm.py      # OpenAI API 客户端
+│   └── glm_llm.py         # 智谱 GLM API 客户端
+└── prompts/               # Prompt 模板（分类、分析、工作流）
 ```
-
-**分析拟合结果：**
-```
-调用 galfit_analyze_by_vlm，传入：
-- image_file: 对比图像路径 (PNG)
-- summary_file: 拟合摘要文件路径 (.md)
-```
-
-## 配置文件与诊断指南
-
-### GalfitS Manual SKILL
-
-项目包含完整的 GalfitS 配置文档（`/skill galfits-manual`），用于指导 `.lyric` 配置文件的编写和调试。
-
-**文档位置：** `.claude/skills/galfits-manual/`
-
-**主要章节：**
-
-| 文件 | 描述 |
-|------|------|
-| `SKILL.md` | 导航索引和快速参考 |
-| `data-config.md` | 数据配置（Region R, Image I, Spectrum S, Atlas A） |
-| `model-components/` | 模型组件（Galaxy G, Profile P, Nuclei/AGN N, Foreground Star F） |
-| `constraints/` | 参数约束（MSR、MMR、SFH、AGN 关系等） |
-| `examples/` | 配置示例（多波段、纯 SED、联合拟合等） |
-| `running-galfits.md` | 命令行参数和运行选项 |
-
-**使用方法：**
-在 Claude Code 中输入 `/skill galfits-manual` 可查阅完整文档。Claude code在执行过程中，会自动调用该skill以辅助理解和生成 GalfitS 配置文件。
-
-### CLAUDE.md 诊断指南
-
-`CLAUDE.md` 文件提供了 GalfitS 拟合结果的系统性诊断方法，用于评估拟合质量并指导参数调整。
-
-**典型问题诊断（Case A-E）：**
-
-| 案例 | 残差特征 | 处理方法 |
-|------|----------|----------|
-| Case A | 蓝/红颜色分裂（波段未对齐） | 允许波段间位置偏移，调整 Ia13/Ia14 |
-| Case B | 偏心亮源残差 | 在该位置添加新的 Sersic 组件 |
-| Case C | 穿过中心的长条状正残差 | 添加 bar（棒）组件 |
-| Case D | 中心圆形正残差 | 添加 bulge 或 AGN 点源组件 |
-| Case E | 模型结构与输入图像显著偏离 | 重新调整初始参数（轴比、位置角、中心坐标） |
-
-## 已知限制与优化方向
-
-当前版本已实现基本功能，以下方面需进一步优化：
-
-### GalfitS Manual 准确性
-- 文档中的参数格式和范围可能需要根据实际数据特性进行验证和调整， 文档中可能存在不准确之处，需要天文老师协助确认
-
-### 残差图像描述方法
-残差图像（原始 - 模型）的视觉描述具有挑战性：
-
-**当前困难：**
-- 残差图是二维连续信号，难以用文字准确传达空间结构
-- 不同信噪比波段的残差视觉特征差异显著
-- 系统性残差（如 Case A-E）的识别依赖于主观经验
-- 文字描述可能无法充分传达残差的强度和分布特征
-
-**优化方向：**
-- 需要开发更结构化的残差描述框架
-- 考虑引入定量指标（如残差的径向分布、傅里叶分析等）辅助定性描述
-- 建立标准化的残差图像模板库，用于对比和参考
-- 与天文老师确认不同数据类型（低/高信噪比、不同波段）的残差描述标准
-
-### Summary 提取与分析
-- `.gssummary` 文件中的参数众多，需要确认哪些参数对拟合判断最有价值
-- Summary 应包含哪些参数以便于 AI 模型快速识别问题
 
 
 ## 许可证

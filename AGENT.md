@@ -138,15 +138,15 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 1. sersic — 常用于 BULGE
 
 0) sersic                 #  Component type
-1) <x>  <y>  0 0          #  Position x, y
-2) <mag>       1          #  Integrated magnitude
-3) <R_e>       1          #  R_e (effective radius) [pix]
-4) <n>         1          #  Sersic index n (de Vaucouleurs n=4)
-5) 0.0000      0          #  -----
+1) <x>  <y>  1 1          #  Position x, y
+3) <mag>       1          #  Integrated magnitude
+4) <R_e>       1          #  R_e (effective radius) [pix]
+5) <n>         1          #  Sersic index n (de Vaucouleurs n=4)
 6) 0.0000      0          #  -----
 7) 0.0000      0          #  -----
-8) <b/a>       1          #  Axis ratio (b/a)
-9) <PA>        1          #  Position angle (PA) [deg]
+8) 0.0000      0          #  -----
+9) <b/a>       1          #  Axis ratio (b/a)
+10) <PA>       1          #  Position angle (PA) [deg]
 Z) 0                      #  Skip this model? (yes=1, no=0)
 
 关键参数：R_e（有效半径）、n（Sérsic 指数）
@@ -156,15 +156,15 @@ Z) 0                      #  Skip this model? (yes=1, no=0)
 1. expdisk  — 常用于 DISK 专为指数衰减的星系盘设计（等效于 n=1 的 Sersic 模型）。
 
 0) expdisk                #  Component type
-1) <x>  <y>  0 0          #  Position x, y
-2) <mag>       1          #  Integrated magnitude
-3) <R_s>       1          #  R_s (disk scale-length) [pix]
-4) 0.0000      0          #  -----
+1) <x>  <y>  1 1          #  Position x, y
+3) <mag>       1          #  Integrated magnitude
+4) <R_s>       1          #  R_s (disk scale-length) [pix]
 5) 0.0000      0          #  -----
 6) 0.0000      0          #  -----
 7) 0.0000      0          #  -----
-8) <b/a>       0          #  Axis ratio (b/a)
-9) <PA>        0          #  Position angle (PA) [deg: Up=0, Left=90]
+8) 0.0000      0          #  -----
+9) <b/a>       0          #  Axis ratio (b/a)
+10) <PA>       0          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
 
 关键参数：R_s（盘标长）
@@ -174,15 +174,15 @@ Z) 0                      #  Skip this model?
 1. ferrer  — 常用于 DISK（截断盘 / 棒 Bar / 透镜）Ferrer 轮廓的特点是中心比较平缓，而在外部有一个清晰的截断边界（Sharp drop-off），非常适合拟合星系棒 (Bar)。
 
 0) ferrer                 #  Component type
-1) <x>  <y>  0 0          #  Position x, y
-2) <mu>        1          #  Surface brightness at FWHM [mag/arcsec^2]
-3) <R_out>     1          #  Outer truncation radius [pix]
-4) <alpha>     0          #  Alpha (outer truncation sharpness)
-5) <beta>      0          #  Beta (central slope)
-6) 0.0000      0          #  -----
+1) <x>  <y>  1 1          #  Position x, y
+3) <mu>        1          #  Surface brightness at FWHM [mag/arcsec^2]
+4) <R_out>     1          #  Outer truncation radius [pix]
+5) <alpha>     0          #  Alpha (outer truncation sharpness)
+6) <beta>      0          #  Beta (central slope)
 7) 0.0000      0          #  -----
-8) <b/a>       1          #  Axis ratio (b/a)
-9) <PA>        1          #  Position angle (PA) [deg: Up=0, Left=90]
+8) 0.0000      0          #  -----
+9) <b/a>       1          #  Axis ratio (b/a)
+10) <PA>       1          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
 
 关键参数：R_out（外截断半径）、alpha（截断锐度）、beta（中心斜率）
@@ -195,41 +195,29 @@ Z) 0                      #  Skip this model?
 1. edgedisk — 常用于沿着视线方向几乎垂直观察的薄盘（$Z$ 轴方向的亮度分布）。
 
 0) edgedisk               #  Component type
-1) <x>  <y>  0 0          #  Position x, y
-2) <mu0>       1          #  Mu(0) [mag/arcsec^2]
-3) <h_s>       1          #  h_s (disk scale-height) [pix]
-4) <R_s>       1          #  R_s (disk scale-length) [pix]
-5) 0.0000      0          #  -----
-6) 0.0000      0          #  -----
-7) 0.0000      0          #  -----
-8) 1.0000      -1         #  (固定 b/a=1)
-9) <PA>        0          #  Position angle (PA) [deg: Up=0, Left=90]
+1) <x>  <y>  1 1          #  Position x, y
+3) <mu0>       1          #  Mu(0) [mag/arcsec^2]
+4) <h_s>       1          #  h_s (disk scale-height) [pix]
+5) <R_s>       1          #  R_s (disk scale-length) [pix]
+10) <PA>       1          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
 
 关键参数：h_s（标高）、R_s（标长）。注意 b/a 固定为 1。
 - mu0（中心表面亮度）：同上，盘中心的表面亮度。
 - h_s（标高 Scale-height）：代表盘的厚度。初始化方法：在 DS9 中测量侧向盘在垂直方向的可见厚度，取其 1/3 或 1/4 作为初始值。通常是一个很小的值（例如 2~10 像素，取决于图像分辨率）。
 - R_s（标长 Scale-length）：代表盘的水平延伸。在长轴方向测量可见长度，除以 3 或 4 作为初始值。
-注意：此时 b/a 被强制固定为 1，因为软件已经通过 h_s 和 R_s 的比例接管了形状的计算，不需要再额外定义轴比。
+
 ---
 1. psf — (常用于 活动星系核 AGN / 恒星 / 极其致密的核)
 
 0) psf                    #  Component type
-1) <x>  <y>  0 0          #  Position x, y
-2) <mag>       1          #  Integrated magnitude
-3) 0.0000      0          #  -----
-4) 0.0000      0          #  -----
-5) 0.0000      0          #  -----
-6) 0.0000      0          #  -----
-7) 0.0000      0          #  -----
-8) 1.0000      -1         #  (固定 b/a=1)
-9) 0.0000      -1         #  (固定 PA=0)
+1) <x>  <y>  1 1          #  Position x, y
+3) <mag>       1          #  Integrated magnitude
 Z) 0                      #  Skip this model?
 
 关键参数：仅 x, y 位置和积分星等，形状参数全部固定。
 - x, y（中心位置）：必须极其精确。通常直接锁定图像中最亮的一个像素位置。
 - mag（星等）：如果中心有明显的致密亮核（如 AGN），估算这个点源的星等。可以尝试用较小孔径测光的结果作为初始值。
-注意：PSF 无法拟合形状，因此 R_e、n、b/a、PA 等参数对其全部失效（全为固定状态）。
 
 ## Galfit 添加成分类型的规范 （必须严格遵守）
 

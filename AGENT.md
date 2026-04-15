@@ -192,6 +192,23 @@ Z) 0                      #  Skip this model?
 - beta（中心斜率）：控制中心的平坦程度。如果是典型的星系棒，中心较平，通常初始化为 0（完全平坦）或 0.5。
 
 ---
+1. ferrer2  —  常用于 DISK（截断盘 / 棒 Bar / 透镜）。 ferrer2 是 ferrer 的改进版，亮度归一化在半高宽（FWHM）处，拟合更稳定、收敛更快，非常适合拟合星系棒 (Bar)。
+
+0) ferrer2                #  Component type
+1) <x>  <y>  1 1          #  Position x, y
+3) <mu_FWHM>    1         #  Surface brightness at FWHM [mag/arcsec^2]
+4) <R_FWHM>     1         #  FWHM radius (half-light radius) [pix]
+5) <alpha>      0         #  Alpha (outer truncation sharpness)
+6) <beta>       0         #  Beta (central slope)
+7) 0.0000       0         #  -----
+8) 0.0000       0         #  -----
+9) <b/a>        1         #  Axis ratio (b/a)
+10) <PA>        1         #  Position angle (PA) [deg: Up=0, Left=90]
+Z) 0                      #  Skip this model?
+
+关键参数：mu_FWHM（半高宽处的表面亮度，不是中心亮度）、R_FWHM（半高宽半径，光度降到一半的半径），其它参数同ferrer
+
+---
 1. edgedisk — 常用于沿着视线方向几乎垂直观察的薄盘（$Z$ 轴方向的亮度分布）。
 
 0) edgedisk               #  Component type

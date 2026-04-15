@@ -29,14 +29,14 @@
 
 0) sersic                 #  Component type
 1) <x>  <y>  0 0          #  Position x, y
-2) <mag>       1          #  Integrated magnitude
-3) <R_e>       1          #  R_e (effective radius) [pix]
-4) <n>         1          #  Sersic index n (de Vaucouleurs n=4)
-5) 0.0000      0          #  -----
+3) <mag>       1          #  Integrated magnitude
+4) <R_e>       1          #  R_e (effective radius) [pix]
+5) <n>         1          #  Sersic index n (de Vaucouleurs n=4)
 6) 0.0000      0          #  -----
 7) 0.0000      0          #  -----
-8) <b/a>       1          #  Axis ratio (b/a)
-9) <PA>        1          #  Position angle (PA) [deg]
+8) 0.0000      0          #  -----
+9) <b/a>       1          #  Axis ratio (b/a)
+10) <PA>       1          #  Position angle (PA) [deg]
 Z) 0                      #  Skip this model? (yes=1, no=0)
 
 关键参数：R_e（有效半径）、n（Sérsic 指数）
@@ -47,14 +47,14 @@ Z) 0                      #  Skip this model? (yes=1, no=0)
 
 0) expdisk                #  Component type
 1) <x>  <y>  0 0          #  Position x, y
-2) <mag>       1          #  Integrated magnitude
-3) <R_s>       1          #  R_s (disk scale-length) [pix]
-4) 0.0000      0          #  -----
+3) <mag>       1          #  Integrated magnitude
+4) <R_s>       1          #  R_s (disk scale-length) [pix]
 5) 0.0000      0          #  -----
 6) 0.0000      0          #  -----
 7) 0.0000      0          #  -----
-8) <b/a>       0          #  Axis ratio (b/a)
-9) <PA>        0          #  Position angle (PA) [deg: Up=0, Left=90]
+8) 0.0000      0          #  -----
+9) <b/a>       0          #  Axis ratio (b/a)
+10) <PA>       0          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
 
 关键参数：R_s（盘标长）
@@ -65,14 +65,14 @@ Z) 0                      #  Skip this model?
 
 0) ferrer                 #  Component type
 1) <x>  <y>  0 0          #  Position x, y
-2) <mu>        1          #  Surface brightness at FWHM [mag/arcsec^2]
-3) <R_out>     1          #  Outer truncation radius [pix]
-4) <alpha>     0          #  Alpha (outer truncation sharpness)
-5) <beta>      0          #  Beta (central slope)
-6) 0.0000      0          #  -----
+3) <mu>        1          #  Surface brightness at FWHM [mag/arcsec^2]
+4) <R_out>     1          #  Outer truncation radius [pix]
+5) <alpha>     0          #  Alpha (outer truncation sharpness)
+6) <beta>      0          #  Beta (central slope)
 7) 0.0000      0          #  -----
-8) <b/a>       1          #  Axis ratio (b/a)
-9) <PA>        1          #  Position angle (PA) [deg: Up=0, Left=90]
+8) 0.0000      0          #  -----
+9) <b/a>       1          #  Axis ratio (b/a)
+10) <PA>       1          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
 
 关键参数：R_out（外截断半径）、alpha（截断锐度）、beta（中心斜率）
@@ -86,14 +86,14 @@ Z) 0                      #  Skip this model?
 
 0) edgedisk               #  Component type
 1) <x>  <y>  0 0          #  Position x, y
-2) <mu0>       1          #  Mu(0) [mag/arcsec^2]
-3) <h_s>       1          #  h_s (disk scale-height) [pix]
-4) <R_s>       1          #  R_s (disk scale-length) [pix]
-5) 0.0000      0          #  -----
+3) <mu0>       1          #  Mu(0) [mag/arcsec^2]
+4) <h_s>       1          #  h_s (disk scale-height) [pix]
+5) <R_s>       1          #  R_s (disk scale-length) [pix]
 6) 0.0000      0          #  -----
 7) 0.0000      0          #  -----
-8) 1.0000      -1         #  (固定 b/a=1)
-9) <PA>        0          #  Position angle (PA) [deg: Up=0, Left=90]
+8) 0.0000      0          #  -----
+9) 1.0000      -1         #  (固定 b/a=1)
+10) <PA>       0          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
 
 关键参数：h_s（标高）、R_s（标长）。注意 b/a 固定为 1。
@@ -106,18 +106,9 @@ Z) 0                      #  Skip this model?
 
 0) psf                    #  Component type
 1) <x>  <y>  0 0          #  Position x, y
-2) <mag>       1          #  Integrated magnitude
-3) 0.0000      0          #  -----
-4) 0.0000      0          #  -----
-5) 0.0000      0          #  -----
-6) 0.0000      0          #  -----
-7) 0.0000      0          #  -----
-8) 1.0000      -1         #  (固定 b/a=1)
-9) 0.0000      -1         #  (固定 PA=0)
+3) <mag>       1          #  Integrated magnitude
 Z) 0                      #  Skip this model?
 
 关键参数：仅 x, y 位置和积分星等，形状参数全部固定。
 - x, y（中心位置）：必须极其精确。通常直接锁定图像中最亮的一个像素位置。
 - mag（星等）：如果中心有明显的致密亮核（如 AGN），估算这个点源的星等。可以尝试用较小孔径测光的结果作为初始值。
-注意：PSF 无法拟合形状，因此 R_e、n、b/a、PA 等参数对其全部失效（全为固定状态）。
-

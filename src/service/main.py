@@ -5,35 +5,54 @@ from src.service.tasks import do_fitting_task
 
 app = FastAPI(title="galfits fitting service", version="1.0")
 
-def validate_arguments(meta_data: dict):
-    fitting_mode = meta_data.get("FittingMode", "").lower()
+def validate_arguments(body: dict):
+    fitting_mode = body.get("fitting_mode", "").lower()
     if fitting_mode not in ["image fitting", "pure sed fitting", "image sed fitting"]:
-        return False, "FittingMode is required and must be one of 'image fitting', 'pure sed fitting', or 'image sed fitting'"
+        return False, "fitting_mode is required and must be one of 'image fitting', 'pure sed fitting', or 'image sed fitting'"
 
-    lyric_file = meta_data.get("LyricFile", None)
+    lyric_file = body.get("lyric_file", None)
     if lyric_file is None:
-        return False, "LyricFile path is required in meta_data"
-    workplace = meta_data.get("Workplace", None)
-    if workplace is None:
-        return False, "Workplace path is required in meta_data"    
+        return False, "lyric_file path is required"
 
-    callback_url = meta_data.get("CallbackURL", None)
+    output_path = body.get("output_path", None)
+    if output_path is None or not isinstance(output_path, str) or output_path.strip() == "":
+        return False, "output_path is invalid, it should be a non-empty string"
+
+    workplace = body.get("workplace", "")
+    # workplace is optional and only required for pure sed fitting, so we allow it to be empty string, but if it's provided, it must be a string
+    if not isinstance(workplace, str):    
+        return False, "workplace path is invalid, it should be a string"
+
+    args = body.get("args", [])
+    # args is optional, but if provided, it must be a list of strings
+    if not isinstance(args, list):
+        return False, "args should be a list"
+    for arg in args:
+        if not isinstance(arg, str):
+            return False, "each argument in args should be a string"    
+    # Remove --workplace and its value from args if it exists, since we handle workplace separately.
+    idx = args.index("--workplace") if "--workplace" in args else -1
+    if idx != -1:        
+        args.pop(idx)  # remove --workplace
+        if idx < len(args):
+            args.pop(idx)  # remove the value after --workplace
+    
+    callback_url = body.get("callback_url", None)
     if callback_url is None or not callback_url.startswith("http"):
-        return False, "CallbackURL must be a valid URL starting with http or https"    
+        return False, "callback_url must be a valid URL starting with http or https"    
 
     return True, ""    
 
 @app.post("/api/fitting/", summary="fitting interface")
 async def fitting_process(body: dict = Body(...)):
-    meta_data = body.get("meta", None)
-    if meta_data is None:
-        return {"status": "error", "message": "meta data not specified!"}
-    valid, message = validate_arguments(meta_data)
+    if body is None or not isinstance(body, dict):
+        return {"status": "error", "message": "invalid body!"}
+    valid, message = validate_arguments(body)
     if not valid:
         return {"status": "error", "message": message}
         
     task_id = uuid.uuid4().hex
-    task = do_fitting_task.delay(task_id=task_id, data=meta_data)
+    task = do_fitting_task.delay(task_id=task_id, data=body)
     return {"status": "success", "task_id": task.id, "message": "Fitting task has been submitted successfully."}
 
 @app.get("/api/fitting-status/{task_id}")

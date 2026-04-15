@@ -27,6 +27,7 @@ class GalfitsFileManager:
         self.pre_hooks = [] 
         self.post_hooks = []
         self.URL          = "https://astro-workbench-bts.lab.zverse.space:32443/api/csst"
+        self.URL          = "https://astro-workbench.eva24002.lab.zverse.space:32443/api/csst"
         self.DOWNLOAD     = "/fitting/v2/oss/files/download"
         self.CONTENT      = "/fitting/v2/oss/files/content"
         self.UPLOADFILE   = "/fitting/v2/oss/files"
@@ -159,12 +160,11 @@ class GalfitsFileManager:
     def upload_file(self, local_file_path, oss_file_path):
         url = self.URL + self.UPLOADFILE
 
-        with open(local_file_path, "rb") as f:
-            files = {"file": (os.path.basename(local_file_path), f)}
-            data = {"filePath": oss_file_path}
-            resp = requests.post(url, files=files, data=data)
+        with open(local_file_path, "r") as f:
+            data = {"filePath": oss_file_path, "content": f.read()}
+            resp = requests.post(url, json=data)
 
-        resp.raise_for_status()
+        resp.raise_for_status()    
 
     def upload_folder(self, local_folder_path, target_path):
         if not target_path.endswith("/"):
@@ -183,7 +183,7 @@ class GalfitsFileManager:
         url = self.URL + self.UPLOADFOLDER
 
         with open(zip_filename, "rb") as f:
-            files = {"file": f}
+            files = {"file": (os.path.basename(local_folder_path) + ".zip", f, "application/zip") }
             data = {"targetPath": target_path}
             resp = requests.post(url, files=files, data=data)
 
@@ -204,28 +204,57 @@ def TEST_extract_fits_paths():
     for path in fits_paths:
         print(path)
 
-if __name__ == "__main__":
-    # TEST_extract_fits_paths()
+def TEST_download_files():
     with GalfitsFileManager() as fm:
         lyric_file = "/home/jiangbo/GALFITS_examples/latest/configs/obj692"
-        fm.add_pre_hook(fm.copy_lyric_and_fits_files, lyric_file=lyric_file)
-        fm.add_pre_hook(fm.update_local_lyric_file, lyric_file=os.path.join(fm.work_dir, os.path.basename(lyric_file)))
-        fm.run_pre_hooks()
-        print("Pre-hooks executed. Local files prepared at:", fm.work_dir)
+        local_lyric, fits_files = fm.download_lyric_and_fits_files(lyric_file)
+        print("Local lyric file:", local_lyric)
+        print("Downloaded fits files:", fits_files)        
 
-        import sys        
-        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-        from tools.galfits_fitting import ImageFitting, PureSEDFitting, ImageSEDFitting
+def TEST_upload_folder():
+    with GalfitsFileManager() as fm:
+        local_folder = "/home/jiangbo/GALFITS_examples/latest/configs/obj692_fits_files"
+        target_path = "/obj692/obj692_fits/"
+        fm.upload_folder(local_folder, target_path)
+        print(f"Folder {local_folder} uploaded to {target_path}")        
 
-        result = ImageFitting(lyric_file=os.path.join(fm.work_dir, os.path.basename(lyric_file)), workplace=os.path.join(fm.work_dir, "result"), args=[])
-        print("Fitting result:", result)
+def TEST_download_file():
+    with GalfitsFileManager() as fm:
+        oss_file = "/obj692/obj692.lyric"
+        local_file = fm.download_file(oss_file, fm.work_dir)
+        print(f"File {oss_file} downloaded to {local_file}")        
 
-        result = PureSEDFitting(lyric_file=os.path.join(fm.work_dir, os.path.basename(lyric_file)), new_lyric_file=os.path.join(fm.work_dir,os.path.basename(lyric_file)), workplace=os.path.join(fm.work_dir, "result"), args=[])
-        print("Fitting result:", result)
+def TEST_download_file2():
+    with GalfitsFileManager() as fm:
+        oss_file = "/obj692/obj692_fits/obj692_fits_files/mask692_F444W.fits"
+        local_file = fm.download_file(oss_file, fm.work_dir)
+        print(f"File {oss_file} downloaded to {local_file}")        
 
-        result = ImageSEDFitting(lyric_file=os.path.join(fm.work_dir, os.path.basename(lyric_file)), workplace=os.path.join(fm.work_dir, "result_is"), args=[])
-        print("Fitting result:", result)
+def TEST_upload_file():
+    with GalfitsFileManager() as fm:
+        local_file = "/home/jiangbo/GALFITS_examples/latest/configs/obj692"
+        target_path = "/obj692/obj692.lyric"
+        fm.upload_file(local_file, target_path)
+        print(f"File {local_file} uploaded to {target_path}")        
 
-        fm.run_post_hooks()
+def TEST_upload_and_download():
+    with GalfitsFileManager() as fm:
+        local_dir = "/home/jiangbo/GALFITS_examples/latest/configs/obj692_fits_files"
+        target_path = "/obj692_2/obj692_fits/"
+
+        fm.upload_folder(local_dir, target_path)
+        print(f"Folder {local_dir} uploaded to {target_path}")        
+
+        target_path = "/obj692_2/obj692_fits/mask692_F444W.fits"
+        fm.download_file(target_path, fm.work_dir)
+        print(f"Folder {target_path} downloaded to {fm.work_dir}")
+
+if __name__ == "__main__":
+    # TEST_extract_fits_paths()
+    # TEST_upload_file()
+    # TEST_upload_folder()
+    # TEST_upload_folder2()
+    # TEST_download_file2()
+    TEST_upload_and_download()
         
         

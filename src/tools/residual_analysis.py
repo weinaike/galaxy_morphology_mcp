@@ -80,14 +80,15 @@ def component_analysis(
             return {"status": "failure", "error": "ANALYSIS_MODE=cc requires CLAUDECODE_API_KEY to be set in environment"}
         from .cc_analysis import run_component_analysis_cc
         session_id = str(uuid.uuid4())
-        context = f"1. 残差图文件：{os.path.abspath(image_file)}\n2. 拟合总结文件：{os.path.abspath(summary_file)}"
 
-        analysis_prompt = prompt.get_residual_analysis_prompt(context)
-        if custom_instructions:
-            analysis_prompt += f"\n\n--- Additional requirements ---\n{custom_instructions}\n建立待办，依次分析"
+        prompts_list: list[str] = [
+            f"{os.path.abspath(image_file)},查看原图图像和模型图像，分析中心星系的结构特征；重点描述残差图即（原图-模型）的差异特征。",
+            f"集合拟合summmary文件：{os.path.abspath(summary_file)}，严格按照残差图分析与决策诊断树的逻辑，对成分进行分析，是否需要增加或删除成分？仅关注中心区域星系残差。\n除此之外：{custom_instructions}"
+            "只提供一个最重要的结论（不允许一次增加或删除多个成分，同步提供具体参数，以及现有成分的修改内容）",
+        ]
         analysis, error = run_component_analysis_cc(
             system_prompt=system_message,
-            analysis_prompt=analysis_prompt,
+            analysis_prompts=prompts_list,
             session_id=session_id,
         )
         if error:

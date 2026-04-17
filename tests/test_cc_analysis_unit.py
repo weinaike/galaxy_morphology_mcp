@@ -9,6 +9,7 @@ from tools.cc_analysis import (
     run_component_analysis_cc,
 )
 
+
 class TestCcAnalysis(unittest.TestCase):
     """Tests for cc_analysis.py."""
 
@@ -41,7 +42,7 @@ class TestCcAnalysis(unittest.TestCase):
     def test_run_component_analysis_cc_success(self, mock_run_async):
         analysis, error = run_component_analysis_cc(
             system_prompt="system",
-            analysis_prompt="analysis",
+            analysis_prompts=["analysis"],
             session_id="test-session-id",
         )
 
@@ -54,7 +55,7 @@ class TestCcAnalysis(unittest.TestCase):
     def test_run_component_analysis_cc_empty_response(self, mock_run_async):
         analysis, error = run_component_analysis_cc(
             system_prompt="system",
-            analysis_prompt="analysis",
+            analysis_prompts=["analysis"],
             session_id="test-session-id",
         )
 
@@ -66,12 +67,25 @@ class TestCcAnalysis(unittest.TestCase):
     def test_run_component_analysis_cc_exception(self, mock_run_async):
         analysis, error = run_component_analysis_cc(
             system_prompt="system",
-            analysis_prompt="analysis",
+            analysis_prompts=["analysis"],
             session_id="test-session-id",
         )
 
         self.assertIsNone(analysis)
         self.assertIn("Agent SDK error: SDK error", error)
+
+    @patch("tools.cc_analysis._run_async",
+           side_effect=_close_coro_return("Multi-turn result"))
+    def test_run_component_analysis_cc_multi_prompts(self, mock_run_async):
+        analysis, error = run_component_analysis_cc(
+            system_prompt="system",
+            analysis_prompts=["first question", "second question", "third question"],
+            session_id="test-session-id",
+        )
+
+        self.assertEqual(analysis, "Multi-turn result")
+        self.assertIsNone(error)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 
 import os
+import uuid
 from typing import Annotated, Any
 import dotenv
 from . import prompt
@@ -26,7 +27,6 @@ def component_analysis(
     the fitting summary, identifies missing or misconfigured physical components (bulge, disk,
     bar, AGN, etc.), and provides actionable suggestions for component addition/removal and
     parameter refinement.
-
     Args:
         image_file (str): Path to the combined image file containing three stamps displayed horizontally:
                         - Original galaxy image
@@ -38,7 +38,7 @@ def component_analysis(
                           - Chi-squared statistics and goodness-of-fit metrics
                           - Component descriptions
         mode (str): 'single-band' for GALFIT or 'multi-band' for GalfitS.
-        custom_instructions (str): Optional additional instructions to guide the analysis,
+        custom_instructions (str): Optional additional instructions to guide the analysis.
 
     Returns:
         dict[str, Any]: A dictionary containing:
@@ -46,29 +46,19 @@ def component_analysis(
             - analysis (str, optional): The diagnostic analysis report (only on success)
             - analysis_file (str, optional): Path to the saved analysis markdown file (only on success)
     """
-    # Create LLM client
-    client, error = create_vlm_client()
-    if error:
-        return {"status": "failure", "error": error}
-
     # Validate input files
     if not os.path.exists(image_file):
         return {"status": "failure", "error": f"Image file not found: {image_file}"}
     if not os.path.exists(summary_file):
         return {"status": "failure", "error": f"Summary file not found: {summary_file}"}
 
-    # Encode image
-    base64_image = encode_image_to_base64(image_file)
-    if not base64_image:
-        return {"status": "failure", "error": f"Failed to encode image: {image_file}"}
-
-    # Read summary
+    # Read summary (needed for both modes)
     summary_content = read_summary_file(summary_file)
     if not summary_content:
         return {"status": "failure", "error": f"Failed to read summary file: {summary_file}"}
 
     # Build prompt and system message from the residual analysis templates
-    analysis_prompt = prompt.get_residual_analysis_prompt(summary_content)
+
     system_message = prompt.RESIDUAL_ANALYSIS_SYSTEM_MESSAGE
 
     # Append component specification based on mode
@@ -80,27 +70,63 @@ def component_analysis(
     if component_spec:
         system_message = system_message + "\n\n" + component_spec
 
-    if custom_instructions:
-        analysis_prompt += f"\n\n--- Additional requirements ---\n{custom_instructions}"
-    analysis_prompt = f'残差图文件路径：{image_file}'+analysis_prompt
-    additional_content = [{"type": "text", "text": analysis_prompt}]
 
-    # Call VLM
-    analysis, error = call_vlm_api(
-        client=client,  # type: ignore[arg-type]
-        base64_image=base64_image,
-        additional_content=additional_content,
-        system_message=system_message,
-    )
-    if error:
-        return {"status": "failure", "error": error}
+    # ── Dispatch to the chosen analysis backend ──────────────────────
+    analysis_mode = os.environ.get("ANALYSIS_MODE", "vlm").lower()
+    session_id = ""
+
+    if analysis_mode == "cc":
+        if not os.environ.get("CLAUDECODE_API_KEY"):
+            return {"status": "failure", "error": "ANALYSIS_MODE=cc requires CLAUDECODE_API_KEY to be set in environment"}
+        from .cc_analysis import run_component_analysis_cc
+        session_id = str(uuid.uuid4())
+        context = f"1. 残差图文件：{os.path.abspath(image_file)}\n2. 拟合总结文件：{os.path.abspath(summary_file)}"
+
+        analysis_prompt = prompt.get_residual_analysis_prompt(context)
+        if custom_instructions:
+            analysis_prompt += f"\n\n--- Additional requirements ---\n{custom_instructions}\n建立待办，依次分析"
+        analysis, error = run_component_analysis_cc(
+            system_prompt=system_message,
+            analysis_prompt=analysis_prompt,
+            session_id=session_id,
+        )
+        if error:
+            return {"status": "failure", "error": error}
+
+    else:
+        analysis_prompt = prompt.get_residual_analysis_prompt(summary_content)
+        if custom_instructions:
+            analysis_prompt += f"\n\n--- Additional requirements ---\n{custom_instructions}"        
+        # --- VLM mode (original single-shot path) ---
+        client, error = create_vlm_client()
+        if error:
+            return {"status": "failure", "error": error}
+
+        base64_image = encode_image_to_base64(image_file)
+        if not base64_image:
+            return {"status": "failure", "error": f"Failed to encode image: {image_file}"}
+
+        vlm_prompt = f'残差图文件路径：{image_file}' + analysis_prompt
+        additional_content = [{"type": "text", "text": vlm_prompt}]
+
+        analysis, error = call_vlm_api(
+            client=client,  # type: ignore[arg-type]
+            base64_image=base64_image,
+            additional_content=additional_content,
+            system_message=system_message,
+        )
+        if error:
+            return {"status": "failure", "error": error}
 
     # analysis is guaranteed to be str when error is None
     assert analysis is not None, "Analysis should not be None when error is None"
 
     # Save analysis
     base_name = os.path.splitext(os.path.basename(image_file))[0]
-    output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_component_analysis.md")
+    if session_id:
+        output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_{session_id}_component_analysis.md")
+    else:
+        output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_component_analysis.md")
 
     try:
         with open(output_file, 'w', encoding='utf-8') as f:

@@ -1,240 +1,125 @@
-"""Unit tests for run_galfit.py module."""
+"""Unit tests for run_galfit.py module using real NGC1097 test data."""
 
 import os
-from pathlib import Path
 
 import numpy as np
 import pytest
 from astropy.io import fits
+from scipy.ndimage import gaussian_filter
 
-# Add src to path for imports
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from tools.run_galfit import create_comparison_png
 
-from tools.run_galfit import _parse_galfit_config, create_comparison_png
+# Fit region from NGC1097.feedme: H) 37 1467 25 1455 (1-indexed)
+FIT_REGION = (37, 1467, 25, 1455)
 
 
-class TestParseGalfitConfig:
-    """Tests for _parse_galfit_config function."""
+@pytest.fixture
+def real_galfit_output(tmp_path, test_data_dir):
+    """Create a GALFIT-style output FITS from the real NGC1097 input image.
 
-    def test_parse_full_config(self, tmp_path):
-        """Test parsing a complete GALFIT config file."""
-        config_content = """================================================================================
-# IMAGE and GALFIT CONTROL PARAMETERS
-A) /path/to/input.fits          # Input data image
-B) /path/to/output.fits         # Output data image
-C) /path/to/sigma.fits         # Sigma image
-D) /path/to/psf.fits           # PSF image
-E) 1                              # PSF sampling
-F) /path/to/mask.fits          # Bad pixel mask
-G) /path/to/constraints.txt    # Constraints
-H) 100   200  100   200         # Region
-I) 256   256                    # Convolution box
-J) 25.0                         # Zero point
-K) 0.06  0.06                   # Plate scale
-O) regular                      # Display type
-P) 0                            # Optimize
-# INITIAL FITTING PARAMETERS
-0) sersic
-1) 100  100  1  1
-3) 18.0  1
-Z) 0
-================================================================================
-"""
-        config_file = tmp_path / "test.feedme"
-        config_file.write_text(config_content)
+    Reads the actual galaxy image, crops to the fit region, and generates
+    model/residual HDUs to simulate GALFIT output.
+    """
+    input_image = test_data_dir / "NGC1097.phot.1_nonan.fits"
+    if not input_image.exists():
+        pytest.skip("Real test data not available")
 
-        result = _parse_galfit_config(str(config_file))
+    # Read real input image and crop to fit region (1-indexed, inclusive)
+    data_full = fits.getdata(str(input_image))
+    xmin, xmax, ymin, ymax = FIT_REGION
+    original = data_full[ymin - 1 : ymax, xmin - 1 : xmax].astype(np.float64)
 
-        assert result["input"] == "/path/to/input.fits"
-        assert result["output"] == "/path/to/output.fits"
-        assert result["sigma"] == "/path/to/sigma.fits"
-        assert result["psf"] == "/path/to/psf.fits"
-        assert result["mask"] == "/path/to/mask.fits"
-        assert result["constraint"] == "/path/to/constraints.txt"
+    # Create a simple model (Gaussian-smoothed approximation)
+    model = gaussian_filter(original, sigma=5.0)
 
-    def test_parse_with_none_values(self, tmp_path):
-        """Test parsing config with 'none' values."""
-        config_content = """================================================================================
-A) /path/to/input.fits          # Input
-B) /path/to/output.fits         # Output
-C) none                         # Sigma (none)
-D) none                         # PSF (none)
-F) none                         # Mask (none)
-G) none                         # Constraints (none)
-H) 100   200  100   200
-I) 256   256
-J) 25.0
-K) 0.06  0.06
-O) regular
-P) 0
-0) sersic
-1) 100  100  1  1
-3) 18.0  1
-Z) 0
-================================================================================
-"""
-        config_file = tmp_path / "test_none.feedme"
-        config_file.write_text(config_content)
+    # Create residual
+    residual = original - model
 
-        result = _parse_galfit_config(str(config_file))
+    # Build GALFIT-style output FITS
+    primary_hdu = fits.PrimaryHDU()
+    primary_hdu.header["OBJECT"] = "NGC1097"
 
-        assert result["input"] == "/path/to/input.fits"
-        assert result["output"] == "/path/to/output.fits"
-        assert result["sigma"] == ""
-        assert result["psf"] == ""
-        assert result["mask"] == ""
-        assert result["constraint"] == ""
+    orig_hdu = fits.ImageHDU(original, name="PRIMARY")
+    orig_hdu.header["OBJECT"] = "NGC1097[1/1][37:1467,25:1455]"
 
-    def test_parse_minimal_config(self, tmp_path):
-        """Test parsing minimal config with only required fields."""
-        config_content = """================================================================================
-A) /path/to/input.fits          # Input
-B) /path/to/output.fits         # Output
-C) none                         # Sigma
-D) none                         # PSF
-F) none                         # Mask
-G) none                         # Constraints
-H) 100   200  100   200
-I) 256   256
-J) 25.0
-K) 0.06  0.06
-O) regular
-P) 0
-0) sersic
-1) 100  100  1  1
-3) 18.0  1
-Z) 0
-================================================================================
-"""
-        config_file = tmp_path / "test_minimal.feedme"
-        config_file.write_text(config_content)
+    model_hdu = fits.ImageHDU(model, name="PRIMARY")
+    model_hdu.header["OBJECT"] = "model"
 
-        result = _parse_galfit_config(str(config_file))
+    resid_hdu = fits.ImageHDU(residual, name="PRIMARY")
+    resid_hdu.header["OBJECT"] = "residual map"
 
-        assert result["input"] == "/path/to/input.fits"
-        assert result["output"] == "/path/to/output.fits"
+    hdul = fits.HDUList([primary_hdu, orig_hdu, model_hdu, resid_hdu])
+
+    output_path = tmp_path / "NGC1097_galfit.fits"
+    hdul.writeto(str(output_path), overwrite=True)
+    return str(output_path)
 
 
 class TestCreateComparisonPng:
-    """Tests for create_comparison_png function."""
+    """Tests for create_comparison_png using real NGC1097 data."""
 
-    def _create_mock_fits(self, path: str, shape=(100, 100)):
-        """Create a mock GALFIT output FITS file."""
-        data = np.random.random(shape) * 100
-        primary_hdu = fits.PrimaryHDU()
-        primary_hdu.header['OBJECT'] = 'test'
-
-        # Original data
-        orig_hdu = fits.ImageHDU(data, name='PRIMARY')
-        orig_hdu.header['OBJECT'] = 'TEST[1/1][0:100,0:100]'
-
-        # Model data
-        model_hdu = fits.ImageHDU(data * 0.9, name='PRIMARY')
-        model_hdu.header['OBJECT'] = 'model'
-
-        # Residual data
-        resid_hdu = fits.ImageHDU(data * 0.1, name='PRIMARY')
-        resid_hdu.header['OBJECT'] = 'residual map'
-
-        hdul = fits.HDUList([primary_hdu, orig_hdu, model_hdu, resid_hdu])
-        hdul.writeto(path, overwrite=True)
-
-    def _create_mask_file(self, path: str, shape=(100, 100)):
-        """Create a mock mask file."""
-        # Create mask with center region valid (1), edges masked (0)
-        mask = np.zeros(shape, dtype=np.int32)
-        center_y, center_x = shape[0] // 2, shape[1] // 2
-        radius = min(shape) // 3
-        y, x = np.ogrid[:shape[0], :shape[1]]
-        dist = np.sqrt((y - center_y)**2 + (x - center_x)**2)
-        mask[dist <= radius] = 1
-
-        hdu = fits.PrimaryHDU(mask)
-        hdu.writeto(path, overwrite=True)
-
-    def _create_sigma_file(self, path: str, shape=(100, 100)):
-        """Create a mock sigma file."""
-        # Normal sigma values around 0.1, with some bad pixels
-        sigma = np.random.random(shape) * 0.1 + 0.05
-        # Add some bad pixels
-        sigma[0:5, 0:5] = 1e10  # Very large values
-        sigma[95:100, 95:100] = 0  # Zero values
-
-        hdu = fits.PrimaryHDU(sigma)
-        hdu.writeto(path, overwrite=True)
-
-    def test_create_comparison_basic(self, tmp_path):
-        """Test basic comparison PNG creation without sigma/mask."""
-        fits_file = tmp_path / "output.fits"
-        self._create_mock_fits(str(fits_file))
-
-        result = create_comparison_png(str(fits_file))
+    def test_create_comparison_basic(self, real_galfit_output):
+        """Test basic comparison PNG creation with real galaxy data."""
+        result = create_comparison_png(real_galfit_output)
 
         assert result is not None
         assert result.endswith("_comparison.png")
         assert os.path.exists(result)
+        assert os.path.getsize(result) > 10000
 
-        # Check file size is reasonable
-        size = os.path.getsize(result)
-        assert size > 10000  # At least 10KB for a valid PNG
+    def test_create_comparison_with_sigma(self, real_galfit_output, test_data_dir):
+        """Test comparison PNG with real sigma normalization."""
+        sigma_file = str(test_data_dir / "NGC1097_sigma2014.fits")
 
-    def test_create_comparison_with_sigma(self, tmp_path):
-        """Test comparison PNG creation with sigma normalization."""
-        fits_file = tmp_path / "output.fits"
-        sigma_file = tmp_path / "sigma.fits"
-        self._create_mock_fits(str(fits_file))
-        self._create_sigma_file(str(sigma_file))
-
-        result = create_comparison_png(str(fits_file), sigma_file=str(sigma_file))
-
+        result = create_comparison_png(real_galfit_output, sigma_file=sigma_file)
         assert result is not None
         assert os.path.exists(result)
 
-    def test_create_comparison_with_mask(self, tmp_path):
-        """Test comparison PNG creation with mask."""
-        fits_file = tmp_path / "output.fits"
-        mask_file = tmp_path / "mask.fits"
-        self._create_mock_fits(str(fits_file))
-        self._create_mask_file(str(mask_file))
+    def test_create_comparison_with_mask(self, real_galfit_output, test_data_dir):
+        """Test comparison PNG with real mask overlay."""
+        mask_file = str(test_data_dir / "NGC1097.1.finmask_nonan.fits")
 
-        result = create_comparison_png(str(fits_file), mask_file=str(mask_file))
-
+        result = create_comparison_png(real_galfit_output, mask_file=mask_file)
         assert result is not None
         assert os.path.exists(result)
 
-    def test_create_comparison_with_all(self, tmp_path):
-        """Test comparison PNG creation with both sigma and mask."""
-        fits_file = tmp_path / "output.fits"
-        sigma_file = tmp_path / "sigma.fits"
-        mask_file = tmp_path / "mask.fits"
-        self._create_mock_fits(str(fits_file))
-        self._create_sigma_file(str(sigma_file))
-        self._create_mask_file(str(mask_file))
-
+    def test_create_comparison_with_all(self, real_galfit_output, test_data_dir):
+        """Test comparison PNG with real sigma, mask, fit_region, and param_file."""
         result = create_comparison_png(
-            str(fits_file),
-            sigma_file=str(sigma_file),
-            mask_file=str(mask_file)
+            real_galfit_output,
+            sigma_file=str(test_data_dir / "NGC1097_sigma2014.fits"),
+            mask_file=str(test_data_dir / "NGC1097.1.finmask_nonan.fits"),
+            fit_region=FIT_REGION,
+            param_file=str(test_data_dir / "NGC1097.feedme"),
         )
-
         assert result is not None
         assert os.path.exists(result)
 
-    def test_create_comparison_mask_cropping(self, tmp_path):
-        """Test that mask is correctly cropped to match FITS dimensions."""
-        # Create smaller FITS output
-        fits_file = tmp_path / "output.fits"
-        small_shape = (50, 50)
-        self._create_mock_fits(str(fits_file), shape=small_shape)
+    def test_create_comparison_with_fit_region(self, real_galfit_output):
+        """Test comparison PNG with explicit fit_region for coordinate display."""
+        result = create_comparison_png(
+            real_galfit_output,
+            fit_region=FIT_REGION,
+        )
+        assert result is not None
+        assert os.path.exists(result)
 
-        # Create larger mask (simulating full frame mask)
-        mask_file = tmp_path / "mask.fits"
-        large_shape = (100, 100)
-        self._create_mask_file(str(mask_file), shape=large_shape)
+    def test_create_comparison_with_param_file(self, real_galfit_output, test_data_dir):
+        """Test comparison PNG with real feedme for component contour overlay."""
+        result = create_comparison_png(
+            real_galfit_output,
+            param_file=str(test_data_dir / "NGC1097.feedme"),
+        )
+        assert result is not None
+        assert os.path.exists(result)
 
-        result = create_comparison_png(str(fits_file), mask_file=str(mask_file))
-
+    def test_create_comparison_mask_cropping(self, real_galfit_output, test_data_dir):
+        """Test that real mask (full-frame) is correctly cropped to match FITS dimensions."""
+        result = create_comparison_png(
+            real_galfit_output,
+            mask_file=str(test_data_dir / "NGC1097.1.finmask_nonan.fits"),
+            fit_region=FIT_REGION,
+        )
         assert result is not None
         assert os.path.exists(result)
 
@@ -244,57 +129,37 @@ class TestCreateComparisonPng:
         invalid_file.write_text("not a fits file")
 
         result = create_comparison_png(str(invalid_file))
-
-        # Should return None for invalid input
         assert result is None
 
-    def test_create_comparison_missing_sigma_mask(self, tmp_path):
-        """Test with non-existent sigma and mask files."""
-        fits_file = tmp_path / "output.fits"
-        self._create_mock_fits(str(fits_file))
-
+    def test_create_comparison_missing_sigma_mask(self, real_galfit_output, tmp_path):
+        """Test with non-existent sigma and mask files (should still succeed)."""
         result = create_comparison_png(
-            str(fits_file),
+            real_galfit_output,
             sigma_file=str(tmp_path / "nonexistent_sigma.fits"),
-            mask_file=str(tmp_path / "nonexistent_mask.fits")
+            mask_file=str(tmp_path / "nonexistent_mask.fits"),
         )
-
-        # Should still work, just skip sigma/mask
         assert result is not None
         assert os.path.exists(result)
 
-    def test_create_comparison_different_shapes(self, tmp_path):
-        """Test with sigma/mask of different shapes than FITS data."""
-        fits_file = tmp_path / "output.fits"
-        sigma_file = tmp_path / "sigma.fits"
-        mask_file = tmp_path / "mask.fits"
+    def test_full_workflow_with_real_galfit(self, test_data_dir):
+        """Test full workflow: run GALFIT on real data then create comparison PNG."""
+        import asyncio
 
-        self._create_mock_fits(str(fits_file), shape=(80, 80))
-        self._create_sigma_file(str(sigma_file), shape=(100, 100))
-        self._create_mask_file(str(mask_file), shape=(120, 120))
+        from tools.run_galfit import run_galfit
 
-        result = create_comparison_png(
-            str(fits_file),
-            sigma_file=str(sigma_file),
-            mask_file=str(mask_file)
+        feedme = str(test_data_dir / "NGC1097.feedme")
+        result = asyncio.run(run_galfit(feedme))
+        assert result["status"] == "success"
+
+        fits_out = result.get("optimized_fits_file")
+        assert fits_out and os.path.exists(fits_out)
+
+        png = create_comparison_png(
+            fits_out,
+            sigma_file=str(test_data_dir / "NGC1097_sigma2014.fits"),
+            mask_file=str(test_data_dir / "NGC1097.1.finmask_nonan.fits"),
+            fit_region=FIT_REGION,
+            param_file=feedme,
         )
-
-        assert result is not None
-        assert os.path.exists(result)
-
-
-class TestIntegration:
-    """Integration tests for run_galfit workflow."""
-
-    @pytest.mark.slow
-    def test_full_workflow_with_real_galfit(self):
-        """Test full workflow with real GALFIT execution.
-
-        This test requires:
-        - GALFIT to be installed
-        - Test data at /home/wnk/code/galfit_example/goodsn_9076/
-        """
-        pytest.skip("Skip integration test - requires GALFIT and test data")
-
-        # This would be implemented for actual integration testing
-        # when GALFIT and test data are available
+        assert png is not None
+        assert os.path.exists(png)

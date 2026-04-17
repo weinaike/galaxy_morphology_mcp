@@ -37,7 +37,8 @@ dependencies = [
     "uvicorn>=0.38.0",
     "celery>=5.6.3",
     "sqlalchemy>=2.0.41",
-    "requests>=2.32.5"
+    "requests>=2.32.5",
+    "claude-agent-sdk>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +50,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5",
 ]
+
 # Placeholder for future extensions (currently unused by code)
 extras = [
     "toml>=0.10.2",
@@ -83,5 +85,6 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests requiring external services (deselect with '-m \"not integration\"')",
 ]

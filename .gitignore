@@ -76,15 +76,13 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
+archives
 # ruff
 .ruff_cache/
 
 # Project specific
 data/
 output/
-*.fits
-*.fit
 *.gal
 config.toml
 

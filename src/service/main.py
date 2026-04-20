@@ -19,11 +19,11 @@ def validate_arguments(body: dict):
         return False, "output_path is invalid, it should be a non-empty string"
 
     workplace = body.get("workplace", "")
-    # workplace is optional and only required for pure sed fitting, so we allow it to be empty string, but if it's provided, it must be a string
-    if not isinstance(workplace, str):    
+    if fitting_mode == "sed fitting" and not isinstance(workplace, str):
         return False, "workplace path is invalid, it should be a string"
 
-    args = body.get("args", [])
+    args = body.get("args", None)
+    args = args if args is not None else []
     # args is optional, but if provided, it must be a list of strings
     if not isinstance(args, (list, str)):
         return False, "args should be a list or a string"
@@ -46,7 +46,7 @@ def validate_arguments(body: dict):
 
     return True, ""    
 
-@app.post("/api/fitting/", summary="fitting interface")
+@app.post("/api/fitting", summary="fitting interface")
 async def fitting_process(body: dict = Body(...)):
     if body is None or not isinstance(body, dict):
         return {"status": "error", "message": "invalid body!"}

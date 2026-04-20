@@ -7,19 +7,43 @@ import requests
 import zipfile
 
 def extract_fits_paths_from_lyric(lyric_path):
-    fits_paths = []
-    pattern = re.compile(r'^I[a-z][1346]\) \[(.+?\.fits)')
+    image_paths = []
+    sigma_paths = []
+    psf_paths = []
+    mask_paths = []
+    image_pattern = re.compile(r'^I[a-z]1\) \[(.+?\.fits)')
+    sigma_pattern = re.compile(r'^I[a-z]3\) \[(.+?\.fits)')
+    psf_pattern = re.compile(r'^I[a-z]4\) \[(.+?\.fits)')
+    mask_pattern = re.compile(r'^I[a-z]6\) \[(.+?\.fits)')
 
     with open(lyric_path, 'r', encoding='utf-8') as f:
         for line in f:
-            match = pattern.match(line.strip())
+            match = image_pattern.match(line.strip())
             if match:
                 path = match.group(1)
                 if not os.path.isabs(path): # TODO: It should be tested against OSS paths in the future
                     path = os.path.join(os.path.dirname(lyric_path), path)
-                fits_paths.append(path)
+                image_paths.append(path)
+            match = sigma_pattern.match(line.strip())
+            if match:                
+                path = match.group(1)    
+                if not os.path.isabs(path):
+                    path = os.path.join(os.path.dirname(lyric_path), path)
+                sigma_paths.append(path)
+            match = psf_pattern.match(line.strip())
+            if match:
+                path = match.group(1)    
+                if not os.path.isabs(path):
+                    path = os.path.join(os.path.dirname(lyric_path), path)
+                psf_paths.append(path)
+            match = mask_pattern.match(line.strip())
+            if match:
+                path = match.group(1)    
+                if not os.path.isabs(path):
+                    path = os.path.join(os.path.dirname(lyric_path), path)
+                mask_paths.append(path)    
 
-    return fits_paths
+    return image_paths, sigma_paths, psf_paths, mask_paths
 
 class GalfitsFileManager:
     def __init__(self, prefix="galfits_fitting_"):
@@ -45,12 +69,15 @@ class GalfitsFileManager:
         if not hasattr(self, "work_dir"):
             self.work_dir = tempfile.mkdtemp(prefix=self.prefix)
         local_lyric_file = self.download_file(lyric_file, self.work_dir)    
-        fits_files = extract_fits_paths_from_lyric(local_lyric_file)
+        image_files, sigma_files, psf_files, mask_files = extract_fits_paths_from_lyric(local_lyric_file)
+        remote_prefix = Path(lyric_file).parent.parent.parent #//  /bywang/test001/6978/16/input/16.lyric -> /bywang/test001/6978/ 
 
-        for fits_file in fits_files:
-            self.download_file(fits_file, os.path.join(self.work_dir, "fits_files"))
+        for fits_file in image_files + sigma_files + mask_files:
+            self.download_file(os.path.join(str(remote_prefix), "raw", os.path.basename(fits_file)), os.path.join(self.work_dir, "fits_files"))
+        for fits_file in psf_files:
+            self.download_file(os.path.join(str(remote_prefix), "raw", "PSF", os.path.basename(fits_file)), os.path.join(self.work_dir, "fits_files"))    
 
-        return local_lyric_file, fits_files    
+        return local_lyric_file, (image_files, sigma_files, psf_files, mask_files)
 
     def copy_lyric_and_fits_files(self, lyric_file):
         # Used for test only as no oss download currently
@@ -67,7 +94,7 @@ class GalfitsFileManager:
 
         return local_lyric_file, fits_files    
 
-    def download_file(self, oss_path, dest_dir="."):
+    def download_file(self, oss_path, dest_dir):
         url = self.URL + self.DOWNLOAD
         os.makedirs(dest_dir, exist_ok=True)
 

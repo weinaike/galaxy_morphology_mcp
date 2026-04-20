@@ -1,6 +1,9 @@
+import asyncio
+
 from fastapi import FastAPI, Body
 import uvicorn
 import uuid
+import requests
 from src.service.tasks import do_fitting_task
 
 app = FastAPI(title="galfits fitting service", version="1.0")
@@ -55,13 +58,13 @@ async def fitting_process(body: dict = Body(...)):
         return {"status": "error", "message": message}
         
     task_id = uuid.uuid4().hex
-    task = do_fitting_task.delay(task_id=task_id, data=body)
-    return {"status": "success", "task_id": task.id, "message": "Fitting task has been submitted successfully."}
+    asyncio.create_task(asyncio.to_thread(do_fitting_task, task_id=task_id, data=body))
+    return {"status": "success", "task_id": task_id, "message": "Fitting task has been submitted successfully."}
 
-@app.get("/api/fitting-status/{task_id}")
-def status(task_id: str):
-    res = do_fitting_task.AsyncResult(task_id)
-    return {"status": res.status, "result": res.result}
+# @app.get("/api/fitting-status/{task_id}")
+# def status(task_id: str):
+#     res = do_fitting_task.AsyncResult(task_id)
+#     return {"status": res.status, "result": res.result}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

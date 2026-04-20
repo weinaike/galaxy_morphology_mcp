@@ -1,18 +1,13 @@
 # tasks.py
-from celery import Celery
 from .file_manager import GalfitsFileManager
 from src.tools.galfits_fitting import ImageFitting, PureSEDFitting, ImageSEDFitting
 import os
+import time
 import requests
 
-celery = Celery(
-    "tasks",
-    broker="sqlalchemy+sqlite:////workspace/celery.db",
-    result_backend="db+sqlite:////workspace/celery.db",
-)
-
-@celery.task
 def do_fitting_task(task_id: str, data: str):
+    st = time.time()
+    print(f"Task {task_id} started at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st))}")
     with GalfitsFileManager() as fm:
         try: 
             fitting_mode = data.get("fitting_mode", "").lower()
@@ -28,8 +23,9 @@ def do_fitting_task(task_id: str, data: str):
             if fitting_mode == "image fitting":
                 result = ImageFitting(lyric_file=local_lyric_file, workplace=os.path.join(fm.work_dir, "result"), args=args)
                 if result["status"] == "success":
-                    fm.upload_directory(os.path.join(fm.work_dir, "result"), remote_dir=output_path)
-                requests.post(callback_url, json={"task_id": task_id, "status": result["status"], "message": result.get("message", "")})
+                    fm.upload_folder(os.path.join(fm.work_dir, "result"), output_path)
+                res = requests.post(callback_url, json={"task_id": task_id, "status": result["status"], "message": result.get("message", "")})
+                print(f"Callback response status code: {res.status_code}, response body: {res.text}")
 
             elif fitting_mode == "sed fitting":
                 fm.download_file(workplace, os.path.join(fm.work_dir, "result"))
@@ -37,12 +33,17 @@ def do_fitting_task(task_id: str, data: str):
                 result = PureSEDFitting(lyric_file=local_lyric_file, new_lyric_file=local_lyric_file, workplace=os.path.join(fm.work_dir, "result"), args=args)
                 if result["status"] == "success":
                     fm.upload_file(local_lyric_file, output_path)
-                requests.post(callback_url, json={"task_id": task_id, "status": result["status"], "message": result.get("message", "")})
+                res = requests.post(callback_url, json={"task_id": task_id, "status": result["status"], "message": result.get("message", "")})
+                print(f"Callback response status code: {res.status_code}, response body: {res.text}")
 
             elif fitting_mode == "image-sed fitting":
                 result = ImageSEDFitting(lyric_file=local_lyric_file, workplace=os.path.join(fm.work_dir, "result"), args=args)
                 if result["status"] == "success":
-                    fm.upload_directory(os.path.join(fm.work_dir, "result"), remote_dir=output_path)
-                requests.post(callback_url, json={"task_id": task_id, "status": result["status"], "message": result.get("message", "")})
+                    fm.upload_folder(os.path.join(fm.work_dir, "result"), output_path)
+                res = requests.post(callback_url, json={"task_id": task_id, "status": result["status"], "message": result.get("message", "")})
+                print(f"Callback response status code: {res.status_code}, response body: {res.text}")
         except Exception as e:
-            requests.post(callback_url, json={"task_id": task_id, "status": "failure", "message": str(e)})        
+            res = requests.post(callback_url, json={"task_id": task_id, "status": "failure", "message": str(e)})        
+            print(f"Callback response status code: {res.status_code}, response body: {res.text}")
+    et = time.time()
+    print(f"Task {task_id} completed in {et - st:.2f} seconds.")

@@ -41,6 +41,7 @@ Synthesize the analysis into a final classification:
 
 output ONLY a raw JSON object directly after the thought process. Do NOT wrap it in markdown code fences.
 
+```json
 {
   "source_id": "[XXX]",
   "galaxy_count": 0,
@@ -57,3 +58,4 @@ output ONLY a raw JSON object directly after the thought process. Do NOT wrap it
     }
   ]
 }
+```

@@ -18,7 +18,7 @@ def component_analysis(
     image_file: Annotated[str, "Path to the combined residual image file [png file] containing three stamps: original, model, residual"],
     summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
     mode: Annotated[str, "Fitting mode: 'single-band' for GALFIT or 'multi-band' for GalfitS"],
-    custom_instructions: Annotated[str, "Optional custom instructions to guide the component analysis"] = "",
+    custom_instructions: Annotated[str, "Context for this round of analysis: must include (1) scientific objective of this fitting task (e.g., bulge-disk decomposition, bar identification, AGN detection), (2) summary of all previously executed rounds' adjustments and outcomes, and (3) description of the current fitting status / residual situation. Additional specific requirements can also be appended."] = "",
 ) -> dict[str, Any]:
     """
     Analyze galaxy fitting results to determine component composition and parameter adjustments.
@@ -38,7 +38,11 @@ def component_analysis(
                           - Chi-squared statistics and goodness-of-fit metrics
                           - Component descriptions
         mode (str): 'single-band' for GALFIT or 'multi-band' for GalfitS.
-        custom_instructions (str): Optional additional instructions to guide the analysis.
+        custom_instructions (str): Required context for multi-round iterative fitting. Must contain:
+            1. **Scientific objective** — the scientific goal of this fitting task (e.g., bulge-disk decomposition, bar identification, AGN detection, galaxy morphology classification).
+            2. **Round history summary** — what components were added/removed/adjusted in each previous round and their outcomes.
+            3. **Current status** — the present residual situation and fitting quality.
+            Additional specific requirements or constraints can also be appended.
 
     Returns:
         dict[str, Any]: A dictionary containing:
@@ -82,9 +86,9 @@ def component_analysis(
         session_id = str(uuid.uuid4())
 
         prompts_list: list[str] = [
-            f"{os.path.abspath(image_file)},查看原图图像和模型图像，分析中心星系的结构特征；重点描述残差图即（原图-模型）的差异特征。",
-            f"集合拟合summmary文件：{os.path.abspath(summary_file)}，严格按照残差图分析与决策诊断树的逻辑，对成分进行分析，是否需要增加或删除成分？仅关注中心区域星系残差。\n除此之外：{custom_instructions}"
-            "只提供一个最重要的结论（不允许一次增加或删除多个成分，同步提供具体参数，以及现有成分的修改内容）",
+            f"{os.path.abspath(image_file)},查看原图图像和模型图像，分析中心星系的结构特征；重点描述残差图即（原图-模型）的差异特征。要求分析出真实存在的物理成分（盘、核球、侧视盘、棒、AGN核）",
+            f"集合拟合summmary文件：{os.path.abspath(summary_file)}，严格按照残差图分析与决策诊断树的逻辑，对成分进行分析，是否需要增加或删除成分？要求\n1。 仅关注中心区域星系图像与残差特征。2。仅关注拟合盘、核球、侧视盘、棒、AGN核这五种物理成分，仅可对这五种成分的残差添加模型成分拟合，其他残差特征可以选择保留不拟合\n 3。补充信息：{custom_instructions}",
+            "只提供一个最重要的结论（不允许一次增加或删除多个成分）。调整成分的同时，如果需要同步修改其他成分的参数也需同步提供。输出格式要去：\n## 本次调整决策如下：1。物理目标 2。具体内容",
         ]
         analysis, error = run_component_analysis_cc(
             system_prompt=system_message,

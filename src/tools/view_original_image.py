@@ -94,7 +94,7 @@ def view_original_image(
 
     # Save classification result
     base_name = os.path.splitext(os.path.basename(image_file))[0]
-    output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_classification.json")
+    output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_classification.md")
 
     try:
         with open(output_file, 'w', encoding='utf-8') as f:

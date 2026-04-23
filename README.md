@@ -62,13 +62,29 @@ docker-compose up -d
 
 ## 配置
 
-创建 `.env` 文件（参考 `.env.example`）：
+根据使用场景选择配置方式：
+
+- **本地开发/直接运行**：创建 `.env` 文件（参考 `.env.example`），服务启动时自动加载。
+- **MCP 客户端接入（如 Claude Code）**：优先在 `.mcp.json` 的 `env` 字段中配置环境变量，无需 `.env` 文件。
 
 ```bash
 # LLM API 配置（用于多模态分析）
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=           # 可选，默认使用官方端点
-OPENAI_MODEL=gpt-4o        # 可选，默认 gpt-4o
+OPENAI_MODEL=gemini-3-flash-preview  # 推荐 gemini-3-flash-preview（性价比高）
+
+# 分析后端选择：vlm（默认）或 cc
+# vlm: 使用 OpenAI 兼容 API 进行分析（需配置 OPENAI_*）
+# cc:  使用 Claude Code Agent SDK 进行分析（需配置 CLAUDECODE_*）
+ANALYSIS_MODE=vlm
+
+# Claude Code Agent SDK 配置（ANALYSIS_MODE=cc 时需要）
+# cc 模式通过 claude-agent-sdk 调用 Anthropic API
+# 如需使用非 Anthropic 模型（如第三方 LLM），可安装 Claude Code Router 作为本地代理：
+# https://github.com/musistudio/claude-code-router
+CLAUDECODE_API_KEY=your_anthropic_api_key_here
+CLAUDECODE_BASE_URL=xxx
+CLAUDECODE_MODEL=gemini-3-flash-preview 
 
 # GALFIT 配置
 GALFIT_BIN=/path/to/galfit  # GALFIT 可执行文件路径
@@ -124,12 +140,20 @@ python -m mcp_server --transport http --port 38507
         "GS_DATA_PATH": "/path/to/GalfitS",
         "OPENAI_API_KEY": "your-apikey",
         "OPENAI_BASE_URL": "https://open.bigmodel.cn/api/coding/paas/v4",
-        "OPENAI_MODEL": "glm-4.6v"
+        "OPENAI_MODEL": "glm-4.6v",
+        "ANALYSIS_MODE": "vlm",
+        "CLAUDECODE_API_KEY": "your-anthropic-apikey",
+        "CLAUDECODE_BASE_URL": "",
+        "CLAUDECODE_MODEL": "gemini-3-flash-preview"
       }
     }
   }
 }
 ```
+
+> **分析模式说明：** `ANALYSIS_MODE` 控制残差分析（`component_analysis`）的后端：
+> - `vlm`（默认）：通过 OpenAI 兼容 API 调用多模态模型，需配置 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
+> - `cc`：通过 Claude Code Agent SDK 调用 Anthropic API，需配置 `CLAUDECODE_API_KEY`。支持通过 [Claude Code Router](https://github.com/musistudio/claude-code-router) 代理到其他 LLM 提供商。
 
 ## 项目结构
 

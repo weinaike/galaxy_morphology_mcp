@@ -15,6 +15,7 @@ from typing import Any
 from mcp.server import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from tools.modify_feedme import add_components, delete_components
+from tools.modify_lyric import modify_lyric
 from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits
 from tools.analyze_image import galfit_analyze_by_vlm
@@ -51,6 +52,7 @@ def _register_tools_and_prompts():
 
     if has_galfits:
         app.add_tool(run_galfits)
+        app.add_tool(modify_lyric)
         app.add_tool(galfits_analyze_by_vlm)
         app.add_prompt(workflow_galfits)
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")

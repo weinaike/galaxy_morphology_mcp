@@ -52,10 +52,10 @@ def validate_arguments(body: dict):
 @app.post("/api/fitting", summary="fitting interface")
 async def fitting_process(body: dict = Body(...)):
     if body is None or not isinstance(body, dict):
-        return {"status": "error", "message": "invalid body!"}
+        return {"status": "failure", "message": "invalid body!"}
     valid, message = validate_arguments(body)
     if not valid:
-        return {"status": "error", "message": message}
+        return {"status": "failure", "message": message}
         
     task_id = uuid.uuid4().hex
     asyncio.create_task(asyncio.to_thread(do_fitting_task, task_id=task_id, data=body))

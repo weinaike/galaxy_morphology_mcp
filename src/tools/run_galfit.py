@@ -86,7 +86,7 @@ def _generate_subcomps(param_file: str, working_dir: str) -> tuple[list, list] |
         comp_images = []
         comp_types = []
         with fits.open(subcomps_path) as hdul:
-            for i in range(2, len(hdul)):
+            for i in range(1, len(hdul)):
                 comp_images.append(hdul[i].data.astype(np.float64))
                 obj = hdul[i].header.get("OBJECT", f"Component {i-1}")
                 comp_types.append(obj.lower())

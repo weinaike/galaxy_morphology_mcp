@@ -43,9 +43,9 @@ def _register_tools_and_prompts():
     has_galfits = bool(os.getenv("GALFITS_BIN"))
 
     if has_galfit:
-        app.add_tool(add_components)
+        # app.add_tool(add_components)
         app.add_tool(run_galfit)
-        app.add_tool(galfit_analyze_by_vlm)
+        # app.add_tool(galfit_analyze_by_vlm)
         app.add_prompt(workflow_galfit)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 

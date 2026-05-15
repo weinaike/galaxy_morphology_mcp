@@ -5,7 +5,7 @@
 
 - 要增加成分BULGE： Component type选用 sersic.
 - 要增加edge-on的星系盘：Component type选用 edgedisk。
-- 当添加的 Bulge的 Re远远小于 1 pixel, 需要更换类型， 采用Component type为psf
+- 当添加的 Bulge的 Re 小于 0.2 pixel(大于0.2px 是可以接受状态), 需要更换类型， 采用Component type为psf
 - 要增加棒 Bar：Component type选用  n~0.5 的 Sersic 模型.
 - 要增加指数衰减的星系盘disk: 选择 n=1 的 Sersic 模型。
 - 如果星系已经有一个 Disk 成分了，针对星系外围（Outskirt）未拟合上的情况，可以添加第二个 Disk 成分或 Sérsic 成分，以捕捉更延展的结构，

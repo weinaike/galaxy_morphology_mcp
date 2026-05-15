@@ -1,12 +1,11 @@
-version: '3.8'
-
 services:
   fastapi:
     build: .
     working_dir: /app
-    command: uvicorn src.service.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - GS_DATA_PATH=/app/galfits-data
+      - PYTHONPATH=/app/GalfitS/src
+    command: /bin/bash -lc "uvicorn src.service.main:app --host 0.0.0.0 --port 8080 1>uv.std.log 2>uv.err.log"
     ports:
-      - "8000:8000"
-    volumes:
-      - ./taskdir:/workspace
+      - "8080:8080"
     restart: unless-stopped

@@ -4,8 +4,13 @@ import sys
 import shutil
 import glob
 import argparse
-from dotenv import load_dotenv
 from tqdm.asyncio import tqdm  # 注意这里：为了兼容异步的进度条
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(*args, **kwargs):
+        return False
 
 # ================= 路径寻址与包导入修复 =================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -174,10 +174,11 @@ def create_comparison_png(
         if param_file and os.path.exists(param_file):
             components = parse_components(param_file)
 
-        # Create figure with 1×5 layout: Original | Model | Residual | (Gap) | SB Profile
-        fig = plt.figure(figsize=(21, 6))
-        gs = GridSpec(1, 5, figure=fig, wspace=0.05, width_ratios=[1, 1, 1, 0.3, 1])
-        fig.subplots_adjust(left=0.05, right=0.95, top=0.82)
+        # Create figure: Original | Model | Residual | Spacer | SB Profile | Isophotes
+        fig = plt.figure(figsize=(32, 7))
+        gs = GridSpec(1, 6, figure=fig, wspace=0.08,
+                      width_ratios=[1, 1, 1, 0.15, 1.2, 1])
+        fig.subplots_adjust(left=0.04, right=0.97, top=0.82)
 
         # === Original Image (asinh stretch, Greys_r + isophotes) ===
         ax1 = fig.add_subplot(gs[0, 0])
@@ -270,10 +271,16 @@ def create_comparison_png(
                                          height_ratios=[3, 1], hspace=0.05)
         ax_sb = fig.add_subplot(gs_sb[0])
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
-        render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
-                          param_file, components, fit_region,
-                          comp_images=comp_images, comp_types=comp_types,
-                          mask=mask)
+        isolist = render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
+                                    param_file, components, fit_region,
+                                    comp_images=comp_images, comp_types=comp_types,
+                                    mask=mask, isophote_output_path=None)
+
+        # === Isophote Ellipses (6th column) ===
+        from .sb_profile import render_isophote_panel
+        ax_iso = fig.add_subplot(gs[0, 5])
+        render_isophote_panel(ax_iso, original_data, isolist=isolist,
+                              mask=mask, norm_params=orig_info)
 
         # Save figure
         fits_dir = os.path.dirname(fits_file)

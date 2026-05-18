@@ -131,7 +131,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
     else:
         pa_refined = pa0
 
-    # ---- Step 2: fixed center, fixed PA, free eps, bounded maxsma ----
+    # ---- Step 2: fixed center, fixed PA, free eps ----
     iso_best = None
 
     for sma0 in sma0_list:
@@ -146,19 +146,6 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 minsma=1, maxsma=maxsma, step=0.1, maxgerr=0.5
             )
 
-            if iso_best is not None and len(iso_best.sma) > 0:
-                break
-
-            # Retry with adjusted eps
-            geometry3 = EllipseGeometry(
-                x0=int(round(cx)), y0=int(round(cy)),
-                sma=sma0, eps=min(e0 + 0.1, 0.9), pa=pa_refined
-            )
-            ellipse3 = Ellipse(image_data, geometry3)
-            iso_best = ellipse3.fit_image(
-                fix_center=True, fix_pa=True, fix_eps=False,
-                minsma=1, maxsma=maxsma, step=0.1, maxgerr=0.5
-            )
             if iso_best is not None and len(iso_best.sma) > 0:
                 break
         except Exception:

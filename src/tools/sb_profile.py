@@ -8,6 +8,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse as EllipsePatch
+from matplotlib.colors import Normalize
 
 try:
     from photutils.isophote import EllipseSample, Ellipse
@@ -38,50 +40,118 @@ def parse_photometry_params(param_file: str) -> tuple[float, float]:
 
 def fit_data_isophotes(image_data, x_center, y_center,
                        pa_deg=None, eps=None, sma_max=None, mask=None):
-    """Fit isophotes using photutils. Returns IsophoteList or None."""
+    """Fit isophotes with fixed center (peak pixel), 2-step approach.
+
+    Step 1: Fixed center, free PA/eps, large maxsma -> find outer boundary + derive PA
+    Step 2: Fixed center, fixed PA (from Step 1), free eps, bounded maxsma
+    """
     if not HAS_PHOTUTILS:
         return None
-    if mask is not None:
-        image_data = np.ma.array(image_data, mask=mask > 0)
-    # Replace NaN with 0 to prevent photutils sampling failures at image edges
     if np.any(np.isnan(image_data)):
         image_data = np.nan_to_num(image_data, nan=0.0)
-    maxsma = sma_max or min(1200.0, max(image_data.shape) * 0.45)
-    ny, nx = image_data.shape
-    edge_dist = min(x_center, y_center, nx - x_center, ny - y_center)
-    maxsma = min(maxsma, edge_dist * 0.9)
 
-    strategies = [
-        {"sma0": 10.0, "integrmode": "median", "step": 0.2},
-        {"sma0": 5.0, "integrmode": "bilinear", "step": 0.15},
-        {"sma0": 20.0, "integrmode": "median", "step": 0.2},
-        {"sma0": 3.0, "integrmode": "bilinear", "step": 0.1},
-    ]
-    pa_rad = np.radians(pa_deg) if pa_deg is not None else None
-    eps_val = eps if eps is not None else None
+    dim = min(image_data.shape)
 
-    best_result = None
-    for strat in strategies:
-        for pa in [pa_rad, 0.0, np.radians(90)]:
-            if pa is None:
-                pa = 0.0
-            for ev in [eps_val, 0.1, 0.3, 0.5] if eps_val is None else [eps_val]:
-                try:
-                    geo = EllipseGeometry(x_center, y_center, strat["sma0"],
-                                          ev, pa)
-                    ellipse = Ellipse(image_data, geometry=geo)
-                    isolist = ellipse.fit_image(
-                        sma0=strat["sma0"], minsma=1.0, maxsma=maxsma,
-                        step=strat["step"], linear=False,
-                        integrmode=strat["integrmode"], sclip=3.0, nclip=3,
-                    )
-                    if len(isolist) > 5:
-                        return isolist
-                    if best_result is None or len(isolist) > len(best_result):
-                        best_result = isolist
-                except Exception:
-                    continue
-    return best_result
+    # ---- Peak pixel as center ----
+    if mask is not None and np.any(mask > 0):
+        masked = image_data.copy()
+        masked[mask > 0] = -np.inf
+        peak_y, peak_x = np.unravel_index(np.argmax(masked), masked.shape)
+    else:
+        peak_y, peak_x = np.unravel_index(np.argmax(image_data), image_data.shape)
+    cx, cy = float(peak_x), float(peak_y)
+
+    if mask is not None and np.any(mask > 0):
+        image_data = np.ma.MaskedArray(image_data, mask=mask > 0)
+
+    # ---- Initial geometry from image second moments ----
+    img_pos = np.maximum(image_data, 0)
+    if hasattr(img_pos, 'filled'):
+        img_pos = img_pos.filled(0)
+    total = np.sum(img_pos)
+    if total > 0:
+        y_grid, x_grid = np.indices(image_data.shape)
+        x2 = np.sum((x_grid - cx)**2 * img_pos) / total
+        y2 = np.sum((y_grid - cy)**2 * img_pos) / total
+        xy = np.sum((x_grid - cx) * (y_grid - cy) * img_pos) / total
+        e0 = 0.2
+        pa0 = 0.5 * np.arctan2(2 * xy, x2 - y2)
+    else:
+        e0, pa0 = 0.2, 0.0
+
+    # ---- Edge noise for outer boundary ----
+    edge = max(3, int(dim * 0.1))
+    edge_mask = np.zeros(image_data.shape, dtype=bool)
+    edge_mask[:edge, :] = True; edge_mask[-edge:, :] = True
+    edge_mask[:, :edge] = True; edge_mask[:, -edge:] = True
+    edge_pixels = image_data[edge_mask]
+    if hasattr(edge_pixels, 'compressed'):
+        edge_pixels = edge_pixels.compressed()
+    from astropy.stats import sigma_clipped_stats
+    _, _, bg_std = sigma_clipped_stats(edge_pixels, sigma=3.0) if len(edge_pixels) > 10 else (0, 0.0, 1.0)
+    intensity_threshold = bg_std * 1.0
+
+    maxsma = sma_max or (dim / 2 * 0.9)
+
+    # ---- sma0 retry list ----
+    sma0_list = sorted(set(min(s, dim//2 - 2) for s in [3, 5, 10]))
+
+    # ---- Step 1: fixed center, free PA/eps, large maxsma ----
+    iso_step1 = None
+    maxsma_bounded = None
+
+    for sma0 in sma0_list:
+        try:
+            geometry = EllipseGeometry(
+                x0=int(round(cx)), y0=int(round(cy)),
+                sma=sma0, eps=e0, pa=pa0
+            )
+            ellipse = Ellipse(image_data, geometry)
+            iso_step1 = ellipse.fit_image(
+                fix_center=True, fix_pa=False, fix_eps=False,
+                minsma=1, maxsma=maxsma, step=0.2, maxgerr=0.5
+            )
+            if iso_step1 is not None and len(iso_step1.sma) > 0:
+                # Find outer boundary
+                indices = np.where(iso_step1.intens < intensity_threshold)[0]
+                out_idx = indices[0] if len(indices) > 0 else len(iso_step1.sma) - 1
+                maxsma_bounded = iso_step1.sma[min(out_idx, len(iso_step1.sma) - 1)]
+                break
+        except Exception:
+            continue
+
+    if iso_step1 is None or len(iso_step1.sma) == 0:
+        return None
+
+    # ---- Derive PA from Step 1 isophotes within outer boundary ----
+    pas = np.array([iso.pa for iso in iso_step1
+                    if iso.valid and iso.sma <= maxsma_bounded])
+    if len(pas) > 0:
+        pa_refined = np.arctan2(np.mean(np.sin(pas)), np.mean(np.cos(pas)))
+    else:
+        pa_refined = pa0
+
+    # ---- Step 2: fixed center, fixed PA, free eps ----
+    iso_best = None
+
+    for sma0 in sma0_list:
+        try:
+            geometry2 = EllipseGeometry(
+                x0=int(round(cx)), y0=int(round(cy)),
+                sma=sma0, eps=e0, pa=pa_refined
+            )
+            ellipse2 = Ellipse(image_data, geometry2)
+            iso_best = ellipse2.fit_image(
+                fix_center=True, fix_pa=True, fix_eps=False,
+                minsma=1, maxsma=maxsma, step=0.1, maxgerr=0.5
+            )
+
+            if iso_best is not None and len(iso_best.sma) > 0:
+                break
+        except Exception:
+            continue
+
+    return iso_best if iso_best is not None else iso_step1
 
 
 def extract_profile(image_data, geometry, x_offset=0, y_offset=0, mask=None):
@@ -155,49 +225,38 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return
+        return None
 
     if param_file is None or model_data is None:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (missing data)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return
+        return None
 
     zeropoint, pltscale = parse_photometry_params(param_file)
 
-    # Compute center in cropped-image 0-indexed coordinates
-    x_cen = original_data.shape[1] / 2.0
-    y_cen = original_data.shape[0] / 2.0
-    init_pa, init_eps = None, None
-    if components:
-        c0 = components[0]
-        if fit_region is not None:
-            x_cen = c0["x"] - fit_region[0]
-            y_cen = c0["y"] - fit_region[2]
-        if c0.get("pa"):
-            init_pa = c0["pa"]
-        if 0 < c0.get("ba", 1) < 1:
-            init_eps = 1.0 - c0["ba"]
-
     sma_max = min(original_data.shape) * 0.45
-    isolist = fit_data_isophotes(original_data, x_cen, y_cen,
-                                  pa_deg=init_pa, eps=init_eps,
+    isolist = fit_data_isophotes(original_data, 0, 0,
                                   sma_max=sma_max, mask=mask)
     if isolist is None or len(isolist) == 0:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (isophote fitting failed)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return
+        return None
 
-    # Data profile directly from isophote list
     sma_data = isolist.sma
     intens_data = isolist.intens
+    int_err_data = getattr(isolist, 'int_err', np.zeros_like(intens_data))
     mu_data = intensity_to_sb(intens_data, zeropoint, pltscale)
-    valid = np.isfinite(mu_data) & (intens_data > 0)
+    # Propagate intensity error to SB error: dmu = (2.5 / (ln10 * intens)) * int_err
+    with np.errstate(divide='ignore', invalid='ignore'):
+        muerr_data = (2.5 / (np.log(10) * intens_data)) * int_err_data
+    valid = np.isfinite(mu_data) & (intens_data > 0) & np.isfinite(muerr_data)
     sma_data = sma_data[valid]
     mu_data = mu_data[valid]
+    muerr_data = muerr_data[valid]
 
     # Model profile using same geometry
     geometry = [(iso.sma, iso.eps, np.degrees(iso.pa), iso.x0, iso.y0)
@@ -206,16 +265,13 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
     mu_model = intensity_to_sb(intens_model, zeropoint, pltscale)
 
     # Main SB panel
-    ax_main.scatter(sma_data, mu_data, s=8, facecolors='none',
-                    edgecolors='black', linewidths=0.4, zorder=5, label='Data')
+    # ax_main.scatter(sma_data, mu_data, s=8, facecolors='none',
+                    # edgecolors='black', linewidths=0.4, zorder=5, label='Data')
+    ax_main.errorbar(sma_data, mu_data, yerr=muerr_data, fmt='o', mfc='none',
+                     mec='black', ecolor='black', markersize=3,
+                     linewidth=0.4, zorder=5, label='Data')
     ax_main.plot(sma_model, mu_model, 'r--', linewidth=1.2,
                  zorder=4, label='Total Model')
-
-    # Inset with log-scaled x-axis
-    ax_inset = ax_main.inset_axes([0.55, 0.5, 0.4, 0.45])
-    ax_inset.scatter(sma_data, mu_data, s=6, facecolors='none',
-                     edgecolors='black', linewidths=0.3, zorder=5)
-    ax_inset.plot(sma_model, mu_model, 'r--', linewidth=1.0, zorder=4)
 
     # Component profiles (image-based from GALFIT subcomps)
     if comp_images and comp_types:
@@ -238,19 +294,13 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                 label = f'{comp_type} {comp_fractions[i]:.3f}'
             ax_main.plot(sma_c, mu_c, '-', color=color, linewidth=1.2,
                          zorder=3, label=label)
-            ax_inset.plot(sma_c, mu_c, '-', color=color, linewidth=1.0)
 
-    ax_inset.set_xscale('log')
-    ax_inset.set_xlim(sma_data[sma_data > 0].min() * 0.8, sma_data.max() * 1.1)
-    ax_inset.invert_yaxis()
-    ax_inset.tick_params(axis='both', which='major', labelsize=9)
-    ax_inset.grid(True, which='both', alpha=0.1, linestyle='--')
-
+    ax_main.set_xscale('log')
     ax_main.set_ylabel(r'Surface Brightness [mag arcsec$^{-2}$]', fontsize=11)
+    ax_main.set_xlim(sma_data[sma_data > 0].min() * 0.8, sma_data.max() * 1.1)
+    ax_main.set_ylim(mu_data.min() * 0.95, mu_data.max() * 1.05)
     ax_main.invert_yaxis()
-    ax_main.set_xlim(0, sma_data.max() * 1.05)
-    # Move legend to the lower right corner inside the plot
-    ax_main.legend(loc='lower right', fontsize=9,
+    ax_main.legend(loc='lower left', fontsize=9,
                    frameon=True, fancybox=True, framealpha=0.7)
     ax_main.set_title('1D Surface Brightness Profile', fontsize=11)
     ax_main.grid(True, which='both', alpha=0.1, linestyle='--')
@@ -273,10 +323,80 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
             ax_resid.axhline(0, color='gray', linewidth=0.8)
             ax_resid.scatter(sma_common[vresid], residual[vresid],
                              s=8, facecolors='none',
-                             edgecolors='black', linewidths=0.5)
-            ax_resid.set_ylim(-0.5, 0.5)
+                             edgecolors='black', linewidths=0.7)
+            # Mark out-of-range points (|Δμ| > 0.5) with red triangles
+            out_hi = vresid & (residual > 0.5)
+            out_lo = vresid & (residual < -0.5)
+            if np.any(out_hi):
+                ax_resid.scatter(sma_common[out_hi],
+                                 np.full(np.sum(out_hi), 0.42),
+                                 s=25, c='red', marker='v', zorder=5,
+                                 clip_on=True)
+            if np.any(out_lo):
+                ax_resid.scatter(sma_common[out_lo],
+                                 np.full(np.sum(out_lo), -0.42),
+                                 s=25, c='red', marker='^', zorder=5,
+                                 clip_on=True)
+            ax_resid.set_ylim(0.5, -0.5)
 
     _style_resid_axes(ax_resid)
+
+    return isolist
+
+
+def render_isophote_panel(ax, image_data, isolist=None, mask=None,
+                          norm_params=None):
+    """Render isophote ellipses onto an existing axes (for embedding in comparison figure).
+
+    Args:
+        isolist: Pre-fitted IsophoteList from render_sb_profile.
+        norm_params: Dict with vmin, vmax, asinh_a from render_asinh_panel.
+                     If provided, render base image with the same stretch as panel 1.
+    """
+    if not HAS_PHOTUTILS:
+        ax.text(0.5, 0.5, 'photutils not installed',
+                ha='center', va='center', transform=ax.transAxes,
+                fontsize=11, color='gray')
+        return
+
+    if isolist is None or len(isolist) == 0:
+        ax.set_title('Isophote Ellipses', fontsize=11)
+        return
+
+    # Render base image with same stretch as panel 1
+    if norm_params is not None:
+        from astropy.visualization import simple_norm
+        snorm = simple_norm(image_data, 'asinh',
+                            vmin=norm_params["vmin"], vmax=norm_params["vmax"],
+                            asinh_a=norm_params["asinh_a"])
+        ax.imshow(image_data, origin='lower', cmap='Greys_r', norm=snorm)
+
+    # Mask overlay (same style as first column)
+    if mask is not None and np.any(mask > 0):
+        mask_overlay = np.zeros((*mask.shape, 4))
+        mask_overlay[mask > 0] = [0, 0, 0, 0.7]
+        ax.imshow(mask_overlay, origin='lower')
+
+    sma_values = np.array([iso.sma for iso in isolist if iso.valid])
+    if len(sma_values) == 0:
+        return
+    norm = Normalize(vmin=sma_values.min(), vmax=sma_values.max())
+    cmap = plt.cm.plasma
+
+    for iso in isolist:
+        if not iso.valid:
+            continue
+        width = 2.0 * iso.sma
+        height = 2.0 * iso.sma * (1.0 - iso.eps)
+        angle = np.degrees(iso.pa)
+        color = cmap(norm(iso.sma))
+        ell = EllipsePatch(xy=(iso.x0, iso.y0), width=width, height=height,
+                           angle=angle, fill=False, edgecolor=color,
+                           linewidth=0.6, alpha=0.85)
+        ax.add_patch(ell)
+
+    ax.set_title('Isophote Ellipses', fontsize=11)
+    ax.tick_params(labelsize=9)
 
 
 def _style_resid_axes(ax):

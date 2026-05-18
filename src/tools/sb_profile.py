@@ -184,7 +184,7 @@ def extract_profile(image_data, geometry, x_offset=0, y_offset=0, mask=None):
                 continue
             intensities = s[2]
             if len(intensities) > 0:
-                med = np.median(intensities)
+                med = np.mean(intensities)
                 if med > 1e-5:
                     sma_arr.append(sma)
                     intensity_arr.append(med)

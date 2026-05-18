@@ -10,7 +10,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse as EllipsePatch
 from matplotlib.colors import Normalize
-from matplotlib.cm import ScalarMappable
 
 try:
     from photutils.isophote import EllipseSample, Ellipse
@@ -39,109 +38,90 @@ def parse_photometry_params(param_file: str) -> tuple[float, float]:
     return zeropoint, pltscale
 
 
-def _run_strategy_grid(image_data, x_center, y_center, maxsma,
-                       pa_rad, eps_val, fix_center=False, fix_pa=False):
-    """Run the strategy/PA/eps grid search. Returns best IsophoteList or None."""
-    strategies = [
-        {"sma0": 10.0, "integrmode": "median", "step": 0.2},
-        {"sma0": 5.0, "integrmode": "bilinear", "step": 0.15},
-        {"sma0": 20.0, "integrmode": "median", "step": 0.2},
-        {"sma0": 3.0, "integrmode": "bilinear", "step": 0.1},
-    ]
-    best_result = None
-    for strat in strategies:
-        if fix_pa and pa_rad is not None:
-            pa_grid = [pa_rad]
-        else:
-            pa_grid = [pa_rad, 0.0, np.radians(90)]
-        for pa in pa_grid:
-            if pa is None:
-                pa = 0.0
-            for ev in [eps_val, 0.1, 0.3, 0.5] if eps_val is None else [eps_val]:
-                try:
-                    geo = EllipseGeometry(x_center, y_center,
-                                          strat["sma0"], ev, pa)
-                    ellipse = Ellipse(image_data, geometry=geo)
-                    kwargs = dict(
-                        sma0=strat["sma0"], minsma=1.0, maxsma=maxsma,
-                        step=strat["step"], linear=False,
-                        integrmode=strat["integrmode"], sclip=3.0, nclip=3,
-                    )
-                    if fix_center:
-                        kwargs["fix_center"] = True
-                    if fix_pa:
-                        kwargs["fix_pa"] = True
-                    isolist = ellipse.fit_image(**kwargs)
-                    if len(isolist) > 5:
-                        return isolist
-                    if best_result is None or len(isolist) > len(best_result):
-                        best_result = isolist
-                except Exception:
-                    continue
-    return best_result
-
-
 def fit_data_isophotes(image_data, x_center, y_center,
                        pa_deg=None, eps=None, sma_max=None, mask=None):
-    """Fit isophotes using photutils with two-pass center refinement.
+    """Fit isophotes with fixed center (peak pixel), 2-step approach.
 
-    Pass 1: free center — fit to determine the average center from inner isophotes.
-    Pass 2: fixed center — re-fit with the refined center locked in place.
+    Center = peak pixel position, no background subtraction.
+    Step 1: Fixed center, large maxsma -> find outer boundary
+    Step 2: Fixed center, bounded to outer boundary
     """
     if not HAS_PHOTUTILS:
         return None
-    if mask is not None:
-        image_data = np.ma.array(image_data, mask=mask > 0)
     if np.any(np.isnan(image_data)):
         image_data = np.nan_to_num(image_data, nan=0.0)
-    maxsma = sma_max or min(1200.0, max(image_data.shape) * 0.45)
-    ny, nx = image_data.shape
-    edge_dist = min(x_center, y_center, nx - x_center, ny - y_center)
-    maxsma = min(maxsma, edge_dist * 0.9)
 
-    pa_rad = np.radians(pa_deg) if pa_deg is not None else None
-    eps_val = eps if eps is not None else None
+    dim = min(image_data.shape)
 
-    # --- Pass 1: free center ---
-    pass1 = _run_strategy_grid(image_data, x_center, y_center, maxsma,
-                               pa_rad, eps_val, fix_center=False)
-    if pass1 is None or len(pass1) == 0:
-        return None
-
-    # Find where centers start to drift: use isophotes whose center
-    # is consistent with the running median (within 1.5 * MAD).
-    valid_isos = [iso for iso in pass1 if iso.valid]
-    if len(valid_isos) == 0:
-        return pass1
-    xs = np.array([iso.x0 for iso in valid_isos])
-    ys = np.array([iso.y0 for iso in valid_isos])
-    # Cumulative median from smallest sma outward
-    cx = np.array([np.median(xs[:i+1]) for i in range(len(xs))])
-    cy = np.array([np.median(ys[:i+1]) for i in range(len(ys))])
-    dx = xs - cx
-    dy = ys - cy
-    mad_x = np.median(np.abs(dx))
-    mad_y = np.median(np.abs(dy))
-    stable = (np.abs(dx) < 1.5 * mad_x + 0.5) & (np.abs(dy) < 1.5 * mad_y + 0.5)
-    # Take all stable isophotes up to the first large jump
-    if np.any(~stable):
-        cutoff = np.argmax(~stable)
-        if cutoff == 0:
-            cutoff = len(stable)
+    # ---- Peak pixel as center ----
+    if mask is not None and np.any(mask > 0):
+        masked = image_data.copy()
+        masked[mask > 0] = -np.inf
+        peak_y, peak_x = np.unravel_index(np.argmax(masked), masked.shape)
     else:
-        cutoff = len(stable)
-    x_refined = np.median(xs[:cutoff])
-    y_refined = np.median(ys[:cutoff])
+        peak_y, peak_x = np.unravel_index(np.argmax(image_data), image_data.shape)
+    cx, cy = float(peak_x), float(peak_y)
 
-    # Circular mean of PA from stable isophotes
-    pas = np.array([iso.pa for iso in valid_isos[:cutoff]])
-    pa_refined = np.arctan2(np.mean(np.sin(pas)), np.mean(np.cos(pas)))
+    if mask is not None and np.any(mask > 0):
+        image_data = np.ma.MaskedArray(image_data, mask=mask > 0)
 
-    # --- Pass 2: fixed refined center + fixed PA ---
-    pass2 = _run_strategy_grid(image_data, x_refined, y_refined, maxsma,
-                               pa_refined, eps_val,
-                               fix_center=True, fix_pa=True)
-    return pass2 if pass2 is not None else pass1
+    # ---- Initial geometry from image second moments ----
+    img_pos = np.maximum(image_data, 0)
+    if hasattr(img_pos, 'filled'):
+        img_pos = img_pos.filled(0)
+    total = np.sum(img_pos)
+    if total > 0:
+        y_grid, x_grid = np.indices(image_data.shape)
+        x2 = np.sum((x_grid - cx)**2 * img_pos) / total
+        y2 = np.sum((y_grid - cy)**2 * img_pos) / total
+        xy = np.sum((x_grid - cx) * (y_grid - cy) * img_pos) / total
+        pa0 = 0.5 * np.arctan2(2 * xy, x2 - y2)
+        a2 = 0.5 * ((x2 + y2) + np.sqrt((x2 - y2)**2 + 4 * xy**2))
+        b2 = 0.5 * ((x2 + y2) - np.sqrt((x2 - y2)**2 + 4 * xy**2))
+        e0 = 1 - np.sqrt(b2 / a2) if a2 > 0 else 0.2
+        e0 = np.clip(e0, 0.01, 0.9)
+    else:
+        e0, pa0 = 0.2, 0.0
+
+    maxsma = sma_max or (dim / 2 * 0.9)
+
+    # ---- sma0 retry list ----
+    sma0_list = sorted(set(min(s, dim//2 - 2) for s in [3, 5, 10]))
+
+    # ---- Fit with fixed center ----
+    iso_best = None
+
+    for sma0 in sma0_list:
+        try:
+            geometry = EllipseGeometry(
+                x0=int(round(cx)), y0=int(round(cy)),
+                sma=sma0, eps=e0, pa=pa0
+            )
+            ellipse = Ellipse(image_data, geometry)
+            iso_best = ellipse.fit_image(
+                fix_center=True, fix_pa=True, fix_eps=False,
+                minsma=1, maxsma=maxsma, step=0.1, maxgerr=0.5
+            )
+
+            if iso_best is not None and len(iso_best.sma) > 0:
+                break
+
+            # Retry with adjusted eps
+            geometry2 = EllipseGeometry(
+                x0=int(round(cx)), y0=int(round(cy)),
+                sma=sma0, eps=min(e0 + 0.1, 0.9), pa=pa0
+            )
+            ellipse2 = Ellipse(image_data, geometry2)
+            iso_best = ellipse2.fit_image(
+                fix_center=True, fix_pa=True, fix_eps=False,
+                minsma=1, maxsma=maxsma, step=0.1, maxgerr=0.5
+            )
+            if iso_best is not None and len(iso_best.sma) > 0:
+                break
+        except Exception:
+            continue
+
+    return iso_best
 
 
 def extract_profile(image_data, geometry, x_offset=0, y_offset=0, mask=None):
@@ -215,41 +195,26 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return
+        return None
 
     if param_file is None or model_data is None:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (missing data)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return
+        return None
 
     zeropoint, pltscale = parse_photometry_params(param_file)
 
-    # Compute center in cropped-image 0-indexed coordinates
-    x_cen = original_data.shape[1] / 2.0
-    y_cen = original_data.shape[0] / 2.0
-    init_pa, init_eps = None, None
-    if components:
-        c0 = components[0]
-        if fit_region is not None:
-            x_cen = c0["x"] - fit_region[0]
-            y_cen = c0["y"] - fit_region[2]
-        if c0.get("pa"):
-            init_pa = c0["pa"]
-        if 0 < c0.get("ba", 1) < 1:
-            init_eps = 1.0 - c0["ba"]
-
     sma_max = min(original_data.shape) * 0.45
-    isolist = fit_data_isophotes(original_data, x_cen, y_cen,
-                                  pa_deg=init_pa, eps=init_eps,
+    isolist = fit_data_isophotes(original_data, 0, 0,
                                   sma_max=sma_max, mask=mask)
     if isolist is None or len(isolist) == 0:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (isophote fitting failed)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return
+        return None
 
     sma_data = isolist.sma
     intens_data = isolist.intens

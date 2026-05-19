@@ -9,36 +9,18 @@ import os
 import asyncio
 from typing import Optional, List, Any
 import dotenv
-import acp
-from acp.schema import (
-    ClientCapabilities,
-    Implementation,
-    AgentMessageChunk,
-    AgentResponseMessage,
-    UserMessageChunk,
-    AgentThoughtChunk,
-    ToolCallStart,
-    ToolCallProgress,
-    AgentPlanUpdate,
-    AvailableCommandsUpdate,
-    CurrentModeUpdate,
-    ConfigOptionUpdate,
-    SessionInfoUpdate,
-    UsageUpdate
-)
 
 dotenv.load_dotenv()
 
 ACP_TIMEOUT = 600  # 10 minutes
 
 
-class MCPClient(acp.Client):
+class MCPClient:
     """
     Implementation of the ACP Client protocol to capture agent responses.
     """
     def __init__(self):
         self.full_response = []
-        self.done_event = asyncio.Event()
 
     async def session_update(
         self,
@@ -46,7 +28,8 @@ class MCPClient(acp.Client):
         update: Any,
         **kwargs: Any
     ) -> None:
-        # ACP sends responses in chunks via this callback
+        from acp.schema import AgentMessageChunk, AgentResponseMessage
+
         if isinstance(update, AgentMessageChunk):
             # content is a ContentBlock (e.g. TextContentBlock)
             content = update.content
@@ -100,6 +83,7 @@ async def _shutdown_proc(proc, timeout=5):
 async def _query_agent(
     system_prompt: str,
     user_prompts: List[str],
+    _partial: Optional[dict] = None,
 ) -> tuple[str, str]:
     """
     Run Gemini CLI in ACP mode, sending each prompt in sequence.
@@ -108,6 +92,8 @@ async def _query_agent(
         (analysis_text, session_id) — the accumulated response and the actual session ID.
     """
     import tempfile
+    import acp
+    from acp.schema import ClientCapabilities, Implementation
 
     full_system_prompt = system_prompt + "\n\n${read_file_ToolName},${write_file_ToolName}"
 
@@ -115,21 +101,24 @@ async def _query_agent(
         tf.write(full_system_prompt)
         system_md_path = tf.name
 
+    gemini_cmd = "gemini"
+    gemini_args = ["--acp"]
+
+    env = os.environ.copy()
+    env["GEMINI_SYSTEM_MD"] = system_md_path
+    if 'ACP_GEMINI_MODEL' in env:
+        env["GEMINI_MODEL"] = env['ACP_GEMINI_MODEL']
+    if 'ACP_GEMINI_API_KEY' in env:
+        env["GEMINI_API_KEY"] = env['ACP_GEMINI_API_KEY']
+    if 'ACP_GOOGLE_GEMINI_BASE_URL' in env:
+        env["GOOGLE_GEMINI_BASE_URL"] = env['ACP_GOOGLE_GEMINI_BASE_URL']
+
+    client_impl = MCPClient()
+    actual_session_id: Optional[str] = None
+    conn = None
+    proc = None
+
     try:
-        gemini_cmd = "gemini"
-        gemini_args = ["--acp"]
-
-        env = os.environ.copy()
-        env["GEMINI_SYSTEM_MD"] = system_md_path
-        if 'ACP_GEMINI_MODEL' in env:
-            env["GEMINI_MODEL"] = env['ACP_GEMINI_MODEL']
-        if 'ACP_GEMINI_API_KEY' in env:
-            env["GEMINI_API_KEY"] = env['ACP_GEMINI_API_KEY']
-        if 'ACP_GOOGLE_GEMINI_BASE_URL' in env:
-            env["GOOGLE_GEMINI_BASE_URL"] = env['ACP_GOOGLE_GEMINI_BASE_URL']
-
-        client_impl = MCPClient()
-
         async with acp.spawn_agent_process(
             client_impl,
             gemini_cmd,
@@ -158,14 +147,18 @@ async def _query_agent(
             result_text = client_impl.get_text()
 
         return result_text, actual_session_id
-    except asyncio.TimeoutError:
-        print(f"[ACP] Timeout ({ACP_TIMEOUT}s), shutting down subprocess...", flush=True)
-        if proc is not None:
+    except asyncio.CancelledError:
+        print("[ACP] Cancelled, shutting down subprocess...", flush=True)
+        if conn is not None:
             try:
                 await conn.close()
             except Exception:
                 pass
+        if proc is not None:
             await _shutdown_proc(proc)
+        if _partial is not None:
+            _partial['text'] = client_impl.get_text()
+            _partial['session_id'] = actual_session_id
         raise
     finally:
         if os.path.exists(system_md_path):
@@ -195,22 +188,25 @@ def run_component_analysis_acp(
             "Install with: pip install agent-client-protocol"
         )
 
+    import concurrent.futures
+    session_id_captured: Optional[str] = None
+    partial_result: dict = {}
     try:
-        coro = _query_agent(system_prompt, analysis_prompts)
+        coro = _query_agent(system_prompt, analysis_prompts, _partial=partial_result)
         wrapped = asyncio.wait_for(coro, timeout=ACP_TIMEOUT)
         # Run in a dedicated thread so asyncio.run() gets its own event loop,
         # avoiding "cannot be called from a running event loop" when the MCP
         # server itself is already async.
-        import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(asyncio.run, wrapped)
             analysis, session_id = future.result(timeout=ACP_TIMEOUT + 30)
+            session_id_captured = session_id
         if not analysis or not analysis.strip():
-            return None, session_id, "Gemini CLI returned empty analysis"
-        return analysis, session_id, None
-    except concurrent.futures.TimeoutError:
-        return None, None, f"ACP agent query timed out after {ACP_TIMEOUT}s"
-    except asyncio.TimeoutError:
-        return None, None, f"ACP agent query timed out after {ACP_TIMEOUT}s"
+            return None, session_id_captured, "Gemini CLI returned empty analysis"
+        return analysis, session_id_captured, None
+    except (concurrent.futures.TimeoutError, asyncio.TimeoutError):
+        partial_text = partial_result.get('text')
+        partial_sid = partial_result.get('session_id') or session_id_captured
+        return partial_text, partial_sid, f"ACP agent query timed out after {ACP_TIMEOUT}s"
     except Exception as e:
-        return None, None, f"ACP Protocol error: {str(e)}"
+        return None, session_id_captured, f"ACP Protocol error: {str(e)}"

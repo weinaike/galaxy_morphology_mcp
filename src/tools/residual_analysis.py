@@ -157,7 +157,12 @@ def component_analysis(
             analysis_prompts=prompts_list,
         )
         if error:
-            return {"status": "failure", "error": error}
+            result = {"status": "failure", "error": error}
+            if session_id:
+                result["session_id"] = session_id
+            if analysis:
+                result["partial_analysis"] = analysis
+            return result
 
     else:
         analysis_prompt = prompt.get_residual_analysis_prompt(summary_content)

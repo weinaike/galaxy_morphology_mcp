@@ -16,7 +16,7 @@ from .parse_lyric import parse_image_infos_from_lyric
 
 def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
                        show_mask=True, norm_params=None, components=None,
-                       fit_region=None):
+                       fit_region=None, vmax_percentile=99.5):
     """Render a single axes with asinh stretch, optional isophotes, and mask overlay.
 
     This is the shared rendering logic used by both render_original (single panel)
@@ -47,7 +47,7 @@ def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
         valid = sci[mask == 0]
         valid = valid[np.isfinite(valid)]
         vmin = median - nmin * std
-        vmax = np.percentile(valid, 99.5)
+        vmax = np.percentile(valid, vmax_percentile)
         data_range = vmax - vmin
         if data_range <= 0:
             data_range = 1e-10
@@ -143,20 +143,30 @@ def render_original(
             mask_full = np.zeros_like(sci_full, dtype=int)
             if image_info.mask:
                 mask_full = fits.getdata(*image_info.mask).astype(int)
-            fig, ax = plt.subplots(figsize=(3.84, 3.84))    
-            info = render_asinh_panel(ax, sci_full, mask_full, region=None)
-            title_line = (
-                f"band: {image_info.band}"
-                f"\nasinh norm: asinh_a={info['asinh_a']:.4f}; vmin={info['vmin_sigma']:.1f}$\\sigma$; vmax=99.5th pctl"
-                f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red];"
-                f"\nShaded regions: Masked (ignored); Focus: Central Galaxy"
-            )
-            ax.set_title(title_line, fontsize=7, pad=4)
+
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.68, 3.84))
+            info1 = render_asinh_panel(ax1, sci_full, mask_full, region=None,
+                                       vmax_percentile=99.5)
+            info2 = render_asinh_panel(ax2, sci_full, mask_full, region=None,
+                                       vmax_percentile=99.99)
+            ax1.set_title(
+                f"band: {image_info.band} vmax=99.5th pctl"
+                f"\nasinh_a={info1['asinh_a']:.4f}; vmin={info1['vmin_sigma']:.1f}$\\sigma$"
+                f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red]"
+                f"\nShaded: Masked; Focus: Central Galaxy",
+                fontsize=6, pad=3)
+            ax2.set_title(
+                f"band: {image_info.band} vmax=99.99th pctl"
+                f"\nasinh_a={info2['asinh_a']:.4f}; vmin={info2['vmin_sigma']:.1f}$\\sigma$"
+                f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red]"
+                f"\nShaded: Masked; Focus: Central Galaxy",
+                fontsize=6, pad=3)
             plt.tight_layout()
 
             lyric_dir = os.path.dirname(config_file)
             base_name = os.path.splitext(os.path.basename(config_file))[0]
-            output_path = os.path.join(lyric_dir, f"{base_name}_{image_info.band}_original.png")
+            output_path = os.path.join(lyric_dir,
+                                       f"{base_name}_{image_info.band}_original.png")
             fig.savefig(output_path, dpi=100)
             plt.close(fig)
             rendered_images[image_info.band] = output_path
@@ -164,7 +174,7 @@ def render_original(
             "status": "success",
             "message": f"The original image has been successfully rendered across {len(image_infos)} observation bands.",
             "image files": rendered_images
-        }    
+        }
     
     params = parse_feedme(config_file)
 
@@ -191,19 +201,24 @@ def render_original(
         mask = mask_full
         region = None
 
-    fig, ax = plt.subplots(figsize=(3.84, 3.84))
-    info = render_asinh_panel(ax, sci, mask, region=region)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.68, 3.84))
+    info1 = render_asinh_panel(ax1, sci, mask, region=region, vmax_percentile=99.5)
+    info2 = render_asinh_panel(ax2, sci, mask, region=region, vmax_percentile=99.99)
 
-    # Title
-    title_line = (
-        f"asinh norm: asinh_a={info['asinh_a']:.4f}; vmin={info['vmin_sigma']:.1f}$\\sigma$; vmax=99.5th pctl"
-        f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red];"
-        f"\nShaded regions: Masked (ignored); Focus: Central Galaxy"
-    )
-    ax.set_title(title_line, fontsize=7, pad=4)
+    ax1.set_title(
+        f"vmax=99.5th pctl"
+        f"\nasinh_a={info1['asinh_a']:.4f}; vmin={info1['vmin_sigma']:.1f}$\\sigma$"
+        f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red]"
+        f"\nShaded: Masked; Focus: Central Galaxy",
+        fontsize=6, pad=3)
+    ax2.set_title(
+        f"vmax=99.99th pctl"
+        f"\nasinh_a={info2['asinh_a']:.4f}; vmin={info2['vmin_sigma']:.1f}$\\sigma$"
+        f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red]"
+        f"\nShaded: Masked; Focus: Central Galaxy",
+        fontsize=6, pad=3)
     plt.tight_layout()
 
-    # Save PNG next to feedme
     feedme_dir = os.path.dirname(config_file)
     base_name = os.path.splitext(os.path.basename(config_file))[0]
     output_path = os.path.join(feedme_dir, f"{base_name}_original.png")

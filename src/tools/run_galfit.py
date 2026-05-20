@@ -174,26 +174,46 @@ def create_comparison_png(
         if param_file and os.path.exists(param_file):
             components = parse_components(param_file)
 
-        # Create figure: Original | Model | Residual | Spacer | SB Profile | Isophotes
-        fig = plt.figure(figsize=(32, 7))
-        gs = GridSpec(1, 6, figure=fig, wspace=0.08,
-                      width_ratios=[1, 1, 1, 0.15, 1.2, 1])
-        fig.subplots_adjust(left=0.04, right=0.97, top=0.82)
+        # Create figure: 2 rows x 3 cols
+        # Row 0: Original 99.5 | Original 99.99 | Isophotes
+        # Row 1: Model          | Residual 2D    | 1D SB Profile
+        fig = plt.figure(figsize=(24, 16))
+        gs = GridSpec(2, 3, figure=fig, wspace=0.18, hspace=0.28,
+                      width_ratios=[1, 1, 1])
+        fig.subplots_adjust(left=0.05, right=0.97, top=0.88, bottom=0.05)
 
-        # === Original Image (asinh stretch, Greys_r + isophotes) ===
+        # === Row 0, Col 0: Original Image (99.5th percentile) ===
         ax1 = fig.add_subplot(gs[0, 0])
-        orig_info = render_asinh_panel(ax1, original_data, mask, region=region, show_isophotes=True)
+        orig_info = render_asinh_panel(ax1, original_data, mask, region=region,
+                                       show_isophotes=True)
         title_orig = (
-            f"Original Data\n"
-            f"asinh: a={orig_info['asinh_a']:.4f}, vmin={orig_info['vmin_sigma']:.1f}$\\sigma$, vmax=99.5th pctl\n"
+            f"Original Data (vmax=99.5th pctl)\n"
+            f"asinh: a={orig_info['asinh_a']:.4f}, vmin={orig_info['vmin_sigma']:.1f}$\\sigma$\n"
             f"Isophotes: 5$\\sigma$ [lime], vmax [red]"
         )
         ax1.set_title(title_orig, fontsize=10, pad=10)
         ax1.set_xlabel('X (pixels)', fontsize=12)
         ax1.set_ylabel('Y (pixels)', fontsize=12)
 
-        # === Model Image (same asinh stretch as original, no isophotes, no mask) ===
-        ax2 = fig.add_subplot(gs[0, 1])
+        # === Row 0, Col 1: Original Image (99.99th percentile) ===
+        ax1b = fig.add_subplot(gs[0, 1])
+        orig_info_9999 = render_asinh_panel(ax1b, original_data, mask, region=region,
+                                            show_isophotes=True, vmax_percentile=99.99)
+        title_orig_9999 = (
+            f"Original Data (vmax=99.99th pctl)\n"
+            f"asinh: a={orig_info_9999['asinh_a']:.4f}, vmin={orig_info_9999['vmin_sigma']:.1f}$\\sigma$\n"
+            f"Isophotes: 5$\\sigma$ [lime], vmax [red]"
+        )
+        ax1b.set_title(title_orig_9999, fontsize=10, pad=10)
+        ax1b.set_xlabel('X (pixels)', fontsize=12)
+        ax1b.tick_params(labelleft=False)
+
+        # === Row 0, Col 2: Isophote Ellipses ===
+        # (placed here so isolist is computed later via SB profile)
+        # We'll render isophotes after SB profile computes isolist
+
+        # === Row 1, Col 0: Model Image (same asinh stretch as original 99.5) ===
+        ax2 = fig.add_subplot(gs[1, 0])
         if model_data is not None:
             render_asinh_panel(ax2, model_data, mask, region=region,
                                show_isophotes=False, show_mask=False,
@@ -202,18 +222,18 @@ def create_comparison_png(
                                fit_region=fit_region)
         else:
             ax2.text(0.5, 0.5, 'No Model', ha='center', va='center', transform=ax2.transAxes)
-        
+
         title_model = (
             f"GALFIT Model\n"
-            f"Same asinh stretch as original\n"
+            f"Same asinh stretch as original (99.5th pctl)\n"
             f"2*$R_e$ contours of component [cyan]"
         )
         ax2.set_title(title_model, fontsize=10, pad=10)
         ax2.set_xlabel('X (pixels)', fontsize=12)
-        ax2.tick_params(labelleft=False)
+        ax2.set_ylabel('Y (pixels)', fontsize=12)
 
-        # === Residual Image (significance map, ±10σ range, seismic) ===
-        ax3 = fig.add_subplot(gs[0, 2])
+        # === Row 1, Col 1: Residual Image (significance map, ±10σ range, seismic) ===
+        ax3 = fig.add_subplot(gs[1, 1])
         im3 = None
         if residual_data is not None:
             resid_display = residual_data.copy()
@@ -266,8 +286,8 @@ def create_comparison_png(
             cbar.ax.tick_params(labelsize=9)
             cbar.set_label('Residual (σ)', fontsize=9)
 
-        # === 1D Surface Brightness Profile (5th column) ===
-        gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[0, 4],
+        # === Row 1, Col 2: 1D Surface Brightness Profile ===
+        gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[1, 2],
                                          height_ratios=[3, 1], hspace=0.05)
         ax_sb = fig.add_subplot(gs_sb[0])
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
@@ -276,11 +296,13 @@ def create_comparison_png(
                                     comp_images=comp_images, comp_types=comp_types,
                                     mask=mask)
 
-        # === Isophote Ellipses (6th column) ===
+        # === Row 0, Col 2: Isophote Ellipses (rendered after isolist is computed) ===
         from .sb_profile import render_isophote_panel
-        ax_iso = fig.add_subplot(gs[0, 5])
+        ax_iso = fig.add_subplot(gs[0, 2])
         render_isophote_panel(ax_iso, original_data, isolist=isolist,
                               mask=mask, norm_params=orig_info)
+        ax_iso.set_xlabel('X (pixels)', fontsize=12)
+        ax_iso.tick_params(labelleft=False)
 
         # Save figure
         fits_dir = os.path.dirname(fits_file)

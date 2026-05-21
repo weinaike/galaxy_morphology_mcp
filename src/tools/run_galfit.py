@@ -111,6 +111,7 @@ def create_comparison_png(
     param_file: str | None = None,
     comp_images: list | None = None,
     comp_types: list | None = None,
+    auto_sky: bool = False,
 ) -> str | None:
     """Create a scientific comparison plot with original, model, and normalized residual.
 
@@ -294,7 +295,7 @@ def create_comparison_png(
         isolist = render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
                                     param_file, components, fit_region,
                                     comp_images=comp_images, comp_types=comp_types,
-                                    mask=mask)
+                                    mask=mask, auto_sky=auto_sky)
 
         # === Row 0, Col 2: Isophote Ellipses (rendered after isolist is computed) ===
         from .sb_profile import render_isophote_panel
@@ -319,16 +320,18 @@ def create_comparison_png(
 
 async def run_galfit(
     config_file: Annotated[str, "absolute path to the GALFIT configuration file"],
-    options: Annotated[List[str], "options that control how galfit runs"] = []
+    options: Annotated[List[str], "options that control how galfit runs"] = [],
+    auto_sky: Annotated[bool, "automatically measure sky and fix it in feedme"] = True,
 ) -> dict[str, Any]:
     """Execute GALFIT single-band fitting with the given configuration file.
 
     **Execution Process:**
     1. Parses the GALFIT feedme configuration file to extract file paths and fitting region
-    2. Executes GALFIT as a subprocess with 5-minute timeout protection
-    3. Generates a 1×4 comparison image: Original | Model | Residual | 1D SB Profile
-    4. Extracts fitting parameters and statistics to JSON summary
-    5. Archives all output files to a timestamped directory with config backup
+    2. If auto_sky=True: measures sky background (sigma-clipped median) and fixes it in feedme
+    3. Executes GALFIT as a subprocess with 5-minute timeout protection
+    4. Generates a comparison image: Original (×2) | Model | Residual | SB Profile | Isophotes
+    5. Extracts fitting parameters and statistics to JSON summary
+    6. Archives all output files to a timestamped directory with config backup
 
     **Input Parameters:**
     - config_file (str): Absolute path to GALFIT feedme configuration file
@@ -336,6 +339,8 @@ async def run_galfit(
       - Relative paths in config are resolved relative to config file location
     - options (List[str], optional): GALFIT command-line options
       - Example: ["-o"] for overwrite mode, ["-v"] for verbose output
+    - auto_sky (bool, optional): If True, measure sky via sigma-clipped median and
+      fix it in the feedme copy before running GALFIT. Default: True.
 
     """
     galfit_bin = os.getenv("GALFIT_BIN", "galfit")
@@ -343,13 +348,51 @@ async def run_galfit(
     options = options or []
     if not isinstance(options, list):
         options = [options]
-    command = [galfit_bin] + options + [config_file]
 
     # Parse config file for additional paths
     config_paths = parse_feedme(config_file)
 
     # Use config file directory as working directory so fit.log is created there
     working_dir = os.path.dirname(os.path.abspath(config_file))
+
+    # --- Auto sky measurement ---
+    if auto_sky:
+        try:
+            from .measure_sky import estimate_sky
+
+            img_path = config_paths.get("input", "")
+            mask_path = config_paths.get("mask", "")
+            if img_path and os.path.exists(img_path):
+                sky_data = fits.getdata(img_path).astype(np.float64)
+                sky_mask = None
+                if mask_path and os.path.exists(mask_path):
+                    sky_mask = fits.getdata(mask_path).astype(bool)
+                    nan_px = ~np.isfinite(sky_data)
+                    sky_mask = sky_mask | nan_px
+                sky_result = estimate_sky(sky_data, mask=sky_mask)
+                sky_val = sky_result["sky"]
+                sky_std = sky_result["std"]
+
+                # Write feedme copy with fixed sky
+                with open(config_file) as f:
+                    feedme_text = f.read()
+                import re
+                feedme_new = re.sub(
+                    r'(\n\s*1\)\s+[^\n]+#\s*Sky background)',
+                    lambda m: f'\n 1) {sky_val:.6e}       0       #  Sky background',
+                    feedme_text
+                )
+                sky_feedme = config_file + ".autosky"
+                with open(sky_feedme, 'w') as f:
+                    f.write(feedme_new)
+                config_file = sky_feedme
+                iso_sma = sky_result.get("iso_sma")
+                iso_tag = f", isophote outer_sma={iso_sma:.1f}px" if iso_sma else ""
+                print(f"Auto sky (isophote): sky = {sky_val:.6e}, std = {sky_std:.6e}{iso_tag} (fixed in feedme)")
+        except Exception as e:
+            print(f"Auto sky measurement skipped: {e}")
+
+    command = [galfit_bin] + options + [config_file]
 
     try:
         proc = subprocess.run(
@@ -418,7 +461,8 @@ async def run_galfit(
     # Use latest_galfit (fitted parameters) for component parameters in plot
     comparison_png_path = create_comparison_png(output_file, sigma_file, mask_file, fit_region,
                                                 param_file=param_file_for_plot,
-                                                comp_images=comp_images, comp_types=comp_types)
+                                                comp_images=comp_images, comp_types=comp_types,
+                                                auto_sky=auto_sky)
 
     # Extract summary information
     summary, fit_stats = extract_summary_from_galfit(output_file, config_file)
@@ -434,7 +478,7 @@ async def run_galfit(
     fit_log_path = os.path.join(working_dir, "fit.log")
     if os.path.exists(fit_log_path):
         shutil.move(fit_log_path, ar_dir)
-    if os.path.exists(output_file):        
+    if os.path.exists(output_file):
         shutil.move(output_file, ar_dir)
         output_file = os.path.join(ar_dir, os.path.basename(output_file))
     if comparison_png_path:
@@ -442,7 +486,7 @@ async def run_galfit(
         comparison_png_path = os.path.join(ar_dir, os.path.basename(comparison_png_path))
     if summary:
         shutil.move(summary, ar_dir)
-        summary = os.path.join(ar_dir, os.path.basename(summary))    
+        summary = os.path.join(ar_dir, os.path.basename(summary))
 
     if matched_galfit_files:
         shutil.copy(latest_galfit, ar_dir)
@@ -474,8 +518,8 @@ async def run_galfit(
         "status": "success",
         "message": message,
         "input_param_file": config_file,
-        "output_param_file": latest_galfit,  
-        "optimized_fits_file": output_file,      
+        "output_param_file": latest_galfit,
+        "optimized_fits_file": output_file,
         "image_file": comparison_png_path,
         "summary_file": summary,
         "console_log_file": console_log_path,

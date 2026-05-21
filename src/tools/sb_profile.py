@@ -201,7 +201,8 @@ def intensity_to_sb(intensity, zeropoint, pixscale):
 
 def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                       param_file, components, fit_region,
-                      comp_images=None, comp_types=None, mask=None):
+                      comp_images=None, comp_types=None, mask=None,
+                      auto_sky=False):
     """Render 1D SB profile onto a pair of (main, residual) axes.
 
     Fits isophotes on the original data, extracts profiles for both data and
@@ -291,7 +292,8 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                 n_val = components[i].get('n')
                 label = f'sersic(n={n_val:.2f}) {comp_fractions[i]:.3f}' if n_val is not None else f'sersic {comp_fractions[i]:.3f}'
             else:
-                label = f'{comp_type} {comp_fractions[i]:.3f}'
+                sky_tag = ' (auto fixed)' if auto_sky and comp_type.lower() == 'sky' else ''
+                label = f'{comp_type}{sky_tag} {comp_fractions[i]:.3f}'
             ax_main.plot(sma_c, mu_c, '-', color=color, linewidth=1.2,
                          zorder=3, label=label)
 

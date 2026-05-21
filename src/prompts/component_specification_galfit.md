@@ -90,6 +90,16 @@ Z) 0                      #  Skip this model?
 - mag（星等）：如果中心有明显的致密亮核（如 AGN），估算这个点源的星等。可以尝试用较小孔径测光的结果作为初始值。
 
 
+--- 
+1. sky 用于估计背景
+
+ 0) sky
+ 1) <sky>      1       # sky background       [ADU counts]
+ 2) 0.000      0       # dsky/dx (sky gradient in x)
+ 3) 0.000      0       # dsky/dy (sky gradient in y)
+ Z) 0                  #  Skip this model in output image?  (yes=1, no=0)
+ <sky> 的具体指需要参考1D SB profile 上的的背景均值数据， 经过两次拟合之后，建议<sky> fix 到背景均值不变
+
 ## 成分的高阶参数，需要拟合高阶成分特征时使用。
 The parameters C0, B1, B2, F1, F2, etc. listed below are hidden from the user unless he/she explicitly requests them.  These can be tagged on to the end of any previous components except, of course, the PSF and the sky -- If a Fourier or Bending amplitude is set to 0 initially GALFIT will reset it  to a value of 0.01. To prevent GALFIT from doing so, one can set it to any other value.
 

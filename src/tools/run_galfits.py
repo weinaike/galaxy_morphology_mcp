@@ -458,7 +458,7 @@ async def run_galfits_sed_fitting(
     workplace_dir = os.path.join(config_dir, "output", f"{timestamp}_{config_basename}")
     os.makedirs(workplace_dir, exist_ok=True)
     shutil.copy(config_file, workplace_dir)
-    new_lyric_file = os.path.join(workplace_dir, f"{config_basename}_for_image_sed_fitting" + (f".{config_ext}" if config_ext else ""))
+    new_lyric_file = os.path.join(workplace_dir, f"{config_basename}_for_image_sed_fitting" + (f"{config_ext}" if config_ext else ""))
 
     res = PureSEDFitting(lyric_file=config_file, workplace=image_fitting_workplace, new_lyric_file=new_lyric_file, mock_root=workplace_dir, args=extra_args)
     if res.get("status") != "success":

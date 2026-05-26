@@ -287,15 +287,17 @@ def create_comparison_png(
             cbar.set_label('Residual (σ)', fontsize=9)
 
         # === Row 1, Col 2: 1D Surface Brightness Profile ===
+        ### will use sky from original image by default.
+        auto_sky = True
         gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[1, 2],
                                          height_ratios=[3, 1], hspace=0.05)
         ax_sb = fig.add_subplot(gs_sb[0])
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
-        isolist = render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
+        isolist, chisq1d, n1d = render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
                                     param_file, components, fit_region,
                                     comp_images=comp_images, comp_types=comp_types,
-                                    mask=mask)
-
+                                    mask=mask,auto_sky=auto_sky)
+    
         # === Row 0, Col 2: Isophote Ellipses (rendered after isolist is computed) ===
         from .sb_profile import render_isophote_panel
         ax_iso = fig.add_subplot(gs[0, 2])
@@ -312,9 +314,9 @@ def create_comparison_png(
         plt.savefig(png_filename, dpi=target_dpi)
         plt.close(fig)
 
-        return png_filename
+        return png_filename, chisq1d, n1d
     except Exception:
-        return None
+        return None, None, None
 
 
 async def run_galfit(
@@ -416,7 +418,7 @@ async def run_galfit(
     comp_types = comp_data[1] if comp_data else None
 
     # Use latest_galfit (fitted parameters) for component parameters in plot
-    comparison_png_path = create_comparison_png(output_file, sigma_file, mask_file, fit_region,
+    comparison_png_path,chisq1d,n1d = create_comparison_png(output_file, sigma_file, mask_file, fit_region,
                                                 param_file=param_file_for_plot,
                                                 comp_images=comp_images, comp_types=comp_types)
 
@@ -453,12 +455,22 @@ async def run_galfit(
         shutil.move(subcomps_file, ar_dir)
 
     stats_lines = ""
-    chi2_nu = fit_stats.get("chi2_nu")
-    bic = fit_stats.get("bic")
-    if chi2_nu is not None:
-        stats_lines += f"- χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
-    if bic is not None:
-        stats_lines += f"- BIC: {bic:.4f}\n"
+    # chi2_nu = fit_stats.get("chi2_nu")
+    # bic = fit_stats.get("bic")
+    
+    # if chi2_nu is not None:
+    #     stats_lines += f"- χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
+    # if bic is not None:
+    #     stats_lines += f"- BIC: {bic:.4f}\n"
+
+    model_freedom = fit_stats.get("nfree")
+    chisq1d_nu = chisq1d / (n1d-model_freedom) if chisq1d is not None and model_freedom is not None and model_freedom > 0 else None
+    bic1d = chisq1d + model_freedom * np.log(n1d) if chisq1d is not None and model_freedom is not None and n1d is not None and n1d > 0 else None
+
+    if chisq1d_nu is not None:
+        stats_lines += f"- χ²/ν (reduced chi-squared): {chisq1d_nu:.6f}\n"
+    if bic1d is not None:
+        stats_lines += f"- BIC: {bic1d:.4f}\n"
 
     message = (
         "GALFIT completed successfully.\n"

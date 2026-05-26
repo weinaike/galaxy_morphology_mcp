@@ -39,7 +39,7 @@ def parse_photometry_params(param_file: str) -> tuple[float, float]:
 
 
 def fit_data_isophotes(image_data, x_center, y_center,
-                       pa_deg=None, eps=None, sma_max=None, mask=None):
+                       pa_deg=None, eps=None, sma_max=None, mask=None, auto_sky=True):
     """Fit isophotes with fixed center (peak pixel), 2-step approach.
 
     Step 1: Fixed center, free PA/eps, large maxsma -> find outer boundary + derive PA
@@ -88,7 +88,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
     if hasattr(edge_pixels, 'compressed'):
         edge_pixels = edge_pixels.compressed()
     from astropy.stats import sigma_clipped_stats
-    _, _, bg_std = sigma_clipped_stats(edge_pixels, sigma=3.0) if len(edge_pixels) > 10 else (0, 0.0, 1.0)
+    _, bg_median, bg_std = sigma_clipped_stats(edge_pixels, sigma=3.0) if len(edge_pixels) > 10 else (0, 0.0, 1.0)
     intensity_threshold = bg_std * 1.0
 
     maxsma = sma_max or (dim / 2 * 0.9)
@@ -116,12 +116,23 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 indices = np.where(iso_step1.intens < intensity_threshold)[0]
                 out_idx = indices[0] if len(indices) > 0 else len(iso_step1.sma) - 1
                 maxsma_bounded = iso_step1.sma[min(out_idx, len(iso_step1.sma) - 1)]
+                eps_bounded = iso_step1.eps[min(out_idx, len(iso_step1.sma) - 1)]
+                pa_bounded = iso_step1.pa[min(out_idx, len(iso_step1.sma) - 1)]
                 break
         except Exception:
             continue
-
+    
     if iso_step1 is None or len(iso_step1.sma) == 0:
         return None
+    
+    if auto_sky:
+        sky_value = bg_median
+        from photutils.aperture import EllipticalAperture
+        aperture = EllipticalAperture((cx,cy), maxsma_bounded, maxsma_bounded*(1-eps_bounded), theta=np.deg2rad(pa_bounded+90))
+        galmask = aperture.to_mask(method='center')
+        sky_image = image_data.copy()
+        sky_image.mask = sky_image.mask | galmask.to_image(image_data.shape).astype(bool)
+        sky_value = sigma_clipped_stats(sky_image, sigma=3, maxiters=10)[1]
 
     # ---- Derive PA from Step 1 isophotes within outer boundary ----
     pas = np.array([iso.pa for iso in iso_step1
@@ -150,8 +161,10 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 break
         except Exception:
             continue
-
-    return iso_best if iso_best is not None else iso_step1
+    if auto_sky:
+        return iso_best, sky_value if iso_best is not None else (iso_step1, sky_value)
+    else:
+        return iso_best if iso_best is not None else iso_step1
 
 
 def extract_profile(image_data, geometry, x_offset=0, y_offset=0, mask=None):
@@ -184,7 +197,7 @@ def extract_profile(image_data, geometry, x_offset=0, y_offset=0, mask=None):
                 continue
             intensities = s[2]
             if len(intensities) > 0:
-                med = np.median(intensities)
+                med = np.mean(intensities)
                 if med > 1e-5:
                     sma_arr.append(sma)
                     intensity_arr.append(med)
@@ -201,7 +214,7 @@ def intensity_to_sb(intensity, zeropoint, pixscale):
 
 def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                       param_file, components, fit_region,
-                      comp_images=None, comp_types=None, mask=None):
+                      comp_images=None, comp_types=None, mask=None, auto_sky=True):
     """Render 1D SB profile onto a pair of (main, residual) axes.
 
     Fits isophotes on the original data, extracts profiles for both data and
@@ -237,15 +250,19 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
     zeropoint, pltscale = parse_photometry_params(param_file)
 
     sma_max = min(original_data.shape) * 0.45
-    isolist = fit_data_isophotes(original_data, 0, 0,
-                                  sma_max=sma_max, mask=mask)
+    if auto_sky:
+        isolist,sky_value = fit_data_isophotes(original_data, 0, 0,
+                                  sma_max=sma_max, mask=mask, auto_sky=auto_sky)
+    else:
+        isolist = fit_data_isophotes(original_data, 0, 0,
+                                  sma_max=sma_max, mask=mask, auto_sky=auto_sky)
     if isolist is None or len(isolist) == 0:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (isophote fitting failed)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
         return None
-
+    
     sma_data = isolist.sma
     intens_data = isolist.intens
     int_err_data = getattr(isolist, 'int_err', np.zeros_like(intens_data))
@@ -263,6 +280,17 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                 for iso in isolist if iso.valid]
     sma_model, intens_model = extract_profile(model_data, geometry, mask=mask)
     mu_model = intensity_to_sb(intens_model, zeropoint, pltscale)
+
+    # Align data and model by sma (extract_profile may skip points, causing size mismatch)
+    common_sma = np.intersect1d(np.round(sma_data, 4), np.round(sma_model, 4))
+    data_idx = np.searchsorted(np.round(sma_data, 4), common_sma)
+    model_idx = np.searchsorted(np.round(sma_model, 4), common_sma)
+    intens_data_aligned = intens_data[data_idx]
+    int_err_data_aligned = int_err_data[data_idx]
+    intens_model_aligned = intens_model[model_idx]
+
+    chisq = np.sum((intens_model_aligned - intens_data_aligned)**2 / int_err_data_aligned**2)
+    n1d = len(common_sma)
 
     # Main SB panel
     # ax_main.scatter(sma_data, mu_data, s=8, facecolors='none',
@@ -294,7 +322,13 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                 label = f'{comp_type} {comp_fractions[i]:.3f}'
             ax_main.plot(sma_c, mu_c, '-', color=color, linewidth=1.2,
                          zorder=3, label=label)
-
+    if auto_sky:
+        if sky_value > 0:
+            mu_sky = intensity_to_sb(sky_value, zeropoint, pltscale)
+        else:
+            mu_sky = 0
+        ax_main.axhline(mu_sky, linestyle='--', color='gray', alpha=0.9, label=f'Sky Level: {sky_value:.4f}')
+        
     ax_main.set_xscale('log')
     ax_main.set_ylabel(r'Surface Brightness [mag arcsec$^{-2}$]', fontsize=11)
     ax_main.set_xlim(sma_data[sma_data > 0].min() * 0.8, sma_data.max() * 1.1)
@@ -341,7 +375,7 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
 
     _style_resid_axes(ax_resid)
 
-    return isolist
+    return isolist, chisq, n1d
 
 
 def render_isophote_panel(ax, image_data, isolist=None, mask=None,

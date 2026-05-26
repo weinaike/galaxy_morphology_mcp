@@ -49,11 +49,11 @@ class OpenAILLM(LLMBase):
         if not base_url:
             base_url = os.getenv("OPENAI_BASE_URL")
 
-        # Initialize OpenAI client
+        # Initialize OpenAI client (120s timeout for VLM image analysis)
         if base_url:
-            self.client = OpenAI(api_key=api_key, base_url=base_url)
+            self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=360.0)
         else:
-            self.client = OpenAI(api_key=api_key)
+            self.client = OpenAI(api_key=api_key, timeout=360.0)
 
         # Default model
         self.default_model = (

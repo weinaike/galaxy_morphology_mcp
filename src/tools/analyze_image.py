@@ -248,25 +248,32 @@ def call_vlm_api(
             - The analysis response if successful, None otherwise
             - Error message if failed, None otherwise
     """
-    try:
-        # Call the LLM using the unified chat_with_image interface
-        # Each LLM subclass handles its own message format internally
-        result = client.chat_with_image(
-            base64_image=base64_image,
-            user_text_content=additional_content,
-            system_message=system_message,
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            additional_images=additional_images
-        )
+    max_retries = 3
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = client.chat_with_image(
+                base64_image=base64_image,
+                user_text_content=additional_content,
+                system_message=system_message,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                additional_images=additional_images
+            )
 
-        # Extract the analysis
-        analysis = result.get("content")
-        return analysis, None
+            analysis = result.get("content")
+            return analysis, None
 
-    except Exception as e:
-        return None, f"Error calling LLM API: {str(e)}"
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait = attempt * 10
+                print(f"VLM API call failed (attempt {attempt}/{max_retries}): {e}. Retrying in {wait}s...")
+                import time
+                time.sleep(wait)
+
+    return None, f"VLM API failed after {max_retries} attempts: {str(last_error)}"
 
 
 # Galfit 专用的分析接口

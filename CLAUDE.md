@@ -1,217 +1,14 @@
 
 ## Core Principles
 
-1. **ALWAYS read files first** before making recommendations - never assume config contents
-2. **Identify the current phase** (1/2/3) before providing diagnostics
-3. **Follow the required response format** strictly
-4. **Prioritize Image Analysis** when multiple issues exist
-5. **Reference specific case numbers** from the diagnostic framework
+1. **ALWAYS read files first** before making any modifications
+2. **NEVER modify the original .lyric file** — write new configs with `_iter{n}` suffix in the galaxy's main directory
+3. **Use `/skill galfits-manual`** to access complete GalfitS parameter documentation before editing configs
+4. **Only use `--fit_method ES`** to run GalfitS
 
 ---
 
-## Three-Phase Workflow
-
-| Phase | Description | Key Focus |
-|-------|-------------|-----------|
-| **Phase 1** | Image Only (no SED) | Spatial parameters: centers, Re, n, PA, q |
-| **Phase 2** | SED Constraint | SED parameters only; fix spatial from Phase 1 |
-| **Phase 3** | Joint Optimization | All parameters free; use Phases 1&2 as initial values |
-
----
-
-## Image Fitting Strategy (Phase 1)
-
-### Principle
-- Start from the simplest model (single Sersic), add components incrementally.
-- Image residuals are the PRIMARY decision driver.
-- Apply Occam's Razor: use BIC to validate every component addition.
-- Accept features that cannot be meaningfully fitted (spiral arms, small clumps).
-
-### Initial Setup
-Start with a **single Sersic component** (disk). Typical initial parameters:
-
-| Parameter | Initial | Bounds |
-|-----------|---------|--------|
-| Center (x,y) | ~0 (relative) | ±0.3 |
-| Re | 0.23-0.33 | 0.01 to 0.75-1.00 |
-| n | 2.5 | 0.2 to 8 |
-| PA | from image/catalog | -180 to +180 |
-| q | from image/catalog | 0 to 1 |
-
-### Residual → Decision Mapping
-
-| Residual Pattern | Action | Parameter Rules |
-|------------------|--------|-----------------|
-| Large-scale symmetric excess (center + radial alternation) | Add **bulge** | bulge: n=4, Re=50-75% of disk; disk n→1 |
-| Linear/X-shaped bright center | Add **bar** | bar: n=0.5 (fixed, vary=0), q≈0.3; PA from prev fit; disk PA→0, q↑ |
-| Compact central positive residual (PSF-like) | Add **PSF/AGN** | Use PSF model when Re<1 pixel |
-| Off-center compact bright spot | Add **companion** Sersic | Position from residual; wide ranges |
-| Outer closed bright ring | Add **ring** | Gaussian ring or truncated Sersic |
-| Asymmetric/tidal/merger features | Add **Fourier mode** | 1st order Fourier; ignore what can't be fitted |
-| Large-scale systematic offset or gradient | **STOP fitting, report issue** | Likely: bad initial guess / sky background / PSF mismatch |
-| Spiral arms ("positive-negative alternating spiral pattern") | **ACCEPT**, do not add components | Impact on mass is negligible |
-| Small clumps | **ACCEPT**, do not add components | |
-| Unmasked foreground/background source | **Update mask**; if impossible, STOP and report | |
-
-### Physical Meaning Check (after every round)
-
-| Issue | Condition | Action |
-|-------|-----------|--------|
-| Bar vs edge-on disk | n<1 AND q<0.5 | If another larger disk exists → set as bar (n=0.5); if only component → keep |
-| Point source in Sersic | Re << 1 pixel | Replace with PSF model |
-| Bulge+Disk center offset | Distance between centers > disk Re | Add companion + constrain centers |
-| Bulge/Disk label swap | Bulge Re > Disk Re | Swap component labels |
-| 3-component label order | Not re_disk > re_bar > re_bulge | Reorder by Re size |
-
-### Occam's Razor (after every component addition)
-
-**BIC Decision Standard:**
-
-| ΔBIC = BIC_simple - BIC_complex | Decision |
-|----------------------------------|----------|
-| < 0 | Reject complex model (overfitting) |
-| 2-6 | Keep simple model (weak evidence) |
-| > 6 | Accept complex model |
-
-**Deletion Priority (when simplifying):**
-1. Remove "patch" components covering background/PSF issues
-2. Replace Re<1px "fake Sersic" with PSF model
-3. Merge highly degenerate redundant components
-4. Remove components contributing <1% of total flux
-
-### Component Parameter Inheritance
-
-When adding a new component:
-1. Copy ALL spatial parameters from the existing primary component as initial values
-2. Only modify the parameters specific to the new component type (see table above)
-3. Use `--readsummary <prev.gssummary>` to carry forward all fitted parameters
-
-### Auto-Iteration & Stopping Criteria
-
-**Auto-Iteration Rule:**
-After each round, evaluate the average fitting score:
-- **Average score < 60 (Tier 3 Fair or below)**: Automatically proceed to next round WITHOUT asking user. Identify residual pattern, modify config, and run next iteration.
-- **Average score ≥ 60 (Tier 2 Good or above)**: STOP and report results to user. Let user decide whether to continue optimizing or proceed to next phase.
-
-**"Good Enough" Stopping Criteria (to report to user):**
-- Residuals appear noise-like ("TV static") with no systematic structure
-- Remaining features are explicitly accepted (spiral arms, clumps, tidal tails after Fourier)
-- BIC has improved (ΔBIC > 2) and parameters are physical
-- No parameters hitting boundaries
-- OR: max 5 rounds reached (report current best result)
-
-### Config File Isolation
-
-**NEVER modify the original .lyric file.** For each iteration round:
-1. Write the new config file to `/tmp/{basename}_iter{n}.lyric` (temporary staging)
-2. Pass the `/tmp/` path to `run_galfits`, which will automatically create the output directory and copy the config there
-3. Use `--readsummary` to inherit parameters from the previous round
-4. **Do NOT manually create any directories** — `run_galfits` handles all output directory creation
-
-**Directory structure example:**
-```
-obj40/
-├── obj40_s1.lyric                              # Original config (NEVER modify)
-├── fitting_log.md                              # Auto-generated fitting log
-├── output/                                     # Auto-managed by run_galfits
-│   ├── 20260423_142428_obj40_s1/               # Round 1 output (auto-created)
-│   │   ├── obj40_s1.gssummary                  # Round 1 results
-│   │   └── obj40_s1.lyric                      # Config copy
-│   ├── 20260423_143334_obj40_s1_iter2/         # Round 2 output (auto-created)
-│   │   ├── obj40_s1_iter2.gssummary            # Round 2 results
-│   │   └── obj40_s1_iter2.lyric                # Config (copied from /tmp/)
-│   └── 20260423_144053_obj40_s1_iter3/         # Round 3 output (auto-created)
-│       ├── obj40_s1_iter3.gssummary            # Round 3 results
-│       └── obj40_s1_iter3.lyric                # Config (copied from /tmp/)
-```
-
----
-
-# Diagnosis Logic & Rule Base (Structured Thinking)
-
-Analyze the user's input across THREE dimensions. If multiple issues exist, prioritize "Image Analysis" FIRST.
-
-## 1. Image Analysis 
-
-### 1.1 Data Image Diagnostics
-**CRITICAL: Per-Band Analysis Required**
-For multi-band fitting, you MUST analyze EACH band SEPARATELY:
-- Do we see contamination sources in the image that are neither fitted nor mask? If yes, we need to request to add a mask and consider if this is the main reason of the bad fitting.
-- Do we see spiral-like pattern in the galaxy? If yes, we need to include a disk component and may add a bulge, a bar, or both. 
-- Do we see a bar-like pattern in the center of the galaxy? If yes, we need to add a bar component in the fitting.
-- Do we see PSF like pattern in the center of the source? If yes, we may try to include a PSF model in the center.
-
-**Global evaluation**
-- Compare the common and special features of the individual bands
-- If the data quality of some individual bands are particularly bad, ignore them in the residual evaluation
-
-
-### 1.2 Residual Map Diagnostics
-**CRITICAL: Per-Band Analysis Required**
-For multi-band fitting, you MUST analyze EACH band SEPARATELY:
-- Examine residual images for each band individually
-- Provide independent analysis process and conclusions for each band
-- Identify which specific band(s) exhibit issues
-- If issues are band-specific, clearly indicate which bands need adjustments
-
-For each band, examine the residual image (Original - Model) for systematic patterns:
-
-**Bad Fitting Indications & Prescribed Actions:**
-*   **Case A:** Blue/Red color split in residuals (band misalignment).
-    *   *Action:* Allow position shifts between bands; adjust center initial values and fitting ranges.
-    *   *Band-specific:* Identify which bands are misaligned
-*   **Case B:** Off-center bright source in residuals.
-    *   *Action:* Add a new Sersic component at that position.
-    *   *Band-specific:* Note if the off-center source appears in specific bands only
-*   **Case C:** Axisymmetric (e.g. doughnut-like) residual or long strip of positive residual through center.
-    *   *Action:* Add a 'bar' component to the model (Sersic profile with n=0.5).
-    *   *Band-specific:* Check if a bar-like feature is visible in the galaxy center across all bands
-*   **Case D:** Circular positive residual in center.
-    *   *Action:* Add a 'bulge' or 'AGN' point-source component.
-    *   *Band-specific:* Determine which bands show the central excess
-*   **Case E:** Model structure deviates significantly from Input image.
-    *   *Action:* Re-adjust initial parameters (axis ratio, position angle, center coordinates).
-    *   *Band-specific:* Identify which bands show structural deviation
-
-**Good Fitting Indications:**
-*   Residuals appear flat/noise-like (no systematic patterns).
-*   Irregular residuals in high-SNR bands that do NOT match Case A-E are acceptable.
-
-*Important Note:* IGNORE spiral arm or ring features. These are complex structures beyond current scope. Do NOT recommend adding ring components.
-
-### 1.3 Fitting Quality Scoring Standard (百分制评分标准)
-**CRITICAL:** You MUST assign a score (0-100) for EACH band individually, then calculate the overall average score.
-
-#### Five Scoring Tiers (五档评分标准):
-
-| Tier | Score Range | Quality Level | Residual Features Description |
-|------|-------------|---------------|-------------------------------|
-| **Tier 1** | 80-100 | Excellent | 残差图像呈现纯噪声特征，无明显系统性结构。中心区域无明显正/负残差，边缘无扩散状残留。模型与原始图像视觉上几乎完全一致。 |
-| **Tier 2** | 60-79 | Good | 残差总体呈噪声状，但存在轻微局部结构。中心或边缘有微弱系统性残差（强度<背景噪声的2倍）。整体拟合良好，仅需微调。 |
-| **Tier 3** | 40-59 | Fair | 存在明显但不严重的系统性残差结构。可识别轻微的Case A-E特征，但强度中等。拟合基本可用，建议针对性优化。 |
-| **Tier 4** | 20-39 | Poor | 存在强烈的系统性残差结构。Case A-E特征清晰可见，强度显著（>背景噪声3倍）。模型明显偏离数据，需重新拟合。 |
-| **Tier 5** | 0-19 | Failed | 模型完全无法描述数据。残差呈现原始图像的主要结构特征，或出现严重的拟合失败迹象（如负通量、参数边界溢出）。必须重新拟合。 |
-
-#### Scoring Guidelines:
-1. **Per-Band Scoring:** 每个波段独立打分，考虑该波段的SNR和残差特征
-2. **Holistic Consideration:** 综合考虑残差形态、统计量（χ²）和参数合理性；注意，在没有用很多模型成分的情况下，χ²小于1是可以接受的。
-3. **SNR Adjustment:** 高SNR波段要求更严格，低SNR波段可适当放宽
-4. **Output Format:** 输出每个波段得分 + 总体平均分 + 对应档位
-
-## 2. Summary Statistics Analysis
-Check the optimization output for numerical issues:
-
-*   **Check A:** Any parameter hit upper/lower limits?
-    *   *Action:* Expand the limit bounds (ensure radius < image size).
-*   **Check B:** `reduced chisq` in one band >> median of others?
-    *   *Action:* Flag as problematic; cross-reference with Image/SED issues.
-*   **Check C:** SED parameters hit limits?
-    *   *Action:* Adjust SED parameter limits.
-
-*Conclusion:* If no issues in A/B/C, mark Summary as **Good**.
-
-
-## 3. Lyric File Reference
+## Lyric File Parameter Format
 
 GALFITS uses `.lyric` config files. Key parameter format:
 
@@ -221,176 +18,20 @@ GALFITS uses `.lyric` config files. Key parameter format:
 
 - `vary=1`: free parameter | `vary=0`: fixed parameter
 
-### Phase Modifications
+### Phase-Specific Parameter Flags
 
 | Phase | Ia15 (Use SED) | Pa3-Pa8 (Spatial) | Pa9-Pa16 (SED) |
 |-------|---------------|-------------------|----------------|
-| 1 | 0 | vary=1 | vary=0 |
-| 2 | 1 | vary=0 | vary=1 |
-| 3 | 1 | vary=1 | vary=1 |
-
-### References for configuration files:
-
-**IMPORTANT: Use `/skill galfits-manual` to access the complete documentation before modifying configs.**
-
-Key sections:
-- **SKILL.md** - Main navigation and quick reference
-- **data-config.md** - Region (R), Images (I), Spectra (S), Atlas (A)
-- **model-components/** - Galaxy (G), Profile (P), Nuclei/AGN (N), Foreground Star (F)
-- **examples/** - Configuration examples for different scenarios
-- **running-galfits.md** - Command-line arguments and MCP interface
-- **constraints/** - MSR, MMR, SFH, AGN constraints
+| 1 (Image only) | 0 | vary=1 | vary=0 |
+| 2 (SED only) | 1 | vary=0 | vary=1 |
+| 3 (Joint) | 1 | vary=1 | vary=1 |
 
 ---
 
-## GalfitS Manual SKILL
+## Component Type Quick Reference
 
-**PURPOSE: The galfits-manual SKILL enables Claude Code to actively implement the full GalfitS workflow: config → edit → execute → analyze → iterate.**
-
-### Closed-Loop Workflow
-
-Claude Code uses the SKILL to perform these actions autonomously:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    GALFITS CLOSED-LOOP WORKFLOW                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  1. READ                                                             │
-│     ├── Read existing .lyric config file                            │
-│     ├── Read output results (.gssummary, .params, PNGs)            │
-│     └── Identify current phase (1/2/3)                              │
-│                                                                     │
-│  2. SKILL REFERENCE (Use /skill galfits-manual)                    │
-│     ├── SKILL.md - Navigation & component types                     │
-│     ├── data-config.md - Ia, Sa, Aa parameters                      │
-│     ├── model-components/ - P, N, G component configuration         │
-│     ├── examples/ - Similar scenario templates                      │
-│     └── running-galfits.md - CLI/MCP execution                     │
-│                                                                     │
-│  3. EDIT (Action - Write NEW .lyric in galaxy main dir)            │
-│     ├── NEVER modify original .lyric file                          │
-│     ├── Write {basename}_iter{n}.lyric in galaxy main dir          │
-│     ├── Add/modify Profile components (Pa1-Pa32)                   │
-│     ├── Add/modify Nuclei/AGN components (Na1-Na27)                │
-│     ├── Update Galaxy configuration (Ga1-Ga7)                      │
-│     ├── Adjust parameter bounds based on analysis                   │
-│     └── Configure phase-specific vary flags                         │
-│                                                                     │
-│  4. EXECUTE (Action - Run GalfitS)                                 │
-│     ├── Use mcp__galmcp__run_galfits MCP tool                       │
-│     └── Or use bash: galfits config.lyric --work ./output           │
-│                                                                     │
-│  5. ANALYZE (Action - Review results)                              │
-│     ├── Use mcp__galmcp__galfits_analyze_by_vlm for AI diagnosis  │
-│     ├── Check residual images (per-band analysis)                   │
-│     ├── Review summary statistics (.gssummary)                      │
-│     ├── Score fitting quality (0-100 per band)                      │
-│     └── Identify issues (Case A-E, parameter limits)               │
-│                                                                     │
-│  6. ITERATE (Loop back to step 2 if needed)                         │
-│     ├── Auto-iterate if avg score < 60 (no user confirmation)     │
-│     ├── Stop and report if avg score ≥ 60                          │
-│     └── Max 5 rounds, then report best result                     │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Action: Edit Configuration Files
-
-When editing .lyric files, Claude Code MUST:
-
-1. **Read current config first** - Never assume contents
-2. **Reference SKILL** for correct parameter format
-3. **NEVER modify the original .lyric file** - write new config in the galaxy's main directory with `_iter{n}` suffix
-4. **Use Write tool** to create new config files (not Edit on originals)
-
-**Example: Adding a bar component**
-```text
-# Before: Use SKILL to understand format
-/skill galfits-manual → model-components/profile-sersic.md
-
-# Action: Edit config.lyric
-Pc1) bar      # Component name
-Pc2) sersic # Profile type (Sersic mode for bars)
-Pc3) [0,-5,5,0.1,1]  # x-center
-Pc4) [0,-5,5,0.1,1]  # y-center
-Pc5) [2.69,0.67,10.75,0.1,1]  # Re of the bar
-Pc6) [0.5,1,6,0.1,0] # **important** Fix the Sersic index to 0.5 for the bar
-...
-
-# Update Galaxy to include new component
-Ga2) ['a','b','c']  # Add 'c' for the new bar component
-```
-
-### Action: Execute GalfitS
-
-**Method 1: MCP Interface (Recommended)**
-```python
-# Claude Code directly calls MCP tool
-result = mcp__galmcp__run_galfits(
-    config_file="config.lyric",
-    extra_args=["--fit_method", "dynesty", "--nlive", "150"]
-)
-```
-
-**Method 2: Bash Command**
-```bash
-galfits config.lyric --work ./output --num_steps 5000
-```
-
-*Important Note* 
-1. Only use "--fit_method=ES" to run GalfitS.
-2. Always try to use *Method 1*; If not possible, provide the reason and ask if proceed with Method 2.
-
-### Action: Analyze Results
-
-**Method 1: MCP Analysis (Recommended)**
-```python
-# Claude Code directly calls MCP tool
-analysis = mcp__galmcp__galfits_analyze_by_vlm(
-    image_file="output/galaxy.png",      # Original|Model|Residual
-    sed_file="output/galaxy.sed.png",     # SED plot
-    summary_file="output/galaxy.gssummary",
-    user_prompt="## CURRENT PHASE\nPhase 1\n..."
-)
-```
-
-**Method 2: Manual Analysis**
-- Read PNG images (visual inspection)
-- Read .gssummary file (parameter statistics)
-- Apply Case A-E diagnostic framework
-- Score each band 0-100
-
-*Important Note* Always try to use *Method 1*; If not possible, provide the reason and ask if proceed with Method 2.
-
-### Quick Reference for Actions
-
-| Action | Tool/SKILL | Command/Method |
-|--------|------------|-----------------|
-| **Read config** | Read tool | `Read: config.lyric` |
-| **Get parameter format** | `/skill galfits-manual` | → SKILL.md |
-| **Add Profile component** | Edit + SKILL | Edit: Add Pa/Pb/Pc section |
-| **Add Nuclei component** | Edit + SKILL | Edit: Add Na section |
-| **Run fit** | MCP or Bash | `mcp__galmcp__run_galfits()` |
-| **Analyze results** | MCP or Read | `mcp__galmcp__galfits_analyze_by_vlm()` |
-| **Get examples** | `/skill galfits-manual` | → examples/ |
-
-### SKILL Sections for Common Edits
-
-| Edit Task | SKILL Reference | Key Parameters |
-|-----------|-----------------|----------------|
-| **Add Sersic bulge** | model-components/profile-sersic.md | Pa1-Pa32, set Pa2=sersic |
-| **Add Sersic bar** | model-components/profile-sersic.md | Pa1-Pa32, set Pa2=sersic |
-| **Add AGN** | model-components/nuclei-agn.md | Na1-Na27 |
-| **Fix band misalignment** | running-galfits.md → Troubleshooting | Ia13=1, Ia14 ranges |
-| **Enable SED fitting** | SKILL.md → Phase-Specific | Ia15=1, Pa9-Pa16 vary=1 |
-| **Apply MSR constraint** | constraints/mass-size-relation.md | --priorpath file |
-
-### Component Type Quick Reference
-
-| Prefix | Component | Parameters | Edit Example |
-|--------|-----------|------------|--------------|
+| Prefix | Component | Parameters | Example |
+|--------|-----------|------------|---------|
 | **R** | Region | R1-R3 | `R1) MyGalaxy` |
 | **I** | Image | Ia1-Ia15 | `Ia15) 1` # Use SED |
 | **S** | Spectrum | Sa1-Sa4 | `Sa1) spectrum.txt` |
@@ -399,162 +40,110 @@ analysis = mcp__galmcp__galfits_analyze_by_vlm(
 | **N** | Nuclei/AGN | Na1-Na27 | `Na12) ['Hb','Ha']` |
 | **G** | Galaxy | Ga1-Ga7 | `Ga2) ['a','b']` |
 
+### Profile Sub-Types (determined by Pa2)
+
+| Profile Type | Pa2 Value | Use For |
+|-------------|-----------|---------|
+| Sersic | `sersic` | Bulge, Disk, Bar (any axisymmetric component) |
+| Fourier Sersic | `sersic_f` | Spiral arms, non-axisymmetric features |
+| Ferrer Bar | `ferrer` | Bar with flat inner core |
+| Edge-on Disk | `edgeondisk` | Galaxy viewed edge-on |
+| Gaussian Ring | `GauRing` | Ring or lens structure |
+| Gaussian | `Gaussian` | Unresolved point source |
+
+### Physical Component → Model Mapping
+
+| Physical Component | Model Type | Key Parameters |
+|-------------------|------------|----------------|
+| Disk | Sersic, n~1 (can be <1 for smooth disk) | Re = large, q = moderate |
+| Bulge | Sersic, n=4 (range 0.1-8) | Re = small, q = round |
+| Bar | Sersic, **n=0.5 fixed** | q = 0.2-0.4, PA from image |
+| Edge-on Disk | edgeondisk | h_s (scale-height), R_s (scale-length) |
+| AGN/Nucleus | PSF (when Re < 0.2 pixel) or Sersic | x, y, mag only |
+
+---
+
+## Config File Management
+
+### Directory Structure
+```
+obj195/
+├── obj_195.lyric                    # Original config (NEVER modify)
+├── obj_195_iter2.lyric              # Iteration 2 config
+├── obj_195_iter3.lyric              # Iteration 3 config
+├── fitting_log.md                   # Auto-generated fitting log
+├── analysis_report_obj195.md        # Final analysis report
+└── output/
+    ├── 20260525_150747_obj_195/      # Round 1 output
+    ├── 20260525_151530_obj_195_iter2/
+    └── 20260525_152158_obj_195_iter3/
+```
+
+### Rules
+- New config files must be written to the **galaxy's main directory** (where the original .lyric is), with `_iter{n}` suffix
+- Use `--readsummary <prev.gssummary>` to carry forward fitted parameters from previous rounds
+- `run_galfits` automatically creates output directories; do NOT manually create directories
+
+---
 
 ## Available MCP Tools
+
+### mcp__galmcp__run_galfits_image_fitting
+Execute GalfitS multi-band image fitting.
+- `config_file`: Absolute path to .lyric config file (REQUIRED)
+- `extra_args`: Additional CLI args, e.g. `["--fit_method", "ES"]`
+- `timeout_sec`: Optional (default: 3600)
+
+### mcp__galmcp__run_galfits_sed_fitting
+Execute SED fitting based on image fitting results.
+- `config_file`: Path to the .lyric config used for the best image fitting
+- `image_fitting_workplace`: Path to the best image fitting output directory
+- `extra_args`: e.g. `["--fit_method", "ES"]`
+- Returns: New .lyric config file for Image-SED joint fitting
+
+### mcp__galmcp__run_galfits_image_sed_fitting
+Execute Image-SED joint fitting.
+- `config_file`: Path to the .lyric config generated by SED fitting step
+- `extra_args`: e.g. `["--fit_method", "ES"]`
+
+### mcp__galmcp__component_analysis
+Analyze fitting results and provide component adjustment strategy.
+- `image_file`: Path to the combined stamp PNG (Original|Model|Residual)
+- `summary_file`: Path to .gssummary file
+- `mode`: 'single-band' or 'multi-band'
+- `custom_instructions`: Context for the analysis
+
+### mcp__galmcp__render_original
+Render original science image with contours and mask overlay.
+- `config_file`: Path to .lyric config file
+
+### mcp__galmcp__view_original_image
+Classify galaxy morphology from original image using VLM.
+- `image_file`: Path to galaxy image PNG
+- `source_id`: Source identifier
+- `custom_instructions`: Analysis guidance
 
 ### Important GalfitS CLI Parameters
 
 | Parameter | Purpose | When to Use |
 |-----------|---------|-------------|
-| `--fit_method ES` | Evolution Strategy optimizer | All image-fitting rounds (REQUIRED) |
-| `--readsummary <.gssummary>` | Carry forward best-fit params from previous round | Every round after Round 1 |
-| `--prior <.prior>` | Apply mass/size constraints | When prior file is available in galaxy directory |
-| `--saveimgs` | Save diagnostic images | Always |
+| `--fit_method ES` | Evolution Strategy optimizer | All fitting rounds (REQUIRED) |
+| `--readsummary <file>` | Carry forward best-fit params | Every round after Round 1 |
+| `--prior <file>` | Apply mass/size constraints | When prior file available |
 
-### mcp__galmcp__run_galfits
-Execute GalfitS multi-band fitting.
+---
 
-**Use when:**
-- Running Phase 1, 2, or 3 fits
-- Re-running after parameter adjustments
+## SKILL Reference
 
-**Parameters:**
-- `config_file`: Path to .lyric config file
-- `timeout_sec`: Optional (default: 3600)
-- `read_summary`: Path to previous .gssummary to carry forward parameters
-- `prior_file`: Path to .prior file for mass/size constraints
-- `extra_args`: Additional CLI args (e.g. `["--fit_method", "ES"]`)
+Use `/skill galfits-manual` to access the complete GalfitS documentation.
 
-### mcp__galmcp__galfits_analyze_by_vlm
-Analyze results using multimodal AI.
-
-**Use when:**
-- User provides residual maps and asks for diagnosis
-- Evaluating whether to proceed to next phase
-- Assessing fit quality
-
-**Parameters:**
-- `image_file`: Combined stamp (original|model|residual) PNG
-- `sed_file`: SED plot PNG (optional)
-- `summary_file`: Optimization summary file
-- `user_prompt`: Structured observations
-
-**user_prompt template:**
-```text
-## CURRENT PHASE
-Phase 1
-
-## USER OBSERVATIONS
-### Image Residuals
-- [Describe patterns]
-
-### Summary Statistics
-- [Parameters hitting limits?]
-- [Reduced chi-square issues?]
-
-### SED Analysis
-- [Data vs Model quality]
-
-## USER QUESTION
-- [Specific question]
-```
-
-
-## Tool Integration Workflow
-
-### Active Closed-Loop Workflow
-
-Claude Code autonomously implements the complete workflow:
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ USER REQUEST                                                         │
-│ "Analyze my GalfitS results and improve the fit"                   │
-└────────────────┬───────────────────────────────────────────────────┘
-                 │
-                 ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ 1. READ & ANALYZE                                                     │
-│ ├── Read config.lyric                                                │
-│ ├── Read output/*.gssummary                                          │
-│ ├── Read output/*.png (residual images)                              │
-│ └── Identify issues (Case A-E, parameter limits)                    │
-└────────────────┬───────────────────────────────────────────────────┘
-                 │
-                 ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ 2. REFERENCE SKILL                                                    │
-│ /skill galfits-manual                                                │
-│ ├── Find solution for identified issues                             │
-│ ├── Get parameter format for new components                        │
-│ └── Get examples for similar scenarios                              │
-└────────────────┬───────────────────────────────────────────────────┘
-                 │
-                 ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ 3. EDIT CONFIG (Action - Write NEW .lyric in galaxy main dir)        │
-│ Write tool: galaxy_dir/obj{id}_s1_iter{n}.lyric                      │
-│ ├── Add missing components (Profile, Nuclei)                         │
-│ ├── Fix parameter bounds                                            │
-│ ├── Enable/disable SED fitting                                      │
-│ └── Adjust phase-specific vary flags                                 │
-└────────────────┬───────────────────────────────────────────────────┘
-                 │
-                 ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ 4. EXECUTE (Action)                                                   │
-│ mcp__galmcp__run_galfits(                                            │
-│     config_file="config.lyric"                                       │
-│ )                                                                    │
-└────────────────┬───────────────────────────────────────────────────┘
-                 │
-                 ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ 5. ANALYZE RESULTS (Action)                                           │
-│ mcp__galmcp__galfits_analyze_by_vlm(                                │
-│     image_file="output/*.png"                                        │
-│     summary_file="output/*.gssummary"                               │
-│ )                                                                    │
-│ ├── Score fitting quality (0-100 per band)                          │
-│ ├── Identify remaining issues                                       │
-│ └── Recommend next actions                                          │
-└────────────────┬───────────────────────────────────────────────────┘
-                 │
-                 ▼
-          ┌──────────────┐
-          │ Quality OK?  │
-          └──────┬───────┘
-                 │
-         No      │      Yes (avg ≥ 60)
-         ┌────────┴────────┐
-         ▼                 ▼
-    ┌─────────┐      ┌─────────────┐
-    │ ITERATE │      │ COMPLETE    │
-    │ (auto)  │      │ Report      │
-    └────┬────┘      └─────────────┘
-         │
-         └──────► Back to step 2
-```
-
-### Example: Adding Bar Component
-
-**User Request:** "There's a bar-like residual in my galaxy fit"
-
-**Claude Code Actions:**
-
-1. **READ**: Read config.lyric, view residual images
-2. **SKILL**: `/skill galfits-manual` → profile-sersic.md
-3. **EDIT**:
-   ```text
-   # Add to config.lyric
-   Pc1) bar
-   Pc2) sersic
-   Pc3) [0,-5,5,0.1,1]
-   ...
-   Ga2) ['a','b','c']  # Update to include bar
-   ```
-4. **EXECUTE**: `mcp__galmcp__run_galfits(config_file="config.lyric")`
-5. **ANALYZE**: `mcp__galmcp__galfits_analyze_by_vlm(...)`
-6. **REPORT**: "Bar component added. New fit score: 75/100 (Good)"
+| Edit Task | SKILL Reference |
+|-----------|-----------------|
+| Add Sersic bulge | model-components/profile-sersic.md |
+| Add Sersic bar | model-components/profile-sersic.md |
+| Add AGN | model-components/nuclei-agn.md |
+| Fix band misalignment | running-galfits.md |
+| Enable SED fitting | SKILL.md → Phase-Specific |
+| Apply constraints | constraints/ |
 
 ---

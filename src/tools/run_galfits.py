@@ -18,144 +18,26 @@ def _is_valid_workflow_output_dir(dirname: str) -> bool:
     return bool(WORKFLOW_OUTPUT_DIR_RE.fullmatch(dirname))
 
 
-def _write_fitting_log(
-    config_file: str,
-    workplace_dir: str,
-    cmd: list[str],
-    summary_stats: dict[str, Any],
-    summary_files: list[str],
-    imagefit_pngs: list[str],
-    sedmodel_pngs: list[str],
-    constrain_files: list[str],
-    params_files: list[str],
-    read_summary: str | None = None,
-    prior_file: str | None = None,
-) -> str:
-    """Append a round record to fitting_log.md in the galaxy directory.
+def _resolve_config_paths(config_file: str) -> str:
+    """Create a temporary config with absolute paths for tools that need them.
 
-    Returns the path to the log file.
+    gsutils.read_config_file resolves relative paths against CWD, not the
+    config file location. This helper rewrites ./  and ../ references to
+    absolute paths so that callers don't need to care about CWD.
     """
-    # Galaxy root: derive from workplace_dir (output/timestamp_basename)
-    # This works regardless of where the config file is located (e.g. /tmp/)
-    workplace_parent = os.path.dirname(os.path.abspath(workplace_dir))
-    if os.path.basename(workplace_parent) == "output":
-        galaxy_dir = os.path.dirname(workplace_parent)
-    else:
-        # Fallback: try config file location
-        galaxy_dir = os.path.dirname(os.path.abspath(config_file))
-    log_path = os.path.join(galaxy_dir, "fitting_log.md")
+    config_dir = os.path.dirname(os.path.abspath(config_file))
+    parent_dir = os.path.dirname(config_dir)
 
-    # Count existing rounds to determine round number
-    round_num = 1
-    if os.path.exists(log_path):
-        with open(log_path) as f:
-            round_num = f.read().count("### Round") + 1
+    with open(config_file) as f:
+        content = f.read()
 
-    # Build command string
-    cmd_parts = []
-    for p in cmd:
-        if " " in p and not p.startswith("-"):
-            cmd_parts.append(f'"{p}"')
-        else:
-            cmd_parts.append(p)
-    cmd_str = " ".join(cmd_parts)
+    content = content.replace("../", parent_dir + "/")
+    content = content.replace("./", config_dir + "/")
 
-    # Relative paths for readability in galaxy-level fitting_log.md
-    def rel(p: str) -> str:
-        try:
-            return os.path.relpath(p, galaxy_dir)
-        except ValueError:
-            return p
-
-    # Extract key spatial parameters
-    params = summary_stats.get("parameters", {})
-    spatial_lines = []
-    # Group parameters by component (disk_xcen, bulge_Re, ring_r0, etc.)
-    components = set()
-    for k in params:
-        m = re.match(r"(\w+)_(?:xcen|ycen|Re|n|ang|axrat|r0|sig)", k)
-        if m:
-            components.add(m.group(1))
-    for comp in sorted(components):
-        xcen = params.get(f"{comp}_xcen")
-        ycen = params.get(f"{comp}_ycen")
-        ang = params.get(f"{comp}_ang")
-        axrat = params.get(f"{comp}_axrat")
-        if xcen is None:
-            continue
-
-        # Sersic components have Re and n; GauRing has r0 and sig
-        re_val = params.get(f"{comp}_Re")
-        n_val = params.get(f"{comp}_n")
-        r0_val = params.get(f"{comp}_r0")
-        sig_val = params.get(f"{comp}_sig")
-
-        if re_val is not None:
-            spatial_lines.append(
-                f"    - {comp}: x={xcen:.4f}, y={ycen:.4f}, Re={re_val:.4f}, "
-                f"n={n_val:.4f}, PA={ang:.2f}, q={axrat:.4f}"
-            )
-        elif r0_val is not None:
-            spatial_lines.append(
-                f"    - {comp}: x={xcen:.4f}, y={ycen:.4f}, r0={r0_val:.4f}, "
-                f"sig={sig_val:.4f}, PA={ang:.2f}, q={axrat:.4f}"
-            )
-
-    # Per-band chi-squared
-    per_band = summary_stats.get("per_band_chisq", {})
-    chisq_lines = []
-    for band, val in sorted(per_band.items()):
-        chisq_lines.append(f"    - {band}: {val}")
-
-    # Build output file list
-    output_names = []
-    for f in summary_files + imagefit_pngs + sedmodel_pngs + constrain_files + params_files:
-        output_names.append(f"- {rel(f)}")
-
-    # Get timestamp from workplace dir name
-    ts_match = re.search(r"(\d{8}_\d{6})", workplace_dir)
-    timestamp_str = ts_match.group(1) if ts_match else datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    record = f"""### Round {round_num}
-**Timestamp:** {timestamp_str}
-
-**1. Config file**
-- {rel(config_file)}
-
-**2. Command**
-```bash
-{cmd_str}
-```
-
-**3. Output files**
-{chr(10).join(output_names) if output_names else "- (none)"}
-
-**4. Fitting statistics**
-- Global reduced chisq: {summary_stats.get("reduced_chisq", "N/A")}
-- BIC: {summary_stats.get("bic", "N/A")}
-{chr(10).join(chisq_lines) if chisq_lines else "- (per-band chisq not available)"}
-
-**5. Fitted spatial parameters**
-{chr(10).join(spatial_lines) if spatial_lines else "- (none)"}
-
-**6. VLM Analysis** *(filled after running analyze tool)*
-
-- Overall Judgement: *(pending)*
-
-- Fitting problems:
-  - *(pending)*
-
-- Next-Step Decision: *(pending)*
-
-- Reasons: *(pending)*
-
-
-"""
-
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(record)
-
-    return log_path
+    abs_config = os.path.join(config_dir, f"_{os.path.basename(config_file)}.abs")
+    with open(abs_config, "w") as f:
+        f.write(content)
+    return abs_config
 
 
 def _build_galfits_command(config_file: str, workplace: str, saveimgs: bool) -> list[str]:
@@ -381,27 +263,6 @@ async def run_galfits(
     # Parse gssummary for structured statistics
     summary_stats = _parse_gssummary(summary_files[0]) if summary_files else {}
 
-    # Write fitting log
-    fitting_log_path = ""
-    try:
-        fitting_log_path = _write_fitting_log(
-            config_file=config_file,
-            workplace_dir=workplace_dir,
-            cmd=cmd,
-            summary_stats=summary_stats,
-            summary_files=summary_files,
-            imagefit_pngs=imagefit_pngs,
-            sedmodel_pngs=sedmodel_pngs,
-            constrain_files=constrain_files,
-            params_files=params_files,
-            read_summary=read_summary,
-            prior_file=prior_file,
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Warning: Failed to write fitting log: {e}")
-
     return {
         "status": "success",
         "message": f"GalfitS completed successfully for {config_file}. Output files:\n"
@@ -419,7 +280,6 @@ async def run_galfits(
         "constrain_files": constrain_files,
         "params_files": params_files,
         "log_path": log_path,
-        "fitting_log": fitting_log_path,
         "reduced_chisq": summary_stats.get("reduced_chisq"),
         "bic": summary_stats.get("bic"),
         "per_band_chisq": summary_stats.get("per_band_chisq", {}),
@@ -453,14 +313,25 @@ async def run_galfits_sed_fitting(
 
     config_dir = os.path.dirname(os.path.abspath(config_file))
     config_basename, config_ext = os.path.splitext(os.path.basename(config_file))
+    # Find galaxy root dir: if config is already inside output/, go up two levels
+    output_parent = os.path.dirname(config_dir)
+    if os.path.basename(output_parent) == "output" and _is_valid_workflow_output_dir(os.path.basename(config_dir)):
+        galaxy_dir = os.path.dirname(output_parent)
+    else:
+        galaxy_dir = config_dir
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs(os.path.join(config_dir, "output"), exist_ok=True)
-    workplace_dir = os.path.join(config_dir, "output", f"{timestamp}_{config_basename}")
+    output_base = os.path.join(galaxy_dir, "output")
+    os.makedirs(output_base, exist_ok=True)
+    workplace_dir = os.path.join(output_base, f"{timestamp}_{config_basename}_sed")
     os.makedirs(workplace_dir, exist_ok=True)
     shutil.copy(config_file, workplace_dir)
     new_lyric_file = os.path.join(workplace_dir, f"{config_basename}_for_image_sed_fitting" + (f"{config_ext}" if config_ext else ""))
 
-    res = PureSEDFitting(lyric_file=config_file, workplace=image_fitting_workplace, new_lyric_file=new_lyric_file, mock_root=workplace_dir, args=extra_args)
+    # gsutils.read_config_file resolves relative paths against CWD, not the
+    # config file location. Create an absolute-path copy to avoid FileNotFoundError.
+    abs_config = _resolve_config_paths(config_file)
+
+    res = PureSEDFitting(lyric_file=abs_config, workplace=image_fitting_workplace, new_lyric_file=new_lyric_file, mock_root=workplace_dir, args=extra_args)
     if res.get("status") != "success":
         return {
             "status": "failure",

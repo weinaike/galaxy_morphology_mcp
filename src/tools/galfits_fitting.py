@@ -59,8 +59,9 @@ def extract_band_fits_pairs(config_lyric):
     pattern1 = re.compile(r'^I([a-z])1\)\s*(.+)', re.IGNORECASE)  # Match Ix1)
     pattern2 = re.compile(r'^I([a-z])2\)\s*(.+)', re.IGNORECASE)  # Match Ix2)
 
-    band_fits_pairs = {}  
-    temp = {}  
+    config_dir = os.path.dirname(os.path.abspath(config_lyric))
+    band_fits_pairs = {}
+    temp = {}
 
     with open(config_lyric, 'r', encoding='utf-8') as f:
         for line in f:
@@ -72,7 +73,14 @@ def extract_band_fits_pairs(config_lyric):
             if match1:
                 img_label = match1.group(1)  # a, b, c...
                 fits_file = match1.group(2).strip()
-                temp[img_label] = {'1': fits_file}
+                # Resolve relative paths against config file directory
+                fits_path = fits_file.strip("[]").split(",")[0].strip()
+                if not os.path.isabs(fits_path):
+                    abs_path = os.path.normpath(os.path.join(config_dir, fits_path))
+                    fits_file_resolved = fits_file.replace(fits_path, abs_path)
+                else:
+                    fits_file_resolved = fits_file
+                temp[img_label] = {'1': fits_file_resolved}
                 continue
 
             match2 = pattern2.match(line)
@@ -248,7 +256,7 @@ def guess_mass(
         fluxes = calculate_profile_fluxes(config_lyric=config_lyric, workplace=workplace)
 
         if mock_root is None:
-            mock_root = Path(os.path.dirname(lyric_file)) / f"{Path(lyric_file).stem}_mock"
+            mock_root = Path(os.path.dirname(config_lyric)) / f"{Path(config_lyric).stem}_mock"
             mock_root = str(mock_root)
         mock_root = mock_root + "/" if not mock_root.endswith("/") else mock_root
 

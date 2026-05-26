@@ -325,7 +325,7 @@ async def run_galfits_sed_fitting(
     workplace_dir = os.path.join(output_base, f"{timestamp}_{config_basename}_sed")
     os.makedirs(workplace_dir, exist_ok=True)
     shutil.copy(config_file, workplace_dir)
-    new_lyric_file = os.path.join(workplace_dir, f"{config_basename}_for_image_sed_fitting{config_ext}")
+    new_lyric_file = os.path.join(workplace_dir, f"{config_basename}_for_image_sed_fitting" + (f"{config_ext}" if config_ext else ""))
 
     # gsutils.read_config_file resolves relative paths against CWD, not the
     # config file location. Create an absolute-path copy to avoid FileNotFoundError.

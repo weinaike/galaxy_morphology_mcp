@@ -299,14 +299,13 @@ def delete_components(
     prefix, blocks = _split_prefix_and_blocks(feedme_file)
 
     sky_idxs = [i for i, b in enumerate(blocks) if b.comp_type == "sky"]
-    if len(sky_idxs) == 0:
-        raise ValueError("No sky component found. Requirement: exactly one sky.")
+    # if len(sky_idxs) == 0:
+    #     raise ValueError("No sky component found. Requirement: exactly one sky.")
     if len(sky_idxs) > 1:
         raise ValueError(f"Found {len(sky_idxs)} sky components. Requirement: exactly one sky.")
 
-    sky_idx = sky_idxs[0]
-    sky_block = blocks[sky_idx]
-    non_sky_blocks = [b for i, b in enumerate(blocks) if i != sky_idx]
+    sky_blocks = [b for i, b in enumerate(blocks) if i in sky_idxs]
+    non_sky_blocks = [b for i, b in enumerate(blocks) if i not in sky_idxs]
 
     total = len(non_sky_blocks)
     for cid in component_ids:
@@ -316,7 +315,7 @@ def delete_components(
     keep_idxs = [i for i in range(total) if (i + 1) not in component_ids]
     kept_non_sky = [non_sky_blocks[i] for i in keep_idxs]
 
-    new_blocks = kept_non_sky + [sky_block]
+    new_blocks = kept_non_sky + sky_blocks
 
     return _renumber_and_join(prefix, new_blocks, start_num=1)
 

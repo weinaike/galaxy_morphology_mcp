@@ -28,7 +28,7 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 
 在 `.cons` 文件中，参数必须使用特定的英文缩写：
 
-* 位置坐标：`x`, `y` (通常写在一起 `x,y`) 约束也要同时约束
+* 位置坐标：`x`, `y` (通常写在一起 `x,y`) 约束也要同时约束（不可单独约束x或者y）
 * 总星等：`mag`
 * 有效半径：`re` (Sérsic) / `rs` (Exponential disk) / `fwhm` (Gaussian/Moffat)
 * Sérsic 指数：`n`
@@ -77,22 +77,6 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 #   galfit input file.
 ```
 
-## 约束规范
-
-约束条件（Constraints）是防止算法“暴走”的安全网，但网织得太紧会勒死正常的优化过程。建议流水线采取以下策略：
-
-- 设定符合物理意义的软性边界（Hard Bounds）：
-在 .cons 约束文件中，为关键参数划定既安全又不至于太局促的绝对区间：
-    - 中心坐标 (x,y)： 约束在初始值的 $\pm 2$ 到 $5$ 个像素内（如果是高度扰动的并合星系可放宽）。绝对不能让星系中心飘到图像边缘。
-    - 有效半径 $R_e$： 最小值约束为 0.1 像素（或 PSF 的一半），最大值约束为图像边长的 1/2 或 1/3，防止模型在尝试拟合平坦背景时无限膨胀。
-    - Sérsic 指数 $n$： 这是最容易暴走的参数。对于纯星系结构，物理上合理的 $n$ 值通常在 $0.1 \sim 8.0$ 之间。建议将其强制约束在 0.1 8.0（除非星系包含非常尖锐的无法分辨的 AGN 核心，才允许放宽到 15 或 20）。
-    - 轴比 $b/a$： 约束在 0.05 1.0 之间，防止弱信噪比的盘成分被压成一条无物理意义的无限细线。
-
-- 利用相对约束（Parameter Tying）稳定复杂模型： 当尝试分解高难度的 Bulge+Disk 甚至添加 Bar 时，参数极易发生简并。此时需要绑定参数：
-    - 强绑定：通过在配置文件中将 Bulge 的 x, y 坐标变量与 Disk 强行链接（偏移量设为固定或完全一致），减少两个自由度，能极大提升收敛稳定性。
-    - 相对约束：可以约束核球的尺寸始终小于盘（例如在 .cons 中限定 Bulge 的 $R_e$ 不能超过 Disk $R_e$ 的 80%）。
-
-
 
 ## Galfit 添加成分类型的规范 （必须严格遵守）
 @src/prompts/component_specification_galfit.md
@@ -105,6 +89,14 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 
 # Working Note 的格式内容要求
 例如：
+- Round 0: 原图成分预测
+  - 高概率存在伴星: 伴星1坐标, 伴星2坐标
+  - 高概率存在成分: Disk
+    - Disk: 证据xxx
+    - Bulge: 证据xxx
+    - 旋臂: 证据xxx
+  - 不确定是否存在，待确认
+    - Bar: 原因xxx
 - Round 1.a : Disk + Bar
   - 成分分析要点：
     - component_analysis分析摘要：xxx

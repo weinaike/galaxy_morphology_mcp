@@ -111,7 +111,7 @@ def create_comparison_png(
     param_file: str | None = None,
     comp_images: list | None = None,
     comp_types: list | None = None,
-) -> str | None:
+) -> tuple[str | None, dict | None]:
     """Create a scientific comparison plot with original, model, and normalized residual.
 
     Rendering style:
@@ -128,7 +128,7 @@ def create_comparison_png(
         param_file: Path to GALFIT parameter file (feedme or galfit.01) to extract components.
 
     Returns:
-        Path to saved PNG file or None if failed.
+        Tuple of (png_path, statistics_1d), both None if failed.
     """
     try:
         # Read FITS data
@@ -147,7 +147,7 @@ def create_comparison_png(
                     residual_data = hdu.data
 
             if original_data is None:
-                return None
+                return None, None
 
         # Load mask if provided (GALFIT convention: 0=good, non-zero=masked/bad)
         mask = None
@@ -187,11 +187,15 @@ def create_comparison_png(
         orig_info = render_asinh_panel(ax1, original_data, mask, region=region,
                                        show_isophotes=True)
         title_orig = (
-            f"Original Data (vmax=99.5th pctl)\n"
+            f"Original Data (vmax=99.5th pctl, LOW Dynamic Range)\n"
             f"asinh: a={orig_info['asinh_a']:.4f}, vmin={orig_info['vmin_sigma']:.1f}$\\sigma$\n"
-            f"Isophotes: 5$\\sigma$ [lime], vmax [red]"
+            f"Isophotes: 5$\\sigma$ [lime], vmax [red]\n"
+            f"Shaded: Masked; Focus: Central Galaxy"
         )
         ax1.set_title(title_orig, fontsize=10, pad=10)
+        ax1.text(0.97, 0.97, 'DATA (LOW DR)', transform=ax1.transAxes, fontsize=14,
+                 fontweight='bold', color='lime', va='top', ha='right',
+                 bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
         ax1.set_xlabel('X (pixels)', fontsize=12)
         ax1.set_ylabel('Y (pixels)', fontsize=12)
 
@@ -200,11 +204,15 @@ def create_comparison_png(
         orig_info_9999 = render_asinh_panel(ax1b, original_data, mask, region=region,
                                             show_isophotes=True, vmax_percentile=99.99)
         title_orig_9999 = (
-            f"Original Data (vmax=99.99th pctl)\n"
+            f"Original Data (vmax=99.99th pctl, HIGH Dynamic Range)\n"
             f"asinh: a={orig_info_9999['asinh_a']:.4f}, vmin={orig_info_9999['vmin_sigma']:.1f}$\\sigma$\n"
-            f"Isophotes: 5$\\sigma$ [lime], vmax [red]"
+            f"Isophotes: 5$\\sigma$ [lime], vmax [red]\n"
+            f"Shaded: Masked; Focus: Central Galaxy"
         )
         ax1b.set_title(title_orig_9999, fontsize=10, pad=10)
+        ax1b.text(0.97, 0.97, 'DATA (HIGH DR)', transform=ax1b.transAxes, fontsize=14,
+                  fontweight='bold', color='lime', va='top', ha='right',
+                  bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
         ax1b.set_xlabel('X (pixels)', fontsize=12)
         ax1b.tick_params(labelleft=False)
 
@@ -229,6 +237,9 @@ def create_comparison_png(
             f"2*$R_e$ contours of component [cyan]"
         )
         ax2.set_title(title_model, fontsize=10, pad=10)
+        ax2.text(0.97, 0.97, 'MODEL', transform=ax2.transAxes, fontsize=14,
+                 fontweight='bold', color='lime', va='top', ha='right',
+                 bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
         ax2.set_xlabel('X (pixels)', fontsize=12)
         ax2.set_ylabel('Y (pixels)', fontsize=12)
 
@@ -274,6 +285,9 @@ def create_comparison_png(
             f"Range: $\\pm$10$\\sigma$, white=masked"
         )
         ax3.set_title(title_resid, fontsize=10, pad=10)
+        ax3.text(0.97, 0.97, 'RESIDUAL', transform=ax3.transAxes, fontsize=14,
+                 fontweight='bold', color='lime', va='top', ha='right',
+                 bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
         ax3.set_xlabel('X (pixels)', fontsize=12)
         ax3.tick_params(labelleft=False)
 
@@ -292,8 +306,11 @@ def create_comparison_png(
         gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[1, 2],
                                          height_ratios=[3, 1], hspace=0.05)
         ax_sb = fig.add_subplot(gs_sb[0])
+        ax_sb.text(0.97, 0.97, '1D SB PROFILE', transform=ax_sb.transAxes, fontsize=14,
+                   fontweight='bold', color='lime', va='top', ha='right',
+                   bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
-        isolist, chisq1d, n1d = render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
+        isolist, statistics_1d = render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
                                     param_file, components, fit_region,
                                     comp_images=comp_images, comp_types=comp_types,
                                     mask=mask,auto_sky=auto_sky)
@@ -304,6 +321,9 @@ def create_comparison_png(
         render_isophote_panel(ax_iso, original_data, isolist=isolist,
                               mask=mask, norm_params=orig_info)
         ax_iso.set_xlabel('X (pixels)', fontsize=12)
+        ax_iso.text(0.97, 0.97, 'ISOPHOTES', transform=ax_iso.transAxes, fontsize=14,
+                    fontweight='bold', color='lime', va='top', ha='right',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
         ax_iso.tick_params(labelleft=False)
 
         # Save figure
@@ -314,9 +334,9 @@ def create_comparison_png(
         plt.savefig(png_filename, dpi=target_dpi)
         plt.close(fig)
 
-        return png_filename, chisq1d, n1d
+        return png_filename, statistics_1d
     except Exception:
-        return None, None, None
+        return None, None
 
 
 async def run_galfit(
@@ -418,12 +438,13 @@ async def run_galfit(
     comp_types = comp_data[1] if comp_data else None
 
     # Use latest_galfit (fitted parameters) for component parameters in plot
-    comparison_png_path,chisq1d,n1d = create_comparison_png(output_file, sigma_file, mask_file, fit_region,
+    comparison_png_path, statistics_1d = create_comparison_png(output_file, sigma_file, mask_file, fit_region,
                                                 param_file=param_file_for_plot,
                                                 comp_images=comp_images, comp_types=comp_types)
 
     # Extract summary information
-    summary, fit_stats = extract_summary_from_galfit(output_file, config_file)
+    summary, fit_stats = extract_summary_from_galfit(output_file, config_file,
+                                                     statistics_1d=statistics_1d)
 
     # Cleanup the workspace
     ws_dir = os.path.dirname(output_file)
@@ -455,22 +476,17 @@ async def run_galfit(
         shutil.move(subcomps_file, ar_dir)
 
     stats_lines = ""
-    # chi2_nu = fit_stats.get("chi2_nu")
-    # bic = fit_stats.get("bic")
-    
-    # if chi2_nu is not None:
-    #     stats_lines += f"- χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
-    # if bic is not None:
-    #     stats_lines += f"- BIC: {bic:.4f}\n"
 
-    model_freedom = fit_stats.get("nfree")
-    chisq1d_nu = chisq1d / (n1d-model_freedom) if chisq1d is not None and model_freedom is not None and model_freedom > 0 else None
-    bic1d = chisq1d + model_freedom * np.log(n1d) if chisq1d is not None and model_freedom is not None and n1d is not None and n1d > 0 else None
+    chisq1d_nu = fit_stats.get("chisq1d_nu")
+    bic1d = fit_stats.get("bic1d")
+    sky_value = fit_stats.get("sky_value")
 
     if chisq1d_nu is not None:
-        stats_lines += f"- χ²/ν (reduced chi-squared): {chisq1d_nu:.6f}\n"
+        stats_lines += f"-1D χ²/ν (reduced chi-squared): {chisq1d_nu:.6f}\n"
     if bic1d is not None:
-        stats_lines += f"- BIC: {bic1d:.4f}\n"
+        stats_lines += f"-1D BIC: {bic1d:.4f}\n"
+    if sky_value is not None:
+        stats_lines += f"- Sky Background: {sky_value:.6f}\n"
 
     message = (
         "GALFIT completed successfully.\n"

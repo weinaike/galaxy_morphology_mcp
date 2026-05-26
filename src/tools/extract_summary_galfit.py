@@ -391,7 +391,8 @@ def parse_model_hdu_header(header) -> dict[str, Any]:
     return result
 
 
-def extract_summary_from_galfit(fits_file: str, config_file: str = None) -> tuple[str | None, dict[str, Any]]:
+def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
+                                statistics_1d: dict | None = None) -> tuple[str | None, dict[str, Any]]:
     """Extract comprehensive summary information from GALFIT FITS output file.
 
     Reads all information from the FITS file header (model HDU):
@@ -399,10 +400,8 @@ def extract_summary_from_galfit(fits_file: str, config_file: str = None) -> tupl
     - Chi-squared statistics (CHISQ, NDOF, CHI2NU)
     - Observation metadata, WCS information
 
-    This is more reliable than reading from fit.log because:
-    - Each FITS file contains its own fitting results
-    - Multiple GALFIT runs can be executed in parallel
-    - No issues with log file being overwritten/append
+    If statistics_1d is provided (with chisq1d, n1d, sky_value), computes 1D
+    reduced chi-squared (χ²/ν) and 1D BIC, adding them to the returned statistics dict.
 
     Returns a tuple of (summary markdown file path or None, statistics dict with chi2/bic/chi2_nu).
     """
@@ -488,6 +487,19 @@ def extract_summary_from_galfit(fits_file: str, config_file: str = None) -> tupl
 
         # Fitting Statistics section
         stats = fit_results.get("statistics", {})
+
+        # Compute 1D BIC and reduced chi-squared from SB profile
+        chisq1d = statistics_1d.get("chisq1d") if statistics_1d else None
+        n1d = statistics_1d.get("n1d") if statistics_1d else None
+        sky_value = statistics_1d.get("sky_value") if statistics_1d else None
+        model_freedom = stats.get("nfree")
+        if chisq1d is not None and n1d is not None and model_freedom is not None and model_freedom > 0:
+            stats["chisq1d"] = chisq1d
+            stats["n1d"] = n1d
+            stats["sky_value"] = sky_value
+            stats["chisq1d_nu"] = chisq1d / (n1d - model_freedom)
+            stats["bic1d"] = chisq1d + model_freedom * math.log(n1d) if n1d > 0 else None
+
         if stats:
             md_lines.append("---")
             md_lines.append("")
@@ -505,8 +517,20 @@ def extract_summary_from_galfit(fits_file: str, config_file: str = None) -> tupl
                 md_lines.append(f"| N_fix (fixed parameters) | {stats['nfix']} |")
             if "chi2_nu" in stats:
                 md_lines.append(f"| χ²/ν (reduced chi-squared) | {stats['chi2_nu']:.6f} |")
-            if "bic" in stats:
-                md_lines.append(f"| BIC | {stats['bic']:.4f} |")
+            # if "bic" in stats:
+            #     md_lines.append(f"| BIC | {stats['bic']:.4f} |")
+            if "chisq1d" in stats:
+                md_lines.append(f"| χ²₁D (1D SB profile) | {stats['chisq1d']:.4f} |")
+            if "n1d" in stats:
+                md_lines.append(f"| N₁D (1D data points) | {stats['n1d']} |")
+            if "chisq1d_nu" in stats:
+                md_lines.append(f"| χ²₁D/ν (1D reduced chi-squared) | {stats['chisq1d_nu']:.6f} |")
+            if "sky_value" in stats and stats["sky_value"] is not None:
+                md_lines.append(f"| Sky Background | {stats['sky_value']:.6f} |")
+            if "bic1d" in stats:
+                md_lines.append(f"| BIC | {stats['bic1d']:.4f} |")
+                md_lines.append(f"\n*Note: 1D statistics are computed from the 1D surface brightness profile fit, and may differ from the 2D fit statistics.*")
+                md_lines.append(f"\n*BIC is calculated using the 1D fit.*")
             md_lines.append("")
 
         # Observation metadata section
@@ -555,7 +579,6 @@ def extract_summary_from_galfit(fits_file: str, config_file: str = None) -> tupl
         with open(summary_filename, 'w') as f:
             f.write('\n'.join(md_lines))
 
-        stats = fit_results.get("statistics", {})
         return summary_filename, stats
 
     except Exception as e:
@@ -570,7 +593,7 @@ def extract_summary_from_galfit(fits_file: str, config_file: str = None) -> tupl
                 f.write(f"**Error:** {str(e)}\n\n")
                 f.write("Could not extract complete summary information.\n")
 
-            return summary_filename
+            return summary_filename, {}
         except:
             return None, {}
 

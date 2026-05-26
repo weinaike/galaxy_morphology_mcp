@@ -124,9 +124,9 @@ def fit_data_isophotes(image_data, x_center, y_center,
     
     if iso_step1 is None or len(iso_step1.sma) == 0:
         return None
-    
+
+    sky_value = bg_median
     if auto_sky:
-        sky_value = bg_median
         from photutils.aperture import EllipticalAperture
         aperture = EllipticalAperture((cx,cy), maxsma_bounded, maxsma_bounded*(1-eps_bounded), theta=np.deg2rad(pa_bounded+90))
         galmask = aperture.to_mask(method='center')
@@ -250,6 +250,7 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
     zeropoint, pltscale = parse_photometry_params(param_file)
 
     sma_max = min(original_data.shape) * 0.45
+    sky_value = 0
     if auto_sky:
         isolist,sky_value = fit_data_isophotes(original_data, 0, 0,
                                   sma_max=sma_max, mask=mask, auto_sky=auto_sky)
@@ -327,7 +328,7 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
             mu_sky = intensity_to_sb(sky_value, zeropoint, pltscale)
         else:
             mu_sky = 0
-        ax_main.axhline(mu_sky, linestyle='--', color='gray', alpha=0.9, label=f'Sky Level: {sky_value:.4f}')
+        ax_main.axhline(mu_sky, linestyle='--', color='gray', alpha=0.9, label=f'Sky Background: {sky_value:.6f}')
         
     ax_main.set_xscale('log')
     ax_main.set_ylabel(r'Surface Brightness [mag arcsec$^{-2}$]', fontsize=11)
@@ -336,7 +337,8 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
     ax_main.invert_yaxis()
     ax_main.legend(loc='lower left', fontsize=9,
                    frameon=True, fancybox=True, framealpha=0.7)
-    ax_main.set_title('1D Surface Brightness Profile', fontsize=11)
+    ax_main.set_title('1D Surface Brightness Profile\nComponent label: type (n=sersic index) flux_fraction\nSky background: sigma-clipped background\n',
+                      fontsize=10)
     ax_main.grid(True, which='both', alpha=0.1, linestyle='--')
     ax_main.tick_params(labelbottom=False)
 
@@ -375,7 +377,8 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
 
     _style_resid_axes(ax_resid)
 
-    return isolist, chisq, n1d
+    statistics_1d = {"chisq1d": chisq, "n1d": n1d, "sky_value": sky_value}
+    return isolist, statistics_1d
 
 
 def render_isophote_panel(ax, image_data, isolist=None, mask=None,

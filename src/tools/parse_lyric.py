@@ -22,8 +22,16 @@ class ImageInfo:
     shift: float
     shift_param: List[List[float]]
     use_sed: int
-    __image_label: str # used for label only
-    
+    image_label: str # used for label only
+
+
+def _resolve_path_pair(value, config_dir):
+    """Resolve relative path in a [path, hdu] pair to absolute path."""
+    if isinstance(value, list) and len(value) >= 1 and isinstance(value[0], str):
+        if not os.path.isabs(value[0]):
+            value[0] = os.path.normpath(os.path.join(config_dir, value[0]))
+    return value
+
 
 def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
     """Extract FITS file paths from a given text or path.
@@ -33,12 +41,14 @@ def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
     Returns:
         A list of ImageInfo objects.
     """
+    config_dir = None
     if os.path.isfile(path_or_text):
+        config_dir = os.path.dirname(os.path.abspath(path_or_text))
         with open(path_or_text, 'r') as f:
             content = f.read()
     else:
         content = path_or_text
-    lines = [line.strip() for line in content.splitlines() if line.strip() and not line.strip().startswith('#')]    
+    lines = [line.strip() for line in content.splitlines() if line.strip() and not line.strip().startswith('#')]
 
     pattern = re.compile(r'^I([A-Za-z])(\d+)\)\s*(.+?)\s*$')
 
@@ -55,7 +65,9 @@ def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
                 if len(value) == 1:
                     value.append(0)
                 else:
-                    value = [value[0].strip(), int(value[1].strip())]    
+                    value = [value[0].strip(), int(value[1].strip())]
+                if config_dir:
+                    value = _resolve_path_pair(value, config_dir)
             else:
                 value = ast.literal_eval(value)
         except:

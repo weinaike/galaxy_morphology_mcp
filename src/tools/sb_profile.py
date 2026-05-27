@@ -201,7 +201,7 @@ def intensity_to_sb(intensity, zeropoint, pixscale):
 
 def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                       param_file, components, fit_region,
-                      comp_images=None, comp_types=None, mask=None):
+                      comp_images=None, comp_types=None, mask=None, **kwargs):
     """Render 1D SB profile onto a pair of (main, residual) axes.
 
     Fits isophotes on the original data, extracts profiles for both data and
@@ -227,14 +227,18 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
         _style_resid_axes(ax_resid)
         return None
 
-    if param_file is None or model_data is None:
+    if model_data is None:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (missing data)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
         return None
 
-    zeropoint, pltscale = parse_photometry_params(param_file)
+    if param_file is not None:
+        zeropoint, pltscale = parse_photometry_params(param_file)
+    else:
+        zeropoint = kwargs.get("zeropoint", 21.0)
+        pltscale = kwargs.get("pixscale", 0.75)
 
     sma_max = min(original_data.shape) * 0.45
     isolist = fit_data_isophotes(original_data, 0, 0,

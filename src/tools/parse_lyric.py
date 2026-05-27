@@ -3,6 +3,8 @@ from typing import Annotated, Any, List
 import ast
 from dataclasses import dataclass
 import os
+from astropy.io import fits
+from astropy.wcs import WCS
 
 
 @dataclass
@@ -23,6 +25,7 @@ class ImageInfo:
     shift_param: List[List[float]]
     use_sed: int
     image_label: str # used for label only
+    pixscale: float = None
 
 
 def _resolve_path_pair(value, config_dir):
@@ -82,6 +85,20 @@ def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
         values = [group.get(i, None) for i in range(1, 16)]
         values.append(label)
         info = ImageInfo(*values)
+        with fits.open(info.image[0]) as hdul:
+            header = hdul[0].header
+            data_shape = hdul[0].data.shape
+            wcs = WCS(header)
+
+        try:
+            from astropy.wcs.utils import proj_plane_pixel_scales
+            scales = proj_plane_pixel_scales(wcs) * 3600.
+            pixsc = float(scales[0])
+        except Exception:
+            cdelt1 = abs(header.get('CDELT1')) * 3600.
+            pixsc = float(cdelt1)
+        info.pixscale = pixsc
+
         image_infos.append(info)
 
     return image_infos    

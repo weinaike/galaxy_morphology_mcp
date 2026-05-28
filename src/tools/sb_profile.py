@@ -106,7 +106,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 x0=int(round(cx)), y0=int(round(cy)),
                 sma=sma0, eps=e0, pa=pa0
             )
-            ellipse = Ellipse(image_data, geometry)
+            ellipse = Ellipse(image_data, geometry=geometry)
             iso_step1 = ellipse.fit_image(
                 fix_center=True, fix_pa=False, fix_eps=False,
                 minsma=1, maxsma=maxsma, step=0.2, maxgerr=0.5
@@ -151,7 +151,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 x0=int(round(cx)), y0=int(round(cy)),
                 sma=sma0, eps=e0, pa=pa_refined
             )
-            ellipse2 = Ellipse(image_data, geometry2)
+            ellipse2 = Ellipse(image_data, geometry=geometry2)
             iso_best = ellipse2.fit_image(
                 fix_center=True, fix_pa=True, fix_eps=False,
                 minsma=1, maxsma=maxsma, step=0.1, maxgerr=0.5
@@ -214,7 +214,7 @@ def intensity_to_sb(intensity, zeropoint, pixscale):
 
 def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                       param_file, components, fit_region,
-                      comp_images=None, comp_types=None, mask=None, auto_sky=True):
+                      comp_images=None, comp_types=None, mask=None, auto_sky=True, **kwargs):
     """Render 1D SB profile onto a pair of (main, residual) axes.
 
     Fits isophotes on the original data, extracts profiles for both data and
@@ -240,14 +240,18 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
         _style_resid_axes(ax_resid)
         return None
 
-    if param_file is None or model_data is None:
+    if model_data is None:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (missing data)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
         return None
 
-    zeropoint, pltscale = parse_photometry_params(param_file)
+    if param_file is not None:
+        zeropoint, pltscale = parse_photometry_params(param_file)
+    else:
+        zeropoint = kwargs.get("zeropoint", 21.0)
+        pltscale = kwargs.get("pixscale", 0.75)
 
     sma_max = min(original_data.shape) * 0.45
     sky_value = 0

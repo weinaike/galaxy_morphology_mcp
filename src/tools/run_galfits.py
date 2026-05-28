@@ -1,14 +1,27 @@
-
 import os
 import re
 import shlex
+import shutil
 import subprocess
+import importlib.util
 from datetime import datetime
 from glob import glob
-from typing import Any, Annotated
-import shutil
-import importlib.util
 
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')  
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from astropy.io import fits
+from typing import Any, Annotated, List, Dict
+
+from .render_original import render_asinh_panel
+from .sb_profile import render_sb_profile
+from .parse_lyric import (
+    parse_image_infos_from_lyric,
+    extract_component_attributes,
+    generate_subcomps
+)
 
 WORKFLOW_OUTPUT_DIR_RE = re.compile(r"^\d{8}_\d{6}_.+(?:_iter\d+)?$")
 
@@ -132,6 +145,404 @@ def _parse_gssummary(summary_path: str) -> dict[str, Any]:
 
     return result
 
+def create_perband_comparison_png(
+    lyric_file: str,
+    gssummary_file: str,
+    result_fits_file_list: List[str],
+) -> Dict[str, str] | None:
+    image_infos = parse_image_infos_from_lyric(lyric_file)
+    pngs = {}
+    for image_info in image_infos:
+        band = image_info.band
+        result_fits_file = [
+            fits_file for fits_file in result_fits_file_list if fits_file.find(band) != -1
+        ]
+        if result_fits_file is None or len(result_fits_file) != 1:
+            pngs[band] = "comparison png not created: no unique result fits file found for band %s" % band
+            continue
+        result_fits_file = result_fits_file[0]
+
+        with fits.open(result_fits_file) as hdul:
+            if len(hdul) != 5:
+                pngs[band] = "comparison png not created: expected 5 HDUs in result fits file, found %d" % len(hdul)
+                continue
+            original_data = hdul[4].data    
+            model_data = hdul[3].data
+            residual_data = hdul[0].data
+            mask_data = hdul[1].data
+            if mask_data is None:
+                mask_data = np.zeros_like(original_data, dtype=np.float)
+            mask = np.where(mask_data > 0, 1, 0)
+
+        region = None
+        components = extract_component_attributes(
+            summary_file=gssummary_file,
+            config_file=lyric_file,
+            fits_file=image_info.image[0],
+            band=image_info.band
+        )
+        comp_imgs, comp_types = generate_subcomps(image_info, components)
+
+        fig = plt.figure(figsize=(40, 8))
+        gs = GridSpec(1, 5, figure=fig, wspace=0.18,
+                      width_ratios=[1, 1, 1, 1, 0.8])
+        fig.subplots_adjust(left=0.03, right=0.97, top=0.85, bottom=0.08)
+
+        # === Col 0: Original Image (99.5th percentile) ===
+        ax1 = fig.add_subplot(gs[0, 0])
+        orig_info = render_asinh_panel(ax1, original_data, mask, region=region,
+                                       show_isophotes=True)
+        title_orig = (
+            f"Original Data (vmax=99.5th pctl)\n"
+            f"asinh: a={orig_info['asinh_a']:.4f}, vmin={orig_info['vmin_sigma']:.1f}$\\sigma$\n"
+            f"Isophotes: 5$\\sigma$ [lime], vmax [red]"
+        )
+        ax1.set_title(title_orig, fontsize=9, pad=8)
+        ax1.set_xlabel('X (pixels)', fontsize=10)
+        ax1.set_ylabel('Y (pixels)', fontsize=10)
+
+        # === Col 1: Original Image (99.99th percentile) ===
+        ax1b = fig.add_subplot(gs[0, 1])
+        orig_info_9999 = render_asinh_panel(ax1b, original_data, mask, region=region,
+                                            show_isophotes=True, vmax_percentile=99.99)
+        title_orig_9999 = (
+            f"Original Data (vmax=99.99th pctl)\n"
+            f"asinh: a={orig_info_9999['asinh_a']:.4f}, vmin={orig_info_9999['vmin_sigma']:.1f}$\\sigma$\n"
+            f"Isophotes: 5$\\sigma$ [lime], vmax [red]"
+        )
+        ax1b.set_title(title_orig_9999, fontsize=9, pad=8)
+        ax1b.set_xlabel('X (pixels)', fontsize=10)
+        ax1b.tick_params(labelleft=False)
+
+        # === Col 2: Model Image (same asinh stretch as original 99.5) ===
+        ax2 = fig.add_subplot(gs[0, 2])
+        if model_data is not None:
+            render_asinh_panel(ax2, model_data, mask, region=region,
+                               show_isophotes=False, show_mask=False,
+                               norm_params=orig_info,
+                               components=components,
+                               fit_region=region)
+        else:
+            ax2.text(0.5, 0.5, 'No Model', ha='center', va='center', transform=ax2.transAxes)
+
+        title_model = (
+            f"GALFIT Model\n"
+            f"Same asinh stretch as original (99.5th pctl)\n"
+            f"2*$R_e$ contours of component [cyan]"
+        )
+        ax2.set_title(title_model, fontsize=9, pad=8)
+        ax2.set_xlabel('X (pixels)', fontsize=10)
+        ax2.tick_params(labelleft=False)
+
+        # === Col 3: Residual Image (significance map, ±10σ range, seismic) ===
+        ax3 = fig.add_subplot(gs[0, 3])
+        im3 = None
+        if residual_data is not None:
+            resid_display = residual_data.copy()
+            resid_display[~np.isfinite(resid_display)] = 0
+
+            # Normalize by background std from original image (significance map)
+            bg_std = orig_info.get("std", 1.0)
+            if bg_std > 0:
+                resid_norm = resid_display / bg_std
+            else:
+                resid_norm = resid_display
+            # Set masked pixels to 0 before normalization
+            if mask is not None:
+                resid_norm[mask > 0] = 0
+            # Compute extent for real pixel coordinates from fit_region
+            if region is not None:
+                xmin, xmax, ymin, ymax = region
+                plot_extent = [xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5]
+            else:
+                plot_extent = None
+
+            im3 = ax3.imshow(resid_norm, cmap='seismic', vmin=-10, vmax=10,
+                           origin='lower', extent=plot_extent, interpolation='nearest',
+                           aspect='auto')
+
+            # Overlay mask on residual (Opaque White)
+            if mask is not None:
+                mask_overlay = np.zeros((*mask.shape, 4))
+                mask_overlay[mask > 0] = [1, 1, 1, 0.7]
+                ax3.imshow(mask_overlay, origin="lower", extent=plot_extent, interpolation='nearest')
+
+        else:
+            ax3.text(0.5, 0.5, 'No Residual', ha='center', va='center', transform=ax3.transAxes)
+
+        title_resid = (
+            f"Residual/$\\sigma$\n"
+            f"Normalized by bg $\\sigma$ of original image\n"
+            f"Range: $\\pm$10$\\sigma$, white=masked"
+        )
+        ax3.set_title(title_resid, fontsize=9, pad=8)
+        ax3.set_xlabel('X (pixels)', fontsize=10)
+        ax3.tick_params(labelleft=False)
+
+        # Add colorbar for residual (right side)
+        if im3 is not None:
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+            divider = make_axes_locatable(ax3)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            cbar = plt.colorbar(im3, cax=cax, orientation='vertical')
+            cbar.ax.tick_params(labelsize=8)
+            cbar.set_label('Residual (σ)', fontsize=8)
+
+        # === Col 4: 1D Surface Brightness Profile ===
+        gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[0, 4],
+                                         height_ratios=[3, 1], hspace=0.05)
+        ax_sb = fig.add_subplot(gs_sb[0])
+        ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
+        render_sb_profile(
+            ax_sb, ax_sb_resid, original_data, model_data,
+            None, components, region,
+            comp_images=comp_imgs, comp_types=comp_types,
+            mask=mask, zeropoint=image_info.magzp, pixscale=image_info.pixscale
+        )
+
+        # Save figure
+        fits_dir = os.path.dirname(result_fits_file)
+        base_name = os.path.splitext(os.path.basename(result_fits_file))[0]
+        png_filename = os.path.join(fits_dir, f"{base_name}_comparison.png")
+        target_dpi = 1024 / 15
+        plt.savefig(png_filename, dpi=target_dpi)
+        plt.close(fig)
+
+        pngs[band] = png_filename
+    return pngs
+            
+def create_multiband_comparison_png(
+    lyric_file: str,
+    gssummary_file: str,
+    result_fits_file_list: List[str],
+) -> str | None:
+    """
+    Create a single multi-band comparison PNG with all bands stacked vertically.
+
+    Each band occupies 1 row (5 panels in 1x5 layout):
+      Original (99.5) | Original (99.99) | Model | Residual / sigma | SB Profile
+
+    Band name header above each row, horizontal separator between bands.
+    Returns the path to the saved PNG, or None if no valid bands found.
+    """
+    image_infos = parse_image_infos_from_lyric(lyric_file)
+
+    # --- Collect valid band data ---
+    band_data = []
+    for image_info in image_infos:
+        band = image_info.band
+        matched = [f for f in result_fits_file_list if band in f]
+        if len(matched) != 1:
+            continue
+        result_fits_file = matched[0]
+
+        with fits.open(result_fits_file) as hdul:
+            if len(hdul) != 5:
+                continue
+            original_data = hdul[4].data
+            model_data = hdul[3].data
+            residual_data = hdul[0].data
+            mask_data = hdul[1].data
+            if mask_data is None:
+                mask_data = np.zeros_like(original_data, dtype=float)
+            mask = np.where(mask_data > 0, 1, 0)
+
+        components = extract_component_attributes(
+            summary_file=gssummary_file,
+            config_file=lyric_file,
+            fits_file=image_info.image[0],
+            band=image_info.band,
+        )
+
+        comp_imgs, comp_types = generate_subcomps(image_info, components)
+
+        band_data.append({
+            'band': band,
+            'image_info': image_info,
+            'result_fits_file': result_fits_file,
+            'original_data': original_data,
+            'model_data': model_data,
+            'residual_data': residual_data,
+            'mask': mask,
+            'components': components,
+            'comp_imgs': comp_imgs,
+            'comp_types': comp_types,
+        })
+
+    if not band_data:
+        return None
+
+    n_bands = len(band_data)
+
+    # --- Build GridSpec height_ratios ---
+    # Per band: header(0.06) + plot row(1); between bands: separator(0.03)
+    height_ratios = []
+    for i in range(n_bands):
+        height_ratios.append(0.06)   # header
+        height_ratios.append(1.0)    # plot row (1x5)
+        if i < n_bands - 1:
+            height_ratios.append(0.03)  # separator
+    n_rows = len(height_ratios)
+
+    fig_height = 8 * n_bands
+    fig = plt.figure(figsize=(40, fig_height))
+    gs = GridSpec(n_rows, 5, figure=fig,
+                  wspace=0.18, hspace=0.30,
+                  width_ratios=[1, 1, 1, 1, 0.8],
+                  height_ratios=height_ratios)
+    fig.subplots_adjust(left=0.03, right=0.97, top=0.97, bottom=0.03)
+
+    # --- Render each band ---
+    current_row = 0
+    for band_idx, bdata in enumerate(band_data):
+        image_info = bdata['image_info']
+        original_data = bdata['original_data']
+        model_data = bdata['model_data']
+        residual_data = bdata['residual_data']
+        mask = bdata['mask']
+        components = bdata['components']
+        comp_imgs = bdata['comp_imgs']
+        comp_types = bdata['comp_types']
+        region = None
+
+        # ---- Header row (band name) ----
+        ax_header = fig.add_subplot(gs[current_row, :])
+        ax_header.set_axis_off()
+        ax_header.text(
+            0.5, 0.3, f"Band: {bdata['band']}",
+            transform=ax_header.transAxes,
+            fontsize=14, fontweight='bold',
+            ha='center', va='center',
+        )
+        current_row += 1
+
+        r0 = current_row       # single plot row (1x5)
+
+        # ---- Col 0: Original (99.5th percentile) ----
+        ax1 = fig.add_subplot(gs[r0, 0])
+        orig_info = render_asinh_panel(
+            ax1, original_data, mask, region=region, show_isophotes=True)
+        ax1.set_title(
+            f"Original Data (vmax=99.5th pctl)\n"
+            f"asinh: a={orig_info['asinh_a']:.4f}, "
+            f"vmin={orig_info['vmin_sigma']:.1f}$\\sigma$\n"
+            f"Isophotes: 5$\\sigma$ [lime], vmax [red]",
+            fontsize=9, pad=8)
+        ax1.set_xlabel('X (pixels)', fontsize=10)
+        ax1.set_ylabel('Y (pixels)', fontsize=10)
+
+        # ---- Col 1: Original (99.99th percentile) ----
+        ax1b = fig.add_subplot(gs[r0, 1])
+        orig_info_9999 = render_asinh_panel(
+            ax1b, original_data, mask, region=region,
+            show_isophotes=True, vmax_percentile=99.99)
+        ax1b.set_title(
+            f"Original Data (vmax=99.99th pctl)\n"
+            f"asinh: a={orig_info_9999['asinh_a']:.4f}, "
+            f"vmin={orig_info_9999['vmin_sigma']:.1f}$\\sigma$\n"
+            f"Isophotes: 5$\\sigma$ [lime], vmax [red]",
+            fontsize=9, pad=8)
+        ax1b.set_xlabel('X (pixels)', fontsize=10)
+        ax1b.tick_params(labelleft=False)
+
+        # ---- Col 2: Model ----
+        ax2 = fig.add_subplot(gs[r0, 2])
+        if model_data is not None:
+            render_asinh_panel(
+                ax2, model_data, mask, region=region,
+                show_isophotes=False, show_mask=False,
+                norm_params=orig_info,
+                components=components,
+                fit_region=region)
+        else:
+            ax2.text(0.5, 0.5, 'No Model',
+                     ha='center', va='center', transform=ax2.transAxes)
+        ax2.set_title(
+            f"GALFITS Model\n"
+            f"Same asinh stretch as original (99.5th pctl)\n"
+            f"2*$R_e$ contours of component [cyan]",
+            fontsize=9, pad=8)
+        ax2.set_xlabel('X (pixels)', fontsize=10)
+        ax2.tick_params(labelleft=False)
+
+        # ---- Col 3: Residual / sigma ----
+        ax3 = fig.add_subplot(gs[r0, 3])
+        im3 = None
+        if residual_data is not None:
+            resid_display = residual_data.copy()
+            resid_display[~np.isfinite(resid_display)] = 0
+
+            bg_std = orig_info.get("std", 1.0)
+            resid_norm = resid_display / bg_std if bg_std > 0 else resid_display
+            if mask is not None:
+                resid_norm[mask > 0] = 0
+            plot_extent = None
+            if region is not None:
+                xmin, xmax, ymin, ymax = region
+                plot_extent = [xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5]
+
+            im3 = ax3.imshow(
+                resid_norm, cmap='seismic', vmin=-10, vmax=10,
+                origin='lower', extent=plot_extent,
+                interpolation='nearest', aspect='auto')
+
+            if mask is not None:
+                mask_overlay = np.zeros((*mask.shape, 4))
+                mask_overlay[mask > 0] = [1, 1, 1, 0.7]
+                ax3.imshow(mask_overlay, origin='lower',
+                           extent=plot_extent, interpolation='nearest')
+        else:
+            ax3.text(0.5, 0.5, 'No Residual',
+                     ha='center', va='center', transform=ax3.transAxes)
+
+        ax3.set_title(
+            f"Residual/$\\sigma$\n"
+            f"Normalized by bg $\\sigma$ of original image\n"
+            f"Range: $\\pm$10$\\sigma$, white=masked",
+            fontsize=9, pad=8)
+        ax3.set_xlabel('X (pixels)', fontsize=10)
+        ax3.tick_params(labelleft=False)
+
+        if im3 is not None:
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+            divider = make_axes_locatable(ax3)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            cbar = plt.colorbar(im3, cax=cax, orientation='vertical')
+            cbar.ax.tick_params(labelsize=8)
+            cbar.set_label('Residual (σ)', fontsize=8)
+
+        # ---- Col 4: 1D SB Profile ----
+        gs_sb = GridSpecFromSubplotSpec(
+            2, 1, subplot_spec=gs[r0, 4],
+            height_ratios=[3, 1], hspace=0.05)
+        ax_sb = fig.add_subplot(gs_sb[0])
+        ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
+        render_sb_profile(
+            ax_sb, ax_sb_resid, original_data, model_data,
+            None, components, region,
+            comp_images=comp_imgs, comp_types=comp_types,
+            mask=mask,
+            zeropoint=image_info.magzp,
+            pixscale=image_info.pixscale,
+        )
+
+        current_row = r0 + 1
+
+        # ---- Separator row (between bands) ----
+        if band_idx < n_bands - 1:
+            ax_sep = fig.add_subplot(gs[current_row, :])
+            ax_sep.set_axis_off()
+            ax_sep.axhline(y=0.5, color='gray', linewidth=2)
+            current_row += 1
+
+    # --- Save ---
+    output_dir = os.path.dirname(band_data[0]['result_fits_file'])
+    png_filename = os.path.join(output_dir, "all_bands_comparison.png")
+    target_dpi = 1024 / 15
+    plt.savefig(png_filename, dpi=target_dpi)
+    plt.close(fig)
+
+    return png_filename
 
 async def run_galfits(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
@@ -256,6 +667,12 @@ async def run_galfits(
 
     result_fits = sorted(set(glob(os.path.join(workplace_dir, "*_result.fits"))))
 
+    comparison_png = create_multiband_comparison_png(
+        lyric_file=os.path.join(workplace_dir, os.path.basename(config_file)),
+        gssummary_file=summary_files[0] if summary_files else None,
+        result_fits_file_list=result_fits,
+    )
+
     # Additional output files from GalfitS
     constrain_files = sorted(glob(os.path.join(workplace_dir, "*.constrain")))
     params_files = sorted(glob(os.path.join(workplace_dir, "*.params")))
@@ -268,6 +685,7 @@ async def run_galfits(
         "message": f"GalfitS completed successfully for {config_file}. Output files:\n"
         f"- summary_files : .gssummary files contain fitting parameters, χ² statistics, and model components for all bands\n"
         f"- imagefit_pngs : PNG visualizations showing observed data, model fits, and residuals for all image bands\n"
+        f"- comparison_png : A single PNG file with multi-band comparison panels (Original, Model, Residual, SB Profile) stacked vertically for all bands\n"
         f"- sedmodel_pngs : PNG plots of Spectral Energy Distribution (SED) models showing multi-band flux fitting across wavelengths\n"
         f"- result_fits : FITS files containing the best-fit model results\n"
         f"- constrain_files : Constraint files used during fitting\n"
@@ -275,6 +693,7 @@ async def run_galfits(
         "workplace": workplace_dir,
         "summary_files": summary_files,
         "imagefit_pngs": imagefit_pngs,
+        "comparison_png": comparison_png,
         "sedmodel_pngs": sedmodel_pngs,
         "result_fits": result_fits,
         "constrain_files": constrain_files,
@@ -352,10 +771,3 @@ async def run_galfits_image_sed_fitting(
     It runs GalfitS as a subprocess and returns discovered artifacts (summary + PNGs) and logs.
     """
     return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
-
-if __name__ == '__main__':
-    config_file = "/home/jiangbo/galaxy_morphology_mcp/GALFITS_examples/latest/configs/obj692"    
-    image_fitting_workplace = "/home/jiangbo/GALFITS_examples/latest/results/obj692"
-    import asyncio
-    res = asyncio.run(run_galfits_sed_fitting(config_file=config_file, image_fitting_workplace=image_fitting_workplace, extra_args=["--fit_method", "ES"]))
-    print(res)

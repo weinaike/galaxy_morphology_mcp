@@ -106,7 +106,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 x0=int(round(cx)), y0=int(round(cy)),
                 sma=sma0, eps=e0, pa=pa0
             )
-            ellipse = Ellipse(image_data, geometry)
+            ellipse = Ellipse(image_data, geometry=geometry)
             iso_step1 = ellipse.fit_image(
                 fix_center=True, fix_pa=False, fix_eps=False,
                 minsma=1, maxsma=maxsma, step=0.2, maxgerr=0.5
@@ -140,7 +140,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 x0=int(round(cx)), y0=int(round(cy)),
                 sma=sma0, eps=e0, pa=pa_refined
             )
-            ellipse2 = Ellipse(image_data, geometry2)
+            ellipse2 = Ellipse(image_data, geometry=geometry2)
             iso_best = ellipse2.fit_image(
                 fix_center=True, fix_pa=True, fix_eps=False,
                 minsma=1, maxsma=maxsma, step=0.1, maxgerr=0.5

@@ -40,7 +40,7 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 # operation (see below)   range
 
   3_2_1_9        x          offset      # Hard constraint: Constrains the
-                                        # x parameter for components 3, 2,
+  3_2_1_9        y          offset      # x,y parameter for components 3, 2,
                                         # 1, and 9 to have RELATIVE positions
                                         # defined by the initial parameter file.
   

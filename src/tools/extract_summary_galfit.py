@@ -528,7 +528,7 @@ def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
             if "sky_value" in stats and stats["sky_value"] is not None:
                 md_lines.append(f"| Sky Background | {stats['sky_value']:.6f} |")
             if "bic1d" in stats:
-                md_lines.append(f"| BIC | {stats['bic1d']:.4f} |")
+                md_lines.append(f"| BIC | {stats['bic']:.4f} |")
                 md_lines.append(f"\n*Note: 1D statistics are computed from the 1D surface brightness profile fit, and may differ from the 2D fit statistics.*")
                 md_lines.append(f"\n*BIC is calculated using the 1D fit.*")
             md_lines.append("")

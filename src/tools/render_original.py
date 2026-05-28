@@ -76,7 +76,7 @@ def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
     # Mask overlay: semi-transparent black for masked regions
     if show_mask:
         mask_overlay = np.zeros((*mask.shape, 4))
-        mask_overlay[mask > 0] = [0, 0, 0, 0.7]
+        mask_overlay[mask > 0] = [0, 0, 0, 1.0]
         ax.imshow(mask_overlay, origin="lower", extent=ext)
 
     # Draw component 2*Re ellipses (for model panel)

@@ -467,6 +467,11 @@ async def run_galfit(
         shutil.move(summary, ar_dir)
         summary = os.path.join(ar_dir, os.path.basename(summary))    
 
+    # Archive constraint file if referenced in config
+    constraint_file = config_paths.get("constraint") or None
+    if constraint_file and os.path.exists(constraint_file):
+        shutil.copy(constraint_file, ar_dir)
+
     if matched_galfit_files:
         shutil.copy(latest_galfit, ar_dir)
     shutil.copy(config_file, ar_dir)
@@ -479,12 +484,14 @@ async def run_galfit(
 
     chisq1d_nu = fit_stats.get("chisq1d_nu")
     bic1d = fit_stats.get("bic1d")
+    chi2_nu = fit_stats.get("chi2_nu")
+    bic = fit_stats.get("bic")
     sky_value = fit_stats.get("sky_value")
 
     if chisq1d_nu is not None:
-        stats_lines += f"-1D χ²/ν (reduced chi-squared): {chisq1d_nu:.6f}\n"
+        stats_lines += f"-χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
     if bic1d is not None:
-        stats_lines += f"-1D BIC: {bic1d:.4f}\n"
+        stats_lines += f"-BIC: {bic:.4f}\n"
     if sky_value is not None:
         stats_lines += f"- Sky Background: {sky_value:.6f}\n"
 

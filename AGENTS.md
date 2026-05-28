@@ -100,23 +100,27 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 - Round 1.a : Disk + Bar
   - 成分分析要点：
     - component_analysis分析摘要：xxx
-    - 预估存在的物理成分类型，包含 Disk + Bugle + Bar
+    - 【这部分必须有】预估存在的物理成分类型，包含 Disk + Bugle + Bar（
     - 本轮需要添加的 Bar 成分; 其主要的 R_e预期小于Disk的R_e，Mag 预期和Disk 相当或者稍暗。
   - 参数设置摘要：xxx
   - galfit拟合结果摘要：
     - 拟合后成分类型与关键参数（位置、星等、尺寸、形状参数等）xxxx, 距离预期目标的偏差
     - 拟合统计指标（如 reduced chi-square, BIC/AIC 等
+  -【这部分必须有】距离预期目标的偏差
 - Round 1.b : Disk + Bar
+  - 【这部分必须有】预估存在的物理成分类型，包含 Disk + Bugle + Bar
   - 参数设置摘要：上一轮 Mag 拟合后偏低， 考虑调整 mag 初值再次拟合。
   - galfit拟合结果摘要：
     - 拟合后成分类型与关键参数（位置、星等、尺寸、形状参数等）xxxx, 距离预期目标的偏差
     - 拟合统计指标（如 reduced chi-square, BIC/AIC 等
+  - 【这部分必须有】距离预期目标的偏差
 - Round 2.a : Disk + Bugle + Bar
   - 成分分析要点：
     - component_analysis分析摘要：xxx
-    - 预估存在的物理成分类型，包含 Disk + Bugle + Bar
+    - 【这部分必须有】预估存在的物理成分类型，包含 Disk + Bugle + Bar
     - 本轮需要添加的 Bugle 成分; 其主要的 n预期2， xxx
   - 参数设置摘要：xxx
   - galfit拟合结果摘要：
-    - 拟合后成分类型与关键参数（位置、星等、尺寸、形状参数等）xxxx, 距离预期目标的偏差
+    - 拟合后成分类型与关键参数（位置、星等、尺寸、形状参数等）xxxx, 
+    - 【这部分必须有】距离预期目标的偏差
     - 拟合统计指标（如 reduced chi-square, BIC/AIC 等

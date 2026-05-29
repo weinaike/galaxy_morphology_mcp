@@ -99,3 +99,6 @@ gs_data
 tests-js/*
 .cline/*
 8021
+docs/superpowers/
+.claude/worktrees/
+.superpowers/

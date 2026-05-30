@@ -489,11 +489,12 @@ async def run_galfit(
     sky_value = fit_stats.get("sky_value")
 
     if chisq1d_nu is not None:
-        stats_lines += f"-χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
+        stats_lines += f"-2D χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
+        stats_lines += f"-1D χ²/ν (reduced chi-squared): {chisq1d_nu:.6f}\n"
     if bic1d is not None:
-        stats_lines += f"-BIC: {bic:.4f}\n"
+        stats_lines += f"-1D BIC: {bic1d:.4f}\n"
     if sky_value is not None:
-        stats_lines += f"- Sky Background: {sky_value:.6f}\n"
+        stats_lines += f"-1D Sky Background: {sky_value:.6f}\n"
 
     message = (
         "GALFIT completed successfully.\n"

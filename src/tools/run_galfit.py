@@ -166,6 +166,15 @@ def create_comparison_png(
         if mask is None:
             mask = np.zeros(original_data.shape, dtype=float)
 
+        # Load sigma if provided
+        sigma_data = None
+        if sigma_file and os.path.exists(sigma_file):
+            sigma_full = fits.getdata(sigma_file)
+            if sigma_full.shape != original_data.shape:
+                sigma_data = _crop_to_fit_region(sigma_full, fit_region, original_data.shape)
+            else:
+                sigma_data = sigma_full
+
         # Convert fit_region tuple to list for render_asinh_panel
         region = list(fit_region) if fit_region is not None else None
 
@@ -310,7 +319,7 @@ def create_comparison_png(
                    fontweight='bold', color='lime', va='top', ha='right',
                    bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
-        isolist, statistics_1d = render_sb_profile(ax_sb, ax_sb_resid, original_data, model_data,
+        isolist, statistics_1d = render_sb_profile(ax_sb, ax_sb_resid, original_data, sigma_data, model_data,
                                     param_file, components, fit_region,
                                     comp_images=comp_images, comp_types=comp_types,
                                     mask=mask,auto_sky=auto_sky)

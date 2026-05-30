@@ -21,7 +21,7 @@ except ImportError:
 DEFAULT_COLORS = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728',
                   '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
 
-
+integrmode = 'nearest_neighbor'
 def parse_photometry_params(param_file: str) -> tuple[float, float]:
     """Parse zeropoint (J) and plate scale (K) from a GALFIT parameter file."""
     zeropoint, pltscale = 21.097, 0.750
@@ -128,11 +128,18 @@ def fit_data_isophotes(image_data, x_center, y_center,
     sky_value = bg_median
     if auto_sky:
         from photutils.aperture import EllipticalAperture
-        aperture = EllipticalAperture((cx,cy), maxsma_bounded, maxsma_bounded*(1-eps_bounded), theta=np.deg2rad(pa_bounded+90))
+        mask_a = maxsma_bounded*3
+        mask_b = maxsma_bounded*(1-eps_bounded)*3
+        if np.max([mask_a, mask_b]) > 0.4*dim:
+            mask_a = 0.4*dim
+        aperture = EllipticalAperture((cx,cy), mask_a, mask_b, theta=np.deg2rad(pa_bounded+90))
         galmask = aperture.to_mask(method='center')
         sky_image = image_data.copy()
         sky_image.mask = sky_image.mask | galmask.to_image(image_data.shape).astype(bool)
         sky_value = sigma_clipped_stats(sky_image, sigma=3, maxiters=10)[1]
+        
+        
+        
 
     # ---- Derive PA from Step 1 isophotes within outer boundary ----
     pas = np.array([iso.pa for iso in iso_step1
@@ -184,26 +191,26 @@ def extract_profile(image_data, geometry, x_offset=0, y_offset=0, mask=None):
         return np.array([]), np.array([])
     if mask is not None:
         image_data = np.ma.array(image_data, mask=mask > 0)
-    sma_arr, intensity_arr = [], []
+    sma_arr, intensity_arr, intensity_err_arr = [], [], []
     for sma, eps, pa_deg, x0, y0 in geometry:
         if sma < 1:
             continue
         try:
             sample = EllipseSample(image_data, sma,
                                    x0=x0 - x_offset, y0=y0 - y_offset,
-                                   eps=eps, position_angle=np.radians(pa_deg))
+                                   eps=eps, position_angle=np.radians(pa_deg), integrmode=integrmode)
             s = sample.extract()
             if len(s) == 0:
                 continue
             intensities = s[2]
             if len(intensities) > 0:
                 med = np.mean(intensities)
-                if med > 1e-5:
-                    sma_arr.append(sma)
-                    intensity_arr.append(med)
+                sma_arr.append(sma)
+                intensity_arr.append(med)
+                intensity_err_arr.append(np.std(intensities)/np.sqrt(len(intensities)))
         except Exception:
             continue
-    return np.array(sma_arr), np.array(intensity_arr)
+    return np.array(sma_arr), np.array(intensity_arr), np.array(intensity_err_arr)
 
 
 def intensity_to_sb(intensity, zeropoint, pixscale):
@@ -212,7 +219,7 @@ def intensity_to_sb(intensity, zeropoint, pixscale):
         return -2.5 * np.log10(intensity / pixscale ** 2) + zeropoint
 
 
-def render_sb_profile(ax_main, ax_resid, original_data, model_data,
+def render_sb_profile(ax_main, ax_resid, original_data, sigma_data, model_data,
                       param_file, components, fit_region,
                       comp_images=None, comp_types=None, mask=None, auto_sky=True, **kwargs):
     """Render 1D SB profile onto a pair of (main, residual) axes.
@@ -268,10 +275,56 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
         _style_resid_axes(ax_resid)
         return None
     
-    sma_data = isolist.sma
-    intens_data = isolist.intens
-    int_err_data = getattr(isolist, 'int_err', np.zeros_like(intens_data))
+    # sma_data = isolist.sma
+    # intens_data = isolist.intens
+    # int_err_data = getattr(isolist, 'int_err', np.zeros_like(intens_data))
+
+    
+    geometry = [(iso.sma, iso.eps, np.degrees(iso.pa), iso.x0, iso.y0)
+                for iso in isolist if iso.valid]
+    sma_data,intens_data,int_err_data = extract_profile(original_data, geometry, mask=mask)
     mu_data = intensity_to_sb(intens_data, zeropoint, pltscale)
+
+    '''
+    ### sigma map
+    sigma_I = []
+
+    varmap = sigma_data**2
+    if mask is not None:
+        varmap = np.ma.array(varmap, mask=mask > 0)
+    for iso in isolist:
+        if iso.sma<1:
+            continue
+        geom = iso.sample.geometry
+
+        # Sample the variance map along the same ellipse
+        var_sample = EllipseSample(
+            varmap,
+            sma=iso.sma,
+            geometry=geom,
+            integrmode=integrmode,
+            sclip=iso.sample.sclip,
+            n_clip=iso.sample.n_clip,
+        )
+        values = var_sample.extract()
+        if len(values) == 0:
+            continue    
+        # values[2] contains sampled variance values
+        var_values = values[2]
+        n = len(var_values)
+        if n > 0:
+            sigma_mean = np.sqrt(np.sum(var_values)) / n
+            sigma_I.append(sigma_mean)
+
+    sigma_I = np.array(sigma_I)
+
+    # Add sky uncertainty if known
+    # sigma_sky_level is the uncertainty in the residual sky level per pixel
+    sigma_total_I = np.sqrt(sigma_I**2 )#+ systematic error!!!
+
+    int_err_data = sigma_total_I
+    '''
+    
     # Propagate intensity error to SB error: dmu = (2.5 / (ln10 * intens)) * int_err
     with np.errstate(divide='ignore', invalid='ignore'):
         muerr_data = (2.5 / (np.log(10) * intens_data)) * int_err_data
@@ -283,7 +336,7 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
     # Model profile using same geometry
     geometry = [(iso.sma, iso.eps, np.degrees(iso.pa), iso.x0, iso.y0)
                 for iso in isolist if iso.valid]
-    sma_model, intens_model = extract_profile(model_data, geometry, mask=mask)
+    sma_model, intens_model, _ = extract_profile(model_data, geometry, mask=mask)
     mu_model = intensity_to_sb(intens_model, zeropoint, pltscale)
 
     # Align data and model by sma (extract_profile may skip points, causing size mismatch)
@@ -314,7 +367,7 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
                           for f in comp_fluxes]
 
         for i, (comp_img, comp_type) in enumerate(zip(comp_images, comp_types)):
-            sma_c, intens_c = extract_profile(comp_img, geometry, mask=mask)
+            sma_c, intens_c, _ = extract_profile(comp_img, geometry, mask=mask)
             if len(sma_c) == 0:
                 continue
             mu_c = intensity_to_sb(intens_c, zeropoint, pltscale)
@@ -361,9 +414,13 @@ def render_sb_profile(ax_main, ax_resid, original_data, model_data,
         vresid = np.isfinite(residual)
         if np.any(vresid):
             ax_resid.axhline(0, color='gray', linewidth=0.8)
-            ax_resid.scatter(sma_common[vresid], residual[vresid],
-                             s=8, facecolors='none',
-                             edgecolors='black', linewidths=0.7)
+            # ax_resid.scatter(sma_common[vresid], residual[vresid],
+            #                  s=8, facecolors='none',
+            #                  edgecolors='black', linewidths=0.7)
+            ax_resid.errorbar(sma_common[vresid], residual[vresid], yerr=muerr_data[cmask][vresid],
+                              fmt='o', mfc='none', mec='black',
+                              ecolor='black', markersize=3,
+                              linewidth=0.4, zorder=5)
             # Mark out-of-range points (|Δμ| > 0.5) with red triangles
             out_hi = vresid & (residual > 0.5)
             out_lo = vresid & (residual < -0.5)

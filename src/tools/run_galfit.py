@@ -130,8 +130,8 @@ def create_comparison_png(
     Returns:
         Tuple of (png_path, statistics_1d), both None if failed.
     """
+    # ── Phase 1: Load core data (failure = fatal) ──────────────────
     try:
-        # Read FITS data
         with fits.open(fits_file) as hdul:
             original_data = None
             model_data = None
@@ -147,38 +147,42 @@ def create_comparison_png(
                     residual_data = hdu.data
 
             if original_data is None:
+                print(f"[create_comparison_png] No original data HDU found in {fits_file}")
                 return None, None
+    except Exception as e:
+        print(f"[create_comparison_png] Failed to read FITS file {fits_file}: {e}")
+        return None, None
 
-        # Load mask if provided (GALFIT convention: 0=good, non-zero=masked/bad)
-        mask = None
-        if mask_file and os.path.exists(mask_file):
+    # ── Phase 2: Load optional data (failure = degrade gracefully) ──
+    mask = np.zeros(original_data.shape, dtype=float)
+    if mask_file and os.path.exists(mask_file):
+        try:
             mask_full = fits.getdata(mask_file)
-            # Crop to matching region using fit_region from feedme
             if mask_full.shape != original_data.shape:
                 mask = _crop_to_fit_region(mask_full, fit_region, original_data.shape)
             else:
                 mask = mask_full
-            # Normalize mask to 0-1 range for display
-            mask = np.array(mask, dtype=float)
-            mask = np.where(mask > 0, 1, 0)
-
-        # Default: no mask (all pixels good)
-        if mask is None:
+            mask = np.where(np.array(mask, dtype=float) > 0, 1.0, 0.0)
+        except Exception as e:
+            print(f"[create_comparison_png] Failed to load mask {mask_file}, degrading to no-mask: {e}")
             mask = np.zeros(original_data.shape, dtype=float)
 
-        # Load sigma if provided
-        sigma_data = None
-        if sigma_file and os.path.exists(sigma_file):
+    sigma_data = None
+    if sigma_file and os.path.exists(sigma_file):
+        try:
             sigma_full = fits.getdata(sigma_file)
             if sigma_full.shape != original_data.shape:
                 sigma_data = _crop_to_fit_region(sigma_full, fit_region, original_data.shape)
             else:
                 sigma_data = sigma_full
+        except Exception as e:
+            print(f"[create_comparison_png] Failed to load sigma {sigma_file}, degrading to no-sigma: {e}")
 
-        # Convert fit_region tuple to list for render_asinh_panel
+    # ── Phase 3: Render ────────────────────────────────────────────
+    fig = plt.figure(figsize=(24, 16))
+    try:
         region = list(fit_region) if fit_region is not None else None
 
-        # Parse components for model panel contour display
         components = None
         if param_file and os.path.exists(param_file):
             components = parse_components(param_file)
@@ -186,7 +190,6 @@ def create_comparison_png(
         # Create figure: 2 rows x 3 cols
         # Row 0: Original 99.5 | Original 99.99 | Isophotes
         # Row 1: Model          | Residual 2D    | 1D SB Profile
-        fig = plt.figure(figsize=(24, 16))
         gs = GridSpec(2, 3, figure=fig, wspace=0.18, hspace=0.28,
                       width_ratios=[1, 1, 1])
         fig.subplots_adjust(left=0.05, right=0.97, top=0.88, bottom=0.05)
@@ -225,10 +228,6 @@ def create_comparison_png(
         ax1b.set_xlabel('X (pixels)', fontsize=12)
         ax1b.tick_params(labelleft=False)
 
-        # === Row 0, Col 2: Isophote Ellipses ===
-        # (placed here so isolist is computed later via SB profile)
-        # We'll render isophotes after SB profile computes isolist
-
         # === Row 1, Col 0: Model Image (same asinh stretch as original 99.5) ===
         ax2 = fig.add_subplot(gs[1, 0])
         if model_data is not None:
@@ -259,16 +258,13 @@ def create_comparison_png(
             resid_display = residual_data.copy()
             resid_display[~np.isfinite(resid_display)] = 0
 
-            # Normalize by background std from original image (significance map)
             bg_std = orig_info.get("std", 1.0)
             if bg_std > 0:
                 resid_norm = resid_display / bg_std
             else:
                 resid_norm = resid_display
-            # Set masked pixels to 0 before normalization
             if mask is not None:
                 resid_norm[mask > 0] = 0
-            # Compute extent for real pixel coordinates from fit_region
             if fit_region is not None:
                 xmin, xmax, ymin, ymax = fit_region
                 plot_extent = [xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5]
@@ -279,7 +275,6 @@ def create_comparison_png(
                            origin='lower', extent=plot_extent, interpolation='nearest',
                            aspect='auto')
 
-            # Overlay mask on residual (Opaque White)
             if mask is not None:
                 mask_overlay = np.zeros((*mask.shape, 4))
                 mask_overlay[mask > 0] = [1, 1, 1, 0.7]
@@ -300,7 +295,6 @@ def create_comparison_png(
         ax3.set_xlabel('X (pixels)', fontsize=12)
         ax3.tick_params(labelleft=False)
 
-        # Add colorbar for residual (right side)
         if im3 is not None:
             from mpl_toolkits.axes_grid1 import make_axes_locatable
             divider = make_axes_locatable(ax3)
@@ -310,25 +304,38 @@ def create_comparison_png(
             cbar.set_label('Residual (σ)', fontsize=9)
 
         # === Row 1, Col 2: 1D Surface Brightness Profile ===
-        ### will use sky from original image by default.
-        auto_sky = True
-        gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[1, 2],
-                                         height_ratios=[3, 1], hspace=0.05)
-        ax_sb = fig.add_subplot(gs_sb[0])
-        ax_sb.text(0.97, 0.97, '1D SB PROFILE', transform=ax_sb.transAxes, fontsize=14,
-                   fontweight='bold', color='lime', va='top', ha='right',
-                   bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
-        ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
-        isolist, statistics_1d = render_sb_profile(ax_sb, ax_sb_resid, original_data, sigma_data, model_data,
-                                    param_file, components, fit_region,
-                                    comp_images=comp_images, comp_types=comp_types,
-                                    mask=mask,auto_sky=auto_sky)
-    
-        # === Row 0, Col 2: Isophote Ellipses (rendered after isolist is computed) ===
-        from .sb_profile import render_isophote_panel
+        statistics_1d = None
+        isolist = None
+        try:
+            auto_sky = True
+            gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[1, 2],
+                                             height_ratios=[3, 1], hspace=0.05)
+            ax_sb = fig.add_subplot(gs_sb[0])
+            ax_sb.text(0.97, 0.97, '1D SB PROFILE', transform=ax_sb.transAxes, fontsize=14,
+                       fontweight='bold', color='lime', va='top', ha='right',
+                       bbox=dict(boxstyle='round,pad=0.2', fc='black', alpha=0.6))
+            ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
+            isolist, statistics_1d = render_sb_profile(ax_sb, ax_sb_resid, original_data, sigma_data, model_data,
+                                        param_file, components, fit_region,
+                                        comp_images=comp_images, comp_types=comp_types,
+                                        mask=mask, auto_sky=auto_sky)
+        except Exception as e:
+            print(f"[create_comparison_png] 1D SB profile failed, degrading: {e}")
+
+        # === Row 0, Col 2: Isophote Ellipses ===
         ax_iso = fig.add_subplot(gs[0, 2])
-        render_isophote_panel(ax_iso, original_data, isolist=isolist,
-                              mask=mask, norm_params=orig_info)
+        if isolist is not None:
+            try:
+                from .sb_profile import render_isophote_panel
+                render_isophote_panel(ax_iso, original_data, isolist=isolist,
+                                      mask=mask, norm_params=orig_info)
+            except Exception as e:
+                print(f"[create_comparison_png] Isophote panel failed: {e}")
+                ax_iso.text(0.5, 0.5, 'Isophote rendering failed', ha='center', va='center',
+                           transform=ax_iso.transAxes, color='red', fontsize=12)
+        else:
+            ax_iso.text(0.5, 0.5, 'No 1D profile available\nfor isophotes', ha='center', va='center',
+                       transform=ax_iso.transAxes, fontsize=12)
         ax_iso.set_xlabel('X (pixels)', fontsize=12)
         ax_iso.text(0.97, 0.97, 'ISOPHOTES', transform=ax_iso.transAxes, fontsize=14,
                     fontweight='bold', color='lime', va='top', ha='right',
@@ -341,11 +348,13 @@ def create_comparison_png(
         png_filename = os.path.join(fits_dir, f"{base_name}_comparison.png")
         target_dpi = 1024 / 15
         plt.savefig(png_filename, dpi=target_dpi)
-        plt.close(fig)
 
         return png_filename, statistics_1d
-    except Exception:
+    except Exception as e:
+        print(f"[create_comparison_png] Rendering failed: {e}")
         return None, None
+    finally:
+        plt.close(fig)
 
 
 async def run_galfit(

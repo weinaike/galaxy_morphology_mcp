@@ -23,9 +23,12 @@ get_galfits_analysis_prompt = prompts.get_galfits_analysis_prompt
 CLASSIFICATION_SYSTEM_MESSAGE = prompts.get_classification_system_message()
 get_classification_prompt = prompts.get_classification_prompt
 RESIDUAL_ANALYSIS_SYSTEM_MESSAGE = prompts.get_residual_analysis_system_message()
-get_residual_analysis_prompt = prompts.get_residual_analysis_prompt
 get_component_specification_galfit = prompts.get_component_specification_galfit
 get_component_specification_galfits = prompts.get_component_specification_galfits
+get_phase_visual_extraction = prompts.get_phase_visual_extraction
+get_phase_parameter_review = prompts.get_phase_parameter_review
+get_phase_expert_reasoning = prompts.get_phase_expert_reasoning
+get_phase_decision_output = prompts.get_phase_decision_output
 
 
 

@@ -1,0 +1,219 @@
+"""
+OpenAI SDK analysis backend with multi-turn conversation support.
+
+Uses the OpenAI chat completions API (compatible with Gemini and other
+models via base_url). Sends focused prompts sequentially, maintaining
+conversation history across turns.
+"""
+
+import os
+import base64
+import asyncio
+import uuid
+from typing import Optional
+import dotenv
+
+dotenv.load_dotenv()
+
+API_TIMEOUT = 600  # 10 minutes total
+
+
+def _get_config() -> tuple[str, str, Optional[str]]:
+    """Read API configuration from OPENAI_* environment variables."""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    return api_key, model, base_url
+
+
+def _run_async(coro):
+    """Run an async coroutine safely from a potentially async MCP server context."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
+
+
+def _build_image_message(text: str, image_path: str) -> dict:
+    """Build a user message with inline image + text (OpenAI vision format)."""
+    ext = os.path.splitext(image_path)[1].lower()
+    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+    mime_type = mime_map.get(ext, "image/png")
+
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": text},
+            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
+        ],
+    }
+
+
+class _UsageAccumulator:
+    """Accumulates token usage across multiple API calls."""
+
+    def __init__(self):
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.turns = 0
+
+    def add(self, response):
+        if response.usage:
+            self.prompt_tokens += response.usage.prompt_tokens or 0
+            self.completion_tokens += response.usage.completion_tokens or 0
+            self.turns += 1
+
+    @property
+    def total_tokens(self):
+        return self.prompt_tokens + self.completion_tokens
+
+    def summary(self) -> str:
+        if self.turns == 0:
+            return ""
+        return f"[Token usage] prompts={self.prompt_tokens}, completions={self.completion_tokens}, total={self.total_tokens} ({self.turns} turns)"
+
+
+async def _call_with_retry(client, model: str, messages: list[dict], usage: _UsageAccumulator, max_retries: int = 3) -> str:
+    """Call chat completions with retry on transient failures."""
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
+                model=model,
+                messages=messages,
+                max_tokens=16384,
+                temperature=0.3,
+            )
+            usage.add(response)
+            return response.choices[0].message.content
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                wait = attempt * 10
+                print(f"API call failed (attempt {attempt}/{max_retries}): {e}. Retrying in {wait}s...")
+                await asyncio.sleep(wait)
+    raise last_error
+
+
+async def _query(
+    system_prompt: str,
+    analysis_prompts: list[str],
+    image_path: str,
+    deferred_system: bool = False,
+) -> str:
+    """Run analysis via OpenAI SDK — single or multi-turn depending on prompt count.
+
+    Args:
+        deferred_system: When False (default), system_prompt is set from the
+            first turn and all history is shared across turns (Mode 1).
+            When True, turn 1 runs with image + turn1 only (no system_prompt);
+            from turn 2 onward, system_prompt is injected and previous turn
+            results are carried as assistant messages (Mode 2).
+    """
+    from openai import OpenAI
+
+    api_key, model, base_url = _get_config()
+
+    client_kwargs: dict = {"api_key": api_key, "timeout": 360.0}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+
+    client = OpenAI(**client_kwargs)
+
+    text_parts: list[str] = []
+    usage = _UsageAccumulator()
+
+    for i, prompt_text in enumerate(analysis_prompts):
+        if not deferred_system:
+            # Mode 1: system_prompt always present, full history accumulates
+            if i == 0:
+                messages: list[dict] = [{"role": "system", "content": system_prompt}]
+            messages.append(
+                _build_image_message(prompt_text, image_path) if i == 0
+                else {"role": "user", "content": prompt_text}
+            )
+        else:
+            # Mode 2: turn 1 — no system, image + prompt only
+            if i == 0:
+                messages = [_build_image_message(prompt_text, image_path)]
+            else:
+                # turn 2+: inject system_prompt, carry prior results, then new prompt
+                messages = [{"role": "system", "content": system_prompt}]
+                for prev in text_parts:
+                    messages.append({"role": "assistant", "content": prev})
+                messages.append({"role": "user", "content": prompt_text})
+
+        assistant_text = await _call_with_retry(client, model, messages, usage)
+
+        if not assistant_text:
+            return "\n\n".join(text_parts) if text_parts else ""
+        text_parts.append(assistant_text)
+
+        if not deferred_system:
+            messages.append({"role": "assistant", "content": assistant_text})
+        print(f"Turn {i+1} completed. {usage.summary()}")
+    print(f"Analysis completed. Total {usage.summary()}")
+    return "\n\n".join(text_parts)
+
+
+def run_openai_analysis(
+    system_prompt: str,
+    analysis_prompts: list[str],
+    image_path: str,
+    deferred_system: bool = False,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Run component analysis using the OpenAI SDK.
+
+    Single-turn when *analysis_prompts* has 1 item; multi-turn when >1.
+    The first turn always includes the image. Conversation history is
+    maintained across turns.
+
+    Args:
+        system_prompt: System message (residual analysis expert + component spec).
+        analysis_prompts: Ordered list of user prompts (1 = single-turn, >1 = multi-turn).
+        image_path: Path to the combined residual image file.
+        deferred_system: If True, turn 1 runs without system_prompt; system_prompt
+            is injected from turn 2 onward along with prior turn results.
+
+    Returns:
+        (analysis_text, session_id, error_message)
+    """
+    try:
+        from openai import OpenAI  # noqa: F401
+    except ImportError:
+        return None, None, "openai is not installed. Install with: pip install openai"
+
+    api_key, _, _ = _get_config()
+    if not api_key:
+        return None, None, (
+            "OPENAI_API_KEY is not set. "
+            "Set it in your .env file or environment."
+        )
+
+    session_id = str(uuid.uuid4())
+
+    try:
+        coro = _query(system_prompt, analysis_prompts, image_path, deferred_system=deferred_system)
+        wrapped = asyncio.wait_for(coro, timeout=API_TIMEOUT)
+        analysis = _run_async(wrapped)
+
+        if not analysis or not analysis.strip():
+            return None, session_id, "OpenAI API returned empty analysis"
+        return analysis, session_id, None
+
+    except asyncio.TimeoutError:
+        return None, session_id, f"OpenAI API query timed out after {API_TIMEOUT}s"
+    except Exception as e:
+        return None, session_id, f"OpenAI API error: {str(e)}"

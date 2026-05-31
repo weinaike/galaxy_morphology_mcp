@@ -69,7 +69,7 @@ class GlmLLM(LLMBase):
         self,
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 9600,
         temperature: float = 0.7,
         **kwargs
     ) -> Dict[str, Any]:

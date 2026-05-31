@@ -82,7 +82,7 @@ def view_original_image(
         base64_image=base64_image,
         additional_content=additional_content,
         system_message=system_message,
-        max_tokens=4800,
+        max_tokens=9600,
         temperature=0.2
     )
 

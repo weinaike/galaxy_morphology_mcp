@@ -127,8 +127,9 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 
 
 # 最优轮次锁定的标准
-- 图像与残差观测已经认证的成分，已经全部添加。
-- 拟合参数符合物理意义的参数值。
+- 成分条件：图像与残差观测已经认证的成分，已经全部添加。
+- 拟合条件：1D profile残差图（DATA-MODEL）已经没有明显的尖峰或者系统性的偏离。2D残差图已经没有明显的对称残差。
+- 物理条件：最终拟合参数之间的关系符合物理意义。
 - 非必要的约束条件已经全部释放，必要的约束条件已经全部添加。
   - Bulge 的 n 无约束
   - Disk 的 n 固定为 1 (即使用 expdisk)
@@ -137,5 +138,5 @@ G) galaxy.cons      # Parameter constraint file (empty string)
   - 其他参数如 Re, mag 等没有过多的约束，允许合理范围内的调整。
 - 以上条件满足的情况下，是否选择包含伴星系/PSF成分的轮次
   - 依据奥卡姆剃刀原则判断。
-- 最优轮次一定是经过 component_analysis 分析的轮次。
+- 最优轮次一定是经过 component_analysis 分析的轮次。必要时可以增加 component_analysis 的轮次，来辅助判断最优轮次的锁定。
   

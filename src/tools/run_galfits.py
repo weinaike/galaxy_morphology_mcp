@@ -521,7 +521,7 @@ def create_multiband_comparison_png(
             ax_sb, ax_sb_resid, original_data, model_data,
             None, components, region,
             comp_images=comp_imgs, comp_types=comp_types,
-            mask=mask,
+            mask=mask, auto_sky=True,
             zeropoint=image_info.magzp,
             pixscale=image_info.pixscale,
         )
@@ -771,3 +771,14 @@ async def run_galfits_image_sed_fitting(
     It runs GalfitS as a subprocess and returns discovered artifacts (summary + PNGs) and logs.
     """
     return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
+
+def TEST_create_multiband_comparison_png():
+    lyric_file = "/home/jiangbo/jwst/104/output/20260602_101555_obj_104/obj_104.lyric"
+    gssummary_file = "/home/jiangbo/jwst/104/output/20260602_101555_obj_104/obj104.gssummary"
+    result_fits_file_list = ["/home/jiangbo/jwst/104/output/20260602_101555_obj_104/obj104_nircam_f444w_result.fits", "/home/jiangbo/jwst/104/output/20260601_164948_obj_104/obj104_nircam_f115w_result.fits"]
+    result_fits_file_list = glob("/home/jiangbo/jwst/104/output/20260602_101555_obj_104/*_result.fits")
+    png_path = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
+    print(f"Generated comparison PNG: {png_path}")
+
+if __name__ == "__main__":
+    TEST_create_multiband_comparison_png()

@@ -218,7 +218,7 @@ def _infer_type(params, comp_name):
     return 'const'
 
 
-def _extract_fits_metadata(fits_file, ra=None, dec=None):
+def extract_fits_metadata(fits_file, ra=None, dec=None):
     """
     Extract image shape, pixel scale, and reference pixel from a FITS file.
     """
@@ -311,7 +311,7 @@ def extract_component_attributes(
     # 解析图像元数据
     wcs = None
     if fits_file is not None:
-        _shape, _pixsc, _x0, _y0, _delta_ang, _wcs = _extract_fits_metadata(
+        _shape, _pixsc, _x0, _y0, _delta_ang, _wcs = extract_fits_metadata(
             fits_file, ra=ra, dec=dec)
         if pixsc is None:
             pixsc = _pixsc

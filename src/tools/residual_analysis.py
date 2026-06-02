@@ -12,7 +12,8 @@ dotenv.load_dotenv()
 
 
 def component_analysis(
-    image_file: Annotated[str, "Path to the combined residual image file [png file] containing three stamps: original, model, residual"],
+    #image_file: Annotated[str, "Path to the combined residual image file [png file] containing three stamps: original, model, residual"],
+    comparison_file: Annotated[str, "Path to the comparison image file [png file] containing the original image, model image, 2D residual image, and 1D surface brightness profile residual plot"],
     summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
     mode: Annotated[str, "Fitting mode: 'single-band' for GALFIT or 'multi-band' for GalfitS"],
     working_note_file: Annotated[str, "File path of the working_note.md to track iterative fitting progress"] = "",
@@ -26,8 +27,10 @@ def component_analysis(
     bar, AGN, etc.), and provides actionable suggestions for component addition/removal and
     parameter refinement.
     Args:
-        image_file (str): Path to the combined image file containing three stamps displayed horizontally:
-                        - Original galaxy image
+        comparison_file (str): Path to the comparison image file containing the original image, model image, 2D residual image, and 1D surface brightness profile residual plot
+        summary_file (str): Path to the optimization summary file containing detailed fitting information
+        mode (str): Fitting mode: 'single-band' for GALFIT or 'multi-band' for GalfitS
+        custom_instructions (str): Context for this round of analysis: must include (1) scientific objective of this fitting task  (2) file path of `working_note.md`
                         - Model image (fitted model)
                         - Residual image (Original - Model)
                         For multi-band fitting, each band has its own set of stamps.
@@ -48,8 +51,8 @@ def component_analysis(
             - analysis_file (str, optional): Path to the saved analysis markdown file (only on success)
     """
     # Validate input files
-    if not os.path.exists(image_file):
-        return {"status": "failure", "error": f"Image file not found: {image_file}"}
+    if not os.path.exists(comparison_file):
+        return {"status": "failure", "error": f"Image file not found: {comparison_file}"}
     if not os.path.exists(summary_file):
         return {"status": "failure", "error": f"Summary file not found: {summary_file}"}
 
@@ -179,11 +182,11 @@ def component_analysis(
     assert analysis is not None, "Analysis should not be None when error is None"
 
     # Save analysis
-    base_name = os.path.splitext(os.path.basename(image_file))[0]
+    base_name = os.path.splitext(os.path.basename(comparison_file))[0]
     if session_id:
-        output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_component_analysis_{session_id}.md")
+        output_file = os.path.join(os.path.dirname(comparison_file), f"{base_name}_component_analysis_{session_id}.md")
     else:
-        output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_component_analysis.md")
+        output_file = os.path.join(os.path.dirname(comparison_file), f"{base_name}_component_analysis.md")
 
     try:
         with open(output_file, 'w', encoding='utf-8') as f:

@@ -61,6 +61,8 @@ GALFITS uses `.lyric` config files. Key parameter format:
 | Edge-on Disk | edgeondisk | h_s (scale-height), R_s (scale-length) |
 | AGN/Nucleus | PSF (when Re < 0.2 pixel) or Sersic | x, y, mag only |
 
+Note: In the fitting input and output configurations, the Effective Radius ($R_e$) is strictly defined in units of arcseconds (arcsec). Before evaluating the fitting results, $R_e$ must be dynamically converted into pixel units using the WCS (World Coordinate System) metadata extracted from the corresponding FITS headers. This step is essential to accurately map the analytical model profiles onto the actual observational image grid, especially since the physical pixel scale ($arcsec/\text{pixel}$) varies across different wavebands.
+
 ---
 
 ## Config File Management

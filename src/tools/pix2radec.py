@@ -5,7 +5,7 @@ import warnings
 import sys
 import os
 from contextlib import contextmanager
-from typing import Annotated, Tuple, Union
+from typing import Annotated, Tuple, Union, List
 
 
 # 定义跨平台的上下文管理器：临时屏蔽stdout/stderr输出
@@ -81,11 +81,29 @@ def pix2radec(
     except Exception as e:
         raise RuntimeError(f"Failed to convert pixel to RA-DEC: {str(e)}")
 
+def re_arcsec2pix(
+    re_as: Annotated[float, "Effective radius ($R_e$) in arcseconds, shared across bands"], 
+    fits_file_list: Annotated[List[str], "List of FITS file paths for different bands (to extract band-specific WCS metadata)"]
+) -> Annotated[List[float], "List of $R_e$ in pixels, corresponding to each input band respectively"]:
+    """
+    Convert a single angular effective radius (Re) in arcseconds to pixel units 
+    across multiple bands.
 
-# 测试示例
-if __name__ == "__main__":
-    try:
-        ra, dec = pix2radec(30.1, 30.2, "/home/jiangbo/GALFITS_examples/41926/f115w.fits", pixel_based=1)
-        print(f"RA: {ra}, DEC: {dec}")
-    except RuntimeError as e:
-        print(f"Error: {e}")
+    Note:
+        Since different bands (FITS files) often have different pixel scales, 
+        the resulting size in pixels may vary for each band despite having the 
+        same angular size.
+
+    Args:
+        re_as: The intrinsic effective radius in arcseconds (e.g., 0.3).
+        fits_file_list: A list of absolute paths to the multi-band FITS files.
+            Each file must contain valid WCS metadata to resolve its pixel scale.
+
+    Returns:
+        A list of floats representing the effective radius in pixel units, 
+        ordered matching the input `fits_file_list`.
+    """
+    from .parse_lyric import extract_fits_metadata
+    
+    pixscales = [extract_fits_metadata(fits_file)[1] for fits_file in fits_file_list]
+    return [re_as / pixscale for pixscale in pixscales]    

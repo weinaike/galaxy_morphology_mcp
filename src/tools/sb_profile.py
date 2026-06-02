@@ -52,13 +52,29 @@ def fit_data_isophotes(image_data, x_center, y_center,
 
     dim = min(image_data.shape)
 
-    # ---- Peak pixel as center ----
+    # Get center 10x10 region coordinates
+    h, w = image_data.shape
+    half_size = 5  # 10x10 = ±5 pixels from center
+    y_start = max(0, h // 2 - half_size)
+    y_end = min(h, h // 2 + half_size + 1)
+    x_start = max(0, w // 2 - half_size)
+    x_end = min(w, w // 2 + half_size + 1)
+
+    # Extract central region
+    central_region = image_data[y_start:y_end, x_start:x_end]
+
+    # Find peak in central region
     if mask is not None and np.any(mask > 0):
         masked = image_data.copy()
         masked[mask > 0] = -np.inf
-        peak_y, peak_x = np.unravel_index(np.argmax(masked), masked.shape)
+        central_masked = masked[y_start:y_end, x_start:x_end]
+        peak_local_y, peak_local_x = np.unravel_index(np.argmax(central_masked), central_masked.shape)
     else:
-        peak_y, peak_x = np.unravel_index(np.argmax(image_data), image_data.shape)
+        peak_local_y, peak_local_x = np.unravel_index(np.argmax(central_region), central_region.shape)
+
+    # Convert to full image coordinates
+    peak_y = y_start + peak_local_y
+    peak_x = x_start + peak_local_x
     cx, cy = float(peak_x), float(peak_y)
 
     if mask is not None and np.any(mask > 0):
@@ -123,7 +139,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
             continue
     
     if iso_step1 is None or len(iso_step1.sma) == 0:
-        return None
+        return None, None if auto_sky else None
 
     sky_value = bg_median
     if auto_sky:

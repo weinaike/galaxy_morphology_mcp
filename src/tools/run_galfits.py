@@ -168,6 +168,7 @@ def create_perband_comparison_png(
                 continue
             original_data = hdul[4].data    
             model_data = hdul[3].data
+            sigma_data = hdul[2].data
             residual_data = hdul[0].data
             mask_data = hdul[1].data
             if mask_data is None:
@@ -294,7 +295,7 @@ def create_perband_comparison_png(
         ax_sb = fig.add_subplot(gs_sb[0])
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
         render_sb_profile(
-            ax_sb, ax_sb_resid, original_data, model_data,
+            ax_sb, ax_sb_resid, original_data, sigma_data, model_data,
             None, components, region,
             comp_images=comp_imgs, comp_types=comp_types,
             mask=mask, zeropoint=image_info.magzp, pixscale=image_info.pixscale
@@ -341,6 +342,7 @@ def create_multiband_comparison_png(
                 continue
             original_data = hdul[4].data
             model_data = hdul[3].data
+            sigma_data = hdul[2].data
             residual_data = hdul[0].data
             mask_data = hdul[1].data
             if mask_data is None:
@@ -362,6 +364,7 @@ def create_multiband_comparison_png(
             'result_fits_file': result_fits_file,
             'original_data': original_data,
             'model_data': model_data,
+            'sigma_data': sigma_data,
             'residual_data': residual_data,
             'mask': mask,
             'components': components,
@@ -397,6 +400,7 @@ def create_multiband_comparison_png(
     for band_idx, bdata in enumerate(band_data):
         image_info = bdata['image_info']
         original_data = bdata['original_data']
+        sigma_data = bdata['sigma_data']
         model_data = bdata['model_data']
         residual_data = bdata['residual_data']
         mask = bdata['mask']
@@ -518,7 +522,7 @@ def create_multiband_comparison_png(
         ax_sb = fig.add_subplot(gs_sb[0])
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
         render_sb_profile(
-            ax_sb, ax_sb_resid, original_data, model_data,
+            ax_sb, ax_sb_resid, original_data, sigma_data, model_data,
             None, components, region,
             comp_images=comp_imgs, comp_types=comp_types,
             mask=mask, auto_sky=True,

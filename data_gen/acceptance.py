@@ -4,29 +4,40 @@ import random
 import json
 import os
 
-def judge_acceptance(delta_r: float, temperature: float = 0.5) -> bool:
+import math
+import random
+from typing import Tuple
+
+def judge_acceptance(delta_r: float, temperature: float = 0.5, force_greedy: bool = True) -> Tuple[bool, str]:
     """
     基于 Metropolis-Hastings 准则的退火接受逻辑。
     
     :param delta_r: 复合 Reward 的差值 (R_new - R_old)
-    :param temperature: 温度 T。T 越高，越容易接受“变差”的动作(探索)；T 越低，越贪婪(利用)。
-    :return: True (接受该动作), False (拒绝该动作)
+    :param temperature: 温度 T。T 越高越容易探索，T 越低越贪婪。
+    :param force_greedy: 强制贪婪模式开关。如果为 True，则只要变差直接拒绝。
+    :return: (是否接受, 理由说明)
     """
-    # 1. 如果结果变好了 (增益 >= 0)，无条件贪婪接受
+    # 1. 永远贪婪接受变好的结果
     if delta_r >= 0:
-        return True,"Reward变好了"
+        return True, "Reward 变好 (增益 >= 0)"
         
-    # 2. 如果结果变差了，计算接受概率 alpha
-    # 防止 Python 的 math.exp 在极端情况下发生数值溢出
+    # 2. 如果结果变差，但开启了强制贪婪模式，直接枪毙 (这就是你目前想要的效果)
+    if force_greedy:
+        return False, "Reward 变差 (贪婪模式直接拒绝)"
+        
+    # 3. 结果变差，走概率退火接受 (保留探索火种)
     try:
         alpha = math.exp(delta_r / temperature)
     except OverflowError:
         alpha = 0.0
         
     acceptance_prob = min(1.0, alpha)
+    roll = random.random()
     
-    # 3. 掷骰子 (0~1 之间的随机数)。如果随机数 <= 概率，则接受！
-    return random.random() <= acceptance_prob,f"Reward变差了，接受概率为 {acceptance_prob}"
+    if roll <= acceptance_prob:
+        return True, f"Reward 变差，但触发退火接受 (概率: {acceptance_prob:.2%}, 掷骰: {roll:.2f})"
+    else:
+        return False, f"Reward 变差，退火拒绝 (概率: {acceptance_prob:.2%}, 掷骰: {roll:.2f})"
 
 
 def save_trajectory(tree_data: dict, output_dir: str):

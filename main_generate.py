@@ -12,7 +12,7 @@ from data_gen.pipeline import DataGenPipeline
 # ==========================================
 TEST_MODE = True  
 USE_LLM_REWARD = True  # 大模型视觉打分全局开关
-USE_EXPERT_PRIOR = False # 是否使用 GT JSON 数据来指导提议分布
+PROPOSAL_STRATEGY = "rule_based" # 提议策略: "rule_based", "expert_guided", "vlm_generated"
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
@@ -57,7 +57,8 @@ async def main():
     pipeline = DataGenPipeline(
         base_project_dir=GADOTTI_ROOT, # ⚠️ 注意这里传的是 Gadotti 的根目录，方便应对跨目录寻址
         output_root=OUTPUT_ROOT, 
-        max_iter=100 
+        max_iter=100,
+        proposal_strategy=PROPOSAL_STRATEGY
     )
 
     print(f"🔍 运行模式: {'测试' if TEST_MODE else '正式'} | VLM打分: {'开启' if USE_LLM_REWARD else '关闭'}")
@@ -66,8 +67,8 @@ async def main():
     if TEST_MODE:
         # 测试模式下，我们从收集到的全集中切片跑前几个
         target_galaxies = all_train_set[:20] 
-        max_steps = 1 # 8
-        num_variants = 5 # 16
+        max_steps = 6 # 8
+        num_variants = 16 # 16
     else:
         target_galaxies = all_train_set  
         max_steps = 10               
@@ -102,7 +103,7 @@ async def main():
             max_steps=max_steps,
             num_variants=num_variants,
             use_llm_reward=USE_LLM_REWARD,
-            use_expert_prior=USE_EXPERT_PRIOR
+            use_expert_prior= PROPOSAL_STRATEGY == "expert_guided"
         )
         
         if not gal_report.get("success", False):

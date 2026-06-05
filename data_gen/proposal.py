@@ -83,9 +83,6 @@ def generate_action_c_perturbation(num_sersic: int) -> dict:
         "delta_n_val": float(delta_n)
     }
 
-import random
-import numpy as np
-
 def _inject_expert_patch_to_action(action: dict, expert_gt: dict) -> dict:
     """
     [新增辅助函数] 不侵入主架构，仅为 Action A 字典动态追加专家数值补丁

@@ -16,7 +16,7 @@ class DataGenPipeline:
         """
         self.env = GalfitEnv(base_project_dir=base_project_dir, max_iter=max_iter)
         self.output_root = output_root
-        self.proposal_strategy = proposal_strategy # 记录策略
+        self.proposal_strategy = proposal_strategy # 记录策略: "rule_based", "expert_guided", "vlm_generated"
         
     def _count_sersic_components(self, feedme_path: str) -> int:
         count = 0
@@ -91,7 +91,7 @@ class DataGenPipeline:
                     # 诊断日志：验证 JSON 读取与战略解析
                     # ==========================================
                     mtype1 = expert_gt_data.get("MType", "unknown")
-                    
+
                     mtype2 = expert_gt_data.get("MType2", "unknown")
                     # 判断需要几个 Sersic 成分：
                     target_sersic_count = 1
@@ -189,7 +189,8 @@ class DataGenPipeline:
                     
                     # 垃圾回收机制：清理硬盘残余变体文件
                     for filename in os.listdir(gal_out_dir):
-                        if node_id in filename:
+                        # if node_id in filename:
+                        if filename.startswith(f"{node_id}.") or filename.startswith(f"{node_id}_"):
                             file_path = os.path.join(gal_out_dir, filename)
                             try:
                                 os.remove(file_path)

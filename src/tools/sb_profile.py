@@ -151,7 +151,11 @@ def fit_data_isophotes(image_data, x_center, y_center,
         aperture = EllipticalAperture((cx,cy), mask_a, mask_b, theta=np.deg2rad(pa_bounded+90))
         galmask = aperture.to_mask(method='center')
         sky_image = image_data.copy()
-        sky_image.mask = sky_image.mask | galmask.to_image(image_data.shape).astype(bool)
+        gal_mask_img = galmask.to_image(image_data.shape).astype(bool)
+        if isinstance(sky_image, np.ma.MaskedArray):
+            sky_image.mask = sky_image.mask | gal_mask_img
+        else:
+            sky_image = np.ma.MaskedArray(sky_image, mask=gal_mask_img)
         sky_value = sigma_clipped_stats(sky_image, sigma=3, maxiters=10)[1]
         
         

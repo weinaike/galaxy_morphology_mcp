@@ -20,7 +20,7 @@ from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 from tools.analyze_image import galfit_analyze_by_vlm
 from tools.analyze_image import galfits_analyze_by_vlm
-from tools.residual_analysis import component_analysis
+from tools.residual_analysis import component_analysis, analyze_multiband_components
 from tools.fourier_mode_analysis import fourier_mode_analysis
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
@@ -63,6 +63,8 @@ def _register_tools_and_prompts():
     app.add_tool(view_original_image)
     app.add_tool(render_original)
     app.add_tool(component_analysis)
+    app.add_tool(analyze_multiband_components)
+    
     app.add_tool(fourier_mode_analysis)
     app.add_tool(pix2radec)
     app.add_tool(re_arcsec2pix)

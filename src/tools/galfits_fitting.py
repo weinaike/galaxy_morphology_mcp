@@ -27,7 +27,6 @@ MAG_ZERO_POINTS = [
 ]
 BANDS_ZEROPOINTS = {band: zp for band, zp in zip (ALL_BANDS, MAG_ZERO_POINTS)}
 
-z_fit =  3.86500
 
 def load_gs_model(config_lyric, workplace, prior_path = None,): 
     
@@ -54,6 +53,16 @@ def load_gs_model(config_lyric, workplace, prior_path = None,):
         Myfitter.cal_model_image()
     
     return Myfitter, targ
+
+def extract_redshift(config_lyric):
+    """Extract the redshift value from the R3) line in a lyric config file."""
+    pattern = re.compile(r'^R3\)\s*(-?\d+\.?\d*)', re.MULTILINE)
+    with open(config_lyric, 'r', encoding='utf-8') as f:
+        text = f.read()
+    match = pattern.search(text)
+    if not match:
+        raise ValueError(f"R3) redshift not found in {config_lyric}")
+    return float(match.group(1))
 
 def extract_band_fits_pairs(config_lyric):
     pattern1 = re.compile(r'^I([a-z])1\)\s*(.+)', re.IGNORECASE)  # Match Ix1)
@@ -128,7 +137,7 @@ def calculate_profile_fluxes(config_lyric, workplace, prior_path=None):
 
     return fluxes
 
-def generate_pure_sed_fitting_lyric(*, profile_name, mock_profile_root, bands, band_fits_pairs, ebv=0.1):
+def generate_pure_sed_fitting_lyric(*, profile_name, mock_profile_root, bands, band_fits_pairs, z_fit, ebv=0.1):
     original_fits = band_fits_pairs[bands[0]][1].strip("[]").split(",")[0].strip() # can any of these bands be used ?
     header = fits.getheader(original_fits) 
     shape = fits.getdata(original_fits).shape 
@@ -233,10 +242,11 @@ def generate_mock_files_for_pure_sed(
 
             # creates a pure_sed.lyric file for current profile/component    
             generate_pure_sed_fitting_lyric(
-                profile_name=profile_name, 
-                mock_profile_root=mock_profile_root, 
-                bands=list(fluxes[galaxy_name][profile_name].keys()), 
-                band_fits_pairs=band_fits_pairs
+                profile_name=profile_name,
+                mock_profile_root=mock_profile_root,
+                bands=list(fluxes[galaxy_name][profile_name].keys()),
+                band_fits_pairs=band_fits_pairs,
+                z_fit=z_fit
             )
         
 def guess_mass(
@@ -249,9 +259,11 @@ def guess_mass(
     """
 
     try:
-        # Each item in band_fits_pairs follows the pattern: 
+        # Each item in band_fits_pairs follows the pattern:
         #     band_name: (<image_label such as 'a', 'b', ...>, <the image fits file>)
         band_fits_pairs = extract_band_fits_pairs(config_lyric)
+
+        z_fit = extract_redshift(config_lyric)
 
         fluxes = calculate_profile_fluxes(config_lyric=config_lyric, workplace=workplace)
 
@@ -359,9 +371,9 @@ PATTERNS = {
         r"(\],\[)"
         r"(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
         r"(\]\])",
-    "Px11": r"(P{label}11\)\s*\[\[)(-?\d+\.?\d*)(,.*?\]\])",
-    "Px12": r"(P{label}12\)\s*\[\[)(-?\d+\.?\d*)(,.*?\]\])",
-    "Px14": r"(P{label}14\)\s*\[)(-?\d+\.?\d*)(.*\])",
+    "Px11": r"(P{label}11\)\s*\[\[)(-?\d+\.?\d*)(,-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*),(-?\d+\.?\d*)(\]\])",
+    "Px12": r"(P{label}12\)\s*\[\[)(-?\d+\.?\d*)(,-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*),(-?\d+\.?\d*)(\]\])",
+    "Px14": r"(P{label}14\)\s*\[)(-?\d+\.?\d*)(,-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*),(-?\d+\.?\d*)(\])",
 }
 
 
@@ -437,15 +449,15 @@ def replace_Px9(label: str, text: str, values: list) -> str:
     v1, v2, v3, v4, v5 = values
     replacement = (
         r"\g<1>"
-        f"{v1},\g<3>,\g<4>,\g<5>,\g<6>"
+        f"{v1},\g<3>,\g<4>,\g<5>,1"
         r"\g<7>"
-        f"{v2},\g<9>,\g<10>,\g<11>,\g<12>"
+        f"{v2},\g<9>,\g<10>,\g<11>,1"
         r"\g<13>"
-        f"{v3},\g<15>,\g<16>,\g<17>,\g<18>"
+        f"{v3},\g<15>,\g<16>,\g<17>,1"
         r"\g<19>"
-        f"{v4},\g<21>,\g<22>,\g<23>,\g<24>"
+        f"{v4},\g<21>,\g<22>,\g<23>,1"
         r"\g<25>"
-        f"{v5},\g<27>,\g<28>,\g<29>,\g<30>"
+        f"{v5},\g<27>,\g<28>,\g<29>,1"
         r"\g<31>"
     )
     return re.compile(PATTERNS["Px9"].format(label=label)).sub(replacement, text)
@@ -456,7 +468,7 @@ def replace_single_value(pattern_key: str, label: str, text: str, value: float) 
 
     Handles Px11, Px12, Px14 patterns.
     """
-    return re.compile(PATTERNS[pattern_key].format(label=label)).sub(rf"\g<1>{value}\g<3>", text)
+    return re.compile(PATTERNS[pattern_key].format(label=label)).sub(rf"\g<1>{value}\g<3>,1\g<5>", text)
 
 
 def update_lyric_with_gssummaries(
@@ -566,19 +578,11 @@ def PureSEDFitting(lyric_file, workplace, new_lyric_file, mock_root=None, args=[
     return {"status": "success", "message": "pure sed fitting success"}
 
 if __name__ == '__main__':
-    print(f'CUDA_VISIBLE_DEVICES: {os.environ.get("CUDA_VISIBLE_DEVICES") or "None"}')
-    lyric_file = "/home/jiangbo/galaxy_morphology_mcp/GALFITS_examples/latest/configs/obj692"
-    new_lyric_file = "/tmp/updated.lyric"
-    workplace = "/home/jiangbo/galaxy_morphology_mcp/GALFITS_examples/latest/results/obj692"
-    args = ["--fit_method", "ES", "--priorpath", "/tmp/galfits_fitting_s6tn832o/priorpath/97.prior"]
 
-    # result = ImageFitting(lyric_file=lyric_file, workplace=workplace, args=args)
-    # print(result)
-
-    lyric_file = "/tmp/galfits_fitting_s6tn832o/97.lyric"
-    workplace =  "/tmp/galfits_fitting_s6tn832o/result/output"
-    new_lyric_file = "/tmp/updated.lyric"
-    args = ["--fit_method", "ES", "--priorpath", "/tmp/galfits_fitting_s6tn832o/priorpath/97.prior"]
+    lyric_file = "/home/jiangbo/GALFITS_examples_2/10766/obj10766.lyric"
+    workplace =  "/home/jiangbo/GALFITS_examples_2/10766/output/20260605_105037_obj10766"
+    new_lyric_file = "/tmp/updated2.lyric"
+    args = ["--fit_method", "ES"]
     result = PureSEDFitting(lyric_file=lyric_file, workplace=workplace, new_lyric_file=new_lyric_file, mock_root=None, args=args)
     print(result)
 

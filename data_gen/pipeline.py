@@ -91,6 +91,7 @@ class DataGenPipeline:
                     # 诊断日志：验证 JSON 读取与战略解析
                     # ==========================================
                     mtype1 = expert_gt_data.get("MType", "unknown")
+                    
                     mtype2 = expert_gt_data.get("MType2", "unknown")
                     # 判断需要几个 Sersic 成分：
                     target_sersic_count = 1
@@ -282,7 +283,7 @@ class DataGenPipeline:
                 if patience_counter >= max_patience:
                     print(f"    🛑 连续 {max_patience} 步未达标，触发早停机制 (模拟 Action D 收敛)！提前结束本星系搜索。")
                     break # 🚀 直接跳出 for 循环，进入落盘结算环节！
-                
+
         # ==================== 落盘结束 ====================
         best_final_node = min(current_layer_nodes, key=lambda x: x["metrics"].get("chi2_nu", 999.0))
         tree["target_feedme"] = best_final_node["feedme_path"]

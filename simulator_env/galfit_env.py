@@ -133,7 +133,7 @@ class GalfitEnv(BaseSimulatorEnv):
         return {
             "status": "success",
             "feedme_path": root_feedme,
-            "residual_path": cropped_root_png, # 🚀 确保第一代父节点传出的就是裁剪后的干净路径
+            "residual_path": cropped_root_png, # 确保第一代父节点传出的就是裁剪后的干净路径
             "summary_path": summary_path,
             "metrics": metrics
         }

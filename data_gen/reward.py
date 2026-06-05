@@ -473,7 +473,7 @@ def is_good_fit(
     residual_image_path: str,
     param: bool = False,
     summary_md_path: Optional[str] = None,
-    model_name: str = "gpt-5.5",
+    model_name: str = "gemini-3.1-pro-preview",
     api_key: str = "sk-orCNeVDDaLy7zNfXvDYx9FX7z5uTdUkbWBJjFWeFDarSysSq",
     temperature: float = 0.0,
     max_tokens: int = 512,
@@ -822,7 +822,7 @@ Output field definitions:
 def calculate_reward_model(
     prev_residual_image_path: str,
     next_residual_image_path: str,
-    model_name: str = "gpt-5.5",
+    model_name: str = "gemini-3.1-pro-preview",
     api_key: str = "sk-orCNeVDDaLy7zNfXvDYx9FX7z5uTdUkbWBJjFWeFDarSysSq",
     temperature: float = 0.7,
     max_tokens: int = 512,
@@ -993,7 +993,7 @@ Definitions:
 
 def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: int, 
                      prev_image_path: str = None, next_image_path: str = None,
-                     use_llm: bool = False) -> tuple:
+                     use_llm: bool = False, vlm_reward_model_name: str = "gemini-3.1-pro-preview") -> tuple:
     """
     终极 Reward 整合枢纽 (严格互斥模式)：
     - use_llm = False: 纯物理规则驱动 (Rule-based)
@@ -1017,7 +1017,8 @@ def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: i
                 print("    👁️ [VLM] 纯视觉模式启动: 评判残差图...")
                 vlm_result = calculate_reward_model(
                     prev_residual_image_path=prev_image_path,
-                    next_residual_image_path=next_image_path
+                    next_residual_image_path=next_image_path,
+                    model_name=vlm_reward_model_name
                 )
                 
                 if int(vlm_result.get("improvement")) == 1:

@@ -2,6 +2,7 @@
 import asyncio
 import os
 import json
+import time  # 🚀 引入 time 模块用于全局耗时统计
 from dotenv import load_dotenv
 
 from data_gen.dataset_utils import get_train_test_split
@@ -13,6 +14,7 @@ from data_gen.pipeline import DataGenPipeline
 TEST_MODE = True  
 USE_LLM_REWARD = True  # 大模型视觉打分全局开关
 PROPOSAL_STRATEGY = "rule_based" # 提议策略: "rule_based", "expert_guided", "vlm_generated"
+VLM_REWARD_MODEL_NAME = "gemini-3.1-pro-preview" # 大模型视觉打分模型名
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
@@ -90,12 +92,21 @@ async def main():
         "vlm_better_count": 0,
         "total_prompt_tokens": 0,
         "total_completion_tokens": 0,
-        "models_used": set()
+        "vlm_reward_model_name": VLM_REWARD_MODEL_NAME, # ✅ 记录定死的模型名
+        # 🚀 新增：耗时统计专用字典
+        "timing_stats": {
+            "total_elapsed_seconds": 0.0,
+            "total_elapsed_str": "",
+            "average_seconds_per_galaxy": 0.0,
+            "per_galaxy_details": {}  # 记录每个星系的独立耗时
+        }
     }
 
     # ==========================================
     # 启动树搜索任务，并收集报告
     # ==========================================
+    global_start_time = time.time()  # 🚀 启动大盘全局计时器
+
     for gal in target_galaxies:
         gal_report = await pipeline.run_galaxy(
             galaxy_id=gal["id"],
@@ -110,8 +121,12 @@ async def main():
             continue
             
         global_total["processed_galaxies"] += 1
-        
         analytics = gal_report.get("analytics", {})
+        
+        # 🚀 记录该星系的独立耗时
+        gal_time = analytics.get("elapsed_seconds", 0.0)
+        global_total["timing_stats"]["per_galaxy_details"][gal["id"]] = gal_time
+        
         global_total["total_actions_generated"] += analytics.get("total_actions_generated", 0)
         global_total["ssim_filtered_count"] += analytics.get("ssim_filtered_count", 0)
         global_total["physics_crashed_count"] += analytics.get("physics_crashed_count", 0)
@@ -128,10 +143,20 @@ async def main():
             global_total["vlm_better_count"] += llm_stats.get("vlm_better_count", 0)
             global_total["total_prompt_tokens"] += llm_stats.get("total_prompt_tokens", 0)
             global_total["total_completion_tokens"] += llm_stats.get("total_completion_tokens", 0)
-            
-            model = llm_stats.get("model_used")
-            if model and model != "None":
-                global_total["models_used"].add(model)
+
+    # ==========================================
+    # 🚀 大盘跑完，结算全局耗时统计
+    # ==========================================
+    global_elapsed = time.time() - global_start_time
+    global_total["timing_stats"]["total_elapsed_seconds"] = round(global_elapsed, 2)
+    
+    hours, rem = divmod(global_elapsed, 3600)
+    minutes, seconds = divmod(rem, 60)
+    global_total["timing_stats"]["total_elapsed_str"] = f"{int(hours)}小时 {int(minutes)}分 {int(seconds)}秒"
+    
+    if global_total["processed_galaxies"] > 0:
+        avg_time = global_elapsed / global_total["processed_galaxies"]
+        global_total["timing_stats"]["average_seconds_per_galaxy"] = round(avg_time, 2)
 
     # ==========================================
     # 打印与保存全局大盘
@@ -151,6 +176,11 @@ async def main():
         print(f"     ├─ 成功优化残差: {global_total['improved_count']}")
         print(f"     └─ 优化失败/平庸: {global_total['not_improved_count']}")
         
+        # 🚀 打印耗时统计模块
+        print("\n⏱️ [算力消耗统计]")
+        print(f"  ├─ 总计耗时: {global_total['timing_stats']['total_elapsed_str']}")
+        print(f"  └─ 平均耗时: {global_total['timing_stats']['average_seconds_per_galaxy']} 秒/星系")
+        
         print("\n🎯 [全局 Action 策略效能评估]")
         for act in ["A", "B", "C"]:
             total = global_total['action_type_distribution'][act]
@@ -161,10 +191,9 @@ async def main():
         if USE_LLM_REWARD:
             hit_rate = (global_total["vlm_better_count"] / global_total["vlm_total_calls"]) * 100 if global_total["vlm_total_calls"] > 0 else 0
             total_tokens = global_total['total_prompt_tokens'] + global_total['total_completion_tokens']
-            models_str = ", ".join(global_total["models_used"]) if global_total["models_used"] else "未知"
             
             print("\n🧠 [LLM 消耗与成本结算大盘]")
-            print(f"  🤖 使用模型: {models_str}")
+            print(f"  🤖 使用模型: {VLM_REWARD_MODEL_NAME}")
             print(f"  📊 环节 1: [判定残差图优化状态]")
             print(f"     ├─ API 成功调用次数: {global_total['vlm_total_calls']} 次")
             print(f"     ├─ 残差变好判定率: {global_total['vlm_better_count']} / {global_total['vlm_total_calls']} ({hit_rate:.1f}%)")
@@ -172,7 +201,6 @@ async def main():
             print(f"     ├─ 输出 Token (Completion): {global_total['total_completion_tokens']:,}")
             print(f"     └─ 环节总消耗 Token: {total_tokens:,}")
         
-        global_total["models_used"] = list(global_total["models_used"])
         global_report_path = os.path.join(OUTPUT_ROOT, "global_analytics_report.json")
         try:
             with open(global_report_path, "w", encoding="utf-8") as f:

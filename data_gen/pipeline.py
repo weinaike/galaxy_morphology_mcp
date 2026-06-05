@@ -8,6 +8,7 @@ from simulator_env.galfit_env import GalfitEnv
 from data_gen.proposal import generate_proposals
 from data_gen.reward import calculate_reward
 from data_gen.acceptance import judge_acceptance, save_trajectory
+import time
 
 class DataGenPipeline:
     def __init__(self, base_project_dir: str, output_root: str, max_iter: int = 100, proposal_strategy: str = "rule_based"):
@@ -28,11 +29,17 @@ class DataGenPipeline:
         return max(1, count)
 
     async def run_galaxy(self, galaxy_id: str, init_feedme: str, max_steps: int = 10, 
-                         num_variants: int = 4, use_llm_reward: bool = False, use_expert_prior: bool = False):
+                         num_variants: int = 4, use_llm_reward: bool = False, use_expert_prior: bool = False,
+                         vlm_reward_model_name: str = "gemini-3.1-pro-preview"):
         """
         处理单个星系，并返回该星系的局部统计报告。
         """
-        strategy_folder = f"{self.proposal_strategy}_proposal"
+        # 新增：记录开始时间
+        start_time = time.time()
+        if use_llm_reward and vlm_reward_model_name != "none":
+            strategy_folder = f"{self.proposal_strategy}_proposal_vlm_reward_{vlm_reward_model_name.lower()}"
+        else:
+            strategy_folder = f"{self.proposal_strategy}_proposal_rule_based_reward"
         gal_out_dir = os.path.join(self.output_root, strategy_folder, galaxy_id)
         
         os.makedirs(gal_out_dir, exist_ok=True)
@@ -53,8 +60,7 @@ class DataGenPipeline:
                 "vlm_total_calls": 0,
                 "vlm_better_count": 0,
                 "total_prompt_tokens": 0,
-                "total_completion_tokens": 0,
-                "model_used": "None"
+                "total_completion_tokens": 0
             },
             "analytics": {
                 "total_actions_generated": 0,
@@ -213,7 +219,8 @@ class DataGenPipeline:
                     step=step,
                     prev_image_path=prev_img,
                     next_image_path=next_img,
-                    use_llm=use_llm_reward
+                    use_llm=use_llm_reward,
+                    vlm_reward_model_name=vlm_reward_model_name
                 )
 
                 improved = False
@@ -229,7 +236,6 @@ class DataGenPipeline:
                         usage = vlm_detail.get("usage", {})
                         tree["llm_stats"]["total_prompt_tokens"] += usage.get("prompt_tokens", 0)
                         tree["llm_stats"]["total_completion_tokens"] += usage.get("completion_tokens", 0)
-                        tree["llm_stats"]["model_used"] = vlm_detail.get("model_used", "gpt-4o")
                         
                         # 兼容多重键名
                         improvement_score = vlm_detail.get("final_improvement")
@@ -289,11 +295,20 @@ class DataGenPipeline:
         best_final_node = min(current_layer_nodes, key=lambda x: x["metrics"].get("chi2_nu", 999.0))
         tree["target_feedme"] = best_final_node["feedme_path"]
         tree["target_residual"] = best_final_node["residual_path"]
+
+        # 新增：结算耗时
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        tree["analytics"]["elapsed_seconds"] = round(elapsed_time, 2) # 保留两位小数落盘
         
         save_trajectory(tree, gal_out_dir)
-        print(f"🎉 {galaxy_id} 处理完毕！最终深度: {best_final_node['depth']}，全场最优 Chi2_nu: {best_final_node['metrics'].get('chi2_nu')}")
+        # 修改：把耗时打印在最终的战报里
+        minutes, seconds = divmod(elapsed_time, 60)
+        time_str = f"{int(minutes)}分{int(seconds)}秒" if minutes > 0 else f"{elapsed_time:.2f}秒"
         
-        # 🚀 极其关键：将本星系的战报返回给主程序
+        print(f"🎉 {galaxy_id} 处理完毕！最终深度: {best_final_node['depth']}，全场最优 Chi2_nu: {best_final_node['metrics'].get('chi2_nu')}")
+        print(f"⏱️ 本星系总耗时: {time_str}")
+
         return {
             "analytics": tree["analytics"],
             "llm_stats": tree["llm_stats"],

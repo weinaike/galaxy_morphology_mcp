@@ -1,0 +1,888 @@
+[
+  {
+    "plate_name": "Plate0414_MJD51901_Fiber247_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r",
+    "archive_id": "20260528T175343.2dd821a6",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175343.2dd821a6",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175343.2dd821a6/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 15.316,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image displays a severe, high-contrast central structure with prominent adjacent red and blue blobs forming an elongated, symmetric pattern. This strongly indicates a poorly fitted or missing bar/inner spiral component and constitutes a clear hard failure.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1292,
+        "total_tokens": 4639,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 235,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1057
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.33,\n  \"confidence\": 0.95,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.15,\n    \"bar_residual_score\": 0.20,\n    \"disk_residual_score\": 0.50,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.30\n  },\n  \"detected_patterns\": [\n    \"strong_central_red_blue_pair\",\n    \"elongated_symmetric_residual\",\n    \"unfitted_bar_or_inner_spiral\",\n    \"central_dipole\"\n  ],\n  \"reason\": \"The residual image displays a severe, high-contrast central structure with prominent adjacent red and blue blobs forming an elongated, symmetric pattern. This strongly indicates a poorly fitted or missing bar/inner spiral component and constitutes a clear hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175343.2dd821a6/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175343.2dd821a6/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0414_MJD51901_Fiber247_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r",
+    "archive_id": "20260528T175657.d4f251f5",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175657.d4f251f5",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175657.d4f251f5/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 15.691,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image displays a severe failure with highly structured, dominant spiral arms and prominent adjacent red/blue positive-negative blobs in the center. This indicates a major mismatch in the modeling of the central and disk components, constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1130,
+        "total_tokens": 4476,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 208,
+          "audio_tokens": 0,
+          "reasoning_tokens": 922
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n\"good_fit\": 0,\n\"final_score\": 0.26,\n\"confidence\": 0.95,\n\"hard_failure\": true,\n\"scores\": {\n\"central_residual_score\": 0.10,\n\"bar_residual_score\": 0.30,\n\"disk_residual_score\": 0.20,\n\"artifact_score\": 0.90,\n\"overall_noise_score\": 0.20\n},\n\"detected_patterns\": [\n\"strong_central_red_blue_pair\",\n\"strong_spiral_residual\",\n\"structured_non_noise_residual\"\n],\n\"reason\": \"The residual image displays a severe failure with highly structured, dominant spiral arms and prominent adjacent red/blue positive-negative blobs in the center. This indicates a major mismatch in the modeling of the central and disk components, constituting a hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175657.d4f251f5/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175657.d4f251f5/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0414_MJD51901_Fiber247_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r",
+    "archive_id": "20260528T180002.ef807c64",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180002.ef807c64",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180002.ef807c64/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 12.108,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image shows a severe hard failure with a prominent, high-contrast red/blue structured pattern in the center, resembling a poorly fitted bar or strong spiral arms. This indicates a major mismatch in the bulge, bar, or disk components, and the fit is not acceptable.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 845,
+        "total_tokens": 4191,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 247,
+          "audio_tokens": 0,
+          "reasoning_tokens": 598
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.25,\n  \"confidence\": 0.95,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.10,\n    \"bar_residual_score\": 0.20,\n    \"disk_residual_score\": 0.20,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.30\n  },\n  \"detected_patterns\": [\n    \"strong_central_residual\",\n    \"prominent_red_blue_pair\",\n    \"bar_like_residual\",\n    \"spiral_like_residual\",\n    \"structured_galaxy_region\"\n  ],\n  \"reason\": \"The residual image shows a severe hard failure with a prominent, high-contrast red/blue structured pattern in the center, resembling a poorly fitted bar or strong spiral arms. This indicates a major mismatch in the bulge, bar, or disk components, and the fit is not acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180002.ef807c64/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180002.ef807c64/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0414_MJD51901_Fiber247_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r",
+    "archive_id": "20260528T180622.d740532f",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 15.344,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image displays a severe, high-contrast central structure with prominent adjacent red and blue positive-negative regions. This strong systematic pattern indicates a major failure in modeling the inner components (bulge, bar, or inner disk), constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1346,
+        "total_tokens": 4693,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 232,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1114
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.30,\n  \"confidence\": 0.95,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.10,\n    \"bar_residual_score\": 0.20,\n    \"disk_residual_score\": 0.40,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.30\n  },\n  \"detected_patterns\": [\n    \"strong_central_residual\",\n    \"adjacent_red_blue_blobs\",\n    \"central_multipole\",\n    \"inner_spiral_residual\"\n  ],\n  \"reason\": \"The residual image displays a severe, high-contrast central structure with prominent adjacent red and blue positive-negative regions. This strong systematic pattern indicates a major failure in modeling the inner components (bulge, bar, or inner disk), constituting a hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T172705.e2afcdf0",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T172705.e2afcdf0",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T172705.e2afcdf0/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 17.274,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image exhibits a severe hard failure in the central region, characterized by strong, adjacent red and blue positive-negative blobs forming an elongated or multipolar pattern. This indicates a major mismatch in modeling the central bulge or bar structure, meaning the fit is not acceptable.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1030,
+        "total_tokens": 4376,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 222,
+          "audio_tokens": 0,
+          "reasoning_tokens": 808
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n\"good_fit\": 0,\n\"final_score\": 0.31,\n\"confidence\": 0.95,\n\"hard_failure\": true,\n\"scores\": {\n\"central_residual_score\": 0.10,\n\"bar_residual_score\": 0.20,\n\"disk_residual_score\": 0.50,\n\"artifact_score\": 0.90,\n\"overall_noise_score\": 0.30\n},\n\"detected_patterns\": [\n\"strong_central_red_blue_blobs\",\n\"elongated_bar_like_residual\",\n\"central_dipole_or_multipolar_pattern\"\n],\n\"reason\": \"The residual image exhibits a severe hard failure in the central region, characterized by strong, adjacent red and blue positive-negative blobs forming an elongated or multipolar pattern. This indicates a major mismatch in modeling the central bulge or bar structure, meaning the fit is not acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T172705.e2afcdf0/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T172705.e2afcdf0/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T173006.6b2299a4",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173006.6b2299a4",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173006.6b2299a4/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 16.424,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image shows strong, highly structured central residuals with clear adjacent red/blue positive-negative blobs and a quadrupole-like pattern, indicating a severe mismatch in the central components (bulge/bar). A noticeable ring-like or arc-like residual structure is also present, constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1115,
+        "total_tokens": 4461,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 222,
+          "audio_tokens": 0,
+          "reasoning_tokens": 893
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n\"good_fit\": 0,\n\"final_score\": 0.31,\n\"confidence\": 0.95,\n\"hard_failure\": true,\n\"scores\": {\n\"central_residual_score\": 0.10,\n\"bar_residual_score\": 0.30,\n\"disk_residual_score\": 0.40,\n\"artifact_score\": 0.90,\n\"overall_noise_score\": 0.30\n},\n\"detected_patterns\": [\n\"strong_central_residual\",\n\"red_blue_pair\",\n\"central_quadrupole\",\n\"ring_like_residual\"\n],\n\"reason\": \"The residual image shows strong, highly structured central residuals with clear adjacent red/blue positive-negative blobs and a quadrupole-like pattern, indicating a severe mismatch in the central components (bulge/bar). A noticeable ring-like or arc-like residual structure is also present, constituting a hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173006.6b2299a4/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173006.6b2299a4/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T173222.a5974202",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173222.a5974202",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173222.a5974202/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 19.879,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image reveals a severe central mismatch characterized by prominent, high-contrast adjacent red and blue positive-negative blobs. Additionally, there are noticeable ring-like or arc-like structures in the disk region. These strong systematic residuals indicate a poorly fitted bulge and disk, constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1378,
+        "total_tokens": 4724,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 244,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1134
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "```json\n{\n  \"good_fit\": 0,\n  \"final_score\": 0.32,\n  \"confidence\": 0.95,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.10,\n    \"bar_residual_score\": 0.40,\n    \"disk_residual_score\": 0.30,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.30\n  },\n  \"detected_patterns\": [\n    \"strong_central_red_blue_pair\",\n    \"central_dipole\",\n    \"ring_like_residuals\",\n    \"structured_residual\"\n  ],\n  \"reason\": \"The residual image reveals a severe central mismatch characterized by prominent, high-contrast adjacent red and blue positive-negative blobs. Additionally, there are noticeable ring-like or arc-like structures in the disk region. These strong systematic residuals indicate a poorly fitted bulge and disk, constituting a hard failure.\"\n}\n```",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173222.a5974202/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173222.a5974202/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T173501.a5974202",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173501.a5974202",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173501.a5974202/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 18.091,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image exhibits a clear hard failure pattern characterized by strong, adjacent red (positive) and blue (negative) blobs in the center, indicating a severe mismatch in the bulge, PSF, or central structure. Furthermore, there are noticeable arc-like or ring-like residuals in the inner disk region, showing that the current model fails to capture significant morphological features.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1525,
+        "total_tokens": 4872,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 260,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1265
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "```json\n{\n  \"good_fit\": 0,\n  \"final_score\": 0.28,\n  \"confidence\": 0.95,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.10,\n    \"bar_residual_score\": 0.30,\n    \"disk_residual_score\": 0.30,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.20\n  },\n  \"detected_patterns\": [\n    \"strong_central_red_blue_blobs\",\n    \"central_dipole\",\n    \"ring_like_residuals\",\n    \"coherent_structures\"\n  ],\n  \"reason\": \"The residual image exhibits a clear hard failure pattern characterized by strong, adjacent red (positive) and blue (negative) blobs in the center, indicating a severe mismatch in the bulge, PSF, or central structure. Furthermore, there are noticeable arc-like or ring-like residuals in the inner disk region, showing that the current model fails to capture significant morphological features.\"\n}\n```",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173501.a5974202/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173501.a5974202/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T173647.f558882e",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173647.f558882e",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173647.f558882e/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 17.412,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image shows a severe hard failure in the form of a strong, compact red/blue dipole pattern at the center, indicating a major mismatch in the modeling of the bulge, PSF, or central bar component. Additionally, there are noticeable ring-like or spiral-like structured residuals surrounding the center. The fit is not acceptable and requires further modeling.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1426,
+        "total_tokens": 4772,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 254,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1172
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.29,\n  \"confidence\": 0.95,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.10,\n    \"bar_residual_score\": 0.20,\n    \"disk_residual_score\": 0.40,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.30\n  },\n  \"detected_patterns\": [\n    \"strong_central_dipole\",\n    \"red_blue_residual_pair\",\n    \"structured_central_residual\",\n    \"ring_like_residual\"\n  ],\n  \"reason\": \"The residual image shows a severe hard failure in the form of a strong, compact red/blue dipole pattern at the center, indicating a major mismatch in the modeling of the bulge, PSF, or central bar component. Additionally, there are noticeable ring-like or spiral-like structured residuals surrounding the center. The fit is not acceptable and requires further modeling.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173647.f558882e/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173647.f558882e/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T173910.11c0d918",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173910.11c0d918",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173910.11c0d918/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 18.456,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image displays a strong, highly structured red and blue positive-negative pattern in the central region. This indicates a significant mismatch in modeling the inner components, constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1418,
+        "total_tokens": 4765,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 222,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1196
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "```json\n{\n  \"good_fit\": 0,\n  \"final_score\": 0.38,\n  \"confidence\": 0.90,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.20,\n    \"bar_residual_score\": 0.40,\n    \"disk_residual_score\": 0.40,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.40\n  },\n  \"detected_patterns\": [\n    \"strong_central_red_blue_residual\",\n    \"inner_spiral_or_ring_residual\",\n    \"structured_central_mismatch\"\n  ],\n  \"reason\": \"The residual image displays a strong, highly structured red and blue positive-negative pattern in the central region. This indicates a significant mismatch in modeling the inner components, constituting a hard failure.\"\n}\n```",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173910.11c0d918/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173910.11c0d918/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T174207.883c02ba",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174207.883c02ba",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174207.883c02ba/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "failed",
+    "elapsed_seconds": 28.517,
+    "error": "JSONDecodeError(\"Expecting ',' delimiter: line 12 column 4 (char 266)\")",
+    "traceback": "Traceback (most recent call last):\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/reward.py\", line 225, in extract_json_from_response\n    return json.loads(text)\n           ^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/__init__.py\", line 346, in loads\n    return _default_decoder.decode(s)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 337, in decode\n    obj, end = self.raw_decode(s, idx=_w(s, 0).end())\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 353, in raw_decode\n    obj, end = self.scan_once(s, idx)\n               ^^^^^^^^^^^^^^^^^^^^^^\njson.decoder.JSONDecodeError: Unterminated string starting at: line 15 column 5 (char 330)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/test_is_good_fit_batch.py\", line 158, in main\n    result = is_good_fit(\n             ^^^^^^^^^^^^\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/reward.py\", line 792, in is_good_fit\n    result = extract_json_from_response(raw_response)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/reward.py\", line 231, in extract_json_from_response\n    return json.loads(text[start:end + 1])\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/__init__.py\", line 346, in loads\n    return _default_decoder.decode(s)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 337, in decode\n    obj, end = self.raw_decode(s, idx=_w(s, 0).end())\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 353, in raw_decode\n    obj, end = self.scan_once(s, idx)\n               ^^^^^^^^^^^^^^^^^^^^^^\njson.decoder.JSONDecodeError: Expecting ',' delimiter: line 12 column 4 (char 266)\n"
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T174728.ad723762",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174728.ad723762",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174728.ad723762/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 26.268,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.85,
+      "reason": "The residual image shows a clear, structured central residual with adjacent red/blue positive-negative regions, indicating a poorly fitted central component. There is also a noticeable ring-like structure in the surrounding disk region. These systematic residuals constitute a hard failure.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1392,
+        "total_tokens": 4738,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 224,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1168
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.38,\n  \"confidence\": 0.85,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.20,\n    \"bar_residual_score\": 0.40,\n    \"disk_residual_score\": 0.40,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.40\n  },\n  \"detected_patterns\": [\n    \"central_red_blue_dipole\",\n    \"ring_like_residual\",\n    \"structured_central_residual\"\n  ],\n  \"reason\": \"The residual image shows a clear, structured central residual with adjacent red/blue positive-negative regions, indicating a poorly fitted central component. There is also a noticeable ring-like structure in the surrounding disk region. These systematic residuals constitute a hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174728.ad723762/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174728.ad723762/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0436_MJD51883_Fiber493_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r",
+    "archive_id": "20260528T175209.e4ab4002",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 14.856,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image shows a strong, coherent spiral or ring-like structure with significant central over-subtraction (blue) and adjacent under-subtraction (red arcs). This indicates a major mismatch in the galaxy model, constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1216,
+        "total_tokens": 4562,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 221,
+          "audio_tokens": 0,
+          "reasoning_tokens": 995
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.425,\n  \"confidence\": 0.90,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.30,\n    \"bar_residual_score\": 0.50,\n    \"disk_residual_score\": 0.35,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.40\n  },\n  \"detected_patterns\": [\n    \"central_over_subtraction\",\n    \"prominent_spiral_residuals\",\n    \"coherent_structure\"\n  ],\n  \"reason\": \"The residual image shows a strong, coherent spiral or ring-like structure with significant central over-subtraction (blue) and adjacent under-subtraction (red arcs). This indicates a major mismatch in the galaxy model, constituting a hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0556_MJD51991_Fiber236_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r",
+    "archive_id": "20260528T123901.390c0cd7",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T123901.390c0cd7",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T123901.390c0cd7/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 22.475,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image exhibits a severe mismatch at the galaxy center, characterized by strong, high-contrast adjacent red and blue blobs forming a complex dipole-like pattern. This indicates a significant failure in modeling the central bulge or PSF component, constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1358,
+        "total_tokens": 4705,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 207,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1151
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n\"good_fit\": 0,\n\"final_score\": 0.57,\n\"confidence\": 0.95,\n\"hard_failure\": true,\n\"scores\": {\n\"central_residual_score\": 0.10,\n\"bar_residual_score\": 0.95,\n\"disk_residual_score\": 0.90,\n\"artifact_score\": 0.90,\n\"overall_noise_score\": 0.50\n},\n\"detected_patterns\": [\n\"strong_central_dipole\",\n\"adjacent_red_blue_blobs\",\n\"central_mismatch\"\n],\n\"reason\": \"The residual image exhibits a severe mismatch at the galaxy center, characterized by strong, high-contrast adjacent red and blue blobs forming a complex dipole-like pattern. This indicates a significant failure in modeling the central bulge or PSF component, constituting a hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T123901.390c0cd7/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T123901.390c0cd7/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0556_MJD51991_Fiber236_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r",
+    "archive_id": "20260528T141453.4c1e1297",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T141453.4c1e1297",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T141453.4c1e1297/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 18.144,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image exhibits a strong, compact central residual with clear adjacent red and blue (positive and negative) blobs. This indicates a significant mismatch in the central bulge or PSF modeling, constituting a hard failure. The fit is not acceptable and should continue.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1375,
+        "total_tokens": 4721,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 211,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1164
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n\"good_fit\": 0,\n\"final_score\": 0.61,\n\"confidence\": 0.90,\n\"hard_failure\": true,\n\"scores\": {\n\"central_residual_score\": 0.15,\n\"bar_residual_score\": 0.95,\n\"disk_residual_score\": 0.90,\n\"artifact_score\": 0.95,\n\"overall_noise_score\": 0.65\n},\n\"detected_patterns\": [\n\"strong_central_residual\",\n\"red_blue_positive_negative_pair\",\n\"central_over_under_subtraction\"\n],\n\"reason\": \"The residual image exhibits a strong, compact central residual with clear adjacent red and blue (positive and negative) blobs. This indicates a significant mismatch in the central bulge or PSF modeling, constituting a hard failure. The fit is not acceptable and should continue.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T141453.4c1e1297/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T141453.4c1e1297/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0556_MJD51991_Fiber236_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r",
+    "archive_id": "20260528T142309.13d8c82e",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142309.13d8c82e",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142309.13d8c82e/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 17.39,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image exhibits a hard failure due to a strong, high-contrast red/blue dipole pattern at the center, indicating a severe mismatch in the central component (bulge or PSF). Additionally, there appears to be an unmasked compact source slightly above the center. Fitting must continue to resolve these central issues.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1397,
+        "total_tokens": 4744,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 221,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1176
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n\"good_fit\": 0,\n\"final_score\": 0.54,\n\"confidence\": 0.90,\n\"hard_failure\": true,\n\"scores\": {\n\"central_residual_score\": 0.15,\n\"bar_residual_score\": 0.85,\n\"disk_residual_score\": 0.85,\n\"artifact_score\": 0.60,\n\"overall_noise_score\": 0.55\n},\n\"detected_patterns\": [\n\"strong_central_dipole\",\n\"red_blue_residual_pair\",\n\"unmasked_point_source\"\n],\n\"reason\": \"The residual image exhibits a hard failure due to a strong, high-contrast red/blue dipole pattern at the center, indicating a severe mismatch in the central component (bulge or PSF). Additionally, there appears to be an unmasked compact source slightly above the center. Fitting must continue to resolve these central issues.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142309.13d8c82e/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142309.13d8c82e/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0556_MJD51991_Fiber236_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r",
+    "archive_id": "20260528T142638.25e7b2ea",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "failed",
+    "good_fit": 0,
+  "raw_good_fit": 0,
+  "confidence": 0.9,
+  "reason": "The residual image exhibits a strong, high-contrast central residual characterized by severe over-subtraction (dark blue) and adjacent positive (red) blobs. This clear central mismatch indicates that the PSF or bulge component is poorly fitted, resulting in a hard failure, despite the large-scale disk and background being mostly noise-like.",
+  "usage": {
+    "prompt_tokens": 3347,
+    "completion_tokens": 1806,
+    "total_tokens": 5153,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "text_tokens": 2259,
+      "audio_tokens": 0,
+      "image_tokens": 0
+    },
+    "completion_tokens_details": {
+      "text_tokens": 256,
+      "audio_tokens": 0,
+      "reasoning_tokens": 1550
+    },
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "input_tokens_details": null,
+    "claude_cache_creation_5_m_tokens": 0,
+    "claude_cache_creation_1_h_tokens": 0
+  },
+  "raw_response": "```json\n{\n  \"good_fit\": 0,\n  \"final_score\": 0.66,\n  \"confidence\": 0.90,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.20,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.95,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.80\n  },\n  \"detected_patterns\": [\n    \"strong_central_residual\",\n    \"central_over_subtraction\",\n    \"adjacent_red_blue_blobs\",\n    \"mostly_noise_like_background\"\n  ],\n  \"reason\": \"The residual image exhibits a strong, high-contrast central residual characterized by severe over-subtraction (dark blue) and adjacent positive (red) blobs. This clear central mismatch indicates that the PSF or bulge component is poorly fitted, resulting in a hard failure, despite the large-scale disk and background being mostly noise-like.\"\n}\n```"},
+  {
+    "plate_name": "Plate0721_MJD52228_Fiber011_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r",
+    "archive_id": "20260528T121940.f609ab69",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T121940.f609ab69",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T121940.f609ab69/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 18.053,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image shows a strong, high-contrast central dipole pattern with clear adjacent red/blue positive-negative blobs. This indicates a significant mismatch in the central bulge or PSF modeling, constituting a hard failure.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1289,
+        "total_tokens": 4635,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 200,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1089
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n\"good_fit\": 0,\n\"final_score\": 0.41,\n\"confidence\": 0.95,\n\"hard_failure\": true,\n\"scores\": {\n\"central_residual_score\": 0.10,\n\"bar_residual_score\": 0.30,\n\"disk_residual_score\": 0.80,\n\"artifact_score\": 0.90,\n\"overall_noise_score\": 0.40\n},\n\"detected_patterns\": [\n\"strong_central_dipole\",\n\"red_blue_residual_blobs\",\n\"compact_central_residual\"\n],\n\"reason\": \"The residual image shows a strong, high-contrast central dipole pattern with clear adjacent red/blue positive-negative blobs. This indicates a significant mismatch in the central bulge or PSF modeling, constituting a hard failure.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T121940.f609ab69/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T121940.f609ab69/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0721_MJD52228_Fiber011_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r",
+    "archive_id": "20260528T122421.1d363f59",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122421.1d363f59",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122421.1d363f59/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 18.325,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image shows a very strong, compact red/blue dipole pattern at the galaxy center. This indicates a significant mismatch in the central component (likely PSF, bulge, or centering issue), constituting a hard failure. The fit is not acceptable and requires further refinement.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1473,
+        "total_tokens": 4820,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 227,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1246
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.52,\n  \"confidence\": 0.90,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.10,\n    \"bar_residual_score\": 0.90,\n    \"disk_residual_score\": 0.70,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.50\n  },\n  \"detected_patterns\": [\n    \"strong_central_dipole\",\n    \"red_blue_residual_pair\",\n    \"compact_central_residual\"\n  ],\n  \"reason\": \"The residual image shows a very strong, compact red/blue dipole pattern at the galaxy center. This indicates a significant mismatch in the central component (likely PSF, bulge, or centering issue), constituting a hard failure. The fit is not acceptable and requires further refinement.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122421.1d363f59/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122421.1d363f59/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0721_MJD52228_Fiber011_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r",
+    "archive_id": "20260528T122905.73bf0e1a",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122905.73bf0e1a",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122905.73bf0e1a/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 18.377,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.95,
+      "reason": "The residual image displays a strong, high-contrast, structured central residual with clear adjacent red and blue positive-negative blobs. This indicates a severe mismatch in the PSF or bulge modeling, constituting a hard failure pattern that requires further fitting.",
+      "usage": {
+        "prompt_tokens": 3346,
+        "completion_tokens": 1345,
+        "total_tokens": 4691,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2258,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 223,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1122
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.50,\n  \"confidence\": 0.95,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.10,\n    \"bar_residual_score\": 0.70,\n    \"disk_residual_score\": 0.85,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.40\n  },\n  \"detected_patterns\": [\n    \"strong_central_residual\",\n    \"red_blue_multipole_pattern\",\n    \"mostly_noise_like_background\"\n  ],\n  \"reason\": \"The residual image displays a strong, high-contrast, structured central residual with clear adjacent red and blue positive-negative blobs. This indicates a severe mismatch in the PSF or bulge modeling, constituting a hard failure pattern that requires further fitting.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122905.73bf0e1a/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122905.73bf0e1a/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0721_MJD52228_Fiber011_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r",
+    "archive_id": "20260528T123307.705746be",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123307.705746be",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123307.705746be/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 16.245,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image shows a strong, compact central residual with clear adjacent red and blue positive-negative blobs. This indicates a poor fit of the PSF or central bulge component, constituting a hard failure, even though the large-scale disk and background are well modeled.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1273,
+        "total_tokens": 4620,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 233,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1040
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "```json\n{\n  \"good_fit\": 0,\n  \"final_score\": 0.62,\n  \"confidence\": 0.90,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.15,\n    \"bar_residual_score\": 0.90,\n    \"disk_residual_score\": 0.90,\n    \"artifact_score\": 0.90,\n    \"overall_noise_score\": 0.80\n  },\n  \"detected_patterns\": [\n    \"strong_central_residual\",\n    \"red_blue_dipole_pair\",\n    \"mostly_noise_like_background\"\n  ],\n  \"reason\": \"The residual image shows a strong, compact central residual with clear adjacent red and blue positive-negative blobs. This indicates a poor fit of the PSF or central bulge component, constituting a hard failure, even though the large-scale disk and background are well modeled.\"\n}\n```",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123307.705746be/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123307.705746be/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0721_MJD52228_Fiber011_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r",
+    "archive_id": "20260528T123725.724849da",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison.png",
+    "model_name": "gemini-3.1-pro-preview",
+    "status": "success",
+    "elapsed_seconds": 26.803,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.85,
+      "reason": "The residual image shows a prominent, high-contrast cluster of adjacent red and blue positive-negative blobs at the very center. This clear central structure indicates a significant mismatch in the modeling of the central bulge or PSF, constituting a hard failure, even though the large-scale disk region is well-fitted and noise-like.",
+      "usage": {
+        "prompt_tokens": 3347,
+        "completion_tokens": 1855,
+        "total_tokens": 5202,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 2259,
+          "audio_tokens": 0,
+          "image_tokens": 0
+        },
+        "completion_tokens_details": {
+          "text_tokens": 243,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1612
+        },
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "input_tokens_details": null,
+        "claude_cache_creation_5_m_tokens": 0,
+        "claude_cache_creation_1_h_tokens": 0
+      },
+      "raw_response": "```json\n{\n  \"good_fit\": 0,\n  \"final_score\": 0.70,\n  \"confidence\": 0.85,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.30,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.95,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.80\n  },\n  \"detected_patterns\": [\n    \"strong_central_residual\",\n    \"red_blue_blobs\",\n    \"mostly_noise_like_background\"\n  ],\n  \"reason\": \"The residual image shows a prominent, high-contrast cluster of adjacent red and blue positive-negative blobs at the very center. This clear central structure indicates a significant mismatch in the modeling of the central bulge or PSF, constituting a hard failure, even though the large-scale disk region is well-fitted and noise-like.\"\n}\n```",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  }
+]

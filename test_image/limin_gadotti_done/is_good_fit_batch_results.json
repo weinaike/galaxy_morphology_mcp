@@ -1,0 +1,1283 @@
+[
+  {
+    "plate_name": "Plate0270_MJD51909_Fiber095_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r",
+    "archive_id": "20260601T143251.e1f2bdd7",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T143251.e1f2bdd7",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T143251.e1f2bdd7/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.999,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual panel shows a strong compact central red/blue pair and dipole-like pattern, indicating a significant PSF/bulge mismatch or unresolved central component. Outer regions are mostly noise-like and large-scale disk/bar structures are well modeled, but the central residual is a clear hard failure under the current criteria, so the fit is not yet acceptable.",
+      "usage": {
+        "completion_tokens": 233,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 14,
+          "engine_ttft_ms": 387,
+          "engine_ttlt_ms": 3589,
+          "pre_inference_ms": 232,
+          "service_tbt_ms": 14,
+          "service_ttft_ms": 899,
+          "service_ttlt_ms": 4081,
+          "total_duration_ms": 3861,
+          "user_visible_ttft_ms": 667
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2938
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.46,\n  \"confidence\": 0.9,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.15,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.9,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.7\n  },\n  \"detected_patterns\": [\n    \"strong_central_red_blue_dipole\",\n    \"compact_central_residual\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_regions_present_but_not_dominant\"\n  ],\n  \"reason\": \"The residual panel shows a strong compact central red/blue pair and dipole-like pattern, indicating a significant PSF/bulge mismatch or unresolved central component. Outer regions are mostly noise-like and large-scale disk/bar structures are well modeled, but the central residual is a clear hard failure under the current criteria, so the fit is not yet acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T143251.e1f2bdd7/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T143251.e1f2bdd7/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0270_MJD51909_Fiber095_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r",
+    "archive_id": "20260601T145905.3ee4525d",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T145905.3ee4525d",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T145905.3ee4525d/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.663,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The outer residuals are largely noise-like with well-masked contaminants, but the galaxy center shows a prominent compact red/blue residual pattern indicating a significant PSF/bulge mismatch. This constitutes a hard central failure, so the decomposition is not yet acceptable despite otherwise good large-scale and bar residuals.",
+      "usage": {
+        "completion_tokens": 216,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 14,
+          "engine_ttft_ms": 334,
+          "engine_ttlt_ms": 3418,
+          "pre_inference_ms": 200,
+          "service_tbt_ms": 14,
+          "service_ttft_ms": 665,
+          "service_ttlt_ms": 3745,
+          "total_duration_ms": 3555,
+          "user_visible_ttft_ms": 465
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2921
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.47,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.9,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.8\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_pair\",\n    \"mostly_noise_like_outer_region\",\n    \"masked_background_sources\"\n  ],\n  \"reason\": \"The outer residuals are largely noise-like with well-masked contaminants, but the galaxy center shows a prominent compact red/blue residual pattern indicating a significant PSF/bulge mismatch. This constitutes a hard central failure, so the decomposition is not yet acceptable despite otherwise good large-scale and bar residuals.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T145905.3ee4525d/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T145905.3ee4525d/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0270_MJD51909_Fiber095_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r",
+    "archive_id": "20260601T150106.992fa2ea",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T150106.992fa2ea",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T150106.992fa2ea/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 12.785,
+    "result": {
+      "good_fit": 1,
+      "raw_good_fit": 1,
+      "confidence": 0.9,
+      "reason": "The residual panel is dominated by random, nearly white-noise-like structure with no clear bar- or disk-like residuals or large-scale gradients. The only noticeable feature is a small compact central residual that is modest in amplitude and not strongly bipolar, indicating only a mild PSF/bulge mismatch. Masked regions from foreground objects/artifacts are present but do not affect the galaxy center. Overall the residuals of bulge/disk/bar/PSF components are sufficiently small that the decomposition can be considered acceptable under the current modeling scope.",
+      "usage": {
+        "completion_tokens": 259,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 11,
+          "engine_ttft_ms": 199,
+          "engine_ttlt_ms": 3035,
+          "pre_inference_ms": 253,
+          "service_tbt_ms": 11,
+          "service_ttft_ms": 674,
+          "service_ttlt_ms": 3495,
+          "total_duration_ms": 3255,
+          "user_visible_ttft_ms": 421
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2964
+      },
+      "raw_response": "{\n  \"good_fit\": 1,\n  \"final_score\": 0.83,\n  \"confidence\": 0.9,\n  \"hard_failure\": false,\n  \"scores\": {\n    \"central_residual_score\": 0.8,\n    \"bar_residual_score\": 1.0,\n    \"disk_residual_score\": 0.95,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.8\n  },\n  \"detected_patterns\": [\n    \"small_compact_central_residual\",\n    \"mostly_noise_like_background\",\n    \"masked_foreground_sources_or_artifacts\"\n  ],\n  \"reason\": \"The residual panel is dominated by random, nearly white-noise-like structure with no clear bar- or disk-like residuals or large-scale gradients. The only noticeable feature is a small compact central residual that is modest in amplitude and not strongly bipolar, indicating only a mild PSF/bulge mismatch. Masked regions from foreground objects/artifacts are present but do not affect the galaxy center. Overall the residuals of bulge/disk/bar/PSF components are sufficiently small that the decomposition can be considered acceptable under the current modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T150106.992fa2ea/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0270_MJD51909_Fiber095_r/archives/20260601T150106.992fa2ea/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0276_MJD51909_Fiber629_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r",
+    "archive_id": "20260601T163335.55ef7369",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163335.55ef7369",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163335.55ef7369/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.121,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image shows a very strong compact central point-like residual with clear adjacent red/blue structure, indicating a significant PSF or central bulge mismatch. While the outer disk region appears mostly noise-like and free of major large-scale systematics, the dominant central residual constitutes a hard failure under the bulge/disk/bar/PSF modeling scope, so the fit is not yet acceptable.",
+      "usage": {
+        "completion_tokens": 247,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 13,
+          "engine_ttft_ms": 357,
+          "engine_ttlt_ms": 3576,
+          "pre_inference_ms": 243,
+          "service_tbt_ms": 13,
+          "service_ttft_ms": 820,
+          "service_ttlt_ms": 4035,
+          "total_duration_ms": 3800,
+          "user_visible_ttft_ms": 577
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2952
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.37,\n  \"confidence\": 0.9,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.1,\n    \"bar_residual_score\": 0.8,\n    \"disk_residual_score\": 0.85,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.6\n  },\n  \"detected_patterns\": [\n    \"strong_central_point_like_residual\",\n    \"central_red_blue_dipole\",\n    \"well_fit_outer_disk_with_noise_like_residuals\",\n    \"masked_neighbor_sources_present_but_not_dominant\"\n  ],\n  \"reason\": \"The residual image shows a very strong compact central point-like residual with clear adjacent red/blue structure, indicating a significant PSF or central bulge mismatch. While the outer disk region appears mostly noise-like and free of major large-scale systematics, the dominant central residual constitutes a hard failure under the bulge/disk/bar/PSF modeling scope, so the fit is not yet acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163335.55ef7369/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163335.55ef7369/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0276_MJD51909_Fiber629_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r",
+    "archive_id": "20260601T163525.ee77cea5",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163525.ee77cea5",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163525.ee77cea5/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.273,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual image is dominated by a strong compact red/blue central residual with a clear dipole-like structure, indicating significant PSF or bulge mismatch. Although the outer disk region appears largely noise-like and artifacts are masked, the severe central residual constitutes a hard failure, so the decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.",
+      "usage": {
+        "completion_tokens": 238,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 12,
+          "engine_ttft_ms": 341,
+          "engine_ttlt_ms": 3172,
+          "pre_inference_ms": 313,
+          "service_tbt_ms": 12,
+          "service_ttft_ms": 818,
+          "service_ttlt_ms": 3634,
+          "total_duration_ms": 3332,
+          "user_visible_ttft_ms": 506
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2943
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.39,\n  \"confidence\": 0.9,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.1,\n    \"bar_residual_score\": 0.8,\n    \"disk_residual_score\": 0.75,\n    \"artifact_score\": 0.85,\n    \"overall_noise_score\": 0.6\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole_pattern\",\n    \"mostly_noise_like_outer_region\",\n    \"several_masked_sources_or_artifacts\"\n  ],\n  \"reason\": \"The residual image is dominated by a strong compact red/blue central residual with a clear dipole-like structure, indicating significant PSF or bulge mismatch. Although the outer disk region appears largely noise-like and artifacts are masked, the severe central residual constitutes a hard failure, so the decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163525.ee77cea5/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163525.ee77cea5/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0276_MJD51909_Fiber629_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r",
+    "archive_id": "20260601T163843.f543cd40",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163843.f543cd40",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163843.f543cd40/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 5.869,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual image is mostly noise-like at large radii, but the galaxy center shows a strong compact red/blue residual pair indicative of significant PSF or bulge mismatch. This constitutes a hard central failure, so despite good disk and artifact behavior, the overall fit is not acceptable under the current bulge/disk/bar/PSF modeling scope and further refinement of the central component is needed.",
+      "usage": {
+        "completion_tokens": 241,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 10,
+          "engine_ttft_ms": 196,
+          "engine_ttlt_ms": 2623,
+          "pre_inference_ms": 247,
+          "service_tbt_ms": 10,
+          "service_ttft_ms": 554,
+          "service_ttlt_ms": 2979,
+          "total_duration_ms": 2745,
+          "user_visible_ttft_ms": 307
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2946
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.47,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.7,\n    \"disk_residual_score\": 0.85,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.75\n  },\n  \"detected_patterns\": [\n    \"strong_central_residual\",\n    \"central_red_blue_dipole_pattern\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_foreground_objects_not_affecting_core\"\n  ],\n  \"reason\": \"The residual image is mostly noise-like at large radii, but the galaxy center shows a strong compact red/blue residual pair indicative of significant PSF or bulge mismatch. This constitutes a hard central failure, so despite good disk and artifact behavior, the overall fit is not acceptable under the current bulge/disk/bar/PSF modeling scope and further refinement of the central component is needed.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163843.f543cd40/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T163843.f543cd40/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0276_MJD51909_Fiber629_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r",
+    "archive_id": "20260601T164106.09bc38db",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164106.09bc38db",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164106.09bc38db/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.824,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.87,
+      "reason": "The outer residuals are largely noise-like with well-masked contaminants, but the central region shows a strong compact red/blue residual pair indicating a significant PSF or central bulge mismatch. This constitutes a hard failure, so the fit is not yet acceptable despite good large-scale disk and noise properties.",
+      "usage": {
+        "completion_tokens": 225,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 14,
+          "engine_ttft_ms": 262,
+          "engine_ttlt_ms": 3403,
+          "pre_inference_ms": 492,
+          "service_tbt_ms": 14,
+          "service_ttft_ms": 977,
+          "service_ttlt_ms": 4189,
+          "total_duration_ms": 3701,
+          "user_visible_ttft_ms": 485
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2930
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.59,\n  \"confidence\": 0.87,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.25,\n    \"bar_residual_score\": 0.6,\n    \"disk_residual_score\": 0.9,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.8\n  },\n  \"detected_patterns\": [\n    \"strong_compact_central_residual\",\n    \"central_red_blue_pair_or_dipole\",\n    \"mostly_noise_like_outer_region\",\n    \"masked_foreground_objects_adequately_handled\"\n  ],\n  \"reason\": \"The outer residuals are largely noise-like with well-masked contaminants, but the central region shows a strong compact red/blue residual pair indicating a significant PSF or central bulge mismatch. This constitutes a hard failure, so the fit is not yet acceptable despite good large-scale disk and noise properties.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164106.09bc38db/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164106.09bc38db/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0276_MJD51909_Fiber629_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r",
+    "archive_id": "20260601T164431.07fdc4da",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164431.07fdc4da",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164431.07fdc4da/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.82,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.86,
+      "reason": "The residual image is mostly noise-like at large radii with well-masked contaminants, but the galaxy center shows a strong compact red/blue residual dipole indicating a significant PSF/bulge mismatch. This central failure qualifies as a hard failure, so the decomposition is not yet acceptable even though disk and bar structures are reasonably modeled.",
+      "usage": {
+        "completion_tokens": 224,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 18,
+          "engine_ttft_ms": 590,
+          "engine_ttlt_ms": 4606,
+          "pre_inference_ms": 203,
+          "service_tbt_ms": 18,
+          "service_ttft_ms": 967,
+          "service_ttlt_ms": 4981,
+          "total_duration_ms": 4789,
+          "user_visible_ttft_ms": 764
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2929
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.47,\n  \"confidence\": 0.86,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.8,\n    \"disk_residual_score\": 0.8,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.6\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_background_sources\"\n  ],\n  \"reason\": \"The residual image is mostly noise-like at large radii with well-masked contaminants, but the galaxy center shows a strong compact red/blue residual dipole indicating a significant PSF/bulge mismatch. This central failure qualifies as a hard failure, so the decomposition is not yet acceptable even though disk and bar structures are reasonably modeled.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164431.07fdc4da/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0276_MJD51909_Fiber629_r/archives/20260601T164431.07fdc4da/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0295_MJD51985_Fiber525_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r",
+    "archive_id": "20260601T170418.fc6fc647",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170418.fc6fc647",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170418.fc6fc647/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.638,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual panel shows a strong compact central residual with adjacent positive and negative blobs, indicating a poor PSF/bulge fit, and a pronounced ring/bullseye pattern in the inner disk, implying significant disk mismatch. These constitute hard failure patterns, so the current bulge/disk/PSF model is not yet acceptable despite the outer regions being mostly noise-like.",
+      "usage": {
+        "completion_tokens": 241,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 16,
+          "engine_ttft_ms": 483,
+          "engine_ttlt_ms": 4329,
+          "pre_inference_ms": 207,
+          "service_tbt_ms": 16,
+          "service_ttft_ms": 827,
+          "service_ttlt_ms": 4669,
+          "total_duration_ms": 4475,
+          "user_visible_ttft_ms": 620
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2946
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.4,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.15,\n    \"bar_residual_score\": 0.85,\n    \"disk_residual_score\": 0.35,\n    \"artifact_score\": 0.7,\n    \"overall_noise_score\": 0.45\n  },\n  \"detected_patterns\": [\n    \"strong_central_positive_negative_residual\",\n    \"central_over_under_subtraction\",\n    \"ring_like_disk_residual\",\n    \"mostly_noise_like_outer_background\",\n    \"masked_foreground_sources_present\"\n  ],\n  \"reason\": \"The residual panel shows a strong compact central residual with adjacent positive and negative blobs, indicating a poor PSF/bulge fit, and a pronounced ring/bullseye pattern in the inner disk, implying significant disk mismatch. These constitute hard failure patterns, so the current bulge/disk/PSF model is not yet acceptable despite the outer regions being mostly noise-like.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170418.fc6fc647/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170418.fc6fc647/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0295_MJD51985_Fiber525_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r",
+    "archive_id": "20260601T170546.65c86daf",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170546.65c86daf",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170546.65c86daf/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.209,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual panel shows a strong compact central red/blue structure with clear positive-negative blobs and surrounding ring-like features, indicating a poor PSF/bulge fit and central bullseye pattern. Although the outer regions are largely noise-like and artifacts are masked, the dominant central residual constitutes a hard failure, so the current bulge/disk/bar/PSF decomposition is not yet acceptable.",
+      "usage": {
+        "completion_tokens": 259,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 13,
+          "engine_ttft_ms": 377,
+          "engine_ttlt_ms": 3768,
+          "pre_inference_ms": 176,
+          "service_tbt_ms": 13,
+          "service_ttft_ms": 720,
+          "service_ttlt_ms": 4100,
+          "total_duration_ms": 3934,
+          "user_visible_ttft_ms": 544
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2964
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.41,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.15,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.6,\n    \"artifact_score\": 0.85,\n    \"overall_noise_score\": 0.55\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole_pattern\",\n    \"ring_like_bullseye_residual_near_center\",\n    \"mostly_noise_like_outer_background\",\n    \"masked_neighbors_or_stars_present_but_not_dominant\"\n  ],\n  \"reason\": \"The residual panel shows a strong compact central red/blue structure with clear positive-negative blobs and surrounding ring-like features, indicating a poor PSF/bulge fit and central bullseye pattern. Although the outer regions are largely noise-like and artifacts are masked, the dominant central residual constitutes a hard failure, so the current bulge/disk/bar/PSF decomposition is not yet acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170546.65c86daf/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170546.65c86daf/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0295_MJD51985_Fiber525_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r",
+    "archive_id": "20260601T170740.adb2a132",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170740.adb2a132",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170740.adb2a132/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 8.275,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.87,
+      "reason": "The residual image shows a pronounced concentric bullseye/ring structure and strong central over/under-subtraction, indicating a significant mismatch in the PSF/bulge and inner disk. These coherent central and ring-like residuals qualify as hard failure patterns, so the current bulge/disk/PSF decomposition is not yet acceptable despite relatively noise-like outer regions.",
+      "usage": {
+        "completion_tokens": 240,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 19,
+          "engine_ttft_ms": 345,
+          "engine_ttlt_ms": 4862,
+          "pre_inference_ms": 304,
+          "service_tbt_ms": 19,
+          "service_ttft_ms": 846,
+          "service_ttlt_ms": 5347,
+          "total_duration_ms": 5051,
+          "user_visible_ttft_ms": 542
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2945
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.49,\n  \"confidence\": 0.87,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.85,\n    \"disk_residual_score\": 0.45,\n    \"artifact_score\": 0.8,\n    \"overall_noise_score\": 0.55\n  },\n  \"detected_patterns\": [\n    \"strong_central_bullseye_pattern\",\n    \"central_over_under_subtraction\",\n    \"ring_like_disk_residual\",\n    \"mostly_noise_like_outer_background\",\n    \"masked_neighboring_sources\"\n  ],\n  \"reason\": \"The residual image shows a pronounced concentric bullseye/ring structure and strong central over/under-subtraction, indicating a significant mismatch in the PSF/bulge and inner disk. These coherent central and ring-like residuals qualify as hard failure patterns, so the current bulge/disk/PSF decomposition is not yet acceptable despite relatively noise-like outer regions.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170740.adb2a132/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T170740.adb2a132/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0295_MJD51985_Fiber525_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r",
+    "archive_id": "20260601T172127.ffbe323f",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172127.ffbe323f",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172127.ffbe323f/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.182,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.86,
+      "reason": "The residual panel shows a strong, compact central red/blue structure with clear bullseye-like rings, indicating significant PSF/bulge mismatch and central over/under-subtraction. There is also a noticeable ring-like disk residual. Although the outer regions are largely noise-like and bar-like residuals are absent, the pronounced central residual pattern meets the hard failure criteria, so the GALFIT decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.",
+      "usage": {
+        "completion_tokens": 269,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 10,
+          "engine_ttft_ms": 271,
+          "engine_ttlt_ms": 3004,
+          "pre_inference_ms": 186,
+          "service_tbt_ms": 10,
+          "service_ttft_ms": 578,
+          "service_ttlt_ms": 3298,
+          "total_duration_ms": 3123,
+          "user_visible_ttft_ms": 392
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2974
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.49,\n  \"confidence\": 0.86,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.4,\n    \"artifact_score\": 0.8,\n    \"overall_noise_score\": 0.55\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole_or_bullseye\",\n    \"ring_like_disk_residual\",\n    \"mostly_noise_like_outer_background\",\n    \"masked_neighbors_or_artifacts\"\n  ],\n  \"reason\": \"The residual panel shows a strong, compact central red/blue structure with clear bullseye-like rings, indicating significant PSF/bulge mismatch and central over/under-subtraction. There is also a noticeable ring-like disk residual. Although the outer regions are largely noise-like and bar-like residuals are absent, the pronounced central residual pattern meets the hard failure criteria, so the GALFIT decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172127.ffbe323f/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172127.ffbe323f/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0295_MJD51985_Fiber525_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r",
+    "archive_id": "20260601T172311.ffbe323f",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172311.ffbe323f",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172311.ffbe323f/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.622,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.86,
+      "reason": "The residual shows a strong, compact central positive/negative structure with pronounced concentric bullseye-like rings, indicating significant PSF/bulge mismatch and disk over/under-subtraction. These coherent patterns qualify as a hard failure despite the outer regions being more noise-like, so the GALFIT decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.",
+      "usage": {
+        "completion_tokens": 255,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 15,
+          "engine_ttft_ms": 580,
+          "engine_ttlt_ms": 4283,
+          "pre_inference_ms": 236,
+          "service_tbt_ms": 15,
+          "service_ttft_ms": 1027,
+          "service_ttlt_ms": 4745,
+          "total_duration_ms": 4533,
+          "user_visible_ttft_ms": 791
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2960
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.49,\n  \"confidence\": 0.86,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.4,\n    \"artifact_score\": 0.8,\n    \"overall_noise_score\": 0.5\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_bullseye_ring_pattern\",\n    \"large_scale_disk_mismatch\",\n    \"mostly_noise_like_background_with_central_structure\",\n    \"masked_foreground_sources_present_but_not_dominant\"\n  ],\n  \"reason\": \"The residual shows a strong, compact central positive/negative structure with pronounced concentric bullseye-like rings, indicating significant PSF/bulge mismatch and disk over/under-subtraction. These coherent patterns qualify as a hard failure despite the outer regions being more noise-like, so the GALFIT decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172311.ffbe323f/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172311.ffbe323f/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0295_MJD51985_Fiber525_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r",
+    "archive_id": "20260601T172832.fa1909f4",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172832.fa1909f4",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172832.fa1909f4/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.68,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.87,
+      "reason": "The outer residuals are largely noise-like with masked contaminants handled well, and there is no strong bar- or disk-like mismatch. However, the galaxy center shows a compact, high-contrast red/blue residual cluster indicative of a PSF/bulge mismatch or unresolved central source, forming a clear central dipole/over-under subtraction pattern. This constitutes a hard central failure, so despite otherwise good residuals the decomposition is not yet acceptable under the current bulge/disk/PSF modeling scope.",
+      "usage": {
+        "completion_tokens": 261,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 11,
+          "engine_ttft_ms": 344,
+          "engine_ttlt_ms": 3147,
+          "pre_inference_ms": 257,
+          "service_tbt_ms": 11,
+          "service_ttft_ms": 927,
+          "service_ttlt_ms": 3723,
+          "total_duration_ms": 3478,
+          "user_visible_ttft_ms": 670
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2966
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.55,\n  \"confidence\": 0.87,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.25,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.8,\n    \"artifact_score\": 0.85,\n    \"overall_noise_score\": 0.75\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole_pattern\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_foreground_sources_present\"\n  ],\n  \"reason\": \"The outer residuals are largely noise-like with masked contaminants handled well, and there is no strong bar- or disk-like mismatch. However, the galaxy center shows a compact, high-contrast red/blue residual cluster indicative of a PSF/bulge mismatch or unresolved central source, forming a clear central dipole/over-under subtraction pattern. This constitutes a hard central failure, so despite otherwise good residuals the decomposition is not yet acceptable under the current bulge/disk/PSF modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172832.fa1909f4/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T172832.fa1909f4/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0295_MJD51985_Fiber525_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r",
+    "archive_id": "20260601T173012.290799f9",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T173012.290799f9",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T173012.290799f9/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 8.274,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual shows a very strong compact red/blue pattern at the galaxy center, indicating a clear PSF/bulge mismatch and constituting a hard failure. While the outer regions are mostly noise-like with only mild ring-like structure and the bar/disk appear reasonably modeled, the dominant central dipole means the GALFIT decomposition is not yet acceptable and the fit should be refined, likely by improving the PSF or central component modeling.",
+      "usage": {
+        "completion_tokens": 260,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 16,
+          "engine_ttft_ms": 437,
+          "engine_ttlt_ms": 4562,
+          "pre_inference_ms": 164,
+          "service_tbt_ms": 16,
+          "service_ttft_ms": 709,
+          "service_ttlt_ms": 4831,
+          "total_duration_ms": 4681,
+          "user_visible_ttft_ms": 545
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2965
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.44,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.1,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.7,\n    \"artifact_score\": 0.85,\n    \"overall_noise_score\": 0.7\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole\",\n    \"moderate_ring_like_inner_residual\",\n    \"mostly_noise_like_outer_background\",\n    \"masked_foreground_sources_not_affecting_core\"\n  ],\n  \"reason\": \"The residual shows a very strong compact red/blue pattern at the galaxy center, indicating a clear PSF/bulge mismatch and constituting a hard failure. While the outer regions are mostly noise-like with only mild ring-like structure and the bar/disk appear reasonably modeled, the dominant central dipole means the GALFIT decomposition is not yet acceptable and the fit should be refined, likely by improving the PSF or central component modeling.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T173012.290799f9/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0295_MJD51985_Fiber525_r/archives/20260601T173012.290799f9/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0300_MJD51943_Fiber581_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r",
+    "archive_id": "20260601T173118.393bba84",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173118.393bba84",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173118.393bba84/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "failed",
+    "elapsed_seconds": 8.273,
+    "error": "JSONDecodeError(\"Expecting ',' delimiter: line 18 column 3 (char 451)\")",
+    "traceback": "Traceback (most recent call last):\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/reward.py\", line 225, in extract_json_from_response\n    return json.loads(text)\n           ^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/__init__.py\", line 346, in loads\n    return _default_decoder.decode(s)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 337, in decode\n    obj, end = self.raw_decode(s, idx=_w(s, 0).end())\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 353, in raw_decode\n    obj, end = self.scan_once(s, idx)\n               ^^^^^^^^^^^^^^^^^^^^^^\njson.decoder.JSONDecodeError: Expecting ',' delimiter: line 18 column 3 (char 451)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/test_is_good_fit_batch.py\", line 156, in main\n    result = is_good_fit(\n             ^^^^^^^^^^^^\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/reward.py\", line 792, in is_good_fit\n    result = extract_json_from_response(raw_response)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/zhongling/wyh/GalDecomp_Gen/data_gen/reward.py\", line 231, in extract_json_from_response\n    return json.loads(text[start:end + 1])\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/__init__.py\", line 346, in loads\n    return _default_decoder.decode(s)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 337, in decode\n    obj, end = self.raw_decode(s, idx=_w(s, 0).end())\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/media/data/anaconda3/envs/prompt/lib/python3.12/json/decoder.py\", line 353, in raw_decode\n    obj, end = self.scan_once(s, idx)\n               ^^^^^^^^^^^^^^^^^^^^^^\njson.decoder.JSONDecodeError: Expecting ',' delimiter: line 18 column 3 (char 451)\n"
+  },
+  {
+    "plate_name": "Plate0300_MJD51943_Fiber581_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r",
+    "archive_id": "20260601T173343.b39899f4",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173343.b39899f4",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173343.b39899f4/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.886,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual image shows a strong, compact red/blue residual at the galaxy center, forming a clear dipole/PSF mismatch pattern, which qualifies as a hard central failure. Although the outer disk region is mostly noise-like and bar-like residuals are absent, the central PSF/bulge component is poorly modeled, so the decomposition is not yet acceptable.",
+      "usage": {
+        "completion_tokens": 236,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 11,
+          "engine_ttft_ms": 470,
+          "engine_ttlt_ms": 3039,
+          "pre_inference_ms": 211,
+          "service_tbt_ms": 11,
+          "service_ttft_ms": 1119,
+          "service_ttlt_ms": 3683,
+          "total_duration_ms": 3488,
+          "user_visible_ttft_ms": 909
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2941
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.43,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.8,\n    \"artifact_score\": 0.7,\n    \"overall_noise_score\": 0.6\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole_pattern\",\n    \"mostly_noise_like_outer_regions\",\n    \"several_masked_or_artifact_regions\"\n  ],\n  \"reason\": \"The residual image shows a strong, compact red/blue residual at the galaxy center, forming a clear dipole/PSF mismatch pattern, which qualifies as a hard central failure. Although the outer disk region is mostly noise-like and bar-like residuals are absent, the central PSF/bulge component is poorly modeled, so the decomposition is not yet acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173343.b39899f4/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173343.b39899f4/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0300_MJD51943_Fiber581_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r",
+    "archive_id": "20260601T173849.c270e1b9",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173849.c270e1b9",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173849.c270e1b9/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 5.936,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual panel is mostly noise-like in the outer regions, but the galaxy center shows a strong compact blue/red residual cluster, indicating significant PSF/bulge mismatch or an unmodeled central component. This constitutes a hard central failure, so the fit is not yet acceptable despite otherwise reasonable disk and bar residuals.",
+      "usage": {
+        "completion_tokens": 223,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 13,
+          "engine_ttft_ms": 213,
+          "engine_ttlt_ms": 3029,
+          "pre_inference_ms": 241,
+          "service_tbt_ms": 13,
+          "service_ttft_ms": 678,
+          "service_ttlt_ms": 3511,
+          "total_duration_ms": 3274,
+          "user_visible_ttft_ms": 437
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2928
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.48,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.75,\n    \"artifact_score\": 0.85,\n    \"overall_noise_score\": 0.7\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_over_under_subtraction\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_neighbor_sources_or_artifacts\"\n  ],\n  \"reason\": \"The residual panel is mostly noise-like in the outer regions, but the galaxy center shows a strong compact blue/red residual cluster, indicating significant PSF/bulge mismatch or an unmodeled central component. This constitutes a hard central failure, so the fit is not yet acceptable despite otherwise reasonable disk and bar residuals.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173849.c270e1b9/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173849.c270e1b9/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0300_MJD51943_Fiber581_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r",
+    "archive_id": "20260601T192555.dde351b0",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192555.dde351b0",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192555.dde351b0/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.35,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual panel is mostly noise-like on large scales and shows no obvious bar or disk mismatch, but there are strong, compact red residuals near the galaxy center plus adjacent blue structure, indicating a significant unresolved or poorly modeled central source/PSF. These high-contrast central residuals qualify as a hard failure, so the current bulge/disk/bar/PSF decomposition is not yet acceptable.",
+      "usage": {
+        "completion_tokens": 246,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 12,
+          "engine_ttft_ms": 245,
+          "engine_ttlt_ms": 3171,
+          "pre_inference_ms": 374,
+          "service_tbt_ms": 12,
+          "service_ttft_ms": 781,
+          "service_ttlt_ms": 3700,
+          "total_duration_ms": 3337,
+          "user_visible_ttft_ms": 407
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2951
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.43,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.8,\n    \"artifact_score\": 0.7,\n    \"overall_noise_score\": 0.6\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_positive_negative_structure\",\n    \"mostly_noise_like_background_with_localized_peaks\",\n    \"possible_unmodeled_or_unmasked_compact_sources\"\n  ],\n  \"reason\": \"The residual panel is mostly noise-like on large scales and shows no obvious bar or disk mismatch, but there are strong, compact red residuals near the galaxy center plus adjacent blue structure, indicating a significant unresolved or poorly modeled central source/PSF. These high-contrast central residuals qualify as a hard failure, so the current bulge/disk/bar/PSF decomposition is not yet acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192555.dde351b0/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192555.dde351b0/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0300_MJD51943_Fiber581_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r",
+    "archive_id": "20260601T192757.6449b1bc",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192757.6449b1bc",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192757.6449b1bc/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.182,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "The residual panel shows a strong compact central blue/red structure with clear over/under-subtraction at the galaxy center, indicating a poor PSF/bulge fit. This constitutes a hard failure despite the outer region being mostly noise-like, so the decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.",
+      "usage": {
+        "completion_tokens": 230,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 11,
+          "engine_ttft_ms": 351,
+          "engine_ttlt_ms": 2910,
+          "pre_inference_ms": 169,
+          "service_tbt_ms": 11,
+          "service_ttft_ms": 706,
+          "service_ttlt_ms": 3260,
+          "total_duration_ms": 3104,
+          "user_visible_ttft_ms": 537
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2935
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.43,\n  \"confidence\": 0.9,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.1,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.7,\n    \"artifact_score\": 0.8,\n    \"overall_noise_score\": 0.6\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_positive_negative_structure\",\n    \"outer_residuals_mostly_noise_like\",\n    \"masked_neighbors_or_artifacts_present\"\n  ],\n  \"reason\": \"The residual panel shows a strong compact central blue/red structure with clear over/under-subtraction at the galaxy center, indicating a poor PSF/bulge fit. This constitutes a hard failure despite the outer region being mostly noise-like, so the decomposition is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192757.6449b1bc/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192757.6449b1bc/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber072_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r",
+    "archive_id": "20260601T212108.6b73f0ca",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212108.6b73f0ca",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212108.6b73f0ca/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.721,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.9,
+      "reason": "Although the outer residuals are largely noise-like and the disk/bar appear well modeled, there is a strong compact central residual with pronounced red/blue structure, indicating a significant PSF or central component mismatch. This qualifies as a hard failure, so the fit is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.",
+      "usage": {
+        "completion_tokens": 228,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 14,
+          "engine_ttft_ms": 352,
+          "engine_ttlt_ms": 3472,
+          "pre_inference_ms": 213,
+          "service_tbt_ms": 14,
+          "service_ttft_ms": 736,
+          "service_ttlt_ms": 3854,
+          "total_duration_ms": 3649,
+          "user_visible_ttft_ms": 523
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2933
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.51,\n  \"confidence\": 0.9,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.9,\n    \"disk_residual_score\": 0.9,\n    \"artifact_score\": 0.85,\n    \"overall_noise_score\": 0.7\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_pair\",\n    \"mostly_noise_like_outer_region\",\n    \"masked_companions_or_stars\"\n  ],\n  \"reason\": \"Although the outer residuals are largely noise-like and the disk/bar appear well modeled, there is a strong compact central residual with pronounced red/blue structure, indicating a significant PSF or central component mismatch. This qualifies as a hard failure, so the fit is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212108.6b73f0ca/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212108.6b73f0ca/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber072_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r",
+    "archive_id": "20260601T212740.5459ef59",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212740.5459ef59",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212740.5459ef59/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.635,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "The residual panel is largely noise-like away from the galaxy and shows well-masked neighboring objects, but there is a very strong, compact central residual with high-contrast positive and negative pixels, indicating a significant PSF/bulge mismatch. This qualifies as a hard central failure, so despite good disk and bar residuals the fit is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.",
+      "usage": {
+        "completion_tokens": 240,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 11,
+          "engine_ttft_ms": 259,
+          "engine_ttlt_ms": 2915,
+          "pre_inference_ms": 427,
+          "service_tbt_ms": 11,
+          "service_ttft_ms": 887,
+          "service_ttlt_ms": 3505,
+          "total_duration_ms": 3104,
+          "user_visible_ttft_ms": 459
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2945
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.46,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.1,\n    \"bar_residual_score\": 0.8,\n    \"disk_residual_score\": 0.85,\n    \"artifact_score\": 0.95,\n    \"overall_noise_score\": 0.7\n  },\n  \"detected_patterns\": [\n    \"strong_compact_central_residual\",\n    \"central_over_under_subtraction\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_background_sources\"\n  ],\n  \"reason\": \"The residual panel is largely noise-like away from the galaxy and shows well-masked neighboring objects, but there is a very strong, compact central residual with high-contrast positive and negative pixels, indicating a significant PSF/bulge mismatch. This qualifies as a hard central failure, so despite good disk and bar residuals the fit is not yet acceptable under the current bulge/disk/bar/PSF modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212740.5459ef59/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T212740.5459ef59/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber072_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r",
+    "archive_id": "20260601T213051.17689f56",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213051.17689f56",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213051.17689f56/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.755,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.86,
+      "reason": "Although the outer residuals are close to white noise with only masked contaminants, the galaxy center shows a compact, high-contrast positive/negative residual pair indicative of a poorly fitted PSF or bulge. This constitutes a hard failure, so the fit is not yet acceptable despite otherwise good disk and bar residuals.",
+      "usage": {
+        "completion_tokens": 219,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 14,
+          "engine_ttft_ms": 450,
+          "engine_ttlt_ms": 3618,
+          "pre_inference_ms": 370,
+          "service_tbt_ms": 15,
+          "service_ttft_ms": 1009,
+          "service_ttlt_ms": 4227,
+          "total_duration_ms": 3904,
+          "user_visible_ttft_ms": 639
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 1920
+        },
+        "total_tokens": 2924
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.6,\n  \"confidence\": 0.86,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.25,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.9,\n    \"artifact_score\": 0.85,\n    \"overall_noise_score\": 0.85\n  },\n  \"detected_patterns\": [\n    \"strong_central_point_like_residual\",\n    \"central_red_blue_pair\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_foreground_sources\"\n  ],\n  \"reason\": \"Although the outer residuals are close to white noise with only masked contaminants, the galaxy center shows a compact, high-contrast positive/negative residual pair indicative of a poorly fitted PSF or bulge. This constitutes a hard failure, so the fit is not yet acceptable despite otherwise good disk and bar residuals.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213051.17689f56/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213051.17689f56/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber072_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r",
+    "archive_id": "20260601T213237.39f53773",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213237.39f53773",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213237.39f53773/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 6.541,
+    "result": {
+      "good_fit": 1,
+      "raw_good_fit": 1,
+      "confidence": 0.9,
+      "reason": "Residuals are dominated by nearly white-noise-like fluctuations with a very small, not strongly dipolar central residual and no clear bar- or disk-like structures. Masked foreground sources are clean and do not affect the galaxy region. Under the current bulge/disk/bar/PSF modeling scope the fit quality is acceptable.",
+      "usage": {
+        "completion_tokens": 213,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 13,
+          "engine_ttft_ms": 446,
+          "engine_ttlt_ms": 3308,
+          "pre_inference_ms": 205,
+          "service_tbt_ms": 13,
+          "service_ttft_ms": 778,
+          "service_ttlt_ms": 3638,
+          "total_duration_ms": 3447,
+          "user_visible_ttft_ms": 573
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 1920
+        },
+        "total_tokens": 2918
+      },
+      "raw_response": "{\n  \"good_fit\": 1,\n  \"final_score\": 0.84,\n  \"confidence\": 0.9,\n  \"hard_failure\": false,\n  \"scores\": {\n    \"central_residual_score\": 0.85,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.9,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.8\n  },\n  \"detected_patterns\": [\n    \"tiny_weak_central_residual\",\n    \"mostly_noise_like_background\",\n    \"masked_foreground_sources\"\n  ],\n  \"reason\": \"Residuals are dominated by nearly white-noise-like fluctuations with a very small, not strongly dipolar central residual and no clear bar- or disk-like structures. Masked foreground sources are clean and do not affect the galaxy region. Under the current bulge/disk/bar/PSF modeling scope the fit quality is acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213237.39f53773/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213237.39f53773/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber072_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r",
+    "archive_id": "20260601T213341.1507a56a",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213341.1507a56a",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213341.1507a56a/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.719,
+    "result": {
+      "good_fit": 1,
+      "raw_good_fit": 1,
+      "confidence": 0.9,
+      "reason": "Residuals are dominated by near white-noise with only a very small, non-dipolar central residual and no evident bar- or disk-like structures. Masked artifacts are clean and do not affect the galaxy region. No strong systematic patterns indicative of bulge, disk, bar, or PSF failure are visible, so the fit is acceptable under the current modeling scope.",
+      "usage": {
+        "completion_tokens": 227,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 19,
+          "engine_ttft_ms": 361,
+          "engine_ttlt_ms": 4569,
+          "pre_inference_ms": 169,
+          "service_tbt_ms": 19,
+          "service_ttft_ms": 855,
+          "service_ttlt_ms": 5059,
+          "total_duration_ms": 4902,
+          "user_visible_ttft_ms": 686
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2932
+      },
+      "raw_response": "{\n  \"good_fit\": 1,\n  \"final_score\": 0.86,\n  \"confidence\": 0.9,\n  \"hard_failure\": false,\n  \"scores\": {\n    \"central_residual_score\": 0.88,\n    \"bar_residual_score\": 0.95,\n    \"disk_residual_score\": 0.9,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.8\n  },\n  \"detected_patterns\": [\n    \"tiny_weak_central_residual\",\n    \"mostly_noise_like_background\",\n    \"masked_foreground_sources_well_handled\"\n  ],\n  \"reason\": \"Residuals are dominated by near white-noise with only a very small, non-dipolar central residual and no evident bar- or disk-like structures. Masked artifacts are clean and do not affect the galaxy region. No strong systematic patterns indicative of bulge, disk, bar, or PSF failure are visible, so the fit is acceptable under the current modeling scope.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213341.1507a56a/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber072_r/archives/20260601T213341.1507a56a/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber501_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r",
+    "archive_id": "20260601T213421.60da9f2f",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T213421.60da9f2f",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T213421.60da9f2f/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 7.13,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.86,
+      "reason": "Although the outer residual field is largely noise-like with only minor masked contaminants, the galaxy center shows a strong compact red residual and an adjacent blue residual forming a clear dipole/over-under subtraction pattern. This indicates a significant PSF/bulge mismatch or missing central component and qualifies as a hard failure, so the fit is not yet acceptable.",
+      "usage": {
+        "completion_tokens": 240,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 17,
+          "engine_ttft_ms": 277,
+          "engine_ttlt_ms": 4244,
+          "pre_inference_ms": 180,
+          "service_tbt_ms": 17,
+          "service_ttft_ms": 569,
+          "service_ttlt_ms": 4533,
+          "total_duration_ms": 4367,
+          "user_visible_ttft_ms": 389
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2048
+        },
+        "total_tokens": 2945
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.51,\n  \"confidence\": 0.86,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.25,\n    \"bar_residual_score\": 0.5,\n    \"disk_residual_score\": 0.75,\n    \"artifact_score\": 0.8,\n    \"overall_noise_score\": 0.7\n  },\n  \"detected_patterns\": [\n    \"strong_central_compact_residual\",\n    \"central_red_blue_dipole\",\n    \"moderate_elongated_central_residual\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_neighbors_or_stars\"\n  ],\n  \"reason\": \"Although the outer residual field is largely noise-like with only minor masked contaminants, the galaxy center shows a strong compact red residual and an adjacent blue residual forming a clear dipole/over-under subtraction pattern. This indicates a significant PSF/bulge mismatch or missing central component and qualifies as a hard failure, so the fit is not yet acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T213421.60da9f2f/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T213421.60da9f2f/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber501_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r",
+    "archive_id": "20260601T214230.bf53e53e",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214230.bf53e53e",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214230.bf53e53e/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 8.069,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.88,
+      "reason": "Although the outer field is mostly noise-like and artifacts are well masked, the residual panel shows strong compact central red and blue clumps forming an elongated dipole/bar-like pattern around the nucleus. This indicates a significant PSF/bulge and possibly bar mismatch, which qualifies as a hard failure, so the current bulge/disk/bar/PSF decomposition is not yet acceptable.",
+      "usage": {
+        "completion_tokens": 252,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 18,
+          "engine_ttft_ms": 345,
+          "engine_ttlt_ms": 5003,
+          "pre_inference_ms": 219,
+          "service_tbt_ms": 19,
+          "service_ttft_ms": 791,
+          "service_ttlt_ms": 5444,
+          "total_duration_ms": 5242,
+          "user_visible_ttft_ms": 572
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2957
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.46,\n  \"confidence\": 0.88,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.15,\n    \"bar_residual_score\": 0.3,\n    \"disk_residual_score\": 0.7,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.7\n  },\n  \"detected_patterns\": [\n    \"strong_central_point_like_residuals\",\n    \"central_red_blue_dipole_pattern\",\n    \"elongated_central_bar_like_residual\",\n    \"mostly_noise_like_outer_region\",\n    \"masked_foreground_objects_adequately_handled\"\n  ],\n  \"reason\": \"Although the outer field is mostly noise-like and artifacts are well masked, the residual panel shows strong compact central red and blue clumps forming an elongated dipole/bar-like pattern around the nucleus. This indicates a significant PSF/bulge and possibly bar mismatch, which qualifies as a hard failure, so the current bulge/disk/bar/PSF decomposition is not yet acceptable.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214230.bf53e53e/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214230.bf53e53e/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  },
+  {
+    "plate_name": "Plate0391_MJD51782_Fiber501_r",
+    "plate_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r",
+    "archive_id": "20260601T214410.e87b7344",
+    "archive_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214410.e87b7344",
+    "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214410.e87b7344/galfit_comparison_cutoff.png",
+    "model_name": "gpt-5.1",
+    "status": "success",
+    "elapsed_seconds": 8.593,
+    "result": {
+      "good_fit": 0,
+      "raw_good_fit": 0,
+      "confidence": 0.86,
+      "reason": "The residual image is dominated near the center by a compact, high-contrast red residual adjacent to blue residuals, indicating a strong unresolved central source or PSF/bulge mismatch. This clear central red/blue pair constitutes a hard failure even though the outer disk is largely noise-like and artifacts are well masked. The current GALFIT decomposition should be refined, particularly the central PSF or bulge component.",
+      "usage": {
+        "completion_tokens": 238,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "latency_checkpoint": {
+          "engine_tbt_ms": 11,
+          "engine_ttft_ms": 434,
+          "engine_ttlt_ms": 3084,
+          "pre_inference_ms": 508,
+          "service_tbt_ms": 11,
+          "service_ttft_ms": 3156,
+          "service_ttlt_ms": 5806,
+          "total_duration_ms": 5313,
+          "user_visible_ttft_ms": 2648
+        },
+        "prompt_tokens": 2705,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 2943
+      },
+      "raw_response": "{\n  \"good_fit\": 0,\n  \"final_score\": 0.55,\n  \"confidence\": 0.86,\n  \"hard_failure\": true,\n  \"scores\": {\n    \"central_residual_score\": 0.2,\n    \"bar_residual_score\": 0.7,\n    \"disk_residual_score\": 0.8,\n    \"artifact_score\": 0.9,\n    \"overall_noise_score\": 0.8\n  },\n  \"detected_patterns\": [\n    \"strong_central_point_like_residual\",\n    \"central_red_blue_pair\",\n    \"mostly_noise_like_outer_regions\",\n    \"masked_foreground_sources\"\n  ],\n  \"reason\": \"The residual image is dominated near the center by a compact, high-contrast red residual adjacent to blue residuals, indicating a strong unresolved central source or PSF/bulge mismatch. This clear central red/blue pair constitutes a hard failure even though the outer disk is largely noise-like and artifacts are well masked. The current GALFIT decomposition should be refined, particularly the central PSF or bulge component.\"\n}",
+      "image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214410.e87b7344/galfit_comparison_cutoff.png",
+      "original_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0391_MJD51782_Fiber501_r/archives/20260601T214410.e87b7344/galfit_comparison_cutoff.png",
+      "summary_md_path": null,
+      "param_used": false
+    }
+  }
+]

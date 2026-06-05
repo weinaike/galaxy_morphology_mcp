@@ -1,0 +1,13 @@
+{
+  "prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T172705.e2afcdf0/galfit_comparison_cutoff.png",
+  "next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+  "model_name": "gpt-5.5",
+  "improvement": 1,
+  "reward_judgement": "improved",
+  "confidence": 0.88,
+  "reason": "Image 2 shows noticeably weaker central red/blue residual structure and fewer strong compact residuals, making the galaxy region closer to noise-like than Image 1.",
+  "prompt_tokens": 1254,
+  "completion_tokens": 125,
+  "total_tokens": 1379,
+  "created_at": "2026-06-04 15:57:54"
+}

@@ -1,0 +1,13 @@
+{
+  "prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T173849.c270e1b9/galfit_comparison.png",
+  "next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/limin_gadotti_done/Plate0300_MJD51943_Fiber581_r/archives/20260601T192555.dde351b0/galfit_comparison.png",
+  "model_name": "gemini-3.1-pro-preview",
+  "improvement": 0,
+  "reward_judgement": "not_improved",
+  "confidence": 0.9,
+  "reason": "Both images show nearly identical residual structures, with no meaningful reduction in the central over-subtracted region or the surrounding red halo in Image 2.",
+  "prompt_tokens": 2719,
+  "completion_tokens": 498,
+  "total_tokens": 3217,
+  "created_at": "2026-06-04 09:39:49"
+}

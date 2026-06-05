@@ -102,3 +102,5 @@ tests-js/*
 docs/superpowers/
 .claude/worktrees/
 .superpowers/
+
+gadotti_data/

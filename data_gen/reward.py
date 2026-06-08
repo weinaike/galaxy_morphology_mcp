@@ -476,8 +476,8 @@ def is_good_fit(
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = "sk-orCNeVDDaLy7zNfXvDYx9FX7z5uTdUkbWBJjFWeFDarSysSq",
     temperature: float = 0.0,
-    max_tokens: int = 512,
-    timeout: int = 120,
+    max_tokens: int = 1024,
+    timeout: int = 300,
     confidence_threshold: float = 0.6,
     max_retries: int = 3,
     retry_sleep: int = 10,
@@ -769,19 +769,19 @@ Output field definitions:
   """
 
 
-
+    #裁剪
     # Crop residual panel before sending image to VLM
-    try:
-        vlm_image_path = crop_residual_panel(residual_image_path)
-    except Exception as e:
-        print(f"    ⚠️ [Crop Warning] Failed to crop residual panel: {e}")
-        print("    ⚠️ Fall back to original image.")
-        vlm_image_path = residual_image_path
+    # try:
+    #     vlm_image_path = crop_residual_panel(residual_image_path)
+    # except Exception as e:
+    #     print(f"    ⚠️ [Crop Warning] Failed to crop residual panel: {e}")
+    #     print("    ⚠️ Fall back to original image.")
+    #     vlm_image_path = residual_image_path
     raw_response, usage = get_openAI_response_one_image(
         api_key=api_key,
         model_name=model_name,
         prompt=prompt,
-        image_path=vlm_image_path,
+        image_path=residual_image_path,
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
@@ -825,8 +825,8 @@ def calculate_reward_model(
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = "sk-orCNeVDDaLy7zNfXvDYx9FX7z5uTdUkbWBJjFWeFDarSysSq",
     temperature: float = 0.7,
-    max_tokens: int = 512,
-    timeout: int = 120,
+    max_tokens: int = 1024,
+    timeout: int = 300,
     confidence_threshold: float = 0.6,
 ):
     """
@@ -893,9 +893,10 @@ You will be given exactly two images in order.
 The first attached image is Image 1: previous-step residual image.
 The second attached image is Image 2: next-step residual image.
 
-Each image may be a full GALFIT comparison figure with multiple panels.
-For each image, focus only on the third panel from the left, titled "Residual/σ" or "Residual".
-Ignore the original data panel, fitted model panel, surface-brightness profile panel, and any blank diagnostic panels.
+Each image may be a full GALFIT comparison figure contains three panels:
+- Left: original cutout image
+- Middle: fitted model image
+- Right: residual image (data - model)
 
 Your task is to compare whether Image 2 is better than Image 1 as a GALFIT residual result.
 
@@ -936,28 +937,28 @@ Definitions:
 - confidence: float between 0 and 1.
 - reason: concise explanation.
 """
-
+    #裁剪
     # Crop residual panels before sending images to VLM
-    try:
-        prev_vlm_image_path = crop_residual_panel(prev_residual_image_path)
-    except Exception as e:
-        print(f"    ⚠️ [Crop Warning] Failed to crop previous residual panel: {e}")
-        print("    ⚠️ Fall back to original previous image.")
-        prev_vlm_image_path = prev_residual_image_path
+    # try:
+    #     prev_vlm_image_path = crop_residual_panel(prev_residual_image_path)
+    # except Exception as e:
+    #     print(f"    ⚠️ [Crop Warning] Failed to crop previous residual panel: {e}")
+    #     print("    ⚠️ Fall back to original previous image.")
+    #     prev_vlm_image_path = prev_residual_image_path
 
-    try:
-        next_vlm_image_path = crop_residual_panel(next_residual_image_path)
-    except Exception as e:
-        print(f"    ⚠️ [Crop Warning] Failed to crop next residual panel: {e}")
-        print("    ⚠️ Fall back to original next image.")
-        next_vlm_image_path = next_residual_image_path
+    # try:
+    #     next_vlm_image_path = crop_residual_panel(next_residual_image_path)
+    # except Exception as e:
+    #     print(f"    ⚠️ [Crop Warning] Failed to crop next residual panel: {e}")
+    #     print("    ⚠️ Fall back to original next image.")
+    #     next_vlm_image_path = next_residual_image_path
 
     raw_response, usage = get_openAI_response_two_images(
         api_key=api_key,
         model_name=model_name,
         prompt=prompt,
-        prev_image_path=prev_vlm_image_path,
-        next_image_path=next_vlm_image_path,
+        prev_image_path=prev_residual_image_path,
+        next_image_path=next_residual_image_path,
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
@@ -1001,6 +1002,7 @@ def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: i
     """
     # 基础安全检查：如果新变体直接物理崩溃 (Chi2 >= 9999.0)，任何模式都直接判死刑
     if new_metrics.get("chi2_nu", 999.0) >= 9999.0:
+        print("    💀 [物理引擎崩溃] 物理引擎崩溃 (Chi2=9999.0)")
         return -100.0, {"fatal_error": "Physics engine crashed (Chi2=9999.0)"}
 
     # ==========================================
@@ -1014,7 +1016,6 @@ def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: i
         # 必须确保有图可看
         if prev_image_path and next_image_path and os.path.exists(prev_image_path) and os.path.exists(next_image_path):
             try:
-                print("    👁️ [VLM] 纯视觉模式启动: 评判残差图...")
                 vlm_result = calculate_reward_model(
                     prev_residual_image_path=prev_image_path,
                     next_residual_image_path=next_image_path,
@@ -1025,13 +1026,16 @@ def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: i
                     r_total = 1  # 大模型说好，直接给高分
                 else:
                     r_total = -1  # 大模型说不好，直接扣分
-                print(f"    👁️ [VLM] 纯视觉模式启动: 评判残差图... 结果: {vlm_result}")
+                print(f"    [VLM] 评判残差图 结果: {vlm_result}")
                     
                 r_detail["vlm_detail"] = vlm_result
             except Exception as e:
                 print(f"    ⚠️ [VLM 警告] 视觉模型调用失败: {e}")
+                print("    📋 完整报错记录:")
+                traceback.print_exc()
+                full_error = traceback.format_exc()
                 r_total = -1.0 # API 失败时的微弱惩罚
-                r_detail["error"] = str(e)
+                r_detail["error"] = full_error
         else:
             r_total = -10.0
             r_detail["error"] = "Missing image files for VLM."
@@ -1043,6 +1047,7 @@ def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: i
     # 模式 2：纯物理规则驱动 (Rule-based)
     # ==========================================
     else:
+        print("    👁️ [Rule-based] 纯物理规则模式启动: 评判残差图...")
         # 完全调用原来的规则函数，不掺杂任何模型得分
         r_total, r_detail = calculate_reward_rule(old_metrics, new_metrics, action, step)
         r_detail["mode"] = "RULE_ONLY"

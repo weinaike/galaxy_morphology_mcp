@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional, List
 
 
-ROOT_DIR = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done"
+ROOT_DIR = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/three-pannels-figure"
 TEST_REWARD_PY = "/media/zhongling/wyh/GalDecomp_Gen/data_gen/test_reward.py"
-OUTPUT_JSON = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/test_reward_batch_results_gpt5.5.json"
+OUTPUT_JSON = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/test_reward_batch_results_threefigure.json"
 
-IMAGE_NAME = "galfit_comparison_cutoff.png"
+IMAGE_NAME = "galfit_three_panel_comparison.png"
 
 TIMEOUT = 300
 MAX_RETRIES = 2

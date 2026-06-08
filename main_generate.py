@@ -13,7 +13,7 @@ from data_gen.pipeline import DataGenPipeline
 # ==========================================
 TEST_MODE = True  
 USE_LLM_REWARD = True  # 大模型视觉打分全局开关
-PROPOSAL_STRATEGY = "rule_based" # 提议策略: "rule_based", "expert_guided", "vlm_generated"
+PROPOSAL_STRATEGY = "expert_guided" # 提议策略: "rule_based", "expert_guided", "vlm_generated"
 VLM_REWARD_MODEL_NAME = "gemini-3.1-pro-preview" # 大模型视觉打分模型名
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
@@ -56,9 +56,14 @@ async def main():
         print("❌ 致命错误: 在所有指定的波段中均没有找到任何数据文件！")
         return
 
+    if USE_LLM_REWARD and VLM_REWARD_MODEL_NAME != "none":
+        strategy_folder = f"{PROPOSAL_STRATEGY}_proposal_vlm_reward_{VLM_REWARD_MODEL_NAME.lower()}"
+    else:
+        strategy_folder = f"{PROPOSAL_STRATEGY}_proposal_rule_based_reward"
+
     pipeline = DataGenPipeline(
         base_project_dir=GADOTTI_ROOT, # ⚠️ 注意这里传的是 Gadotti 的根目录，方便应对跨目录寻址
-        output_root=OUTPUT_ROOT, 
+        output_root=os.path.join(OUTPUT_ROOT, strategy_folder), 
         max_iter=100,
         proposal_strategy=PROPOSAL_STRATEGY
     )
@@ -201,7 +206,7 @@ async def main():
             print(f"     ├─ 输出 Token (Completion): {global_total['total_completion_tokens']:,}")
             print(f"     └─ 环节总消耗 Token: {total_tokens:,}")
         
-        global_report_path = os.path.join(OUTPUT_ROOT, "global_analytics_report.json")
+        global_report_path = os.path.join(OUTPUT_ROOT, strategy_folder, "global_analytics_report.json")
         try:
             with open(global_report_path, "w", encoding="utf-8") as f:
                 json.dump(global_total, f, indent=4, ensure_ascii=False)

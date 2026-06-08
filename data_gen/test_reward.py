@@ -10,7 +10,7 @@ def run_test(
     prev_image_path: str,
     next_image_path: str,
     output_json_path: str,
-    model_name: str = "gpt-5.5",
+    model_name: str = "gemini-3.1-pro-preview",
     api_key: str = None,
 ):
     """
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         type=str,
-        default="gpt-5.5",
+        default="gemini-3.1-pro-preview",
         help="VLM model name.",
     )
 

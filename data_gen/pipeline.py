@@ -36,11 +36,7 @@ class DataGenPipeline:
         """
         # 新增：记录开始时间
         start_time = time.time()
-        if use_llm_reward and vlm_reward_model_name != "none":
-            strategy_folder = f"{self.proposal_strategy}_proposal_vlm_reward_{vlm_reward_model_name.lower()}"
-        else:
-            strategy_folder = f"{self.proposal_strategy}_proposal_rule_based_reward"
-        gal_out_dir = os.path.join(self.output_root, strategy_folder, galaxy_id)
+        gal_out_dir = os.path.join(self.output_root, galaxy_id)
         
         os.makedirs(gal_out_dir, exist_ok=True)
         

@@ -73,7 +73,6 @@ obj195/
 ├── obj_195.lyric                    # Original config (NEVER modify)
 ├── obj_195_iter2.lyric              # Iteration 2 config
 ├── obj_195_iter3.lyric              # Iteration 3 config
-├── fitting_log.md                   # Auto-generated fitting log
 ├── analysis_report_obj195.md        # Final analysis report
 └── output/
     ├── 20260525_150747_obj_195/      # Round 1 output

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import shlex
@@ -191,8 +192,7 @@ def create_perband_comparison_png(
 
         # === Col 0: Original Image (99.5th percentile) ===
         ax1 = fig.add_subplot(gs[0, 0])
-        orig_info = render_asinh_panel(ax1, original_data, mask, region=region,
-                                       show_isophotes=True)
+        orig_info = render_asinh_panel(ax1, original_data, mask, region=region, show_isophotes=True)
         title_orig = (
             f"Original Data (vmax=99.5th pctl)\n"
             f"asinh: a={orig_info['asinh_a']:.4f}, vmin={orig_info['vmin_sigma']:.1f}$\\sigma$\n"
@@ -204,7 +204,7 @@ def create_perband_comparison_png(
 
         # === Col 1: Original Image (99.99th percentile) ===
         ax1b = fig.add_subplot(gs[0, 1])
-        orig_info_9999 = render_asinh_panel(ax1b, original_data, mask, region=region,
+        orig_info_9999 = render_asinh_panel(ax1b, original_data, mask, region=region, 
                                             show_isophotes=True, vmax_percentile=99.99)
         title_orig_9999 = (
             f"Original Data (vmax=99.99th pctl)\n"
@@ -425,7 +425,7 @@ def create_multiband_comparison_png(
         # ---- Col 0: Original (99.5th percentile) ----
         ax1 = fig.add_subplot(gs[r0, 0])
         orig_info = render_asinh_panel(
-            ax1, original_data, mask, region=region, show_isophotes=True)
+            ax1, original_data, mask, region=region, components=components, show_isophotes=True)
         ax1.set_title(
             f"Original Data (vmax=99.5th pctl)\n"
             f"asinh: a={orig_info['asinh_a']:.4f}, "
@@ -438,7 +438,7 @@ def create_multiband_comparison_png(
         # ---- Col 1: Original (99.99th percentile) ----
         ax1b = fig.add_subplot(gs[r0, 1])
         orig_info_9999 = render_asinh_panel(
-            ax1b, original_data, mask, region=region,
+            ax1b, original_data, mask, region=region, components=components,
             show_isophotes=True, vmax_percentile=99.99)
         ax1b.set_title(
             f"Original Data (vmax=99.99th pctl)\n"
@@ -785,5 +785,36 @@ def TEST_create_multiband_comparison_png():
     png_path = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
     print(f"Generated comparison PNG: {png_path}")
 
+def TEST_sed_fitting():
+    # config_file = "/home/jiangbo/GALFITS_examples_2/6978/obj6978_iter4.lyric"
+    # image_fitting_workplace = "/home/jiangbo/GALFITS_examples_2/6978/output/20260603_112151_obj6978_iter4"
+    # extra_args = ["--fit_method", "ES"]
+    # res = asyncio.run(run_galfits_sed_fitting(config_file, image_fitting_workplace, extra_args=extra_args))
+    # print(res)
+
+    config_file = "/home/jiangbo/GALFITS_examples_2/10766/obj10766.lyric"
+    extra_args = ["--fit_method", "ES"]
+    res = asyncio.run(run_galfits_image_sed_fitting(config_file, extra_args=extra_args))
+    print(res)
+
+    # from .residual_analysis import component_analysis
+    # component_analysis(
+    #     image_file="/home/jiangbo/GALFITS_examples_2/6978/output/20260604_091751_obj6978_iter4_sed/all_bands_comparison.png", 
+    #     summary_file="/home/jiangbo/GALFITS_examples_2/6978/output/20260604_091751_obj6978_iter4_sed/obj6978_s1_nosed.gssummary",
+    #     mode="multi-band"
+    # )
+
+    # config_file = "/home/jiangbo/GALFITS_examples_2/13374/obj13374_iter2.lyric"
+    # extra_args = ["--fit_method","ES","--readsummary","/home/jiangbo/GALFITS_examples_2/13374/output/20260604_114058_obj13374/obj13374_s1.gssummary"]
+    # res = asyncio.run(run_galfits_image_fitting(config_file, extra_args=extra_args))
+    # print(res)
+
+    # config_file = "/home/jiangbo/GALFITS_examples_2/2114/obj2114_iter1.lyric"
+    # extra_args = ["--fit_method","ES"]
+    # res = asyncio.run(run_galfits_image_fitting(config_file, extra_args=extra_args))
+    # print(res)
+    
+    
+    
 if __name__ == "__main__":
-    TEST_create_multiband_comparison_png()
+    TEST_sed_fitting()

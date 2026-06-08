@@ -150,11 +150,13 @@ def fit_data_isophotes(image_data, x_center, y_center,
             mask_a = 0.4*dim
         aperture = EllipticalAperture((cx,cy), mask_a, mask_b, theta=np.deg2rad(pa_bounded+90))
         galmask = aperture.to_mask(method='center')
-        sky_image = image_data.copy()
-        sky_image.mask = sky_image.mask | galmask.to_image(image_data.shape).astype(bool)
+        galmask_bool = galmask.to_image(image_data.shape).astype(bool)
+        if isinstance(image_data, np.ma.MaskedArray):
+            combined_mask = image_data.mask | galmask_bool
+        else:
+            combined_mask = galmask_bool
+        sky_image = np.ma.MaskedArray(np.asarray(image_data), mask=combined_mask)
         sky_value = sigma_clipped_stats(sky_image, sigma=3, maxiters=10)[1]
-        
-        
         
 
     # ---- Derive PA from Step 1 isophotes within outer boundary ----
@@ -205,7 +207,7 @@ def extract_profile(image_data, geometry, x_offset=0, y_offset=0, mask=None):
     """
     if not HAS_PHOTUTILS:
         return np.array([]), np.array([])
-    if mask is not None:
+    if mask is not None and mask.shape == image_data.shape:
         image_data = np.ma.array(image_data, mask=mask > 0)
     sma_arr, intensity_arr, intensity_err_arr = [], [], []
     for sma, eps, pa_deg, x0, y0 in geometry:

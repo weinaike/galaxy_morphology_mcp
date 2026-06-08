@@ -80,7 +80,8 @@ def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
         ax.imshow(mask_overlay, origin="lower", extent=ext)
 
     # Draw component 2*Re ellipses (for model panel)
-    if components and fit_region is not None:
+    # if components and fit_region is not None:
+    if components:    
         # Note: components have coords in full image space, extent is also in full image space
         # So we can use component coords directly - no transformation needed
         for comp in components:

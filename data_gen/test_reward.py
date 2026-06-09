@@ -48,6 +48,10 @@ def run_test(
             "final_improvement",
             reward_result.get("improvement", 0)
         )
+        improvement_level = reward_result.get(
+            "final_improvement_level",
+            reward_result.get("improvement_level", 0)
+        )
         confidence = reward_result.get("confidence", 0.0)
         reason = reward_result.get("reason", "")
         usage = reward_result.get("usage", {})

@@ -10,6 +10,7 @@ import base64
 import mimetypes
 import requests
 import time
+import traceback
 from typing import Optional, Dict, Any, Tuple
 from PIL import Image
 
@@ -239,9 +240,9 @@ def get_openAI_response_two_images(
     prompt: str,
     prev_image_path: str,
     next_image_path: str,
-    temperature: float = 0.0,
-    max_tokens: int = 512,
-    timeout: int = 120,
+    temperature: float = 0.1,
+    max_tokens: int = 2048,
+    timeout: int = 300,
     url: str = "https://api.road2all.com/v1/chat/completions",
     max_retries: int = 3,
     retry_sleep: int = 10,
@@ -359,9 +360,9 @@ def get_openAI_response_one_image(
     model_name: str,
     prompt: str,
     image_path: str,
-    temperature: float = 0.0,
-    max_tokens: int = 512,
-    timeout: int = 120,
+    temperature: float = 0.1,
+    max_tokens: int = 2048,
+    timeout: int = 300,
     url: str = "https://api.road2all.com/v1/chat/completions",
     max_retries: int = 3,
     retry_sleep: int = 10,
@@ -475,7 +476,7 @@ def is_good_fit(
     summary_md_path: Optional[str] = None,
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = "sk-orCNeVDDaLy7zNfXvDYx9FX7z5uTdUkbWBJjFWeFDarSysSq",
-    temperature: float = 0.0,
+    temperature: float = 0.1,
     max_tokens: int = 1024,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
@@ -824,8 +825,8 @@ def calculate_reward_model(
     next_residual_image_path: str,
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = "sk-orCNeVDDaLy7zNfXvDYx9FX7z5uTdUkbWBJjFWeFDarSysSq",
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
+    temperature: float = 0.1,
+    max_tokens: int = 2048,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
 ):
@@ -884,59 +885,59 @@ def calculate_reward_model(
         raise FileNotFoundError(
             f"Next residual image not found: {next_residual_image_path}"
         )
+####prompt 0
+#     prompt = """
+# You are an astronomer experienced in GALFIT galaxy component decomposition.
 
-    prompt = """
-You are an astronomer experienced in GALFIT galaxy component decomposition.
+# You will be given exactly two images in order.
 
-You will be given exactly two images in order.
+# The first attached image is Image 1: previous-step residual image.
+# The second attached image is Image 2: next-step residual image.
 
-The first attached image is Image 1: previous-step residual image.
-The second attached image is Image 2: next-step residual image.
+# Each image may be a full GALFIT comparison figure contains three panels:
+# - Left: original cutout image
+# - Middle: fitted model image
+# - Right: residual image (data - model)
 
-Each image may be a full GALFIT comparison figure contains three panels:
-- Left: original cutout image
-- Middle: fitted model image
-- Right: residual image (data - model)
+# Your task is to compare whether Image 2 is better than Image 1 as a GALFIT residual result.
 
-Your task is to compare whether Image 2 is better than Image 1 as a GALFIT residual result.
+# A better residual image means:
+# - residuals are closer to white-noise-like background;
+# - central residuals are reduced;
+# - structured residuals are weaker or fewer;
+# - spiral, bar, ring, bullseye, dipole, clumpy, or off-center residual structures are reduced;
+# - large-scale gradients, chaotic dark patches, over-subtraction, or unmasked artifacts are reduced;
+# - the galaxy region is cleaner and less systematically structured.
 
-A better residual image means:
-- residuals are closer to white-noise-like background;
-- central residuals are reduced;
-- structured residuals are weaker or fewer;
-- spiral, bar, ring, bullseye, dipole, clumpy, or off-center residual structures are reduced;
-- large-scale gradients, chaotic dark patches, over-subtraction, or unmasked artifacts are reduced;
-- the galaxy region is cleaner and less systematically structured.
+# A worse or not improved residual image means:
+# - structured residuals become stronger or more obvious;
+# - new central residuals, rings, dipoles, spiral patterns, clumps, or artifacts appear;
+# - the residual is not meaningfully improved;
+# - the difference is too small or ambiguous to confidently say Image 2 is better.
 
-A worse or not improved residual image means:
-- structured residuals become stronger or more obvious;
-- new central residuals, rings, dipoles, spiral patterns, clumps, or artifacts appear;
-- the residual is not meaningfully improved;
-- the difference is too small or ambiguous to confidently say Image 2 is better.
+# Important decision rule:
+# Only output improvement = 1 when Image 2 is clearly better than Image 1.
+# If the improvement is weak, ambiguous, visually negligible, or Image 2 is worse, output improvement = 0.
 
-Important decision rule:
-Only output improvement = 1 when Image 2 is clearly better than Image 1.
-If the improvement is weak, ambiguous, visually negligible, or Image 2 is worse, output improvement = 0.
+# Please focus mainly on the residual quality.
+# Do not judge based on whether the model image visually resembles the original galaxy, unless the provided image contains multiple panels.
+# The main criterion is whether the residual panel becomes cleaner and less structured.
 
-Please focus mainly on the residual quality.
-Do not judge based on whether the model image visually resembles the original galaxy, unless the provided image contains multiple panels.
-The main criterion is whether the residual panel becomes cleaner and less structured.
+# Output STRICTLY in JSON format.
+# Do not include any text outside the JSON.
 
-Output STRICTLY in JSON format.
-Do not include any text outside the JSON.
+# Required JSON format:
+# {
+#   "improvement": 1,
+#   "confidence": 0.85,
+#   "reason": "Image 2 has weaker central residuals and fewer structured patterns than Image 1."
+# }
 
-Required JSON format:
-{
-  "improvement": 1,
-  "confidence": 0.85,
-  "reason": "Image 2 has weaker central residuals and fewer structured patterns than Image 1."
-}
-
-Definitions:
-- improvement: integer, must be either 0 or 1.
-- confidence: float between 0 and 1.
-- reason: concise explanation.
-"""
+# Definitions:
+# - improvement: integer, must be either 0 or 1.
+# - confidence: float between 0 and 1.
+# - reason: concise explanation.
+# """
     #裁剪
     # Crop residual panels before sending images to VLM
     # try:
@@ -952,6 +953,92 @@ Definitions:
     #     print(f"    ⚠️ [Crop Warning] Failed to crop next residual panel: {e}")
     #     print("    ⚠️ Fall back to original next image.")
     #     next_vlm_image_path = next_residual_image_path
+    
+    
+    
+    prompt = """
+You are an astronomer experienced in GALFIT galaxy component decomposition.
+
+You will be given exactly two images in order.
+
+The first attached image is Image 1: previous-step residual image.
+The second attached image is Image 2: next-step residual image.
+
+The image may be:
+- a residual-only image, or
+- a full GALFIT comparison figure with multiple panels.
+
+If multiple panels are present, focus only on the residual panel, usually titled "Residual/σ", "Residual", or similar.
+Ignore the original data panel, fitted model panel, surface-brightness profile panel, and blank diagnostic panels.
+
+Your task is to compare whether Image 2 is improved relative to Image 1 as a GALFIT residual result.
+
+Important:
+This is a relative step-by-step comparison, not a final good-fit judgement.
+Image 2 does NOT need to be a good final fit.
+It only needs to show a meaningful reduction of residual structures compared with Image 1.
+
+Focus on the galaxy-related residual structures, especially:
+- central positive/negative residuals;
+- dipole-like residuals;
+- compact red/blue clumps near the galaxy center;
+- ring, spiral, bar, or asymmetric structures;
+- coherent large-scale residual patterns.
+
+Ignore features that are unchanged and likely unrelated to the galaxy fit, such as:
+- masked regions;
+- saturated foreground stars;
+- isolated artifacts far from the galaxy center;
+- unchanged random background noise.
+
+Decision criteria:
+
+Output improvement = 1 if Image 2 shows any meaningful residual improvement compared with Image 1, including:
+- central residuals become weaker, smaller, or less saturated;
+- dipole-like red/blue structures are reduced;
+- structured residuals become less coherent or less extended;
+- the galaxy center becomes cleaner, even if the overall background remains similar;
+- the improvement is local but clearly related to the target galaxy.
+
+Output improvement = 0 if:
+- Image 2 is visually identical to Image 1;
+- differences are only random noise fluctuations;
+- the main central or galaxy-related residual structure remains equally strong;
+- new structured residuals appear;
+- Image 2 is worse or the comparison is too ambiguous.
+
+Use the following judgement scale internally:
+- clear_improvement: obvious reduction of galaxy-related residual structures;
+- slight_improvement: small but visible reduction of central or structured residuals;
+- no_improvement: no meaningful change;
+- worse: residual structures become stronger or new artifacts appear.
+
+For the binary output:
+- clear_improvement -> improvement = 1
+- slight_improvement -> improvement = 1
+- no_improvement or worse -> improvement = 0
+
+Be careful:
+Do not require Image 2 to look like white noise.
+A residual can still be imperfect but improved.
+
+Output STRICTLY in JSON format.
+Do not include any text outside the JSON.
+
+Required JSON format:
+{
+  "improvement": 1,
+  "improvement_level": "slight_improvement",
+  "confidence": 0.75,
+  "reason": "Image 2 shows a small but visible reduction of the central blue/red residual structure, although the overall residual background remains similar."
+}
+
+Definitions:
+- improvement: integer, must be either 0 or 1.
+- improvement_level: one of ["clear_improvement", "slight_improvement", "no_improvement", "worse"].
+- confidence: float between 0 and 1.
+- reason: concise explanation focusing on residual differences.
+"""
 
     raw_response, usage = get_openAI_response_two_images(
         api_key=api_key,
@@ -968,6 +1055,7 @@ Definitions:
 
     improvement = int(result.get("improvement", 0))
     confidence = float(result.get("confidence", 0.0))
+    improvement_level = result.get("improvement_level", "no_improvement")
 
     # 强制保证只返回 0 或 1
     if improvement not in [0, 1]:
@@ -984,9 +1072,10 @@ Definitions:
 
 
     result["final_improvement"] = improvement
+    result["final_improvement_level"] = improvement_level
     result["usage"] = usage
-    result["prev_image_path"] = prev_vlm_image_path
-    result["next_image_path"] = next_vlm_image_path
+    # result["prev_image_path"] = prev_vlm_image_path
+    # result["next_image_path"] = next_vlm_image_path
     result["original_prev_image_path"] = prev_residual_image_path
     result["original_next_image_path"] = next_residual_image_path
 

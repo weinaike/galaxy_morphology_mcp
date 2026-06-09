@@ -7,15 +7,16 @@ from pathlib import Path
 from typing import Any, Dict, Optional, List
 
 
-ROOT_DIR = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/three-pannels-figure"
+ROOT_DIR = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done"
 TEST_REWARD_PY = "/media/zhongling/wyh/GalDecomp_Gen/data_gen/test_reward.py"
-OUTPUT_JSON = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/test_reward_batch_results_threefigure.json"
+OUTPUT_JSON = "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/galfit_comparison_cutoff_test_result.json"
 
-IMAGE_NAME = "galfit_three_panel_comparison.png"
+IMAGE_NAME = "galfit_comparison_cutoff.png"
 
 TIMEOUT = 300
 MAX_RETRIES = 2
 RETRY_SLEEP = 5
+MODEL_NAME = "gemini-3.1-pro-preview"
 
 
 def load_json_safely(json_path: str) -> Optional[Dict[str, Any]]:
@@ -64,6 +65,8 @@ def run_one_pair(
         next_image,
         "--output_json",
         pair_output_json,
+        "--model_name",
+        MODEL_NAME,
     ]
 
     last_error = None

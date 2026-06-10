@@ -282,7 +282,7 @@ def create_perband_comparison_png(
                 mask_data = np.zeros_like(original_data, dtype=np.float)
             mask = np.where(mask_data > 0, 1, 0)
 
-        region = None
+        region = image_info.fitting_region
         components = extract_component_attributes(
             summary_file=gssummary_file,
             config_file=lyric_file,
@@ -513,7 +513,7 @@ def create_multiband_comparison_png(
         components = bdata['components']
         comp_imgs = bdata['comp_imgs']
         comp_types = bdata['comp_types']
-        region = None
+        region = image_info.fitting_region
 
         # ---- Header row (band name) ----
         ax_header = fig.add_subplot(gs[current_row, :])
@@ -918,10 +918,10 @@ def TEST_sed_fitting():
     # res = asyncio.run(run_galfits_sed_fitting(config_file, image_fitting_workplace, extra_args=extra_args))
     # print(res)
 
-    config_file = "/home/jiangbo/GALFITS_examples_2/10766/obj10766.lyric"
-    extra_args = ["--fit_method", "ES"]
-    res = asyncio.run(run_galfits_image_sed_fitting(config_file, extra_args=extra_args))
-    print(res)
+    # config_file = "/home/jiangbo/GALFITS_examples_2/10766/obj10766.lyric"
+    # extra_args = ["--fit_method", "ES"]
+    # res = asyncio.run(run_galfits_image_sed_fitting(config_file, extra_args=extra_args))
+    # print(res)
 
     # from .residual_analysis import component_analysis
     # component_analysis(
@@ -931,16 +931,15 @@ def TEST_sed_fitting():
     # )
 
     # config_file = "/home/jiangbo/GALFITS_examples_2/13374/obj13374_iter2.lyric"
-    # extra_args = ["--fit_method","ES","--readsummary","/home/jiangbo/GALFITS_examples_2/13374/output/20260604_114058_obj13374/obj13374_s1.gssummary"]
-    # res = asyncio.run(run_galfits_image_fitting(config_file, extra_args=extra_args))
-    # print(res)
-
-    # config_file = "/home/jiangbo/GALFITS_examples_2/2114/obj2114_iter1.lyric"
+    # # extra_args = ["--fit_method","ES","--readsummary","/home/jiangbo/GALFITS_examples_2/13374/output/20260604_114058_obj13374/obj13374_s1.gssummary"]
     # extra_args = ["--fit_method","ES"]
     # res = asyncio.run(run_galfits_image_fitting(config_file, extra_args=extra_args))
     # print(res)
-    
-    
+
+    config_file = "/home/jiangbo/GALFITS_examples_2/2114/obj2114_iter2.lyric"
+    extra_args = ["--fit_method","ES"]
+    res = asyncio.run(run_galfits_image_fitting(config_file, extra_args=extra_args))
+    print(res)
     
 if __name__ == "__main__":
     TEST_sed_fitting()

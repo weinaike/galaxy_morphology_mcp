@@ -20,7 +20,7 @@ class ImageInfo:
     psf_sampling: int
     mask: Any
     unit: str
-    fitting_area: Any
+    fitting_area: Any # in arcsec, the "Ix8" parameter in .lyric
     conversion: Any
     magzp: float
     skymodel: str
@@ -30,6 +30,45 @@ class ImageInfo:
     use_sed: int
     image_label: str # used for label only
     pixscale: float = None
+    fitting_region: tuple[int, int, int, int] = None # (xmin, xmax, ymin, ymax) in pixel coordinates
+
+
+def calculate_fitting_region(x, y, pixscale, ix8, src_x=None, src_y=None):
+    """Calculate the fitting region bounds used by GalfitS ``img_cut``.
+
+    Reproduces the cutout logic in ``GalfitS/src/galfits/images.py:img_cut``
+    (lines 1454-1477):
+
+    1. Convert *ix8* (arcsec) to pixel radius:  ``cutsize_int = int(ix8 / pixscale)``
+    2. Build a symmetric box around the source pixel position.
+    3. Clamp to the image boundaries ``[0, x]`` / ``[0, y]``.
+
+    Args:
+        x: Image width  (NAXIS1, number of columns).
+        y: Image height (NAXIS2, number of rows).
+        pixscale: Pixel scale in arcsec/pixel (as returned by
+            ``proj_plane_pixel_scales``).
+        ix8: Fitting-area half-width in arcsec (the ``Ix8`` value in the
+            ``.lyric`` config).
+        src_x: Source X pixel position (1-based).  Defaults to image centre.
+        src_y: Source Y pixel position (1-based).  Defaults to image centre.
+
+    Returns:
+        ``(xmin, xmax, ymin, ymax)`` – the integer pixel bounds of the
+        fitting region (0-based, exclusive upper).
+    """
+    if src_x is None:
+        src_x = x / 2.0
+    if src_y is None:
+        src_y = y / 2.0
+
+    cutsize_int = int(ix8 / pixscale)
+    xmin = max(int(src_x) - cutsize_int, 0)
+    xmax = min(int(src_x) + cutsize_int, x)
+    ymin = max(int(src_y) - cutsize_int, 0)
+    ymax = min(int(src_y) + cutsize_int, y)
+
+    return (xmin, xmax, ymin, ymax)
 
 
 def _resolve_path_pair(value, config_dir):
@@ -102,6 +141,8 @@ def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
             cdelt1 = abs(header.get('CDELT1')) * 3600.
             pixsc = float(cdelt1)
         info.pixscale = pixsc
+        y, x = fits.getdata(info.image[0]).shape
+        info.fitting_region = calculate_fitting_region(x, y, info.pixscale, ix8=info.fitting_area)
 
         image_infos.append(info)
 
@@ -429,8 +470,8 @@ def generate_feedme(image_info: ImageInfo, components, feedme_file):
         f.write(f"E) 1 # PSF fine sampling factor relative to data\n")
         f.write(f"F) {image_info.mask[0]}  # Bad pixel mask (optional)\n")
         f.write("G) none  # Parameter constraints (optional)\n")
-        y, x = fits.getdata(image_info.image[0]).shape
-        f.write(f"H) 1 {x}  1 {y} # Image region to fit (xmin xmax ymin ymax)\n")
+        xmin, xmax, ymin, ymax = image_info.fitting_region
+        f.write(f"H) {xmin} {xmax}  {ymin} {ymax} # Image region to fit (xmin xmax ymin ymax)\n")
         f.write("I) 100 100  # Size of convolution box (x y)\n")
         f.write(f"J) {image_info.magzp}  # Magnitude zero point\n")
         f.write(f"K) {image_info.pixscale} {image_info.pixscale} # Plate scale (dx dy)\n")

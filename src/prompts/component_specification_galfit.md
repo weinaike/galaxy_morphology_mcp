@@ -2,14 +2,18 @@
 # 成分添加规范
 
 ## Galfit 添加成分类型的规范 （必须严格遵守）
-
+- 要增加Disk, 
+  - 1. Face-on要求选用指数衰减的星系盘 expdisk。
+  - 2. Edge-on要求选用的星系盘是 edgedisk。
+  - 3. 星系是 Face-on、Edge-on需要需要先区分, 有助于提升 Disk的选择和初值设置的准确性；
+  - 4. 一个expdisk拟合后（b/a）小于 0.3，可以考虑切换为Edge-on 的edgedisk 可能更为合适；
+  - 5. edgedisk 不能添加 fourier 模式， 因为不支持。
 - 要增加成分BULGE： Component type选用 sersic.
-- 要增加edge-on的星系盘：Component type选用 edgedisk。
-- 当添加的 Bulge的 Re 小于 0.2 pixel(大于0.2px 是可以接受状态), 需要更换类型， 采用Component type为psf
-- 要增加棒 Bar：Component type选用  n~0.5 的 Sersic 模型.
-- 要增加Disk, 要求选用指数衰减的星系盘 expdisk。
+- 当添加的 Bulge的 Re 小于 0.2 pixel(大于0.2px 保持sersic类型), 需要更换类型， 采用Component type为psf
+- 要增加棒 Bar：Component type选用  n=0.5[fix] 的 Sersic 模型.
 - 如果星系已经有一个 Disk 成分了，针对星系外围（Outskirt）未拟合上的情况，可以添加第二个 Disk 成分或 Sérsic 成分（这时通常Re较大，n较小<1），以捕捉更延展的结构，
-- 星系是 Face-on、Edge-on需要需要先区分, 有助于提升 Disk的选择和初值设置的准确性；一个Disk的（b/a）小于 0.5，可以认定为Edge-on；
+- 如果星系是elliptical， 只有单个成分，这直接选用 sersic 模型即可，
+  - 但如果一个星系用单 sersic 成分拟合后，出现 axis ratio （q<0.5）, 那么elliptical判断需要调整，应该有 disk。有 disk 就应该考虑 bulge。
 
 ## 成分初始参数的设置参考
 
@@ -132,7 +136,7 @@ C0) 0.1         0      # traditional diskyness(-)/boxyness(+)
 在 .cons 约束文件中，为关键参数划定既安全又不至于太局促的绝对区间：
   - 中心坐标 (x,y)： 约束在初始值的 $\pm 2$ 到 $5$ 个像素内（如果是高度扰动的并合星系可放宽）。绝对不能让星系中心飘到图像边缘。
   - 有效半径 $R_e$： 最小值约束为 0.1 像素（或 PSF 的一半），最大值约束为图像边长的 1/2 或 1/3，防止模型在尝试拟合平坦背景时无限膨胀。
-  - Sérsic 指数 $n$： 这是最容易暴走的参数。对于纯星系结构，物理上合理的 $n$ 值通常在 $0.1 \sim 8.0$ 之间。建议将其强制约束在 0.1 8.0（除非星系包含非常尖锐的无法分辨的 AGN 核心，才允许放宽到 15 或 20）。
+  - Sérsic 指数 $n$： 这是最容易暴走的参数。对于纯星系结构，物理上合理的 $n$ 值通常在 $0.1 \sim 8.0$ 之间。建议将其强制约束在 0.1 8.0。
   - 轴比 $b/a$： 约束在 0.05 1.0 之间，防止弱信噪比的盘成分被压成一条无物理意义的无限细线。
 
 ```text

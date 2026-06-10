@@ -127,16 +127,14 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 
 
 # 最优轮次锁定的标准
-- 成分条件：图像与残差观测已经认证的成分，已经全部添加。
+- 成分条件：图像与残差观测得到已经认证的成分，已经全部添加。
 - 拟合条件：1D profile残差图（DATA-MODEL）已经没有明显的尖峰或者系统性的偏离。2D残差图已经没有明显的对称残差。
 - 物理条件：最终拟合参数之间的关系符合物理意义。
-- 非必要的约束条件已经全部释放，必要的约束条件已经全部添加。
-  - Bulge 的 n 无约束
-  - Disk 的 n 固定为 1 (即使用 expdisk)
+- 参数条件：非必要的约束条件已经全部释放，必要的约束条件已经全部添加。
+  - 多成分时:Disk 使用 expdisk or edgedisk 成分; 单成分时：使用 Sersic 成分。
   - Bar 的 n 固定为 0.5
-  - 所有成分的 x,y 位置约束为 offset，保证同心。
+  - 所有中心星系成分的 x,y 位置约束为 offset，保证同心。
   - 其他参数如 Re, mag 等没有过多的约束，允许合理范围内的调整。
-- 以上条件满足的情况下，是否选择包含伴星系/PSF成分的轮次
-  - 依据奥卡姆剃刀原则判断。
-- 最优轮次一定是经过 component_analysis 分析的轮次。必要时可以增加 component_analysis 的轮次，来辅助判断最优轮次的锁定。
-  
+- 校验条件：最优轮次一定是经过 component_analysis 分析的轮次。疑似最优的轮次如果不包含component_analysis的输出文件， 需要重新调用 component_analysis 生成。以辅助验证是否符合最优条件。
+- 指标条件：以上成分、拟合、物理、尝试、校验五个维度的条件都满足的情况下，轮次选择基于BIC与reduced chi-square判断。**先chi2/nue, 后 BIC.**
+  - 如果 chi2/nu 改善超过 0.1，选择 chi2/nu 较小的轮次。 如果 chi2/nu 改善不明显（差值小于0.1）， 选择 BIC 较小的轮次.

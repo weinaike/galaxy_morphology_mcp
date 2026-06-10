@@ -392,7 +392,8 @@ def parse_model_hdu_header(header) -> dict[str, Any]:
 
 
 def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
-                                statistics_1d: dict | None = None) -> tuple[str | None, dict[str, Any]]:
+                                statistics_1d: dict | None = None,
+                                constraint_file: str | None = None) -> tuple[str | None, dict[str, Any]]:
     """Extract comprehensive summary information from GALFIT FITS output file.
 
     Reads all information from the FITS file header (model HDU):
@@ -474,6 +475,19 @@ def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
         if config_file:
             with open(config_file) as f: 
                 md_lines.append(f.read())
+
+        # Constraint file content
+        if constraint_file and os.path.exists(constraint_file):
+            md_lines.append("---")
+            md_lines.append("")
+            md_lines.append("## Constraint File Content")
+            md_lines.append("")
+            try:
+                with open(constraint_file) as f:
+                    md_lines.append(f.read())
+            except Exception as e:
+                md_lines.append(f"*Could not read constraint file: {e}*")
+            md_lines.append("")
 
         fit_log_path = os.path.join(os.path.dirname(config_file) if config_file else ".", "fit.log")    
         if os.path.exists(fit_log_path):

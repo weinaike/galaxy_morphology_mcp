@@ -5,6 +5,7 @@
 2. **NEVER modify the original .lyric file** — write new configs with `_iter{n}` suffix in the galaxy's main directory
 3. **Use `/skill galfits-manual`** to access complete GalfitS parameter documentation before editing configs
 4. **Only use `--fit_method ES`** to run GalfitS
+5. **NEVER assume pixel scales** — always use `mcp__galmcp__re_arcsec2pix` to convert arcsec to pixels via FITS WCS headers. Do not use hardcoded values like 0.031"/px or 0.063"/px, as images may be drizzle-resampled at different scales.
 
 ---
 

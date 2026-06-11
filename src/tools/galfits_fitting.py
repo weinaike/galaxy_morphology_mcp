@@ -542,6 +542,9 @@ def update_lyric_with_gssummaries(
             lyric_content = replace_single_value("Px14", label, lyric_content, summary_data[f"logM_{profile_name}"])
             lyric_content = replace_single_value("Px11", label, lyric_content, summary_data[f"{profile_name}_Z_value"])
 
+        # Force Ix15) to 1 for all bands (Ia15, Ib15, Ic15, ...) to enable SED usage
+        lyric_content = re.sub(r'(I[a-z]15\)\s*)\d+', r'\g<1>1', lyric_content)
+
         # Write updated content back to file
         new_lyric_file = new_lyric_file if new_lyric_file else lyric_file
         with open(new_lyric_file, "w", encoding="utf-8") as f:

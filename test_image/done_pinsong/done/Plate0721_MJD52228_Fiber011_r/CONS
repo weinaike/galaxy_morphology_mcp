@@ -1,0 +1,12 @@
+# Component/    parameter   constraint    Comment
+# operation (see below)   range
+
+  1_2_3           x          offset      # Hard constraint: Constrains the
+                                        # x parameter for components 3, 2,
+                                        # 1, and 9 to have RELATIVE positions
+                                        # defined by the initial parameter file.
+                                        #
+  1_2_3           y          offset      # Hard constraint: Constrains the
+                                        # x parameter for components 3, 2,
+                                        # 1, and 9 to have RELATIVE positions
+                                        # defined by the initial parameter file.

@@ -1,0 +1,900 @@
+{
+  "root_dir": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done",
+  "metrics": {
+    "total_pairs": 18,
+    "valid_pairs": 18,
+    "true_positive": 11,
+    "false_negative": 7,
+    "recall": 0.6111111111111112
+  },
+  "records": [
+    {
+      "plate": "Plate0414_MJD51901_Fiber247_r",
+      "prev_archive": "20260528T175343.2dd821a6",
+      "next_archive": "20260528T180622.d740532f",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "slight_improvement",
+          "confidence": 0.85,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a slight reduction in the intensity and extent of the central positive (red) and negative (blue) residuals compared to Image 1. The fitted parameters represent a physically plausible bulge+bar+disk decomposition with reasonable size hierarchy and parameter values.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "slight_improvement",
+          "usage": {
+            "prompt_tokens": 5956,
+            "completion_tokens": 1251,
+            "total_tokens": 7207,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3780,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 117,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1134
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175343.2dd821a6/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0414_MJD51901_Fiber247_r",
+      "prev_archive": "20260528T175657.d4f251f5",
+      "next_archive": "20260528T180622.d740532f",
+      "prediction": 0,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 0,
+        "raw_result": {
+          "improvement": 0,
+          "improvement_level": "no_improvement",
+          "confidence": 0.95,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 is visually identical to Image 1, showing no meaningful reduction in the central structured residuals. The fitted parameters are within physically plausible ranges.",
+          "confidence_filter_applied": false,
+          "original_improvement": 0,
+          "param_override_applied": false,
+          "final_improvement": 0,
+          "final_improvement_level": "no_improvement",
+          "usage": {
+            "prompt_tokens": 5955,
+            "completion_tokens": 1070,
+            "total_tokens": 7025,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3779,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 93,
+              "audio_tokens": 0,
+              "reasoning_tokens": 977
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T175657.d4f251f5/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0414_MJD51901_Fiber247_r",
+      "prev_archive": "20260528T180002.ef807c64",
+      "next_archive": "20260528T180622.d740532f",
+      "prediction": 0,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 0,
+        "raw_result": {
+          "improvement": 0,
+          "improvement_level": "no_improvement",
+          "confidence": 0.95,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "The residual images are visually identical, with the strong central spiral/bar-like structures remaining equally prominent. There is no meaningful improvement. All fitted parameters are within physically plausible ranges.",
+          "confidence_filter_applied": false,
+          "original_improvement": 0,
+          "param_override_applied": false,
+          "final_improvement": 0,
+          "final_improvement_level": "no_improvement",
+          "usage": {
+            "prompt_tokens": 5955,
+            "completion_tokens": 1662,
+            "total_tokens": 7617,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3779,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 99,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1563
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180002.ef807c64/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0414_MJD51901_Fiber247_r/archives/20260528T180622.d740532f/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T172705.e2afcdf0",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "clear_improvement",
+          "confidence": 0.95,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a clear reduction in the strong central dipole-like residuals compared to Image 1. All fitted parameters are within physically plausible ranges, with no signs of severe overfitting or parameter runaway.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "clear_improvement",
+          "usage": {
+            "prompt_tokens": 6348,
+            "completion_tokens": 1562,
+            "total_tokens": 7910,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4172,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 103,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1459
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T172705.e2afcdf0/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T173006.6b2299a4",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "clear_improvement",
+          "confidence": 0.9,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a clear reduction in the strong central red/blue dipole-like residuals compared to Image 1, indicating a better fit in the central region. All fitted parameters are within physically plausible boundaries, with a reasonable size hierarchy and no signs of severe overfitting or parameter runaway.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "clear_improvement",
+          "usage": {
+            "prompt_tokens": 6348,
+            "completion_tokens": 1909,
+            "total_tokens": 8257,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4172,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 119,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1790
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173006.6b2299a4/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T173222.a5974202",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "slight_improvement",
+          "confidence": 0.85,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a slight reduction in the intensity of the central red and blue residual structures compared to Image 1. All fitted parameters, including Sersic indices and effective radii, are within physically plausible ranges.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "slight_improvement",
+          "usage": {
+            "prompt_tokens": 6349,
+            "completion_tokens": 1704,
+            "total_tokens": 8053,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4173,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 108,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1596
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173222.a5974202/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T173501.a5974202",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "clear_improvement",
+          "confidence": 0.9,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a clear reduction in the central red and blue residual structures compared to Image 1. All fitted parameters are within physically plausible ranges, with a reasonable size hierarchy and no redundant components.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "clear_improvement",
+          "usage": {
+            "prompt_tokens": 6349,
+            "completion_tokens": 2221,
+            "total_tokens": 8570,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4173,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 104,
+              "audio_tokens": 0,
+              "reasoning_tokens": 2117
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173501.a5974202/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T173647.f558882e",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "slight_improvement",
+          "confidence": 0.85,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a slight reduction in the central dipole-like and ring-like residuals compared to Image 1. All fitted parameters are within physically plausible ranges, with no signs of parameter runaway or unphysical values.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "slight_improvement",
+          "usage": {
+            "prompt_tokens": 6349,
+            "completion_tokens": 1416,
+            "total_tokens": 7765,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4173,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 109,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1307
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173647.f558882e/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T173910.11c0d918",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "clear_improvement",
+          "confidence": 0.95,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a clear reduction in the central dipole-like residuals compared to Image 1, resulting in a cleaner galaxy center. All fitted parameters, including Sersic indices, effective radii, and axis ratios, are within physically plausible ranges.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "clear_improvement",
+          "usage": {
+            "prompt_tokens": 6348,
+            "completion_tokens": 2070,
+            "total_tokens": 8418,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4172,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 113,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1957
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T173910.11c0d918/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T174207.883c02ba",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 0,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 0,
+        "raw_result": {
+          "improvement": 0,
+          "improvement_level": "no_improvement",
+          "confidence": 0.95,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows no meaningful reduction in residual structures compared to Image 1; the central negative residuals appear slightly more concentrated and the overall pattern is unchanged. The fitted parameters are within physically plausible ranges.",
+          "confidence_filter_applied": false,
+          "original_improvement": 0,
+          "param_override_applied": false,
+          "final_improvement": 0,
+          "final_improvement_level": "no_improvement",
+          "usage": {
+            "prompt_tokens": 6348,
+            "completion_tokens": 2475,
+            "total_tokens": 8823,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4172,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 103,
+              "audio_tokens": 0,
+              "reasoning_tokens": 2372
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174207.883c02ba/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0436_MJD51883_Fiber493_r",
+      "prev_archive": "20260528T174728.ad723762",
+      "next_archive": "20260528T175209.e4ab4002",
+      "prediction": 0,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 0,
+        "raw_result": {
+          "improvement": 0,
+          "improvement_level": "no_improvement",
+          "confidence": 0.9,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows no meaningful reduction in residual structures compared to Image 1; the central residuals and the faint red ring-like structure remain unchanged or slightly more pronounced. The fitted parameters are within physically plausible ranges.",
+          "confidence_filter_applied": false,
+          "original_improvement": 0,
+          "param_override_applied": false,
+          "final_improvement": 0,
+          "final_improvement_level": "no_improvement",
+          "usage": {
+            "prompt_tokens": 6348,
+            "completion_tokens": 1918,
+            "total_tokens": 8266,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 4172,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 106,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1812
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T174728.ad723762/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0436_MJD51883_Fiber493_r/archives/20260528T175209.e4ab4002/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0556_MJD51991_Fiber236_r",
+      "prev_archive": "20260528T123901.390c0cd7",
+      "next_archive": "20260528T142638.25e7b2ea",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "clear_improvement",
+          "confidence": 0.95,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a clear reduction in the central dipole-like residuals compared to Image 1. All fitted parameters are within physically plausible ranges, showing a reasonable size hierarchy (Re = 1.33, 12.51, 43.59) for a multi-component fit with no signs of parameter runaway.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "clear_improvement",
+          "usage": {
+            "prompt_tokens": 5961,
+            "completion_tokens": 1315,
+            "total_tokens": 7276,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3785,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 134,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1181
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T123901.390c0cd7/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0556_MJD51991_Fiber236_r",
+      "prev_archive": "20260528T141453.4c1e1297",
+      "next_archive": "20260528T142638.25e7b2ea",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "slight_improvement",
+          "confidence": 0.85,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a slight reduction in the central positive and negative residuals compared to Image 1, making the core slightly cleaner. All fitted parameters are within physically plausible ranges, with a reasonable size hierarchy (Re = 1.33, 12.51, 43.59) and significant flux contributions from all components.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "slight_improvement",
+          "usage": {
+            "prompt_tokens": 5960,
+            "completion_tokens": 1259,
+            "total_tokens": 7219,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3784,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 135,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1124
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T141453.4c1e1297/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0556_MJD51991_Fiber236_r",
+      "prev_archive": "20260528T142309.13d8c82e",
+      "next_archive": "20260528T142638.25e7b2ea",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "slight_improvement",
+          "confidence": 0.8,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a slight reduction in the intensity of the central positive (red) residual peak compared to Image 1. The fitted parameters for the three Sersic components are all within physically plausible ranges, with a reasonable size hierarchy (Re ~ 1.3px, 12.5px, 43.6px) and significant flux contributions from all components.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "slight_improvement",
+          "usage": {
+            "prompt_tokens": 5960,
+            "completion_tokens": 2335,
+            "total_tokens": 8295,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3784,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 142,
+              "audio_tokens": 0,
+              "reasoning_tokens": 2193
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142309.13d8c82e/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0721_MJD52228_Fiber011_r",
+      "prev_archive": "20260528T121940.f609ab69",
+      "next_archive": "20260528T123725.724849da",
+      "prediction": 1,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 1,
+        "raw_result": {
+          "improvement": 1,
+          "improvement_level": "clear_improvement",
+          "confidence": 0.95,
+          "param_plausible": true,
+          "param_issues": [],
+          "reason": "Image 2 shows a clear reduction in the central dipole-like residual structures compared to Image 1, resulting in a cleaner galaxy center. All fitted parameters, including Sersic indices, effective radii, and axis ratios, are within physically plausible ranges and maintain a reasonable size hierarchy for a multi-component fit.",
+          "confidence_filter_applied": false,
+          "original_improvement": 1,
+          "param_override_applied": false,
+          "final_improvement": 1,
+          "final_improvement_level": "clear_improvement",
+          "usage": {
+            "prompt_tokens": 5969,
+            "completion_tokens": 1601,
+            "total_tokens": 7570,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3793,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 127,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1474
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T121940.f609ab69/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0721_MJD52228_Fiber011_r",
+      "prev_archive": "20260528T122421.1d363f59",
+      "next_archive": "20260528T123725.724849da",
+      "prediction": 0,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 2,
+        "prediction": 0,
+        "raw_result": {
+          "improvement": 0,
+          "improvement_level": "slight_improvement",
+          "confidence": 0.95,
+          "param_plausible": false,
+          "param_issues": [
+            "Component 2 Sersic index n=0.0508 is outside the plausible range [0.1, 8]"
+          ],
+          "reason": "Image 2 shows a slight reduction in the central dipole-like residuals compared to Image 1. However, the fitted parameters are not physically plausible because Component 2 has an extremely low Sersic index (n < 0.1), indicating parameter runaway. The residual improvement is likely due to overfitting with unphysical parameters.",
+          "confidence_filter_applied": false,
+          "original_improvement": 0,
+          "param_override_applied": false,
+          "final_improvement": 0,
+          "final_improvement_level": "slight_improvement",
+          "usage": {
+            "prompt_tokens": 5968,
+            "completion_tokens": 1172,
+            "total_tokens": 7140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3792,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 164,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1008
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122421.1d363f59/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0721_MJD52228_Fiber011_r",
+      "prev_archive": "20260528T122905.73bf0e1a",
+      "next_archive": "20260528T123725.724849da",
+      "prediction": 0,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 0,
+        "raw_result": {
+          "improvement": 0,
+          "improvement_level": "slight_improvement",
+          "confidence": 0.9,
+          "param_plausible": false,
+          "param_issues": [
+            "Component 2 Sersic index n=0.0508 is below the 0.1 threshold"
+          ],
+          "reason": "While the central residual shows a slight reduction in the intensity of the dipole-like structures, Component 2 has an unphysically low Sersic index (n < 0.1), indicating parameter runaway. The fit is rejected due to unphysical parameters.",
+          "confidence_filter_applied": false,
+          "original_improvement": 0,
+          "param_override_applied": false,
+          "final_improvement": 0,
+          "final_improvement_level": "slight_improvement",
+          "usage": {
+            "prompt_tokens": 5968,
+            "completion_tokens": 1466,
+            "total_tokens": 7434,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3792,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 147,
+              "audio_tokens": 0,
+              "reasoning_tokens": 1319
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122905.73bf0e1a/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_summary.md"
+        }
+      }
+    },
+    {
+      "plate": "Plate0721_MJD52228_Fiber011_r",
+      "prev_archive": "20260528T123307.705746be",
+      "next_archive": "20260528T123725.724849da",
+      "prediction": 0,
+      "status": "success",
+      "detail": {
+        "status": "success",
+        "attempt": 1,
+        "prediction": 0,
+        "raw_result": {
+          "improvement": 0,
+          "improvement_level": "no_improvement",
+          "confidence": 0.95,
+          "param_plausible": false,
+          "param_issues": [
+            "Component 2 Sersic index n=0.0508 is below the 0.1 threshold"
+          ],
+          "reason": "The residual images are visually identical with no meaningful reduction in the central structures. Additionally, Component 2 has an unphysically low Sersic index (n < 0.1), indicating parameter runaway.",
+          "confidence_filter_applied": false,
+          "original_improvement": 0,
+          "param_override_applied": false,
+          "final_improvement": 0,
+          "final_improvement_level": "no_improvement",
+          "usage": {
+            "prompt_tokens": 5968,
+            "completion_tokens": 1042,
+            "total_tokens": 7010,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 3792,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            },
+            "completion_tokens_details": {
+              "text_tokens": 135,
+              "audio_tokens": 0,
+              "reasoning_tokens": 907
+            },
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_tokens_details": null,
+            "claude_cache_creation_5_m_tokens": 0,
+            "claude_cache_creation_1_h_tokens": 0
+          },
+          "original_prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123307.705746be/galfit_comparison_cutoff.png",
+          "original_next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison_cutoff.png",
+          "summary_path_used": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_summary.md"
+        }
+      }
+    }
+  ]
+}

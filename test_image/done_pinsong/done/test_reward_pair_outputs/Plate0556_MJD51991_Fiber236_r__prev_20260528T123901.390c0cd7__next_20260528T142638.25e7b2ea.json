@@ -1,0 +1,13 @@
+{
+  "prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T123901.390c0cd7/galfit_comparison_cutoff.png",
+  "next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_comparison_cutoff.png",
+  "model_name": "gemini-3.1-pro-preview",
+  "improvement": 1,
+  "reward_judgement": "improved",
+  "confidence": 0.95,
+  "reason": "Image 2 shows a clear reduction of the strong central dipole-like residual structure, with the bright red positive lobes significantly diminished compared to Image 1.",
+  "prompt_tokens": 2974,
+  "completion_tokens": 475,
+  "total_tokens": 3449,
+  "created_at": "2026-06-09 09:31:41"
+}

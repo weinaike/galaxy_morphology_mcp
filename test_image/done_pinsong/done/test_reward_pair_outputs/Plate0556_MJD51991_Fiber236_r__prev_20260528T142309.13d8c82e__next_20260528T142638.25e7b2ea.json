@@ -1,0 +1,13 @@
+{
+  "prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142309.13d8c82e/galfit_comparison_cutoff.png",
+  "next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0556_MJD51991_Fiber236_r/archives/20260528T142638.25e7b2ea/galfit_comparison_cutoff.png",
+  "model_name": "gemini-3.1-pro-preview",
+  "improvement": 1,
+  "reward_judgement": "improved",
+  "confidence": 0.85,
+  "reason": "Image 2 shows a slight reduction in the intensity of the central negative (dark blue) residual structure compared to Image 1, indicating a marginally better fit to the galaxy core.",
+  "prompt_tokens": 2974,
+  "completion_tokens": 828,
+  "total_tokens": 3802,
+  "created_at": "2026-06-09 09:32:10"
+}

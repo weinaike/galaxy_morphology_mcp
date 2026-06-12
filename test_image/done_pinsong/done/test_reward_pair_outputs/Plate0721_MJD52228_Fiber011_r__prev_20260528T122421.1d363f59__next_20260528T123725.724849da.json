@@ -1,0 +1,13 @@
+{
+  "prev_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T122421.1d363f59/galfit_comparison_cutoff.png",
+  "next_image_path": "/media/zhongling/wyh/GalDecomp_Gen/test_image/done_pinsong/done/Plate0721_MJD52228_Fiber011_r/archives/20260528T123725.724849da/galfit_comparison_cutoff.png",
+  "model_name": "gemini-3.1-pro-preview",
+  "improvement": 1,
+  "reward_judgement": "improved",
+  "confidence": 0.85,
+  "reason": "The central dipole-like residual structure in Image 2 is slightly less saturated and less coherent compared to Image 1, indicating a minor improvement in the fit.",
+  "prompt_tokens": 2974,
+  "completion_tokens": 784,
+  "total_tokens": 3758,
+  "created_at": "2026-06-09 09:32:30"
+}

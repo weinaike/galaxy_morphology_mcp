@@ -10,6 +10,12 @@ import shutil
 import subprocess
 import numpy as np
 
+@dataclass
+class RegionInfo:
+    object: str
+    ra: float
+    dec: float
+    red_shift: float
 
 @dataclass
 class ImageInfo:
@@ -78,6 +84,58 @@ def _resolve_path_pair(value, config_dir):
             value[0] = os.path.normpath(os.path.join(config_dir, value[0]))
     return value
 
+def parse_region_info_from_lyric(path_or_text: str) -> RegionInfo:
+    """Extract object name, RA, Dec, and redshift from a given text or path.
+
+    Args:
+        path_or_text: A string that may contain region info or be a path itself.
+    Returns:
+        A RegionInfo object.
+    """
+    if os.path.isfile(path_or_text):
+        with open(path_or_text, 'r') as f:
+            content = f.read()
+    else:
+        content = path_or_text
+    lines = [line.strip() for line in content.splitlines() if line.strip() and not line.strip().startswith('#')]
+
+    pattern = re.compile(r'^R(\d+)\)\s*(.+?)\s*$')
+
+    region = {}
+    for line in lines:
+        line = line.split('#')[0].strip()
+        match = pattern.match(line)
+        if not match:
+            continue
+        index, value = match.groups()
+        try:
+            value = ast.literal_eval(value)
+        except:
+            pass
+        region[int(index)] = value
+
+    object_name = region.get(1)
+    if isinstance(object_name, (list, tuple)):
+        object_name = object_name[0] if object_name else None
+
+    ra_dec = region.get(2)
+    if isinstance(ra_dec, (list, tuple)) and len(ra_dec) >= 2:
+        ra = float(ra_dec[0])
+        dec = float(ra_dec[1])
+    else:
+        ra = None
+        dec = None
+
+    red_shift = region.get(3)
+    if red_shift is not None:
+        red_shift = float(red_shift)
+
+    return RegionInfo(
+        object=object_name,
+        ra=ra,
+        dec=dec,
+        red_shift=red_shift,
+    )
 
 def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
     """Extract FITS file paths from a given text or path.
@@ -442,6 +500,8 @@ def extract_component_attributes(
         # 轴比与位置角
         ba = p('axrat')
         pa = p('ang')
+        # 注意：Galfit 的 PA 定义为从 +y 逆时针到 +x 的角度，Galfits的PA是相对于正北方向逆时针旋转到半长轴的角度，而天文中通常定义为从北向东的角度。因此需要转换：
+        pa = (pa + _delta_ang + 90) % 360 if pa is not None else None
 
         result.append({
             'name': comp_name,

@@ -20,6 +20,7 @@ from .render_original import render_asinh_panel
 from .sb_profile import render_sb_profile
 from .parse_lyric import (
     parse_image_infos_from_lyric,
+    parse_region_info_from_lyric,
     extract_component_attributes,
     generate_subcomps
 )
@@ -257,6 +258,7 @@ def create_perband_comparison_png(
     gssummary_file: str,
     result_fits_file_list: List[str],
 ) -> Dict[str, str] | None:
+    region_info = parse_region_info_from_lyric(lyric_file)
     image_infos = parse_image_infos_from_lyric(lyric_file)
     pngs = {}
     for image_info in image_infos:
@@ -287,7 +289,9 @@ def create_perband_comparison_png(
             summary_file=gssummary_file,
             config_file=lyric_file,
             fits_file=image_info.image[0],
-            band=image_info.band
+            band=image_info.band,
+            ra=region_info.ra,
+            dec=region_info.dec
         )
         comp_imgs, comp_types = generate_subcomps(image_info, components)
 
@@ -432,6 +436,7 @@ def create_multiband_comparison_png(
     Band name header above each row, horizontal separator between bands.
     Returns the path to the saved PNG, or None if no valid bands found.
     """
+    region_info = parse_region_info_from_lyric(lyric_file)
     image_infos = parse_image_infos_from_lyric(lyric_file)
 
     # --- Collect valid band data ---
@@ -460,6 +465,8 @@ def create_multiband_comparison_png(
             config_file=lyric_file,
             fits_file=image_info.image[0],
             band=image_info.band,
+            ra=region_info.ra,
+            dec=region_info.dec,
         )
 
         comp_imgs, comp_types = generate_subcomps(image_info, components)

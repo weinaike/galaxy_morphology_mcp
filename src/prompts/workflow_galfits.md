@@ -12,6 +12,7 @@
 * 步骤1. **拟合与调参：**: 调用 `run_galfits_image_fitting`，完成一次多波段的形态拟合（要求输入配置文件绝对路径），
     - 请查看日志确认拟合是否正常。如果拟合异常，需要调初始值与调约束（调初始值优先级高于增加约束；非必要不加.cons）,重新拟合。只有正常拟合，才能进入步骤2"；（本步骤只调参数和约束、不改变成分，不改变拟合区域。）
 * 步骤2. **成分调整：** 使用`analyze_multiband_components` 分析当前模型的成分配置，获取成分增删和参数调整策略；严格遵循策略，修改配置，执行步骤1。
+    - 每次调用`analyze_multiband_components`前，需要创建或者更新前当前星系目录下的 `working_note.md`, 将上一轮次的`成分分析要点`、`拟合目标`和`拟合进展`形成摘要加到文件末尾。
 
 重复执行上述1-2步骤，直到步骤2的 `analyze_multiband_components`工具 给出无需调整5类物理成分(盘、核球、侧视盘、棒、AGN)，且当前参数已经合理收敛后，才能进入步骤3. 
 
@@ -49,6 +50,7 @@ SED拟合通常需要基于最优的Image拟合（在阶段三中已经确认）
 
 阶段五. Image-SED联合拟合
 * 调用`run_galfits_image_sed_fitting`对image和SED进行一次联合拟合，输入配置文件是SED拟合成功后生成的配置文件            
+    - 如果最佳的image-fitting使用了--parconstrain，那么run_galfits_image_sed_fitting也需要加载同一个约束文件
     - Image-SED拟合只需要成功一次即可
     - 若Image-SED拟合失败，需要分析原因并重新Image-SED拟合
     - Image-SED联合拟合成功后，标志着当前星系的拟合任务完成

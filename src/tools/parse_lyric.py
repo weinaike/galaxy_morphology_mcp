@@ -10,6 +10,12 @@ import shutil
 import subprocess
 import numpy as np
 
+@dataclass
+class RegionInfo:
+    object: str
+    ra: float
+    dec: float
+    red_shift: float
 
 @dataclass
 class ImageInfo:
@@ -20,7 +26,7 @@ class ImageInfo:
     psf_sampling: int
     mask: Any
     unit: str
-    fitting_area: Any
+    fitting_area: Any # in arcsec, the "Ix8" parameter in .lyric
     conversion: Any
     magzp: float
     skymodel: str
@@ -30,6 +36,45 @@ class ImageInfo:
     use_sed: int
     image_label: str # used for label only
     pixscale: float = None
+    fitting_region: tuple[int, int, int, int] = None # (xmin, xmax, ymin, ymax) in pixel coordinates
+
+
+def calculate_fitting_region(x, y, pixscale, ix8, src_x=None, src_y=None):
+    """Calculate the fitting region bounds used by GalfitS ``img_cut``.
+
+    Reproduces the cutout logic in ``GalfitS/src/galfits/images.py:img_cut``
+    (lines 1454-1477):
+
+    1. Convert *ix8* (arcsec) to pixel radius:  ``cutsize_int = int(ix8 / pixscale)``
+    2. Build a symmetric box around the source pixel position.
+    3. Clamp to the image boundaries ``[0, x]`` / ``[0, y]``.
+
+    Args:
+        x: Image width  (NAXIS1, number of columns).
+        y: Image height (NAXIS2, number of rows).
+        pixscale: Pixel scale in arcsec/pixel (as returned by
+            ``proj_plane_pixel_scales``).
+        ix8: Fitting-area half-width in arcsec (the ``Ix8`` value in the
+            ``.lyric`` config).
+        src_x: Source X pixel position (1-based).  Defaults to image centre.
+        src_y: Source Y pixel position (1-based).  Defaults to image centre.
+
+    Returns:
+        ``(xmin, xmax, ymin, ymax)`` – the integer pixel bounds of the
+        fitting region (0-based, exclusive upper).
+    """
+    if src_x is None:
+        src_x = x / 2.0
+    if src_y is None:
+        src_y = y / 2.0
+
+    cutsize_int = int(ix8 / pixscale)
+    xmin = max(int(src_x) - cutsize_int, 0)
+    xmax = min(int(src_x) + cutsize_int, x)
+    ymin = max(int(src_y) - cutsize_int, 0)
+    ymax = min(int(src_y) + cutsize_int, y)
+
+    return (xmin, xmax, ymin, ymax)
 
 
 def _resolve_path_pair(value, config_dir):
@@ -39,6 +84,58 @@ def _resolve_path_pair(value, config_dir):
             value[0] = os.path.normpath(os.path.join(config_dir, value[0]))
     return value
 
+def parse_region_info_from_lyric(path_or_text: str) -> RegionInfo:
+    """Extract object name, RA, Dec, and redshift from a given text or path.
+
+    Args:
+        path_or_text: A string that may contain region info or be a path itself.
+    Returns:
+        A RegionInfo object.
+    """
+    if os.path.isfile(path_or_text):
+        with open(path_or_text, 'r') as f:
+            content = f.read()
+    else:
+        content = path_or_text
+    lines = [line.strip() for line in content.splitlines() if line.strip() and not line.strip().startswith('#')]
+
+    pattern = re.compile(r'^R(\d+)\)\s*(.+?)\s*$')
+
+    region = {}
+    for line in lines:
+        line = line.split('#')[0].strip()
+        match = pattern.match(line)
+        if not match:
+            continue
+        index, value = match.groups()
+        try:
+            value = ast.literal_eval(value)
+        except:
+            pass
+        region[int(index)] = value
+
+    object_name = region.get(1)
+    if isinstance(object_name, (list, tuple)):
+        object_name = object_name[0] if object_name else None
+
+    ra_dec = region.get(2)
+    if isinstance(ra_dec, (list, tuple)) and len(ra_dec) >= 2:
+        ra = float(ra_dec[0])
+        dec = float(ra_dec[1])
+    else:
+        ra = None
+        dec = None
+
+    red_shift = region.get(3)
+    if red_shift is not None:
+        red_shift = float(red_shift)
+
+    return RegionInfo(
+        object=object_name,
+        ra=ra,
+        dec=dec,
+        red_shift=red_shift,
+    )
 
 def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
     """Extract FITS file paths from a given text or path.
@@ -102,6 +199,8 @@ def parse_image_infos_from_lyric(path_or_text: str) -> List[ImageInfo]:
             cdelt1 = abs(header.get('CDELT1')) * 3600.
             pixsc = float(cdelt1)
         info.pixscale = pixsc
+        y, x = fits.getdata(info.image[0]).shape
+        info.fitting_region = calculate_fitting_region(x, y, info.pixscale, ix8=info.fitting_area)
 
         image_infos.append(info)
 
@@ -401,6 +500,8 @@ def extract_component_attributes(
         # 轴比与位置角
         ba = p('axrat')
         pa = p('ang')
+        # 注意：Galfit 的 PA 定义为从 +y 逆时针到 +x 的角度，Galfits的PA是相对于正北方向逆时针旋转到半长轴的角度，而天文中通常定义为从北向东的角度。因此需要转换：
+        pa = (pa + _delta_ang + 90) % 360 if pa is not None else None
 
         result.append({
             'name': comp_name,
@@ -429,8 +530,8 @@ def generate_feedme(image_info: ImageInfo, components, feedme_file):
         f.write(f"E) 1 # PSF fine sampling factor relative to data\n")
         f.write(f"F) {image_info.mask[0]}  # Bad pixel mask (optional)\n")
         f.write("G) none  # Parameter constraints (optional)\n")
-        y, x = fits.getdata(image_info.image[0]).shape
-        f.write(f"H) 1 {x}  1 {y} # Image region to fit (xmin xmax ymin ymax)\n")
+        xmin, xmax, ymin, ymax = image_info.fitting_region
+        f.write(f"H) {xmin} {xmax}  {ymin} {ymax} # Image region to fit (xmin xmax ymin ymax)\n")
         f.write("I) 100 100  # Size of convolution box (x y)\n")
         f.write(f"J) {image_info.magzp}  # Magnitude zero point\n")
         f.write(f"K) {image_info.pixscale} {image_info.pixscale} # Plate scale (dx dy)\n")

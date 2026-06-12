@@ -14,14 +14,12 @@ import importlib.util
 from typing import Any
 from mcp.server import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from tools.modify_feedme import add_components, delete_components
-from tools.modify_lyric import modify_lyric
 from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
-from tools.analyze_image import galfit_analyze_by_vlm
-from tools.analyze_image import galfits_analyze_by_vlm
+
 from tools.residual_analysis import component_analysis, analyze_multiband_components
 from tools.fourier_mode_analysis import fourier_mode_analysis
+from tools.bar_lopsidedness_detection import detect_bar_lopsidedness
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix
@@ -44,26 +42,26 @@ def _register_tools_and_prompts():
     has_galfits = bool(os.getenv("GALFITS_BIN"))
 
     if has_galfit:
-        # app.add_tool(add_components)
         app.add_tool(run_galfit)
-        # app.add_tool(galfit_analyze_by_vlm)
+        app.add_tool(component_analysis)        
         app.add_prompt(workflow_galfit)
+        app.add_tool(detect_bar_lopsidedness)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 
     if has_galfits:
-        # app.add_tool(run_galfits)
+
         app.add_tool(run_galfits_image_fitting)
         app.add_tool(run_galfits_sed_fitting)
         app.add_tool(run_galfits_image_sed_fitting)
-        app.add_tool(galfits_analyze_by_vlm)
+        app.add_tool(analyze_multiband_components)
         app.add_prompt(workflow_galfits)
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
 
     # Shared tools — always available
     app.add_tool(view_original_image)
     app.add_tool(render_original)
-    app.add_tool(component_analysis)
-    app.add_tool(analyze_multiband_components)
+
+
     
     app.add_tool(fourier_mode_analysis)
     app.add_tool(pix2radec)

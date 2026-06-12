@@ -460,9 +460,13 @@ async def run_galfit(
                                                 param_file=param_file_for_plot,
                                                 comp_images=comp_images, comp_types=comp_types)
 
+    # Identify constraint file
+    constraint_file = config_paths.get("constraint") or None
+
     # Extract summary information
     summary, fit_stats = extract_summary_from_galfit(output_file, config_file,
-                                                     statistics_1d=statistics_1d)
+                                                     statistics_1d=statistics_1d,
+                                                     constraint_file=constraint_file)
 
     # Cleanup the workspace
     ws_dir = os.path.dirname(output_file)
@@ -486,7 +490,6 @@ async def run_galfit(
         summary = os.path.join(ar_dir, os.path.basename(summary))    
 
     # Archive constraint file if referenced in config
-    constraint_file = config_paths.get("constraint") or None
     if constraint_file and os.path.exists(constraint_file):
         shutil.copy(constraint_file, ar_dir)
 

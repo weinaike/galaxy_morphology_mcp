@@ -8,7 +8,7 @@ from .analyze_image import (
     read_summary_file,
 )
 
-from parse_lyric import parse_image_infos_from_lyric, extract_component_attributes
+from .parse_lyric import parse_image_infos_from_lyric, extract_component_attributes
 
 dotenv.load_dotenv()
 

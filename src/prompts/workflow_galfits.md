@@ -50,6 +50,7 @@ SED拟合通常需要基于最优的Image拟合（在阶段三中已经确认）
 
 阶段五. Image-SED联合拟合
 * 调用`run_galfits_image_sed_fitting`对image和SED进行一次联合拟合，输入配置文件是SED拟合成功后生成的配置文件            
+    - 如果最佳的image-fitting使用了--parconstrain，那么run_galfits_image_sed_fitting也需要加载同一个约束文件
     - Image-SED拟合只需要成功一次即可
     - 若Image-SED拟合失败，需要分析原因并重新Image-SED拟合
     - Image-SED联合拟合成功后，标志着当前星系的拟合任务完成

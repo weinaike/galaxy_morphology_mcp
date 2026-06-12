@@ -83,8 +83,15 @@ obj195/
 
 ### Rules
 - New config files must be written to the **galaxy's main directory** (where the original .lyric is), with `_iter{n}` suffix
-- Use `--readsummary <prev.gssummary>` to carry forward fitted parameters from previous rounds
-- `run_galfits` automatically creates output directories; do NOT manually create directories
+- When you need to reuse parameters from earlier fittings, add the argument --readsummary <prev.gssummary>.
+- If you need to constrain galaxy components to share the same center (e.g., make bulge, bar and disk have identical centers), complete the following three steps:
+    - In the .lyric configuration file, set the x and y parameters (maybe Pb3, Pb4, Pc3, Pc4, it depends) of bulge and bar to fixed.
+    - Create a constraint file named iter{n}.constrain with the following content (python function):
+          def Update_Constraints(pardictlc):
+              pardictlc['bulge_xcen'] = pardictlc['bar_xcen'] = 1 * pardictlc['disk_xcen']
+              pardictlc['bulge_xcen'] = pardictlc['bar_xcen'] = 1 * pardictlc['disk_xcen']
+    - Add the parameter --parconstrain iter{n}.constrain when calling Galfits fitting methods to load this constraint file.          
+- `run_galfits` automatically creates output directories; do NOT manually create directories    
 
 ---
 

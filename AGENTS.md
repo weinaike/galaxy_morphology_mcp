@@ -87,16 +87,23 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 
 
 
-# Working Note 的格式内容要求
-例如：
+# Working Note 的撰写规范
+
+- Working Note 是记录每轮拟合分析过程的核心文档，必须详细记录每轮的分析要点、参数设置、拟合结果以及距离预期目标的偏差等关键信息。 example示例中提到的 【这部分必须有】 的内容是必须包含的关键信息。(【这部分必须有】这几个字只是标识，不用出现)
+- Working Note 中必须包含<Round 0: 原图成分预测>，必须明确指出<高概率存在的成分>。
+- 严格按照以下示例的格式撰写 Working Note，确保信息的完整性和清晰度。
+
+<example>
 - Round 0: 原图成分预测
-  - 高概率存在伴星: 伴星1坐标, 伴星2坐标
-  - 高概率存在成分: Disk
+  - 总体判断：这是 xxx星系，特征是xxx
+  - 高概率存在成分:
     - Disk: 证据xxx
     - Bulge: 证据xxx
     - 旋臂: 证据xxx
-  - 不确定是否存在，待确认
-    - Bar: 原因xxx
+    - 伴星1：坐标
+    - 伴星2：坐标
+  - 不确定是否存在，
+    - Bar
 - Round 1.a : Disk + Bar
   - 成分分析要点：
     - component_analysis分析摘要：xxx
@@ -124,7 +131,7 @@ G) galaxy.cons      # Parameter constraint file (empty string)
     - 拟合后成分类型与关键参数（位置、星等、尺寸、形状参数等）xxxx, 
     - 【这部分必须有】距离预期目标的偏差
     - 拟合统计指标（如 reduced chi-square, BIC/AIC 等
-
+</example>
 
 # 最优轮次锁定的标准
 - 成分条件：图像与残差观测得到已经认证的成分，已经全部添加。

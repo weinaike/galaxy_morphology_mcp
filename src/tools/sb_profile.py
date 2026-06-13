@@ -37,9 +37,99 @@ def parse_photometry_params(param_file: str) -> tuple[float, float]:
         pass
     return zeropoint, pltscale
 
+def determine_center(image, mask=None):
+    """确定拟合中心
 
-def fit_data_isophotes(image_data, x_center, y_center,
-                       pa_deg=None, eps=None, sma_max=None, mask=None, auto_sky=True):
+    1. 计算正像素的 flux-weighted centroid
+    2. 若偏离图像中心 > CENTER_OFFSET_MAX, 则使用图像中心
+    """
+    ny, nx = image.shape
+    img_cx, img_cy = (nx - 1) / 2.0, (ny - 1) / 2.0
+
+    positive = image > 0
+    if mask is not None:
+        positive &= ~mask
+
+    if not np.any(positive):
+        return img_cx, img_cy
+
+    values = np.where(positive, image, 0)
+    total = values.sum()
+    if total <= 0:
+        return img_cx, img_cy
+
+    yy, xx = np.indices(image.shape)
+    cx = (xx * values).sum() / total
+    cy = (yy * values).sum() / total
+
+    offset = np.sqrt((cx - img_cx)**2 + (cy - img_cy)**2)
+    if offset > 3: #CENTER_OFFSET_MAX
+        return img_cx, img_cy
+    return cx, cy
+def get_initial_params(image, mask=None):
+    """从图像获取初始拟合参数 (无 segmentation map 时的通用方法)"""
+    ny, nx = image.shape
+
+    # Get center 10x10 region coordinates
+    half_size = 5  # 10x10 = ±5 pixels from center
+    y_start = max(0, ny // 2 - half_size)
+    y_end = min(ny, ny // 2 + half_size + 1)
+    x_start = max(0, nx // 2 - half_size)
+    x_end = min(nx, nx // 2 + half_size + 1)
+
+    # Extract central region
+    central_region = image[y_start:y_end, x_start:x_end]
+
+    # Find peak in central region
+    if mask is not None and np.any(mask > 0):
+        masked = image.copy()
+        masked[mask > 0] = -np.inf
+        central_masked = masked[y_start:y_end, x_start:x_end]
+        peak_local_y, peak_local_x = np.unravel_index(np.argmax(central_masked), central_masked.shape)
+    else:
+        peak_local_y, peak_local_x = np.unravel_index(np.argmax(central_region), central_region.shape)
+
+    # Convert to full image coordinates
+    peak_y = y_start + peak_local_y
+    peak_x = x_start + peak_local_x
+    cx, cy = float(peak_x), float(peak_y)
+    # cx, cy = determine_center(image)
+
+    # 用二阶矩估计 ellipticity 和 PA
+    positive = image > 0
+    if mask is not None:
+        positive &= ~mask
+
+    if np.sum(positive) < 10:
+        return cx, cy, 0.2, 0.0, max(3, min(nx, ny) // 6)
+
+    values = np.where(positive, image, 0)
+    total = values.sum()
+    if total <= 0:
+        return cx, cy, 0.2, 0.0, max(3, min(nx, ny) // 6)
+
+    yy, xx = np.indices(image.shape)
+    dx = xx - cx
+    dy = yy - cy
+    w = values / total
+
+    x2 = np.sum(w * dx * dx)
+    y2 = np.sum(w * dy * dy)
+    xy = np.sum(w * dx * dy)
+
+    # 主轴方向
+    theta = 0.5 * np.arctan2(2 * xy, x2 - y2)
+    # 椭率
+    Ixx = x2 * np.cos(theta)**2 + 2 * xy * np.cos(theta) * np.sin(theta) + y2 * np.sin(theta)**2
+    Iyy = x2 * np.sin(theta)**2 - 2 * xy * np.cos(theta) * np.sin(theta) + y2 * np.cos(theta)**2
+    eps = 1.0 - np.sqrt(Iyy / max(Ixx, 1e-30))
+    eps = np.clip(eps, 0.01, 0.9)
+
+    # 起始 sma: 基于二阶矩尺度
+    sma0 = max(3, int(round(np.sqrt(Ixx) * 0.5)))
+
+    return cx, cy, eps, theta, sma0
+def fit_data_isophotes(image_data, sma_max=None, mask=None, auto_sky=True):
     """Fit isophotes with fixed center (peak pixel), 2-step approach.
 
     Step 1: Fixed center, free PA/eps, large maxsma -> find outer boundary + derive PA
@@ -52,48 +142,13 @@ def fit_data_isophotes(image_data, x_center, y_center,
 
     dim = min(image_data.shape)
 
-    # Get center 10x10 region coordinates
-    h, w = image_data.shape
-    half_size = 5  # 10x10 = ±5 pixels from center
-    y_start = max(0, h // 2 - half_size)
-    y_end = min(h, h // 2 + half_size + 1)
-    x_start = max(0, w // 2 - half_size)
-    x_end = min(w, w // 2 + half_size + 1)
-
-    # Extract central region
-    central_region = image_data[y_start:y_end, x_start:x_end]
-
-    # Find peak in central region
-    if mask is not None and np.any(mask > 0):
-        masked = image_data.copy()
-        masked[mask > 0] = -np.inf
-        central_masked = masked[y_start:y_end, x_start:x_end]
-        peak_local_y, peak_local_x = np.unravel_index(np.argmax(central_masked), central_masked.shape)
-    else:
-        peak_local_y, peak_local_x = np.unravel_index(np.argmax(central_region), central_region.shape)
-
-    # Convert to full image coordinates
-    peak_y = y_start + peak_local_y
-    peak_x = x_start + peak_local_x
-    cx, cy = float(peak_x), float(peak_y)
-
     if mask is not None and np.any(mask > 0):
         image_data = np.ma.MaskedArray(image_data, mask=mask > 0)
-
-    # ---- Initial geometry from image second moments ----
-    img_pos = np.maximum(image_data, 0)
-    if hasattr(img_pos, 'filled'):
-        img_pos = img_pos.filled(0)
-    total = np.sum(img_pos)
-    if total > 0:
-        y_grid, x_grid = np.indices(image_data.shape)
-        x2 = np.sum((x_grid - cx)**2 * img_pos) / total
-        y2 = np.sum((y_grid - cy)**2 * img_pos) / total
-        xy = np.sum((x_grid - cx) * (y_grid - cy) * img_pos) / total
-        e0 = 0.2
-        pa0 = 0.5 * np.arctan2(2 * xy, x2 - y2)
-    else:
-        e0, pa0 = 0.2, 0.0
+    
+    cx,cy,e0,pa0,sma0_base = get_initial_params(image_data)
+    # print(cx, cy, e0, pa0, sma0_base)
+    # ---- sma0 retry list ----
+    sma0_list = sorted(set(min(s, dim//2 - 2) for s in [3,5,10,20,sma0_base, sma0_base + 5, sma0_base + 10]))
 
     # ---- Edge noise for outer boundary ----
     edge = max(3, int(dim * 0.1))
@@ -107,19 +162,15 @@ def fit_data_isophotes(image_data, x_center, y_center,
     _, bg_median, bg_std = sigma_clipped_stats(edge_pixels, sigma=3.0) if len(edge_pixels) > 10 else (0, 0.0, 1.0)
     intensity_threshold = bg_std * 1.0
 
-    maxsma = sma_max or (dim / 2 * 0.9)
-
-    # ---- sma0 retry list ----
-    sma0_list = sorted(set(min(s, dim//2 - 2) for s in [3, 5, 10]))
+    maxsma = sma_max or (dim / 2 * 1.35)
 
     # ---- Step 1: fixed center, free PA/eps, large maxsma ----
     iso_step1 = None
     maxsma_bounded = None
-
     for sma0 in sma0_list:
         try:
             geometry = EllipseGeometry(
-                x0=int(round(cx)), y0=int(round(cy)),
+                x0=round(cx), y0=round(cy),
                 sma=sma0, eps=e0, pa=pa0
             )
             ellipse = Ellipse(image_data, geometry=geometry)
@@ -171,6 +222,7 @@ def fit_data_isophotes(image_data, x_center, y_center,
     iso_best = None
 
     for sma0 in sma0_list:
+        print("  Testing sma0:", sma0)
         try:
             geometry2 = EllipseGeometry(
                 x0=int(round(cx)), y0=int(round(cy)),
@@ -186,6 +238,9 @@ def fit_data_isophotes(image_data, x_center, y_center,
                 break
         except Exception:
             continue
+
+    print("Best isophote found:", iso_best.sma)
+    print("success")
     if auto_sky:
         return iso_best, sky_value if iso_best is not None else (iso_step1, sky_value)
     else:
@@ -281,10 +336,10 @@ def render_sb_profile(ax_main, ax_resid, original_data, sigma_data, model_data,
     sma_max = min(original_data.shape) * 0.45
     sky_value = 0
     if auto_sky:
-        isolist,sky_value = fit_data_isophotes(original_data, 0, 0,
+        isolist,sky_value = fit_data_isophotes(original_data,
                                   sma_max=sma_max, mask=mask, auto_sky=auto_sky)
     else:
-        isolist = fit_data_isophotes(original_data, 0, 0,
+        isolist = fit_data_isophotes(original_data,
                                   sma_max=sma_max, mask=mask, auto_sky=auto_sky)
     if isolist is None or len(isolist) == 0:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (isophote fitting failed)',

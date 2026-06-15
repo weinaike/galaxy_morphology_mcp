@@ -36,7 +36,8 @@ class DataGenPipeline:
                          use_param_check: bool = False,
                          vlm_proposal_num_calls: int = 4,
                          use_expert_hint_for_vlm: bool = False,
-                         use_history_for_vlm: bool = False):
+                         use_history_for_vlm: bool = False,
+                         history_max_steps: int = 0):
         """
         处理单个星系，并返回该星系的局部统计报告。
         """
@@ -211,6 +212,10 @@ class DataGenPipeline:
                 chain.append(cur)
                 cur = by_id.get(cur.get("parent_id"))
             chain.reverse()
+
+            # 只取最近 history_max_steps 步（0=全部），控制 prompt 长度
+            if history_max_steps and history_max_steps > 0:
+                chain = chain[-history_max_steps:]
 
             lines = []
             for n in chain:

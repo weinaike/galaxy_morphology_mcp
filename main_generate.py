@@ -20,6 +20,7 @@ USE_PARAM_CHECK = True  # 参数合理性审查（仅 USE_LLM_REWARD=True 时生
 VLM_PROPOSAL_NUM_CALLS = 4  # VLM 提议并发调用次数（仅 vlm_generated 策略生效）
 USE_EXPERT_HINT_FOR_VLM = True  # 是否用 Gadotti_params.json 引导 VLM 提议（仅 vlm_generated 策略生效）
 USE_HISTORY_FOR_VLM = True  # 是否把历史轮次摘要(父链路:采纳动作/指标/同层被拒)注入 VLM 提议 prompt（仅 vlm_generated）
+VLM_HISTORY_MAX_STEPS = 0  # 历史轮次最多取最近多少步（0=全部，N=只取最近 N 步，控制 prompt 长度）
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
@@ -33,7 +34,7 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 GADOTTI_ROOT = os.path.join(PROJECT_ROOT, "gadotti_data")
 OUTPUT_ROOT = os.path.join(PROJECT_ROOT, "output")
 
-load_dotenv()
+load_dotenv(override=True)  # .env 优先：覆盖 shell 里可能残留的旧 OPENAI_API_KEY
 
 async def main():
     print(f"🔍 正在启动多波段扫描任务，目标波段: {TARGET_BANDS}")
@@ -151,6 +152,7 @@ async def main():
             vlm_proposal_num_calls=VLM_PROPOSAL_NUM_CALLS if PROPOSAL_STRATEGY == "vlm_generated" else 4,
             use_expert_hint_for_vlm=USE_EXPERT_HINT_FOR_VLM if PROPOSAL_STRATEGY == "vlm_generated" else False,
             use_history_for_vlm=USE_HISTORY_FOR_VLM if PROPOSAL_STRATEGY == "vlm_generated" else False,
+            history_max_steps=VLM_HISTORY_MAX_STEPS,
         )
         
         if not gal_report.get("success", False):

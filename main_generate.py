@@ -37,7 +37,29 @@ OUTPUT_ROOT = os.path.join(PROJECT_ROOT, "output")
 load_dotenv(override=True)  # .env 优先：覆盖 shell 里可能残留的旧 OPENAI_API_KEY
 
 async def main():
-    print(f"🔍 正在启动多波段扫描任务，目标波段: {TARGET_BANDS}")
+    # ==========================================
+    # 📋 配置参数打印(日志开头一次性记录,便于复盘)
+    # ==========================================
+    print("=" * 70)
+    print("📋 [本次运行配置]")
+    print("=" * 70)
+    print(f"  TEST_MODE                 = {TEST_MODE}")
+    print(f"  PROPOSAL_STRATEGY         = {PROPOSAL_STRATEGY}")
+    print(f"  TARGET_BANDS              = {TARGET_BANDS}")
+    print(f"  USE_LLM_REWARD            = {USE_LLM_REWARD}")
+    print(f"  USE_PARAM_CHECK           = {USE_PARAM_CHECK}")
+    print(f"  VLM_REWARD_MODEL_NAME     = {VLM_REWARD_MODEL_NAME}")
+    print(f"  VLM_PROPOSAL_MODEL_NAME   = {VLM_PROPOSAL_MODEL_NAME}")
+    print(f"  VLM_PROPOSAL_NUM_CALLS    = {VLM_PROPOSAL_NUM_CALLS}")
+    print(f"  USE_EXPERT_HINT_FOR_VLM   = {USE_EXPERT_HINT_FOR_VLM}")
+    print(f"  USE_HISTORY_FOR_VLM       = {USE_HISTORY_FOR_VLM}")
+    print(f"  VLM_HISTORY_MAX_STEPS     = {VLM_HISTORY_MAX_STEPS} (0=全部)")
+    print(f"  PROJECT_ROOT              = {PROJECT_ROOT}")
+    print(f"  GADOTTI_ROOT              = {GADOTTI_ROOT}")
+    print(f"  OUTPUT_ROOT               = {OUTPUT_ROOT}")
+    print("=" * 70)
+
+    print(f"\n🔍 正在启动多波段扫描任务，目标波段: {TARGET_BANDS}")
     
     # 🚀 自动遍历收集所有波段的数据
     all_train_set = []
@@ -90,13 +112,15 @@ async def main():
     # 控制跑测试集还是全量集
     if TEST_MODE:
         # 测试模式下，我们从收集到的全集中切片跑前几个
-        target_galaxies = all_train_set[:20] 
+        target_galaxies = all_train_set[:20]
         max_steps = 6 # 8
         num_variants = 16 # 16
     else:
-        target_galaxies = all_train_set  
-        max_steps = 10               
-        num_variants = 16            
+        target_galaxies = all_train_set
+        max_steps = 10
+        num_variants = 16
+
+    print(f"  → 本次跑 {len(target_galaxies)} 个星系 | max_steps={max_steps} | num_variants={num_variants} | strategy_folder={strategy_folder}\n")
 
     # ==========================================
     # 🚀 全局总账本 (Map-Reduce 核心 + 留存高级 Token 统计)

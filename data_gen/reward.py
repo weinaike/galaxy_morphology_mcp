@@ -832,7 +832,7 @@ def calculate_reward_model(
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = None,
     temperature: float = 0.1,
-    max_tokens: int = 2048,
+    max_tokens: int = 4096,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
 ):
@@ -1096,7 +1096,7 @@ def calculate_reward_model_with_param(
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = None,
     temperature: float = 0.1,
-    max_tokens: int = 2560,
+    max_tokens: int = 4096,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
 ):
@@ -1688,7 +1688,7 @@ def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: i
                     r_total = 1  # 大模型说好，直接给高分
                 else:
                     r_total = -1  # 大模型说不好，直接扣分
-                print(f"    [VLM] 评判残差图 结果: {vlm_result}")
+                print(f"    [{mode_label}] 评判结果: {vlm_result}")
 
                 # Mode 3 额外日志：参数审查结果
                 if mode_label == "VLM+PARAM":

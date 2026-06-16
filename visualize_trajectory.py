@@ -108,6 +108,32 @@ def read_summary_text(summary_path: str) -> str:
         return f"(读取失败: {e})"
 
 
+def read_feedme_text(feedme_path: str) -> str:
+    """读取 feedme 内容"""
+    if not feedme_path or not os.path.exists(feedme_path):
+        return "(feedme 文件不存在)"
+    try:
+        with open(feedme_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        return f"(读取失败: {e})"
+
+
+def load_gadotti_params(init_feedme_path: str) -> dict:
+    """Gadotti_params.json 与原始 init_feedme 同目录。找不到返回 None。"""
+    if not init_feedme_path:
+        return None
+    source_dir = os.path.dirname(os.path.abspath(init_feedme_path))
+    json_path = os.path.join(source_dir, "Gadotti_params.json")
+    if not os.path.exists(json_path):
+        return None
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            return {"path": json_path, "data": json.load(f)}
+    except Exception as e:
+        return {"path": json_path, "data": None, "error": str(e)}
+
+
 def guess_comparison_png(node: dict) -> str:
     """从 residual_path (cutoff) 推断全图 comparison.png 路径"""
     rp = node.get("residual_path", "")
@@ -148,6 +174,23 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
     accepted_nodes = sum(1 for n in trajectory.get("nodes", []) if n.get("is_accepted"))
     rejected_nodes = total_nodes - accepted_nodes
 
+    # 加载 Gadotti 专家真值(与 init_feedme 同目录)
+    gadotti = load_gadotti_params(trajectory.get("init_feedme", ""))
+    if gadotti is not None:
+        if gadotti.get("data") is not None:
+            gad_pretty = json.dumps(gadotti["data"], indent=2, ensure_ascii=False)
+            gad_pretty_escaped = gad_pretty.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            gadotti_html = f'''
+    <details class="gadotti-block" open>
+        <summary>🎯 专家真值 (Gadotti_params.json) — <code>{gadotti["path"]}</code></summary>
+        <pre class="summary-pre">{gad_pretty_escaped}</pre>
+    </details>
+    '''
+        else:
+            gadotti_html = f'<div class="gadotti-block">⚠️ Gadotti_params.json 读取失败 ({gadotti.get("error","")}): {gadotti["path"]}</div>'
+    else:
+        gadotti_html = '<div class="gadotti-block" style="color:#888">ℹ️ 该星系无 Gadotti_params.json (init_feedme 同目录未找到)</div>'
+
     chain_html_blocks = []
     available_metric_keys = set()
     for n in trajectory.get("nodes", []):
@@ -177,6 +220,7 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
             cutoff_b64 = image_to_base64(cutoff_path)
             full_b64 = image_to_base64(full_path)
             summary_text = read_summary_text(summary_path)
+            feedme_text = read_feedme_text(node.get("feedme_path", ""))
 
             delta_html = ""
             if delta_r is not None:
@@ -192,6 +236,7 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
             full_img = f'<img src="{full_b64}" class="node-img-full" onclick="openModal(this.src)" title="Full comparison">' if full_b64 else '<div class="img-placeholder">Comparison 图不存在</div>'
 
             summary_escaped = summary_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            feedme_escaped = feedme_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
             step_html = f'''
             <div class="step-card" id="chain{ci}_step{si}">
@@ -221,6 +266,10 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
                     <details class="summary-details">
                         <summary>📄 Summary Markdown</summary>
                         <pre class="summary-pre">{summary_escaped}</pre>
+                    </details>
+                    <details class="summary-details">
+                        <summary>📐 Feedme</summary>
+                        <pre class="summary-pre">{feedme_escaped}</pre>
                     </details>
                 </div>
             </div>
@@ -284,6 +333,24 @@ h1 {{ color: #ffd700; margin-bottom: 10px; }}
 }}
 .stat-item {{ font-size: 15px; }}
 .stat-item b {{ color: #ffd700; }}
+.gadotti-block {{
+    background: #1a1a3e;
+    border: 1px solid #ffd700;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+}}
+.gadotti-block > summary {{
+    cursor: pointer;
+    color: #ffd700;
+    font-weight: bold;
+    font-size: 15px;
+}}
+.gadotti-block code {{
+    color: #aaa;
+    font-size: 12px;
+    font-weight: normal;
+}}
 .chain-block {{
     background: #1a1a3e;
     border: 1px solid #444;
@@ -425,6 +492,8 @@ h1 {{ color: #ffd700; margin-bottom: 10px; }}
     <div class="stat-item"><b>来源:</b> {os.path.basename(json_path)}</div>
     <div class="stat-item" style="color:#aaa"><b>可用 metric 字段:</b> {", ".join(sorted(available_metric_keys)) or "(无)"}</div>
 </div>
+
+{gadotti_html}
 
 {"".join(chain_html_blocks)}
 

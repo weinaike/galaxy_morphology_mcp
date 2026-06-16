@@ -241,7 +241,7 @@ def get_openAI_response_two_images(
     prev_image_path: str,
     next_image_path: str,
     temperature: float = 0.1,
-    max_tokens: int = 2048,
+    max_tokens: int = 4096,
     timeout: int = 300,
     url: str = "https://api.road2all.com/v1/chat/completions",
     max_retries: int = 3,
@@ -364,7 +364,7 @@ def get_openAI_response_one_image(
     prompt: str,
     image_path: str,
     temperature: float = 0.1,
-    max_tokens: int = 2048,
+    max_tokens: int = 4096,
     timeout: int = 300,
     url: str = "https://api.road2all.com/v1/chat/completions",
     max_retries: int = 3,
@@ -483,7 +483,7 @@ def is_good_fit(
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = None,
     temperature: float = 0.1,
-    max_tokens: int = 1024,
+    max_tokens: int = 2048,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
     max_retries: int = 3,
@@ -832,7 +832,7 @@ def calculate_reward_model(
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = None,
     temperature: float = 0.1,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
 ):
@@ -1096,7 +1096,7 @@ def calculate_reward_model_with_param(
     model_name: str = "gemini-3.1-pro-preview",
     api_key: str = None,
     temperature: float = 0.1,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
 ):
@@ -1156,56 +1156,44 @@ def calculate_reward_model_with_param(
     else:
         new_summary_content = "(下一步参数摘要不可用)"
 
-    prompt = """
+    prompt_new = """
 You are an astronomer experienced in GALFIT galaxy component decomposition.
 
-You will be given exactly two images in order.
+You will be given exactly two images in order:
 
-The first attached image is Image 1: previous-step fitting result.
-The second attached image is Image 2: next-step fitting result.
+* Image 1: previous-step fitting result.
+* Image 2: next-step fitting result.
 
-Each image may be:
-
-* a residual-only image, or
-* a full GALFIT comparison figure with multiple panels.
-
+Each image may be a residual-only image or a full GALFIT comparison figure.
 If multiple panels are present, focus primarily on the residual panel, usually titled "Residual/σ", "Residual", "data-model", or similar.
-Ignore the observed data panel, fitted model panel, surface-brightness profile panel, and blank diagnostic panels unless they are needed only to check image-summary correspondence.
+Ignore the observed data panel, fitted model panel, surface-brightness profile panel, and blank diagnostic panels unless needed only to check image-summary correspondence.
 
-Your task is to determine whether Image 2 represents a valid improvement over Image 1 as a GALFIT decomposition result.
-
+Your task is to determine whether Image 2 is a valid improvement over Image 1.
 This is a relative step-by-step comparison, not a final good-fit judgement.
-Image 2 does NOT need to be a good final fit.
-It only needs to show a meaningful improvement relative to Image 1, while keeping the fitted parameters physically plausible and the fitting metrics statistically reasonable.
+Image 2 does not need to be a final good fit.
+
+The final decision must consider:
+
+1. residual image change;
+2. physical plausibility of the next-step parameters;
+3. statistical reasonability of chisq, chisq/nu, and BIC;
+4. image-summary consistency;
+5. severe residual or fitting warnings.
 
 ========================================
 Input Pairing
 =============
 
-The two images and the two fitting summaries must be interpreted as paired inputs:
+Image 1 corresponds only to the previous-step fitting summary.
+Image 2 corresponds only to the next-step fitting summary.
 
-* Image 1 corresponds only to the previous-step fitting summary.
-* Image 2 corresponds only to the next-step fitting summary.
-* Do not use parameters, warnings, or component descriptions from the previous-step summary to interpret Image 2.
-* Do not use parameters, warnings, or component descriptions from the next-step summary to interpret Image 1.
+Do not use parameters or warnings from one summary to interpret the other image.
 
 Before comparing the two results, internally check whether each image appears broadly consistent with its corresponding summary.
+If the image-summary correspondence is too uncertain to support a reliable comparison, set:
 
-Consider:
-
-* component types;
-* obvious morphology;
-* residual features;
-* convergence warnings;
-* fitting problems mentioned in the summary;
-* whether the image appears to be the correct GALFIT result for that summary.
-
-If one image-summary pair appears internally inconsistent, lower confidence and mention the issue in the reason.
-If the correspondence is too uncertain to support a reliable comparison, set improvement = 0.
-
-========================================
-Fitting Summaries
-=================
+improvement = 0
+image_text_consistent = false
 
 Previous-step fitting summary for Image 1:
 
@@ -1216,205 +1204,77 @@ Next-step fitting summary for Image 2:
 """ + new_summary_content + """
 
 ========================================
-Evaluation Procedure
-====================
-
-Before making the final decision, internally evaluate the following three dimensions:
-
-Q: Residual Quality
-
-* Does Image 2 reduce galaxy-related residual structures compared with Image 1?
-* Are the remaining residuals weaker, smaller, less coherent, or more background-like?
-
-C: Physical Consistency
-
-* Are the next-step parameters physically meaningful?
-* Are component centers, sizes, axis ratios, magnitudes, and Sérsic indices reasonable?
-* Does the component hierarchy make sense for the galaxy morphology?
-* Are there signs of redundancy, parameter degeneracy, or parameter runaway?
-
-M: Metric Reasonability
-
-* Do chisq and chisq/nu support the claimed visual improvement?
-* Are there convergence warnings, large uncertainties, or suspicious metric changes?
-* Does the metric change suggest real improvement rather than overfitting?
-
-Do not output Q, C, and M as separate fields.
-Use them internally to make the final decision.
-
-========================================
 Part 1: Residual Image Comparison
 =================================
 
-Compare the residual quality of Image 2 against Image 1.
+Compare only galaxy-related residual structures.
+
+Focus on:
+
+* central positive or negative residuals;
+* dipole-like red/blue residuals;
+* compact clumps near the galaxy center;
+* ring, spiral, bar, lens-like, or asymmetric structures;
+* coherent large-scale residual patterns.
+
+Ignore unchanged features likely unrelated to the target galaxy, such as masked regions, foreground stars, isolated artifacts far from the galaxy center, or unchanged random background noise.
+
+Set improvement_level as one of:
+
+* "clear_improvement": obvious reduction of galaxy-related residual structures;
+* "slight_improvement": small but visible reduction of central or structured residuals;
+* "no_improvement": no meaningful visual change;
+* "worse": residual structures become stronger or new artifacts appear.
+
+Set residual_improved = true only for "clear_improvement" or "slight_improvement".
+Set residual_improved = false for "no_improvement" or "worse".
 
 Important:
-This is a relative comparison.
-Do not require Image 2 to look like white noise.
-A residual image can still be imperfect but improved.
+If Image 2 is visually identical or nearly identical to Image 1, set:
 
-When comparing residual quality, use the following priority order:
+residual_improved = false
+improvement_level = "no_improvement"
 
-1. Severe residual failures
-
-Strongly penalize residual images showing any of the following issues:
-
-* linear_gradient: strong large-scale background gradient;
-* chaotic_dark_patches: large irregular dark patches suggesting background or masking failure;
-* diffuse_fragments: widespread diffuse fragments not corresponding to meaningful galaxy components;
-* unmasked_artifact: strong contamination from unmasked stars, cosmic rays, bad pixels, or other artifacts.
-
-If Image 2 introduces a severe residual failure that is not present in Image 1, be conservative and set residual_improved = false unless the failure is clearly unrelated to the target galaxy and the galaxy-related residual improvement is very clear.
-
-2. Obvious unmodeled primary galaxy components
-
-Strongly penalize Image 2 if it clearly retains or introduces major galaxy-related residual structures that should have been modeled, including:
-
-* obvious central bulge residual;
-* obvious disk residual;
-* obvious bar residual;
-* unresolved nuclear or PSF-like residual;
-* strong central positive/negative residual;
-* strong dipole-like red/blue residual pattern.
-
-3. Other coherent residual structures
-
-Compare coherent non-random structures, including:
-
-* closed ring-like structures;
-* clumpy irregular structures;
-* off-center clumps;
-* asymmetric large-scale residuals;
-* spiral, bar, or lens-like residuals;
-* compact red/blue clumps near the galaxy center.
-
-Prefer Image 2 if these structures become fewer, weaker, smaller, less coherent, or less extended.
-
-4. Spiral residuals
-
-Spiral-arm residuals may be given lower priority unless the fitting mode explicitly requires modeling spiral arms.
-Do not reward Image 2 merely because it suppresses spiral arms if doing so requires unnecessary or physically implausible components.
-
-5. Background-like residuals
-
-Only after the checks above, compare whether the residual background becomes more spatially uniform, lower amplitude, and closer to random background noise.
-
-Residual improvement criteria:
-
-Set residual_improved = true if Image 2 shows meaningful galaxy-related improvement compared with Image 1, including:
-
-* central residuals become weaker, smaller, or less saturated;
-* dipole-like red/blue structures are reduced;
-* compact clumps near the galaxy center are reduced;
-* coherent residual structures become less extended or less organized;
-* the galaxy center becomes cleaner;
-* the improvement is local but clearly related to the target galaxy.
-
-Set residual_improved = false if:
-
-* Image 2 is visually identical or nearly identical to Image 1;
-* differences are only random noise fluctuations;
-* the main central or galaxy-related residual structure remains equally strong;
-* new structured residuals appear;
-* severe background or artifact failures are introduced;
-* Image 2 is worse;
-* the comparison is too ambiguous.
-
-Use the following residual improvement scale:
-
-* clear_improvement: obvious reduction of galaxy-related residual structures;
-* slight_improvement: small but visible reduction of central or structured residuals;
-* no_improvement: no meaningful change;
-* worse: residual structures become stronger or new artifacts appear.
-
-For residual comparison only:
-
-* clear_improvement -> residual_improved = true
-* slight_improvement -> residual_improved = true
-* no_improvement or worse -> residual_improved = false
+However, this does not automatically mean improvement = 0.
+If the residual is visually unchanged but Image 2 is not worse, the final decision may still be improvement = 1 if the metrics clearly improve and the parameters remain physically plausible.
 
 ========================================
 Part 2: Hard Warning Check
 ==========================
 
-Check whether the next-step result has any Hard Warning.
+Check whether Image 2 has any severe warning.
 
 Hard Warning tags are:
 
-* fit_not_converged: the summary indicates that the fit did not converge.
-* linear_gradient: Image 2 residual shows a strong large-scale linear background gradient.
-* chaotic_dark_patches: Image 2 residual contains large irregular dark patches.
-* diffuse_fragments: Image 2 residual contains widespread diffuse fragments unrelated to meaningful galaxy structure.
-* unmasked_artifact: Image 2 residual is dominated by unmasked stars, cosmic rays, bad pixels, saturated sources, or other artifacts.
+* "fit_not_converged": the summary indicates that the fit did not converge.
+* "linear_gradient": Image 2 residual shows a strong large-scale linear background gradient.
+* "chaotic_dark_patches": Image 2 residual contains large irregular dark patches.
+* "diffuse_fragments": Image 2 residual contains widespread diffuse fragments unrelated to meaningful galaxy structure.
+* "unmasked_artifact": Image 2 residual is dominated by unmasked stars, cosmic rays, bad pixels, saturated sources, or other artifacts.
 
-If Image 2 has any severe Hard Warning, set improvement = 0.
-
-If Image 2 has a mild Hard Warning but also shows clear galaxy-related residual improvement, evaluate conservatively:
-
-* accept improvement only if parameters remain physically plausible;
-* accept improvement only if chisq and chisq/nu do not contradict the improvement;
-* otherwise set improvement = 0.
-
-Record all Hard Warning tags for Image 2 in the hard_warnings list.
+If Image 2 has a severe Hard Warning, set improvement = 0.
+Record all warning tags in hard_warnings.
 If there are no Hard Warnings, use an empty list.
 
 ========================================
-Part 3: Parameter and Physical Consistency
-==========================================
+Part 3: Parameter Plausibility
+==============================
 
 Evaluate whether the next-step parameters are physically plausible and whether the parameter changes from Image 1 to Image 2 are reasonable.
 
-Check the following aspects:
+Set param_plausible = false if there are serious issues such as:
 
-1. Parameter boundary check
+* Sérsic index n < 0.1 or n > 8, unless physically justified, such as BCG/cD galaxies;
+* effective radius Re < 0.2 pixel;
+* effective radius Re unreasonably large, approaching the image size;
+* axis ratio q < 0.05 or q > 1.0;
+* large center offsets between components that should be co-centered;
+* implausible size hierarchy, such as an unreasonable bulge/disk/bar relation;
+* redundant or nearly duplicated components;
+* negligible-flux components, for example mag difference > 5 from major components;
+* parameter runaway, severe degeneracy, or unstable parameters;
+* more components without residual or metric support.
 
-* Is any Sérsic index n outside the normal range [0.1, 8]?
-  Values n > 8 or n < 0.1 may suggest parameter runaway.
-  Exception: BCGs or cD galaxies may have n up to approximately 20; pseudobulges can have n < 1.
-
-* Is any effective radius Re < 0.2 pixel?
-  This is usually unphysical and may indicate that the component should be replaced with a PSF model.
-
-* Is any effective radius Re unreasonably large, for example approaching the image size?
-  This may indicate parameter runaway.
-
-* Is any axis ratio q < 0.05 or q > 1.0?
-  These values are physically suspicious or invalid.
-
-* Did any parameter become much more extreme from Image 1 to Image 2 without a clear residual benefit?
-
-2. Component consistency check
-
-* Are the centers of co-centric components reasonably close?
-* Does a large offset between bulge, disk, bar, or PSF components suggest that the model is fitting different sources?
-* Is the size hierarchy plausible for the galaxy morphology?
-  For disk galaxies, a typical hierarchy is:
-  Re_disk > Re_bar > Re_bulge.
-* Did the next step introduce a component that appears redundant, unnecessary, or physically unjustified?
-
-3. Overfitting and redundancy check
-
-Do not reward the next-step result merely because it uses more components.
-
-Additional components should be considered justified only if:
-
-* they correspond to visible galaxy morphology;
-* they reduce a coherent galaxy-related residual structure;
-* their parameters are physically plausible;
-* they do not duplicate existing components.
-
-Watch for:
-
-* negligible components, for example mag difference > 5 compared with major components;
-* components with nearly identical parameters;
-* duplicated Sérsic components without clear morphological meaning;
-* slight residual improvement accompanied by more extreme parameters;
-* component number increase without clear support from residuals or metrics;
-* large uncertainties or unstable parameters.
-
-If the next step improves the residual only slightly but introduces suspicious components, parameter degeneracy, negligible flux, center misalignment, or implausible size hierarchy, treat this as likely overfitting and set improvement = 0.
-
-Set param_plausible = false if there are serious physical or parameter issues.
 Set param_plausible = true only if the next-step parameters are physically reasonable and do not show suspicious degradation from the previous step.
 
 Record specific issues in param_issues.
@@ -1424,27 +1284,64 @@ If there are no parameter issues, use an empty list.
 Part 4: Metric Reasonability
 ============================
 
-Compare chisq and chisq/nu between the previous-step and next-step summaries.
+Compare chisq, chisq/nu, and BIC between the previous-step and next-step summaries.
 
 Rules:
 
-* Both chisq and chisq/nu are better when smaller.
-* chisq measures the overall residual mismatch.
-* chisq/nu is important because it normalizes by degrees of freedom and partially reflects overfitting risk.
-* If both chisq and chisq/nu decrease, this supports a real improvement, provided the parameters remain physically plausible.
-* If chisq decreases but chisq/nu increases, this may indicate that the apparent improvement is not robust.
-* If residual improvement is only slight but chisq/nu becomes worse, be conservative.
-* If residual improvement is only slight, chisq/nu becomes worse, and parameters become more extreme, treat this as likely overfitting and set improvement = 0.
-* If the residual visually improves clearly and parameters remain plausible, a small or ambiguous metric change may be tolerated.
-* If metrics are unavailable, do not automatically reject the improvement, but reduce confidence and explain that metric support is unavailable.
+* chisq is better when smaller.
+* chisq/nu is better when smaller.
+* BIC is better when smaller.
+* chisq measures total residual mismatch.
+* chisq/nu measures normalized fitting quality and should not become clearly worse.
+* BIC penalizes model complexity and is especially important when residual images are visually similar.
 
-Set metric_consistent = true if the metric changes support or do not contradict the claimed improvement.
-Set metric_consistent = false if chisq/nu becomes clearly worse, the fit does not converge, or the metric changes suggest overfitting.
+Metric interpretation:
+
+1. If residuals visually improve:
+
+   * Accept improvement if parameters are plausible and metrics do not clearly contradict it.
+   * A small or ambiguous metric change may be tolerated for clear visual improvement.
+
+2. If residuals are visually similar or nearly unchanged:
+
+   * Do not automatically set improvement = 0.
+   * BIC becomes especially important.
+   * If BIC clearly decreases and chisq/nu is unchanged or only mildly worse, this supports metric-driven improvement.
+   * If chisq/nu clearly decreases and BIC does not clearly worsen, this also supports metric-driven improvement.
+   * If chisq decreases only negligibly but BIC increases, the next-step model is not statistically preferred.
+   * If chisq/nu is almost unchanged and BIC increases, do not consider Image 2 better, especially if it uses more free parameters.
+
+3. If chisq/nu clearly worsens:
+
+   * Be conservative.
+   * Even if BIC decreases, do not accept the result as improvement = 1 when chisq/nu degradation is large.
+
+4. If BIC improves but parameters become suspicious:
+
+   * Do not accept the improvement.
+   * BIC improvement must not override unphysical parameters, parameter runaway, severe center offsets, redundancy, or obvious overfitting.
+
+Set metric_consistent = true if:
+
+* residuals visually improve and the metrics do not clearly contradict the improvement; or
+* residuals are visually similar, BIC clearly decreases, and chisq/nu does not clearly worsen; or
+* residuals are visually similar, chisq/nu decreases, and BIC does not clearly worsen.
+
+Set metric_consistent = false if:
+
+* chisq/nu clearly worsens, even if BIC decreases;
+* BIC clearly worsens without clear residual improvement;
+* the fit does not converge;
+* metric changes suggest overfitting or loss of fitting quality;
+* metric improvement is accompanied by suspicious or physically implausible parameters.
 
 Determine:
 
 * chisq_trend: "decreased", "increased", "unchanged", or "unavailable"
 * chisq_nu_trend: "decreased", "increased", "unchanged", or "unavailable"
+
+Do not add a new JSON field for BIC.
+If BIC is available, use it in the final decision and mention its trend in reason or metric_issues.
 
 Record specific metric issues in metric_issues.
 If there are no metric issues, use an empty list.
@@ -1453,40 +1350,55 @@ If there are no metric issues, use an empty list.
 Combined Decision Rule
 ======================
 
-Apply all criteria to make the final decision.
+There are two valid ways for Image 2 to be considered an improvement.
 
-Set improvement = 1 only if all of the following are true:
+A. Residual-driven improvement:
+
+Set improvement = 1 if all are true:
 
 * residual_improved = true;
 * param_plausible = true;
 * metric_consistent = true;
 * image_text_consistent = true;
 * Image 2 has no severe Hard Warning;
-* the improvement is not merely caused by overfitting or unnecessary components.
+* the improvement is not caused by overfitting or unnecessary components.
 
-Set improvement = 0 if any of the following are true:
+B. Metric-driven improvement when residuals are visually similar:
 
-* residual_improved = false;
-* Image 2 is visually identical or nearly identical to Image 1;
-* Image 2 is worse;
+Set improvement = 1 even if residual_improved = false only if all are true:
+
+* Image 2 is visually identical, nearly identical, or only marginally different from Image 1;
+* Image 2 is not visually worse than Image 1;
+* improvement_level = "no_improvement" or "slight_improvement";
+* param_plausible = true;
+* metric_consistent = true;
+* image_text_consistent = true;
+* Image 2 has no severe Hard Warning;
+* BIC clearly decreases while chisq/nu does not clearly worsen, or chisq/nu clearly decreases while BIC does not clearly worsen;
+* the metric improvement is not accompanied by suspicious components, unphysical parameters, parameter runaway, strong degeneracy, or obvious overfitting.
+
+Set improvement = 0 if any are true:
+
+* Image 2 is visually worse;
 * Image 2 introduces severe residual failures;
 * param_plausible = false;
 * metric_consistent = false;
 * image_text_consistent = false;
-* the improvement is too ambiguous;
-* the residual improvement is only slight but accompanied by worse chisq/nu, suspicious components, or extreme parameter changes.
+* the improvement is too ambiguous and not supported by either residual comparison or metrics;
+* residuals are visually unchanged and neither BIC nor chisq/nu improves;
+* residuals are visually unchanged, BIC improves, but chisq/nu clearly worsens;
+* residuals are visually unchanged, BIC increases, and chisq/nu is unchanged or only negligibly better;
+* residuals are visually unchanged, metrics improve, but the improvement is accompanied by suspicious components, unphysical parameters, parameter degeneracy, or likely overfitting;
+* residual improvement is only slight but accompanied by worse chisq/nu, worse BIC, suspicious components, or extreme parameter changes.
 
 Be conservative:
-A visually tiny improvement should not be accepted if it is accompanied by worse chisq/nu, suspicious components, unphysical parameters, image-summary mismatch, or Hard Warnings.
-
-However, do not require Image 2 to be a final good fit.
-If Image 2 clearly reduces galaxy-related residual structures, keeps physically plausible parameters, and has reasonable metrics, set improvement = 1 even if the residual image is still imperfect.
+A visually tiny or metric-only improvement should not be accepted if it is accompanied by worse chisq/nu, worse BIC, suspicious components, unphysical parameters, image-summary mismatch, or Hard Warnings.
 
 ========================================
 Output Format
 =============
 
-Output STRICTLY in JSON format.
+Output strictly in JSON format.
 Do not include Markdown.
 Do not include any text outside the JSON.
 
@@ -1505,31 +1417,31 @@ Required JSON format:
 "chisq_nu_trend": "decreased",
 "param_issues": [],
 "metric_issues": [],
-"reason": "Image 2 shows reduced central residuals. The image-summary correspondence is reliable. The next-step parameters remain physically plausible, no hard warnings are present, and both chisq and chisq/nu decrease compared with the previous step."
+"reason": "Image 2 shows reduced central residuals. The image-summary correspondence is reliable. The next-step parameters remain physically plausible, no hard warnings are present, and chisq / chisq_nu / BIC changes support the improvement."
 }
 
 Definitions:
 
-* improvement: integer, must be either 0 or 1. This is the final decision considering residual comparison, physical plausibility, metric consistency, image-text correspondence, and hard warnings.
-* improvement_level: one of ["clear_improvement", "slight_improvement", "no_improvement", "worse"]. This is based on residual comparison only.
+* improvement: integer, must be either 0 or 1. Final decision considering residual comparison, physical plausibility, metric consistency, image-summary consistency, and hard warnings. Improvement can be residual-driven or metric-driven.
+* improvement_level: one of ["clear_improvement", "slight_improvement", "no_improvement", "worse"]. Based on residual comparison only.
 * confidence: float between 0 and 1.
-* residual_improved: boolean. true if Image 2 is visually improved compared with Image 1 in galaxy-related residual structures.
-* param_plausible: boolean. true if the next-step parameters are physically reasonable and do not show suspicious degradation from the previous step.
-* metric_consistent: boolean. true if chisq and chisq/nu changes support or do not contradict the claimed improvement.
+* residual_improved: boolean. true only if Image 2 is visually improved in galaxy-related residual structures.
+* param_plausible: boolean. true if the next-step parameters are physically reasonable and do not show suspicious degradation.
+* metric_consistent: boolean. true if chisq, chisq/nu, and BIC changes support or do not contradict the claimed improvement. When residuals are visually similar, metric_consistent can be true if BIC clearly decreases and chisq/nu does not clearly worsen. It should be false if chisq/nu clearly worsens, even when BIC decreases.
 * image_text_consistent: boolean. true if both image-summary pairs appear broadly consistent.
 * hard_warnings: list of strings. Each string must be one of ["fit_not_converged", "linear_gradient", "chaotic_dark_patches", "diffuse_fragments", "unmasked_artifact"]. Empty list if none.
 * chisq_trend: one of ["decreased", "increased", "unchanged", "unavailable"].
 * chisq_nu_trend: one of ["decreased", "increased", "unchanged", "unavailable"].
-* param_issues: list of strings. Each string describes one specific parameter or physical issue found. Empty list if none.
-* metric_issues: list of strings. Each string describes one specific metric issue found. Empty list if none.
-* reason: concise explanation covering residual comparison, image-summary correspondence, parameter assessment, hard warnings, and chisq / chisq_nu comparison.
+* param_issues: list of strings. Each string describes one specific parameter or physical issue. Empty list if none.
+* metric_issues: list of strings. Each string describes one specific metric issue. Empty list if none.
+* reason: concise explanation covering residual comparison, parameter assessment, image-summary correspondence, hard warnings, and chisq / chisq_nu / BIC comparison.
   """
-
+  
 
     raw_response, usage = get_openAI_response_two_images(
         api_key=api_key,
         model_name=model_name,
-        prompt=prompt,
+        prompt=prompt_new,
         prev_image_path=prev_residual_image_path,
         next_image_path=next_residual_image_path,
         temperature=temperature,
@@ -1553,17 +1465,18 @@ Definitions:
 
     result = extract_json_from_text(raw_response)
 
-    image_text_consistent = bool(result.get("image_text_consistent", True))
-    hard_warnings = result.get("hard_warnings", [])
-    
+    # ===== 读取模型输出 =====
     improvement = int(result.get("improvement", 0))
     confidence = float(result.get("confidence", 0.0))
 
-    improvement_level = result.get("improvement_level", "no_improvement")
-    residual_improved = bool(result.get("residual_improved", improvement == 1))
+    residual_improvement_level = result.get("improvement_level", "no_improvement")
+    residual_improved = bool(result.get("residual_improved", False))
 
     param_plausible = bool(result.get("param_plausible", True))
     metric_consistent = bool(result.get("metric_consistent", True))
+    image_text_consistent = bool(result.get("image_text_consistent", True))
+
+    hard_warnings = result.get("hard_warnings", [])
 
     chisq_trend = result.get("chisq_trend", "unavailable")
     chisq_nu_trend = result.get("chisq_nu_trend", "unavailable")
@@ -1571,48 +1484,62 @@ Definitions:
     param_issues = result.get("param_issues", [])
     metric_issues = result.get("metric_issues", [])
 
+    # ===== 清洗 improvement =====
     if improvement not in [0, 1]:
         improvement = 0
 
-    # 记录模型原始判断
-    result["original_improvement"] = improvement
-
-    # 低置信度保护：只有高置信度的改善才算正样本
+    # ===== 后处理保护 =====
     if improvement == 1 and confidence < confidence_threshold:
         improvement = 0
         result["confidence_filter_applied"] = True
     else:
         result["confidence_filter_applied"] = False
 
-    # 参数不合理时强制置 0
     if improvement == 1 and not param_plausible:
         improvement = 0
         result["param_override_applied"] = True
     else:
         result["param_override_applied"] = False
 
-    # chisq / chisq_nu 指标不支持时强制置 0
     if improvement == 1 and not metric_consistent:
         improvement = 0
         result["metric_override_applied"] = True
     else:
         result["metric_override_applied"] = False
 
-    # 如果 residual 本身没有改善，也强制置 0
-    if improvement == 1 and not residual_improved:
+    if improvement == 1 and not image_text_consistent:
         improvement = 0
-        result["residual_override_applied"] = True
+        result["image_text_override_applied"] = True
     else:
-        result["residual_override_applied"] = False
+        result["image_text_override_applied"] = False
 
-    
-    result["final_improvement"] = improvement
-    result["final_improvement_level"] = improvement_level
+    if improvement == 1 and hard_warnings:
+        improvement = 0
+        result["hard_warning_override_applied"] = True
+    else:
+        result["hard_warning_override_applied"] = False
+
+    # 注意：residual_improved=False 不再强制置 0
+    result["residual_override_applied"] = False
+
+    # ===== 判断 improvement 来源 =====
+    if improvement == 1 and residual_improved:
+        improvement_source = "residual_driven"
+    elif improvement == 1 and not residual_improved:
+        improvement_source = "metric_driven"
+    else:
+        improvement_source = "none"
+
+    # ===== 统一最终输出字段 =====
+    result["improvement"] = improvement
+
+    # improvement_level 改成更明确的 residual_improvement_level
+    result.pop("improvement_level", None)
+    result["residual_improvement_level"] = residual_improvement_level
 
     result["residual_improved"] = residual_improved
     result["param_plausible"] = param_plausible
     result["metric_consistent"] = metric_consistent
-
     result["image_text_consistent"] = image_text_consistent
     result["hard_warnings"] = hard_warnings
 
@@ -1622,6 +1549,8 @@ Definitions:
     result["param_issues"] = param_issues
     result["metric_issues"] = metric_issues
 
+    result["improvement_source"] = improvement_source
+
     result["usage"] = usage
     result["original_prev_image_path"] = prev_residual_image_path
     result["original_next_image_path"] = next_residual_image_path
@@ -1629,6 +1558,7 @@ Definitions:
     result["new_summary_path_used"] = new_summary_path
 
     return result
+
 
 
 def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: int,

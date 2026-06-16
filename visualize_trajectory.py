@@ -25,7 +25,7 @@ def load_trajectory(json_path: str) -> dict:
 
 
 def build_children_map(nodes: list) -> dict:
-    """node_id -> list of child nodes"""
+    """node_id -> list of all child nodes (accepted + rejected)"""
     children = defaultdict(list)
     for n in nodes:
         pid = n.get("parent_id")
@@ -35,11 +35,19 @@ def build_children_map(nodes: list) -> dict:
 
 
 def find_leaf_nodes(nodes: list, children_map: dict) -> list:
-    """叶子 = is_accepted=True 且没有子节点的节点"""
+    """叶子 = is_accepted=True 且没有 *accepted* 子节点的节点。
+
+    注意:trajectory.json 里保存了所有 reward 评估过的节点(包括 rejected),
+    rejected 子节点不算"被采纳进入下一层",所以不影响叶子判定。
+    """
     leaves = []
     for n in nodes:
+        if not n.get("is_accepted"):
+            continue
         nid = n["node_id"]
-        if n.get("is_accepted") and not children_map.get(nid):
+        kids = children_map.get(nid) or []
+        accepted_kids = [c for c in kids if c.get("is_accepted")]
+        if not accepted_kids:
             leaves.append(n)
     return leaves
 
@@ -58,6 +66,21 @@ def extract_chain(node: dict, by_id: dict) -> list:
         cur = by_id.get(parent_id) if parent_id else None
     chain.reverse()
     return chain
+
+
+def _get_metric(metrics: dict, *keys, default="N/A"):
+    """从 metrics 字典里按优先级取第一个非 None 的值。"""
+    for k in keys:
+        v = metrics.get(k)
+        if v is not None:
+            return v
+    return default
+
+
+def _fmt_metric(v, fmt=".4f"):
+    if isinstance(v, (int, float)):
+        return f"{v:{fmt}}"
+    return str(v)
 
 
 def image_to_base64(img_path: str) -> str:
@@ -126,18 +149,23 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
     rejected_nodes = total_nodes - accepted_nodes
 
     chain_html_blocks = []
+    available_metric_keys = set()
+    for n in trajectory.get("nodes", []):
+        available_metric_keys.update((n.get("metrics") or {}).keys())
+
     for ci, chain in enumerate(chains):
         leaf = chain[-1]
         leaf_metrics = leaf.get("metrics", {})
-        leaf_chi2 = leaf_metrics.get("chi2_nu", "N/A")
-        leaf_bic = leaf_metrics.get("bic", "N/A")
+        leaf_chi2 = _get_metric(leaf_metrics, "chi2_nu", "chisq_nu", "chisq1d_nu")
+        leaf_bic = _get_metric(leaf_metrics, "bic", "bic1d", "BIC")
 
         steps_html = []
         for si, node in enumerate(chain):
             nid = node.get("node_id", "")
             metrics = node.get("metrics", {})
-            chi2_nu = metrics.get("chi2_nu", "N/A")
-            bic = metrics.get("bic", "N/A")
+            chi2_nu = _get_metric(metrics, "chi2_nu", "chisq_nu", "chisq1d_nu")
+            bic = _get_metric(metrics, "bic", "bic1d", "BIC")
+            chisq1d_nu = _get_metric(metrics, "chisq1d_nu")
             delta_r = node.get("delta_R")
             action_label = get_action_label(node)
 
@@ -155,8 +183,10 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
                 color = "#2ecc71" if delta_r > 0 else "#e74c3c"
                 delta_html = f'<span style="color:{color};font-weight:bold">ΔR={delta_r:+.4f}</span>'
 
-            chi2_display = f"{chi2_nu:.4f}" if isinstance(chi2_nu, (int, float)) else str(chi2_nu)
-            bic_display = f"{bic:.2f}" if isinstance(bic, (int, float)) else str(bic)
+            chi2_display = _fmt_metric(chi2_nu, ".4f")
+            bic_display = _fmt_metric(bic, ".2f")
+            chisq1d_display = _fmt_metric(chisq1d_nu, ".4f")
+            chisq1d_html = f' <span class="metric"><b>χ²₁D/ν</b> = {chisq1d_display}</span>' if chisq1d_nu != "N/A" else ""
 
             cutoff_img = f'<img src="{cutoff_b64}" class="node-img" onclick="openModal(this.src)" title="Residual cutoff">' if cutoff_b64 else '<div class="img-placeholder">Cutoff 图不存在</div>'
             full_img = f'<img src="{full_b64}" class="node-img-full" onclick="openModal(this.src)" title="Full comparison">' if full_b64 else '<div class="img-placeholder">Comparison 图不存在</div>'
@@ -173,7 +203,7 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
                     </div>
                     <div class="metrics-bar">
                         <span class="metric"><b>χ²/ν</b> = {chi2_display}</span>
-                        <span class="metric"><b>BIC</b> = {bic_display}</span>
+                        <span class="metric"><b>BIC</b> = {bic_display}</span>{chisq1d_html}
                         {delta_html}
                     </div>
                 </div>
@@ -201,8 +231,8 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
             if si < len(chain) - 1:
                 steps_html.append('<div class="arrow-down">⬇</div>')
 
-        leaf_chi2_display = f"{leaf_chi2:.4f}" if isinstance(leaf_chi2, (int, float)) else str(leaf_chi2)
-        leaf_bic_display = f"{leaf_bic:.2f}" if isinstance(leaf_bic, (int, float)) else str(leaf_bic)
+        leaf_chi2_display = _fmt_metric(leaf_chi2, ".4f")
+        leaf_bic_display = _fmt_metric(leaf_bic, ".2f")
 
         chain_block = f'''
         <div class="chain-block">
@@ -393,6 +423,7 @@ h1 {{ color: #ffd700; margin-bottom: 10px; }}
     <div class="stat-item"><b>Rejected:</b> {rejected_nodes}</div>
     <div class="stat-item"><b>链路数 (叶子):</b> {len(chains)}</div>
     <div class="stat-item"><b>来源:</b> {os.path.basename(json_path)}</div>
+    <div class="stat-item" style="color:#aaa"><b>可用 metric 字段:</b> {", ".join(sorted(available_metric_keys)) or "(无)"}</div>
 </div>
 
 {"".join(chain_html_blocks)}
@@ -453,6 +484,12 @@ def main():
     by_id = {n["node_id"]: n for n in nodes}
     children_map = build_children_map(nodes)
 
+    # 打印第一个有 metrics 的节点的字段,帮 debug BIC 缺失等问题
+    sample_metrics = next((n.get("metrics") for n in nodes if n.get("metrics")), None)
+    if sample_metrics:
+        print(f"🔬 样例 metrics 字段: {list(sample_metrics.keys())}")
+        print(f"   样例值: {sample_metrics}")
+
     leaves = find_leaf_nodes(nodes, children_map)
     print(f"📊 总节点: {len(nodes)} | 叶子节点: {len(leaves)}")
 
@@ -474,11 +511,9 @@ def main():
     for i, chain in enumerate(chains):
         leaf = chain[-1]
         m = leaf.get("metrics", {})
-        chi2 = m.get("chi2_nu", "N/A")
-        bic = m.get("bic", "N/A")
-        chi2_str = f"{chi2:.4f}" if isinstance(chi2, (int, float)) else str(chi2)
-        bic_str = f"{bic:.2f}" if isinstance(bic, (int, float)) else str(bic)
-        print(f"  链路 {i+1}: 深度={len(chain)-1}, 叶子={leaf['node_id']}, χ²/ν={chi2_str}, BIC={bic_str}")
+        chi2 = _get_metric(m, "chi2_nu", "chisq_nu", "chisq1d_nu")
+        bic = _get_metric(m, "bic", "bic1d", "BIC")
+        print(f"  链路 {i+1}: 深度={len(chain)-1}, 叶子={leaf['node_id']}, χ²/ν={_fmt_metric(chi2)}, BIC={_fmt_metric(bic, '.2f')}")
 
     print("🎨 生成 HTML...")
     html = generate_html(trajectory, chains, json_path)

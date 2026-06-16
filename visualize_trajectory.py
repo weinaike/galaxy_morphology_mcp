@@ -196,14 +196,109 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
     for n in trajectory.get("nodes", []):
         available_metric_keys.update((n.get("metrics") or {}).keys())
 
+    # 预构建 parent_id → 所有 children(accepted+rejected),用于查找拒绝兄弟
+    all_children = defaultdict(list)
+    for n in trajectory.get("nodes", []):
+        pid = n.get("parent_id")
+        if pid is not None:
+            all_children[pid].append(n)
+
+    def _metric_delta_html(start, end, fmt=".4f", lower_is_better=True):
+        """格式化 start → end (delta%) 进度,lower_is_better 决定 ↓/↑ 哪个是绿色"""
+        if not (isinstance(start, (int, float)) and isinstance(end, (int, float))):
+            return f"{_fmt_metric(start, fmt)} → {_fmt_metric(end, fmt)}"
+        delta = end - start
+        pct = (delta / start * 100) if start != 0 else 0
+        if abs(delta) < 1e-12:
+            arrow, color = "→", "#aaa"
+        elif (delta < 0) == lower_is_better:
+            arrow, color = "↓" if delta < 0 else "↑", "#2ecc71"  # 改进 = 绿
+        else:
+            arrow, color = "↓" if delta < 0 else "↑", "#e74c3c"  # 变差 = 红
+        return f'{start:{fmt}} → {end:{fmt}} <span style="color:{color};font-weight:bold">({arrow}{abs(pct):.1f}%)</span>'
+
+    def _render_rejected_sibling(sib: dict) -> str:
+        """渲染单个被拒绝兄弟节点,重点展示 VLM reward 打标细节"""
+        nid = sib.get("node_id", "")
+        sm = sib.get("metrics", {})
+        s_chi2 = _get_metric(sm, "chi2_nu", "chisq_nu", "chisq1d_nu")
+        s_bic = _get_metric(sm, "bic", "bic1d", "BIC")
+        s_dr = sib.get("delta_R")
+        s_action = get_action_label(sib)
+
+        # 缩略残差图
+        sib_cutoff = sib.get("residual_path", "")
+        sib_b64 = image_to_base64(sib_cutoff)
+        thumb = f'<img src="{sib_b64}" class="sib-thumb" onclick="openModal(this.src)">' if sib_b64 else '<div class="img-placeholder" style="width:140px;height:120px">无图</div>'
+
+        # VLM reward 详情(假阳假阴的关键证据)
+        rd = sib.get("reward_detail") or {}
+        vd = rd.get("vlm_detail") or {}
+        vlm_html = ""
+        if vd:
+            orig_imp = vd.get("original_improvement", "—")
+            final_imp = vd.get("final_improvement", vd.get("improvement", "—"))
+            imp_level = vd.get("residual_improvement_level") or vd.get("improvement_level", "—")
+            conf = vd.get("confidence", "—")
+            src = vd.get("improvement_source", "—")
+            param_ok = vd.get("param_plausible", "—")
+            metric_ok = vd.get("metric_consistent", "—")
+            hard_warn = vd.get("hard_warnings", "—")
+            reason = vd.get("reason", "")
+            reason_esc = (reason if isinstance(reason, str) else str(reason)).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+            vlm_html = f'''
+            <div class="vlm-detail">
+                <table class="vlm-table">
+                    <tr><td>original_improvement</td><td><b>{orig_imp}</b></td>
+                        <td>final_improvement</td><td><b>{final_imp}</b></td></tr>
+                    <tr><td>improvement_level</td><td>{imp_level}</td>
+                        <td>improvement_source</td><td>{src}</td></tr>
+                    <tr><td>confidence</td><td>{conf}</td>
+                        <td>param_plausible</td><td>{param_ok}</td></tr>
+                    <tr><td>metric_consistent</td><td>{metric_ok}</td>
+                        <td>hard_warnings</td><td>{hard_warn}</td></tr>
+                </table>
+                <div class="vlm-reason"><b>reason:</b> {reason_esc}</div>
+            </div>
+            '''
+
+        chi2_s = _fmt_metric(s_chi2, ".4f")
+        bic_s = _fmt_metric(s_bic, ".2f")
+        dr_s = f"{s_dr:+.4f}" if isinstance(s_dr, (int, float)) else "—"
+        dr_color = "#e74c3c" if isinstance(s_dr, (int, float)) and s_dr <= 0 else "#aaa"
+
+        return f'''
+        <div class="rejected-sib">
+            <div class="rejected-sib-left">{thumb}</div>
+            <div class="rejected-sib-right">
+                <div class="sib-header">
+                    <span class="node-id">{nid}</span>
+                    <span class="action-badge" style="background:#888">{s_action}</span>
+                    <span class="metric"><b>χ²/ν</b>={chi2_s}</span>
+                    <span class="metric"><b>BIC</b>={bic_s}</span>
+                    <span style="color:{dr_color};font-weight:bold">ΔR={dr_s}</span>
+                </div>
+                {vlm_html}
+            </div>
+        </div>
+        '''
+
     for ci, chain in enumerate(chains):
         leaf = chain[-1]
         leaf_metrics = leaf.get("metrics", {})
         leaf_chi2 = _get_metric(leaf_metrics, "chi2_nu", "chisq_nu", "chisq1d_nu")
         leaf_bic = _get_metric(leaf_metrics, "bic", "bic1d", "BIC")
 
+        # 链路起点(root)的 chi2 / bic,用于算 root→leaf 进度
+        root_metrics = chain[0].get("metrics", {})
+        root_chi2 = _get_metric(root_metrics, "chi2_nu", "chisq_nu", "chisq1d_nu")
+        root_bic = _get_metric(root_metrics, "bic", "bic1d", "BIC")
+        chi2_progress = _metric_delta_html(root_chi2, leaf_chi2, ".4f", lower_is_better=True)
+        bic_progress = _metric_delta_html(root_bic, leaf_bic, ".2f", lower_is_better=True)
+
         steps_html = []
         for si, node in enumerate(chain):
+            is_leaf = (si == len(chain) - 1)
             nid = node.get("node_id", "")
             metrics = node.get("metrics", {})
             chi2_nu = _get_metric(metrics, "chi2_nu", "chisq_nu", "chisq1d_nu")
@@ -238,13 +333,34 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
             summary_escaped = summary_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             feedme_escaped = feedme_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
+            # 找该节点的被拒绝兄弟(同 parent_id, is_accepted=False)
+            parent_id = node.get("parent_id")
+            rejected_sibs = []
+            if parent_id:
+                rejected_sibs = [
+                    s for s in all_children.get(parent_id, [])
+                    if not s.get("is_accepted") and s.get("node_id") != nid
+                ]
+            rej_html = ""
+            if rejected_sibs:
+                sib_blocks = "".join(_render_rejected_sibling(s) for s in rejected_sibs)
+                rej_html = f'''
+                    <details class="summary-details">
+                        <summary>🚫 被 VLM reward 拒绝的兄弟 ({len(rejected_sibs)} 个) — 看假阳假阴</summary>
+                        <div class="rejected-list">{sib_blocks}</div>
+                    </details>
+                '''
+
+            leaf_class = " leaf-step" if is_leaf else ""
+            leaf_badge = ' <span class="leaf-badge">🏁 叶子</span>' if is_leaf else ''
+
             step_html = f'''
-            <div class="step-card" id="chain{ci}_step{si}">
+            <div class="step-card{leaf_class}" id="chain{ci}_step{si}">
                 <div class="step-header">
                     <div class="step-title">
                         <span class="step-badge">Step {node.get("depth", si)}</span>
                         <span class="node-id">{nid}</span>
-                        <span class="action-badge">{action_label}</span>
+                        <span class="action-badge">{action_label}</span>{leaf_badge}
                     </div>
                     <div class="metrics-bar">
                         <span class="metric"><b>χ²/ν</b> = {chi2_display}</span>
@@ -271,6 +387,7 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
                         <summary>📐 Feedme</summary>
                         <pre class="summary-pre">{feedme_escaped}</pre>
                     </details>
+                    {rej_html}
                 </div>
             </div>
             '''
@@ -289,8 +406,9 @@ def generate_html(trajectory: dict, chains: list, json_path: str) -> str:
                 <h2>
                     🔗 链路 {ci + 1}
                     <span class="chain-summary">
-                        深度 {len(chain) - 1} 步 | 叶子: {leaf.get("node_id", "")} |
-                        χ²/ν = {leaf_chi2_display} | BIC = {leaf_bic_display}
+                        深度 {len(chain) - 1} 步 | 叶子: {leaf.get("node_id", "")}<br>
+                        χ²/ν: {chi2_progress}<br>
+                        BIC: {bic_progress}
                     </span>
                 </h2>
                 <span class="toggle-icon" id="chain{ci}_icon">▼</span>
@@ -378,6 +496,71 @@ h1 {{ color: #ffd700; margin-bottom: 10px; }}
     border-radius: 8px;
     margin-bottom: 8px;
     overflow: hidden;
+}}
+.step-card.leaf-step {{
+    border: 2px solid #ffd700;
+    box-shadow: 0 0 14px rgba(255, 215, 0, 0.3);
+}}
+.leaf-badge {{
+    background: #ffd700;
+    color: #111;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    margin-left: 6px;
+}}
+.rejected-list {{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}}
+.rejected-sib {{
+    display: flex;
+    gap: 12px;
+    padding: 10px;
+    background: #1a1a3e;
+    border: 1px dashed #e74c3c;
+    border-radius: 6px;
+}}
+.rejected-sib-left {{ flex: 0 0 auto; }}
+.rejected-sib-right {{ flex: 1; }}
+.sib-thumb {{
+    max-height: 130px;
+    max-width: 180px;
+    border-radius: 4px;
+    border: 1px solid #555;
+    cursor: zoom-in;
+}}
+.sib-header {{
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    font-size: 13px;
+}}
+.vlm-detail {{ font-size: 12px; }}
+.vlm-table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6px;
+}}
+.vlm-table td {{
+    padding: 3px 8px;
+    border: 1px solid #333;
+    color: #ccc;
+}}
+.vlm-table td:nth-child(odd) {{ color: #888; width: 22%; }}
+.vlm-reason {{
+    background: #111;
+    padding: 8px 10px;
+    border-radius: 4px;
+    color: #ccc;
+    border-left: 3px solid #4a90d9;
+    margin-top: 4px;
+    line-height: 1.5;
 }}
 .step-header {{
     background: #2a2a55;

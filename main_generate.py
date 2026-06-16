@@ -3,6 +3,7 @@ import asyncio
 import os
 import json
 import time  # 🚀 引入 time 模块用于全局耗时统计
+import datetime  # RUN_ID 时间戳
 from dotenv import load_dotenv
 
 from data_gen.dataset_utils import get_train_test_split
@@ -37,12 +38,16 @@ OUTPUT_ROOT = os.path.join(PROJECT_ROOT, "output")
 load_dotenv(override=True)  # .env 优先：覆盖 shell 里可能残留的旧 OPENAI_API_KEY
 
 async def main():
+    # 每次运行生成唯一时间戳，贯穿 strategy_folder 与日志展示，确保实验互不覆盖
+    run_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
     # ==========================================
     # 📋 配置参数打印(日志开头一次性记录,便于复盘)
     # ==========================================
     print("=" * 70)
     print("📋 [本次运行配置]")
     print("=" * 70)
+    print(f"  RUN_ID                    = {run_id}")
     print(f"  TEST_MODE                 = {TEST_MODE}")
     print(f"  PROPOSAL_STRATEGY         = {PROPOSAL_STRATEGY}")
     print(f"  TARGET_BANDS              = {TARGET_BANDS}")
@@ -99,6 +104,9 @@ async def main():
             strategy_folder += "_experthint"
         if USE_HISTORY_FOR_VLM:
             strategy_folder += "_hist"
+
+    # 每次运行附加 RUN_ID 后缀,避免相同配置反复跑导致目录覆盖,便于按时间维度管理实验
+    strategy_folder = f"{strategy_folder}__{run_id}"
 
     pipeline = DataGenPipeline(
         base_project_dir=GADOTTI_ROOT, # ⚠️ 注意这里传的是 Gadotti 的根目录，方便应对跨目录寻址

@@ -38,7 +38,8 @@ class DataGenPipeline:
                          use_expert_hint_for_vlm: bool = False,
                          use_history_for_vlm: bool = False,
                          history_max_steps: int = 0,
-                         beam_top_k: int = 0):
+                         beam_top_k: int = 0,
+                         vlm_reward_image_mode: str = "cutoff"):
         """
         处理单个星系，并返回该星系的局部统计报告。
         """
@@ -350,22 +351,40 @@ class DataGenPipeline:
                 next_img = res.get("residual_path")
                 prev_img = parent_node.get("residual_path")
 
+                # VLM reward 看图模式: full=完整 comparison.png; cutoff=仅残差面板裁剪
+                # galfit_env 默认存 cutoff,需要 full 时反推去掉 _cutoff 后缀
+                if vlm_reward_image_mode == "full":
+                    def _to_full(p):
+                        if not p:
+                            return p
+                        stem, ext = os.path.splitext(p)
+                        if stem.endswith("_cutoff"):
+                            full_p = stem[:-len("_cutoff")] + ext
+                            if os.path.exists(full_p):
+                                return full_p
+                        return p
+                    prev_img_for_reward = _to_full(prev_img)
+                    next_img_for_reward = _to_full(next_img)
+                else:
+                    prev_img_for_reward = prev_img
+                    next_img_for_reward = next_img
+
                 # 走到这里说明通过了 SSIM 滤渣，进入 reward 评估
                 tree["analytics"]["passed_ssim_action_distribution"][action_type] += 1
                 if struct_key and struct_key in tree["analytics"]["passed_ssim_structural_distribution"]:
                     tree["analytics"]["passed_ssim_structural_distribution"][struct_key] += 1
                 _ensure_psa(step_key, fine)["passed_ssim"] += 1
 
-                print(f"      - prev_img: {prev_img} (存在: {os.path.exists(str(prev_img))})")
-                print(f"      - next_img: {next_img} (存在: {os.path.exists(str(next_img))})")
+                print(f"      - prev_img({vlm_reward_image_mode}): {prev_img_for_reward} (存在: {os.path.exists(str(prev_img_for_reward))})")
+                print(f"      - next_img({vlm_reward_image_mode}): {next_img_for_reward} (存在: {os.path.exists(str(next_img_for_reward))})")
 
                 step_delta_r, r_detail = calculate_reward(
                     old_metrics=parent_node["metrics"],
                     new_metrics=res.get("metrics", {}),
                     action=action,
                     step=step,
-                    prev_image_path=prev_img,
-                    next_image_path=next_img,
+                    prev_image_path=prev_img_for_reward,
+                    next_image_path=next_img_for_reward,
                     use_llm=use_llm_reward,
                     vlm_reward_model_name=vlm_reward_model_name,
                     use_param_check=use_param_check,

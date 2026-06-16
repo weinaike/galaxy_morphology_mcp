@@ -37,7 +37,8 @@ class DataGenPipeline:
                          vlm_proposal_num_calls: int = 4,
                          use_expert_hint_for_vlm: bool = False,
                          use_history_for_vlm: bool = False,
-                         history_max_steps: int = 0):
+                         history_max_steps: int = 0,
+                         beam_top_k: int = 0):
         """
         处理单个星系，并返回该星系的局部统计报告。
         """
@@ -436,6 +437,12 @@ class DataGenPipeline:
                 print(f"    {flag} {node_id} | 父: {parent_node['node_id']} | 动作: {action_type} | 增益: {step_delta_r:.3f} | {acceptance_reason}")
 
             if next_layer_nodes:
+                # Beam pruning: 每层保留 chi2_nu 最好的 K 个,防止深层分支爆炸 + 自动剪相似分支
+                if beam_top_k and beam_top_k > 0 and len(next_layer_nodes) > beam_top_k:
+                    pruned_count = len(next_layer_nodes) - beam_top_k
+                    next_layer_nodes.sort(key=lambda n: n["metrics"].get("chi2_nu", 999.0))
+                    next_layer_nodes = next_layer_nodes[:beam_top_k]
+                    print(f"    ✂️  [Beam Pruning] 保留 chi2_nu 最好的 {beam_top_k} 个父节点,剪掉 {pruned_count} 个")
                 current_layer_nodes = next_layer_nodes
                 patience_counter = 0 # 只要有进步，耐心值清零
             else:

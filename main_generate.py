@@ -18,10 +18,11 @@ PROPOSAL_STRATEGY = "vlm_generated" # 提议策略: "rule_based", "expert_guided
 VLM_REWARD_MODEL_NAME = "gemini-3.1-pro-preview" # 大模型视觉打分模型名
 VLM_PROPOSAL_MODEL_NAME = "gemini-3.1-pro-preview" # VLM 提议分布模型名（独立于 reward 模型）
 USE_PARAM_CHECK = True  # 参数合理性审查（仅 USE_LLM_REWARD=True 时生效，让 VLM 同时审查拟合参数物理合理性）
-VLM_PROPOSAL_NUM_CALLS = 4  # VLM 提议并发调用次数（仅 vlm_generated 策略生效）
+VLM_PROPOSAL_NUM_CALLS = 2  # VLM 提议并发调用次数（仅 vlm_generated 策略生效）。降到 2 抑制深层分支爆炸 + 减少同温度抖动产生的相似样本
 USE_EXPERT_HINT_FOR_VLM = True  # 是否用 Gadotti_params.json 引导 VLM 提议（仅 vlm_generated 策略生效）
 USE_HISTORY_FOR_VLM = True  # 是否把历史轮次摘要(父链路:采纳动作/指标/同层被拒)注入 VLM 提议 prompt（仅 vlm_generated）
 VLM_HISTORY_MAX_STEPS = 0  # 历史轮次最多取最近多少步（0=全部，N=只取最近 N 步，控制 prompt 长度）
+BEAM_TOP_K = 6  # 每个 step 后保留 chi2_nu 最好的 K 个 accepted 父节点（防止深层分支爆炸 + 自动剪相似分支）
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
@@ -59,6 +60,7 @@ async def main():
     print(f"  USE_EXPERT_HINT_FOR_VLM   = {USE_EXPERT_HINT_FOR_VLM}")
     print(f"  USE_HISTORY_FOR_VLM       = {USE_HISTORY_FOR_VLM}")
     print(f"  VLM_HISTORY_MAX_STEPS     = {VLM_HISTORY_MAX_STEPS} (0=全部)")
+    print(f"  BEAM_TOP_K                = {BEAM_TOP_K} (每层保留 chi2_nu 最好的 K 个父节点)")
     print(f"  PROJECT_ROOT              = {PROJECT_ROOT}")
     print(f"  GADOTTI_ROOT              = {GADOTTI_ROOT}")
     print(f"  OUTPUT_ROOT               = {OUTPUT_ROOT}")
@@ -185,6 +187,7 @@ async def main():
             use_expert_hint_for_vlm=USE_EXPERT_HINT_FOR_VLM if PROPOSAL_STRATEGY == "vlm_generated" else False,
             use_history_for_vlm=USE_HISTORY_FOR_VLM if PROPOSAL_STRATEGY == "vlm_generated" else False,
             history_max_steps=VLM_HISTORY_MAX_STEPS,
+            beam_top_k=BEAM_TOP_K,
         )
         
         if not gal_report.get("success", False):

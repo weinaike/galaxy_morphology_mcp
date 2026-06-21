@@ -1,7 +1,7 @@
+import ast
 import os
 import re
 
-import shutil
 from typing import Annotated
 
 from tools.analyze_image import create_vlm_client
@@ -257,32 +257,222 @@ def modify_lyric(
 
     return { "status": "failure", "error": message }       
 
-def check_lyric_file(lyric_file: str) -> dict:
+# Lyric section schema: family -> (repeatable, max_index).
+# repeatable=False means the family carries no label letter (R1, R2, R3);
+# repeatable=True means it carries a label letter (Ia, Ib, Pb, Gb, ...).
+# Index ranges come from the galfits-manual skill docs and gsutils.read_config_file.
+LYRIC_SECTION_SCHEMA = {
+    'R': (False, 3),    # Region: R1 name, R2 [ra, dec], R3 redshift
+    'I': (True, 15),    # Image band: Ix1 input image ... Ix15 use-SED
+    'S': (True, 5),     # Spectrum: Sx1 file, Sx2 flux factor, Sx3 windows, Sx4 hires, Sx5 lsf (optional)
+    'A': (True, 7),     # Atlas: Ax1 name ... Ax7 reference images
+    'N': (True, 27),    # Nuclei/AGN: Nx1 ... Nx27
+    'P': (True, 32),    # Profile: Px1 name, Px2 type ... Px32
+    'G': (True, 7),     # Galaxy: Gx1 name ... Gx7 narrow-line components
+    'F': (True, 8),     # Foreground star: Fx1 name ... Fx8 use-SED
+}
+
+
+def _is_number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _looks_like_5tuple(v):
+    """True if v is a [init, min, max, step, flag] numeric 5-tuple."""
+    return (isinstance(v, (list, tuple)) and len(v) == 5
+            and all(_is_number(e) for e in v))
+
+
+def _validate_5tuple(t, key, lineno, errors):
+    """Validate a [init, min, max, step, flag] 5-tuple, appending any problems.
+
+    Rules:
+      - flag must be 0 or 1;
+      - init must lie within [min, max] inclusive;
+      - for a free parameter (flag=1) min must be strictly less than max;
+        for a fixed parameter (flag=0) min == max is allowed -- it is the
+        standard way to pin a value (e.g. bar Sersic n fixed to 0.5, or an
+        unused slot zeroed as [0,0,0,0,0]) -- so only min > max is rejected.
     """
-    It checks if the lyric file is valid by trying to parse it. If the file is valid, it returns {"status": "success"}. If the file is invalid, it returns {"status": "failure", "error": error_message}.
+    init, lo, hi, _step, flag = t
+    if flag not in (0, 1):
+        errors.append(f"Line {lineno}: {key} flag must be 0 or 1, got {flag!r}")
+    if not (lo < hi):
+        errors.append(
+            f"Line {lineno}: {key} requires min < max, got min={lo}, max={hi}"
+        )
+    if not (lo <= init <= hi):
+        errors.append(f"Line {lineno}: {key} init {init} outside [{lo}, {hi}]")
+
+
+def check_lyric_file(lyric_file: Annotated[str, "path to the lyric file"]) -> dict:
+    """
+    Lightweight validation of a .lyric configuration file.
+
+    This validates syntax and basic structure WITHOUT importing galfits, jax,
+    astropy, or matplotlib -- avoiding the heavy module loading that the full
+    ``galfits.gsutils.read_config_file`` triggers on every call. Use this when
+    you only need to know whether the file is syntactically well-formed and
+    structurally complete; it does not load images or build models.
+
+    Checks performed:
+      * file is readable;
+      * every non-comment line has a ``)`` key/value separator and a
+        well-formed key (e.g. ``R1)``, ``Ia3)``, ``Pb5)``);
+      * values are parseable (Python literal, else falls back to plain string,
+        mirroring ``parse_config_file``);
+      * required region keys ``R1)``, ``R2)``, ``R3)`` are present;
+      * ``R2)`` unpacks to ``(ra, dec)`` and ``R3)`` is numeric;
+      * duplicate keys are flagged (almost always a typo);
+      * within each labelled section family (``I``/``A``/``P``/``N``/``G``/``S``)
+        keys are grouped by their label: a ``{F}{label}{N>1})`` line must sit
+        inside the block declared by ``{F}{label}1)``. This catches typos such
+        as ``Pc14)`` written inside a ``Pb1) ... Pb32)`` block;
+      * the section family is known (``R``/``I``/``S``/``A``/``N``/``P``/``G``/``F``),
+        non-repeatable families (``R``) carry no label, repeatable ones require
+        one, and every key's index is within the family's valid range;
+      * any value that is a 5-tuple ``[init, min, max, step, flag]`` (or a list
+        of such 5-tuples) is checked: ``flag`` is 0 or 1, ``init`` lies within
+        ``[min, max]`` inclusive, and ``min < max`` for all parameters.
 
     Args:
         lyric_file: The file name of the lyric file to be checked.
 
     Returns:
-        dict: A dictionary indicating success or failure, and error message if failure.
+        dict: ``{"status": "success"|"failure", "message": ...}``. On success a
+        summary of detected sections is appended to the message; on failure the
+        message lists every problem found.
     """
-    class DummyWorkplace:
-        def __enter__(self):
-            import tempfile
-            self.dummy_dir = tempfile.mkdtemp(prefix="check_lyric_")
-            return self
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            if hasattr(self, 'dummy_dir') and os.path.exists(self.dummy_dir):
-                shutil.rmtree(self.dummy_dir)
+    if not os.path.exists(lyric_file):
+        return {"status": "failure",
+                "message": f"{lyric_file} is an invalid lyric file. Error: file does not exist"}
 
-    with DummyWorkplace() as workplace:
+    try:
+        with open(lyric_file, 'r') as f:
+            lines = f.readlines()
+    except OSError as e:
+        return {"status": "failure",
+                "message": f"{lyric_file} is an invalid lyric file. Error: cannot read file ({e})"}
+
+    config_data = {}
+    key_counts = {}
+    errors = []
+    sections = {}
+    # decompose key into family (one uppercase letter), label letters, index.
+    # e.g. 'R1' -> ('R', '', 1), 'Ia15' -> ('I', 'a', 15), 'Pc14' -> ('P', 'c', 14)
+    key_decomp_re = re.compile(r'^([A-Z])([A-Za-z]*)(\d+)$')
+    # for each labelled family, the label of the component whose block is
+    # currently "open" (i.e. the most recent {family}{label}1 declaration)
+    current_label = {}
+
+    for lineno, raw in enumerate(lines, start=1):
+        # mirror galfits.gsutils.parse_config_file: drop inline comment + strip
+        line = raw.split('#', 1)[0].strip()
+        if not line:
+            continue
+
+        if ')' not in line:
+            errors.append(f"Line {lineno}: missing ')' separator: {raw.strip()!r}")
+            continue
+
+        key_part, _, value_part = line.partition(')')
+        key_part = key_part.strip()
+        value_str = value_part.strip()
+
+        dm = key_decomp_re.match(key_part)
+        if not dm:
+            errors.append(f"Line {lineno}: malformed key {key_part!r}")
+            continue
+
+        family, label, index = dm.group(1), dm.group(2), int(dm.group(3))
+
+        # mirror parse_config_file: try literal eval, fall back to raw string.
+        # ast.literal_eval is used instead of eval for safety; the lyric format
+        # only ever contains literals so behaviour is equivalent.
         try:
-            from galfits.gsutils import read_config_file
-            _ = read_config_file(lyric_file, workplace.dummy_dir)
-            return {"status": "success", "message": f"{lyric_file} is a valid lyric file."}
-        except Exception as e:
-            return {"status": "failure", "message": f"{lyric_file} is an invalid lyric file. Error: {str(e)}"}
+            value = ast.literal_eval(value_str)
+        except (ValueError, SyntaxError):
+            value = value_str
+
+        key = key_part + ')'
+        key_counts[key] = key_counts.get(key, 0) + 1
+        config_data[key] = value
+
+        # ---- section schema checks ----
+        if family not in LYRIC_SECTION_SCHEMA:
+            errors.append(f"Line {lineno}: unknown section family {family!r} in {key}")
+            continue
+        repeatable, max_index = LYRIC_SECTION_SCHEMA[family]
+        if repeatable and not label:
+            errors.append(
+                f"Line {lineno}: {key} is missing its label letter "
+                f"(expected e.g. {family}a{index})"
+            )
+        if not repeatable and label:
+            errors.append(
+                f"Line {lineno}: section {family!r} is not repeatable; "
+                f"{key} should be {family}{index})"
+            )
+        if index < 1 or index > max_index:
+            errors.append(
+                f"Line {lineno}: {key} index {index} is out of range "
+                f"1..{max_index} for family {family}"
+            )
+
+        # ---- component-block grouping (labelled families only) ----
+        if label and repeatable:
+            sections.setdefault(family, set()).add(label)
+            if index == 1:
+                # declaration line: opens this component's block
+                current_label[family] = label
+            else:
+                cur = current_label.get(family)
+                if cur is None:
+                    errors.append(
+                        f"Line {lineno}: {key} appears before any "
+                        f"{family}*) declaration (missing {family}{label}1?)"
+                    )
+                elif label != cur:
+                    errors.append(
+                        f"Line {lineno}: {key} sits inside {family}-component "
+                        f"'{cur}' but uses label '{label}' "
+                        f"(expected {family}{cur}{index})"
+                    )
+
+        # ---- 5-tuple value validation ([init, min, max, step, flag]) ----
+        if _looks_like_5tuple(value):
+            _validate_5tuple(value, key, lineno, errors)
+        elif (isinstance(value, (list, tuple)) and len(value) > 0
+              and all(_looks_like_5tuple(e) for e in value)):
+            for e in value:
+                _validate_5tuple(e, key, lineno, errors)
+
+    # duplicate keys
+    for key, count in key_counts.items():
+        if count > 1:
+            errors.append(f"Duplicate key {key!r} appears {count} times (likely a typo)")
+
+    # required region block (read_config_file accesses these unconditionally)
+    for req in ('R1)', 'R2)', 'R3)'):
+        if req not in config_data:
+            errors.append(f"Missing required key {req!r}")
+
+    # light value checks on the region block
+    r2 = config_data.get('R2)')
+    if 'R2)' in config_data and not (isinstance(r2, (list, tuple)) and len(r2) == 2):
+        errors.append(f"R2) must be [ra, dec], got {r2!r}")
+    r3 = config_data.get('R3)')
+    if 'R3)' in config_data and not isinstance(r3, (int, float)):
+        errors.append(f"R3) must be a numeric redshift, got {r3!r}")
+
+    if errors:
+        bullet = "\n  - ".join(errors)
+        return {"status": "failure",
+                "message": f"{lyric_file} is an invalid lyric file.\n  - {bullet}"}
+
+    # found = {k: sorted(v) for k, v in sections.items() if v}
+    return {"status": "success",
+            "message": f"{lyric_file} is a valid lyric file. "}
         
 
 def TEST_add_AGN():
@@ -330,4 +520,6 @@ def TEST_delete_profile_component2():
 if __name__ == '__main__':
     
     #TEST_add_profile_component3()
-    TEST_delete_profile_component1()
+    #TEST_delete_profile_component1()
+    print(check_lyric_file("/home/jiangbo/jwst/104/output/20260617_161456_obj_104_iter2/obj_104_iter2.lyric"))
+    print(check_lyric_file("/tmp/obj_104_iter2.lyric"))

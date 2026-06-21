@@ -222,7 +222,7 @@ def fit_data_isophotes(image_data, sma_max=None, mask=None, auto_sky=True):
     iso_best = None
 
     for sma0 in sma0_list:
-        print("  Testing sma0:", sma0)
+        # print("  Testing sma0:", sma0)
         try:
             geometry2 = EllipseGeometry(
                 x0=int(round(cx)), y0=int(round(cy)),
@@ -239,8 +239,8 @@ def fit_data_isophotes(image_data, sma_max=None, mask=None, auto_sky=True):
         except Exception:
             continue
 
-    print("Best isophote found:", iso_best.sma)
-    print("success")
+    # print("Best isophote found:", iso_best.sma)
+    # print("success")
     if auto_sky:
         return iso_best, sky_value if iso_best is not None else (iso_step1, sky_value)
     else:

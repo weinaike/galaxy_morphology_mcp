@@ -14,6 +14,7 @@ import importlib.util
 from typing import Any
 from mcp.server import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from tools.modify_lyric import check_lyric_file
 from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 
@@ -62,6 +63,7 @@ def _register_tools_and_prompts():
     app.add_tool(render_original)
     app.add_tool(component_analysis)
     app.add_tool(analyze_multiband_components)
+    app.add_tool(check_lyric_file)
     
     app.add_tool(fourier_mode_analysis)
     app.add_tool(pix2radec)

@@ -766,6 +766,7 @@ async def run_galfits(
     # Discover common outputs (even on non-zero returncode,
     # GalfitS may have produced valid result files before exiting)
     summary_files = sorted(glob(os.path.join(workplace_dir, "*.gssummary")))
+    summary_files = [f for f in summary_files if f != '_filtered_summary.gssummary']
 
     # GalfitS output filenames vary between versions; support common patterns.
     imagefit_pngs = sorted(

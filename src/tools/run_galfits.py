@@ -33,112 +33,6 @@ def _is_valid_workflow_output_dir(dirname: str) -> bool:
     return bool(WORKFLOW_OUTPUT_DIR_RE.fullmatch(dirname))
 
 
-# Mapping from P-block parameter index to summary parameter suffix
-_SERIESIC_SUFFIX = {3: 'xcen', 4: 'ycen', 5: 'Re', 6: 'n', 7: 'ang', 8: 'axrat'}
-_EDGEON_SUFFIX = {3: 'xcen', 4: 'ycen', 5: 'hs', 6: 'rs', 7: 'ang'}
-_PROFILE_SUFFIX_MAP = {
-    'sersic': _SERIESIC_SUFFIX, 'sersic_f': _SERIESIC_SUFFIX,
-    'ferrer': _SERIESIC_SUFFIX, 'sersic_b': _SERIESIC_SUFFIX,
-    'sersic_r': _SERIESIC_SUFFIX, 'sersic_bf': _SERIESIC_SUFFIX,
-    'sersic_rf': _SERIESIC_SUFFIX,
-    'edgeondisk': _EDGEON_SUFFIX,
-    'Gaussian': {3: 'xcen', 4: 'ycen', 5: 'sig', 7: 'ang', 8: 'axrat'},
-    'GauRing': {3: 'xcen', 4: 'ycen', 5: 'r0', 6: 'sig', 7: 'ang', 8: 'axrat'},
-}
-
-
-def _find_fixed_param_suffixes(config_file: str) -> set[str]:
-    """Parse .lyric to find summary parameter suffixes of vary=0 spatial parameters.
-
-    Returns a set of suffixes (e.g. {'n', 'Re'}) that should be excluded from
-    the summary to prevent --readsummary from overwriting fixed values.
-    """
-    with open(config_file) as f:
-        lines = f.readlines()
-
-    suffixes: set[str] = set()
-    current_prefix: str | None = None
-    current_type: str | None = None
-
-    for line in lines:
-        s = line.strip()
-        if not s or s.startswith('#'):
-            continue
-
-        # Detect component start: Pa1) name, Pb1) name
-        m = re.match(r'^P([a-z])1\)', s)
-        if m:
-            current_prefix = m.group(1)
-            current_type = None
-            continue
-
-        # Detect profile type: Pa2) sersic
-        if current_prefix is not None and current_type is None:
-            m = re.match(rf'^P{current_prefix}2\)\s*(\S+)', s)
-            if m:
-                current_type = m.group(1)
-                continue
-
-        # Detect vary=0 parameters
-        if current_prefix is not None and current_type is not None:
-            m = re.match(rf'^P{current_prefix}(\d+)\)\s*\[([^\]]+)\]', s)
-            if m:
-                idx = int(m.group(1))
-                parts = [p.strip() for p in m.group(2).split(',')]
-                if len(parts) >= 5 and parts[4].strip() == '0':
-                    suffix_map = _PROFILE_SUFFIX_MAP.get(current_type, {})
-                    suffix = suffix_map.get(idx)
-                    if suffix:
-                        suffixes.add(suffix)
-
-    return suffixes
-
-
-def _filter_summary(summary_file: str, suffixes_to_skip: set[str], output_path: str) -> str:
-    """Write a filtered summary that excludes parameters matching suffixes.
-
-    Lines whose parameter name ends with ``_<suffix>`` (where suffix is in
-    *suffixes_to_skip*) are removed.  Comment lines and blank lines are
-    preserved so that astropy ``ascii.read()`` can still parse the file.
-    """
-    with open(summary_file) as f:
-        lines = f.readlines()
-
-    filtered = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            filtered.append(line)
-            continue
-
-        parts = stripped.split()
-        if len(parts) >= 2:
-            pname = parts[0]
-            skip = any(pname.endswith(f'_{s}') for s in suffixes_to_skip)
-            if not skip:
-                filtered.append(line)
-        else:
-            filtered.append(line)
-
-    with open(output_path, 'w') as f:
-        f.writelines(filtered)
-    return output_path
-
-
-def _apply_summary_filter_to_args(args: list[str], config_file: str, workplace_dir: str) -> None:
-    """Find --readsummary in args list and replace with filtered version in-place."""
-    for i, arg in enumerate(args):
-        if arg == '--readsummary' and i + 1 < len(args):
-            summary_path = args[i + 1]
-            if os.path.exists(summary_path):
-                fixed_suffixes = _find_fixed_param_suffixes(config_file)
-                if fixed_suffixes:
-                    filtered_path = os.path.join(workplace_dir, "_filtered_summary.gssummary")
-                    _filter_summary(summary_path, fixed_suffixes, filtered_path)
-                    args[i + 1] = filtered_path
-            break
-
-
 def _resolve_config_paths(config_file: str) -> str:
     """Create a temporary config with absolute paths for tools that need them.
 
@@ -714,22 +608,16 @@ async def run_galfits(
 
     cmd = _build_galfits_command(config_file=config_file, workplace=workplace_dir, saveimgs=True)
 
-    # Intercept --readsummary: filter out vary=0 parameters so fixed values
-    # in the .lyric are not overwritten by previous round's fitted values.
-    effective_read_summary = read_summary
-    if effective_read_summary:
-        fixed_suffixes = _find_fixed_param_suffixes(config_file)
-        if fixed_suffixes:
-            filtered_path = os.path.join(workplace_dir, "_filtered_summary.gssummary")
-            _filter_summary(effective_read_summary, fixed_suffixes, filtered_path)
-            effective_read_summary = filtered_path
-        cmd.extend(["--readsummary", os.path.abspath(effective_read_summary)])
+    # Pass --readsummary through as-is. Caveat: GalfitS uses astropy.ascii.read
+    # which only parses the `# free parameters:` section, so parameters that
+    # were vary=0 in the previous round will NOT be inherited even if flipped
+    # to vary=1 in the new config. Per CLAUDE.md Core Principle 6, prefer
+    # manually writing fitted values into the new .lyric instead.
+    if read_summary:
+        cmd.extend(["--readsummary", os.path.abspath(read_summary)])
 
-    # Also intercept --readsummary from extra_args
     if extra_args:
-        filtered_args = list(extra_args)
-        _apply_summary_filter_to_args(filtered_args, config_file, workplace_dir)
-        cmd.extend([str(x) for x in filtered_args])
+        cmd.extend([str(x) for x in extra_args])
 
     # Add --prior for mass/size constraints
     if prior_file:

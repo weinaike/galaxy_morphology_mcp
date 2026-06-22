@@ -101,7 +101,7 @@ def analyze_multiband_components(
         )
 
         step1 = f'''
-你是一个集成了"计算机视觉特征提取"与"天体物理形态学专家推理"的自动化诊断 Agent。你的任务是基于 GALFIT 的拟合结果，通过严密的四步思维链（Chain-of-Thought），诊断当前模型的缺陷，并输出下一步的调整决策。
+你是一个集成了"计算机视觉特征提取"与"天体物理形态学专家推理"的自动化诊断 Agent。你的任务是基于 GALFITS 的拟合结果，通过严密的四步思维链（Chain-of-Thought），诊断当前模型的缺陷，并输出下一步的调整决策。
 
 在这个过程中只能使用read_file 和 write_file 工具，不能使用其他工具。 write_file 可以用于编写 /tmp/todo_xxx.md来记录代办进展。
 

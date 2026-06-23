@@ -9,8 +9,30 @@ from .analyze_image import (
 )
 
 from .parse_lyric import parse_image_infos_from_lyric, extract_component_attributes
+from . import best_round_registry as _brr
 
 dotenv.load_dotenv()
+
+
+def _maybe_fetch_reference_blocks(image_file: str):
+    """Best-effort visualRAG Few-shot retrieval for VLM turn-1.
+
+    Queries the visualRAG service for the galaxy behind `image_file` and returns
+    ``(reference_blocks, reference_intro)`` for ``run_openai_analysis``. Any
+    failure (service disabled/down, empty results) returns ``(None, None)`` so
+    the caller degrades to the legacy single-image turn-1.
+    """
+    try:
+        from . import visualrag_client as vrag
+        resp = vrag.query_service(image_file)
+        if resp and (resp.get("baseline") or resp.get("positive")
+                     or resp.get("hard_negatives")):
+            blocks = vrag.fetch_reference_images(resp)
+            if blocks:
+                return blocks, vrag.REFERENCE_INTRO
+    except Exception as e:  # noqa: BLE001
+        print(f"[visualRAG] reference fetch failed, degrading to no-reference: {e}")
+    return None, None
 
 def analyze_multiband_components(
     lyric_file: Annotated[str, "Path to the lyric file containing the input information for multi-band fitting"],
@@ -46,6 +68,10 @@ def analyze_multiband_components(
 
     # Build system message from templates
     system_message = prompt.RESIDUAL_ANALYSIS_SYSTEM_MESSAGE
+
+    # Maintain best-round memory for this galaxy (visual-primary VLM comparison).
+    _best_info = _brr.update_best_round_for_call(
+        image_path=comparison_file, summary_path=summary_file, lyric_file=lyric_file)
 
     component_spec = prompt.get_component_specification_galfits()
 
@@ -145,12 +171,19 @@ def analyze_multiband_components(
 
         prompts_list = [turn1, turn2, turn3]
         deferred_system = os.environ.get("VLM_DEFERRED_SYSTEM", "0") == "1"
-        analysis, session_id, error = run_openai_analysis(
-            system_prompt=system_message,
-            analysis_prompts=prompts_list,
-            image_path=os.path.abspath(comparison_file),
-            deferred_system=deferred_system,
-        )
+        ref_blocks, ref_intro = _maybe_fetch_reference_blocks(comparison_file)
+        try:
+            analysis, session_id, error = run_openai_analysis(
+                system_prompt=system_message,
+                analysis_prompts=prompts_list,
+                image_path=os.path.abspath(comparison_file),
+                deferred_system=deferred_system,
+                reference_blocks=ref_blocks,
+                reference_intro=ref_intro,
+            )
+        finally:
+            from . import visualrag_client as _vrag
+            _vrag.cleanup_reference_images(ref_blocks)
         if error:
             result = {"status": "failure", "error": error}
             if session_id:
@@ -176,17 +209,30 @@ def analyze_multiband_components(
         print(f"Warning: Failed to save analysis to file: {e}")
         output_file = None
 
+    if _best_info is not None:
+        _brr.attach_analysis_to_best(comparison_file, analysis)
+
     require = '''
 - 必须严格落实【调整决策】中的要求，基于上一轮的拟合结果的基础上调整初始参数。
     - 落实过程中，不可以私自增减（即使因为拟合出现异常），增减成分的决策权归属 component_analysis 所有。
 - 落实过程中，可以对参数细节做调整，比如参数初值、fix/free等，但必须保证调整的方向和目标与 component_analysis 输出的决策完全一致。
 - 决策落实完成后，及时调用 component_analysis 进行下一轮的分析和调整，直到达到满意的拟合结果为止。
 '''
-    return {
+    result = {
         "status": "success",
         "analysis": analysis + require,
         "analysis_file": output_file,
     }
+    if _best_info is not None:
+        result["best_round_status"] = _best_info.get("status")
+        result["best_round"] = _best_info.get("best_round")
+        result["best_round_label"] = _best_info.get("best_round_label")
+        if os.environ.get("BEST_ROUND_VERBOSE") == "1":
+            if _best_info.get("verdict") is not None:
+                result["best_round_verdict"] = _best_info["verdict"]
+            if _best_info.get("comparison_text") is not None:
+                result["best_round_comparison"] = _best_info["comparison_text"]
+    return result
 
 
 def component_analysis(
@@ -237,6 +283,10 @@ def component_analysis(
     summary_content = read_summary_file(summary_file)
     if not summary_content:
         return {"status": "failure", "error": f"Failed to read summary file: {summary_file}"}
+
+    # Maintain best-round memory for this galaxy (visual-primary VLM comparison).
+    _best_info = _brr.update_best_round_for_call(
+        image_path=image_file, summary_path=summary_file, lyric_file=None)
 
     # Build system message from templates
     system_message = prompt.RESIDUAL_ANALYSIS_SYSTEM_MESSAGE
@@ -342,12 +392,19 @@ def component_analysis(
 
         prompts_list = [turn1, turn2, turn3]
         deferred_system = os.environ.get("VLM_DEFERRED_SYSTEM", "0") == "1"
-        analysis, session_id, error = run_openai_analysis(
-            system_prompt=system_message,
-            analysis_prompts=prompts_list,
-            image_path=os.path.abspath(image_file),
-            deferred_system=deferred_system,
-        )
+        ref_blocks, ref_intro = _maybe_fetch_reference_blocks(image_file)
+        try:
+            analysis, session_id, error = run_openai_analysis(
+                system_prompt=system_message,
+                analysis_prompts=prompts_list,
+                image_path=os.path.abspath(image_file),
+                deferred_system=deferred_system,
+                reference_blocks=ref_blocks,
+                reference_intro=ref_intro,
+            )
+        finally:
+            from . import visualrag_client as _vrag
+            _vrag.cleanup_reference_images(ref_blocks)
         if error:
             result = {"status": "failure", "error": error}
             if session_id:
@@ -373,14 +430,30 @@ def component_analysis(
         print(f"Warning: Failed to save analysis to file: {e}")
         output_file = None
 
+    if _best_info is not None:
+        _brr.attach_analysis_to_best(image_file, analysis)
+
     require = '''
 - 必须严格落实【调整决策】中的要求，基于上一轮的拟合结果的基础上调整初始参数。
     - 落实过程中，不可以私自增减（即使因为拟合出现异常），增减成分的决策权归属 component_analysis 所有。
 - 落实过程中，可以对参数细节做调整，比如参数初值、fix/free等，但必须保证调整的方向和目标与 component_analysis 输出的决策完全一致。
 - 决策落实完成后，及时调用 component_analysis 进行下一轮的分析和调整，直到达到满意的拟合结果为止。
 '''
-    return {
+    result = {
         "status": "success",
         "analysis": analysis + require,
         "analysis_file": output_file,
     }
+    if _best_info is not None:
+        _br = _best_info.get("best_round")
+        _br_label = _best_info.get("best_round_label") or "未知轮次"
+        _br_id = f"round {_br}（{_br_label}）" if _br is not None else _br_label
+        result["best_round_judge"] = (
+            f"对比图像，最优轮次判断（{_best_info.get('status')}）：当前最优轮次为 {_br_id}。"
+        )
+        if os.environ.get("BEST_ROUND_VERBOSE") == "1":
+            if _best_info.get("verdict") is not None:
+                result["best_round_verdict"] = _best_info["verdict"]
+            if _best_info.get("comparison_text") is not None:
+                result["best_round_comparison"] = _best_info["comparison_text"]
+    return result

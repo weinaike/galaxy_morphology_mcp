@@ -127,6 +127,18 @@ class Prompts(metaclass=SingletonMeta):
     def get_phase_decision_output(self):
         return self._ca_phases()["decision_output"]
 
+    # --- Best-round comparison prompt (visual-residual primary, metrics reference) ---
+
+    def get_round_comparison_prompt(self, best_round_label, current_round_label,
+                                    best_reference, current_reference):
+        return self._read_prompt_and_render(
+            "round_comparison.md",
+            best_round_label=best_round_label,
+            current_round_label=current_round_label,
+            best_reference=best_reference,
+            current_reference=current_reference,
+        )
+
     @property
     def GALFIT_SYSTEM_MESSAGE(self):
         return self.get_galfit_system_message()

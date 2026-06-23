@@ -29,6 +29,7 @@ get_phase_visual_extraction = prompts.get_phase_visual_extraction
 get_phase_parameter_review = prompts.get_phase_parameter_review
 get_phase_expert_reasoning = prompts.get_phase_expert_reasoning
 get_phase_decision_output = prompts.get_phase_decision_output
+get_round_comparison_prompt = prompts.get_round_comparison_prompt
 
 
 

@@ -41,22 +41,49 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-def _build_image_message(text: str, image_path: str) -> dict:
-    """Build a user message with inline image + text (OpenAI vision format)."""
+def _image_content_block(image_path: str) -> dict:
+    """One OpenAI-vision image_url content block, base64-encoded from a file."""
     ext = os.path.splitext(image_path)[1].lower()
     mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
     mime_type = mime_map.get(ext, "image/png")
-
     with open(image_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
+    return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}}
 
+
+def _build_image_message(text: str, image_path: str) -> dict:
+    """Build a user message with inline image + text (OpenAI vision format)."""
     return {
         "role": "user",
         "content": [
+            _image_content_block(image_path),
             {"type": "text", "text": text},
-            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
         ],
     }
+
+
+def _build_interleaved_image_message(text: str, image_path: str,
+                                     reference_blocks: list[dict] | None = None,
+                                     reference_intro: str | None = None) -> dict:
+    """Turn-1 message: optional reference Few-shot images + captions, then the
+    target image, then the prompt text — linearly interleaved (one image per
+    feature), matching the visual-RAG design doc.
+
+    Each reference block is ``{"image": <path>, "caption": <str>}``. With no
+    reference blocks this is identical to :func:`_build_image_message`.
+    """
+    content: list[dict] = []
+    if reference_blocks:
+        if reference_intro:
+            content.append({"type": "text", "text": reference_intro})
+        for blk in reference_blocks:
+            content.append(_image_content_block(blk["image"]))
+            cap = blk.get("caption")
+            if cap:
+                content.append({"type": "text", "text": cap})
+    content.append(_image_content_block(image_path))
+    content.append({"type": "text", "text": text})
+    return {"role": "user", "content": content}
 
 
 class _UsageAccumulator:
@@ -111,6 +138,8 @@ async def _query(
     analysis_prompts: list[str],
     image_path: str,
     deferred_system: bool = False,
+    reference_blocks: list[dict] | None = None,
+    reference_intro: str | None = None,
 ) -> str:
     """Run analysis via OpenAI SDK — single or multi-turn depending on prompt count.
 
@@ -120,6 +149,9 @@ async def _query(
             When True, turn 1 runs with image + turn1 only (no system_prompt);
             from turn 2 onward, system_prompt is injected and previous turn
             results are carried as assistant messages (Mode 2).
+        reference_blocks: optional Few-shot reference images + captions prepended
+            to the turn-1 message (target image stays last). None = legacy
+            single-image turn-1.
     """
     from openai import OpenAI
 
@@ -133,20 +165,26 @@ async def _query(
 
     text_parts: list[str] = []
     usage = _UsageAccumulator()
-
+    messages: list[dict] = []
     for i, prompt_text in enumerate(analysis_prompts):
         if not deferred_system:
             # Mode 1: system_prompt always present, full history accumulates
             if i == 0:
                 messages: list[dict] = [{"role": "system", "content": system_prompt}]
             messages.append(
-                _build_image_message(prompt_text, image_path) if i == 0
-                else {"role": "user", "content": prompt_text}
+                (_build_interleaved_image_message(prompt_text, image_path,
+                                                  reference_blocks, reference_intro)
+                 if i == 0 and reference_blocks else
+                 _build_image_message(prompt_text, image_path) if i == 0
+                 else {"role": "user", "content": prompt_text})
             )
         else:
             # Mode 2: turn 1 — no system, image + prompt only
             if i == 0:
-                messages = [_build_image_message(prompt_text, image_path)]
+                messages = [(_build_interleaved_image_message(prompt_text, image_path,
+                                                              reference_blocks, reference_intro)
+                             if reference_blocks else
+                             _build_image_message(prompt_text, image_path))]
             else:
                 # turn 2+: inject system_prompt, carry prior results, then new prompt
                 messages = [{"role": "system", "content": system_prompt}]
@@ -172,6 +210,8 @@ def run_openai_analysis(
     analysis_prompts: list[str],
     image_path: str,
     deferred_system: bool = False,
+    reference_blocks: Optional[list[dict]] = None,
+    reference_intro: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Run component analysis using the OpenAI SDK.
@@ -183,9 +223,13 @@ def run_openai_analysis(
     Args:
         system_prompt: System message (residual analysis expert + component spec).
         analysis_prompts: Ordered list of user prompts (1 = single-turn, >1 = multi-turn).
-        image_path: Path to the combined residual image file.
+        image_path: Path to the combined residual image file (the analysis target).
         deferred_system: If True, turn 1 runs without system_prompt; system_prompt
             is injected from turn 2 onward along with prior turn results.
+        reference_blocks: Optional Few-shot reference images + captions prepended
+            to the turn-1 message (each is {"image": path, "caption": str}). The
+            target image remains the last image. None keeps the legacy single-image turn.
+        reference_intro: Optional explanatory text placed before the reference images.
 
     Returns:
         (analysis_text, session_id, error_message)
@@ -205,7 +249,10 @@ def run_openai_analysis(
     session_id = str(uuid.uuid4())
 
     try:
-        coro = _query(system_prompt, analysis_prompts, image_path, deferred_system=deferred_system)
+        coro = _query(system_prompt, analysis_prompts, image_path,
+                      deferred_system=deferred_system,
+                      reference_blocks=reference_blocks,
+                      reference_intro=reference_intro)
         wrapped = asyncio.wait_for(coro, timeout=API_TIMEOUT)
         analysis = _run_async(wrapped)
 

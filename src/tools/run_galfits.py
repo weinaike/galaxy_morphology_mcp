@@ -14,7 +14,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 from astropy.io import fits
-from typing import Any, Annotated, List, Dict
+from typing import Any, Annotated, List, Dict, Tuple
 
 from .render_original import render_asinh_panel
 from .sb_profile import render_sb_profile
@@ -320,7 +320,7 @@ def create_multiband_comparison_png(
     lyric_file: str,
     gssummary_file: str,
     result_fits_file_list: List[str],
-) -> str | None:
+) -> Tuple[str, str]:
     """
     Create a single multi-band comparison PNG with all bands stacked vertically.
 
@@ -328,7 +328,7 @@ def create_multiband_comparison_png(
       Original (99.5) | Original (99.99) | Model | Residual / sigma | SB Profile
 
     Band name header above each row, horizontal separator between bands.
-    Returns the path to the saved PNG, or None if no valid bands found.
+    Returns the path to the saved PNG and component attributes file, or None if no valid bands found.
     """
     region_info = parse_region_info_from_lyric(lyric_file)
     image_infos = parse_image_infos_from_lyric(lyric_file)
@@ -380,7 +380,7 @@ def create_multiband_comparison_png(
         })
 
     if not band_data:
-        return None
+        return None, None
 
     n_bands = len(band_data)
 
@@ -553,7 +553,20 @@ def create_multiband_comparison_png(
     plt.savefig(png_filename, dpi=target_dpi)
     plt.close(fig)
 
-    return png_filename
+    component_attr_file = os.path.join(output_dir, "component_attributes.txt")
+    with open(component_attr_file, "w") as f:
+        f.write("# NOTE that the units of x, y, Re are transformed from arcsec to pixel.\n")
+        f.write("Component Attributes by Band\n")
+        for bdata in band_data:
+            f.write(f"- Band: {bdata['band']}\n")
+            for comp in bdata['components']:
+                f.write(f"    - Component {comp['name']}:\n")
+                for attr, val in comp.items():
+                    if attr not in ['name']:
+                        f.write(f"        {attr}: {val}\n")
+            f.write("\n")
+
+    return png_filename, component_attr_file
 
 async def run_galfits(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
@@ -676,7 +689,7 @@ async def run_galfits(
 
     comparison_png = None
     if result_fits and summary_files:
-        comparison_png = create_multiband_comparison_png(
+        comparison_png, component_attr_file = create_multiband_comparison_png(
             lyric_file=os.path.join(workplace_dir, os.path.basename(config_file)),
             gssummary_file=summary_files[0],
             result_fits_file_list=result_fits,
@@ -696,6 +709,7 @@ async def run_galfits(
             result["summary_files"] = summary_files
             result["result_fits"] = result_fits
             result["comparison_png"] = comparison_png
+            result["component_attr_file"] = component_attr_file
             result["reduced_chisq"] = _parse_gssummary(summary_files[0]).get("reduced_chisq") if summary_files else None
         return result
 
@@ -800,12 +814,12 @@ async def run_galfits_image_sed_fitting(
     return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
 
 def TEST_create_multiband_comparison_png():
-    lyric_file = "/home/jiangbo/jwst/104/output/20260602_101555_obj_104/obj_104.lyric"
-    gssummary_file = "/home/jiangbo/jwst/104/output/20260602_101555_obj_104/obj104.gssummary"
-    result_fits_file_list = ["/home/jiangbo/jwst/104/output/20260602_101555_obj_104/obj104_nircam_f444w_result.fits", "/home/jiangbo/jwst/104/output/20260601_164948_obj_104/obj104_nircam_f115w_result.fits"]
-    result_fits_file_list = glob("/home/jiangbo/jwst/104/output/20260602_101555_obj_104/*_result.fits")
-    png_path = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
+    lyric_file = "/home/jiangbo/jwst/216/output/20260621_134739_obj_216/obj_216.lyric"
+    gssummary_file = "/home/jiangbo/jwst/216/output/20260621_134739_obj_216/obj216.gssummary"
+    result_fits_file_list = glob("/home/jiangbo/jwst/216/output/20260621_134739_obj_216/*_result.fits")
+    png_path, component_attr_file = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
     print(f"Generated comparison PNG: {png_path}")
+    print(f"Generated component attributes file: {component_attr_file}")
 
 def TEST_sed_fitting():
     # config_file = "/home/jiangbo/GALFITS_examples_2/6978/obj6978_iter4.lyric"
@@ -838,4 +852,5 @@ def TEST_sed_fitting():
     print(res)
     
 if __name__ == "__main__":
-    TEST_sed_fitting()
+    # TEST_sed_fitting()
+    TEST_create_multiband_comparison_png()

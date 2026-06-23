@@ -318,8 +318,15 @@ def _infer_model(role: str, given_model: str, re_val) -> str:
     return "sersic"
 
 
-def _normalize_component(c: dict) -> Optional[dict]:
-    """规范化单个成分；mag 缺失则返回 None（视为非法规格）。"""
+def _normalize_component(c: dict, expert_gt: Optional[dict] = None) -> Optional[dict]:
+    """规范化单个成分；mag 缺失则返回 None（视为非法规格）。
+
+    bar 参数处理原则（2026-06 修订）：
+      - VLM 输出永远是基础事实
+      - 有 Gadotti 真值：以真值为中心 ±20% 作合理范围，VLM 输出超界才 clamp；n 释放为 free
+      - 无 Gadotti 真值：用教科书边界（q∈[0.2,0.4], n=0.5 fix），让 VLM 误提的 bar
+        在 unbarred 星系上自然失败（→ DPO 负样本）
+    """
     if not isinstance(c, dict):
         return None
     role = str(c.get("role", "")).lower().strip()
@@ -366,7 +373,19 @@ def _normalize_component(c: dict) -> Optional[dict]:
         except (TypeError, ValueError):
             q = 0.5
         if role == "bar":
-            q = max(0.2, min(0.4, q))
+            expert_q = (expert_gt or {}).get("axis_ratio_bar", 0) if expert_gt else 0
+            try:
+                expert_q = float(expert_q)
+            except (TypeError, ValueError):
+                expert_q = 0
+            if expert_q and expert_q > 0:
+                # 有 Gadotti: 真值 ±20%
+                lo = max(0.05, expert_q * 0.8)
+                hi = min(1.0, expert_q * 1.2)
+            else:
+                # 无 Gadotti: 教科书,让 unbarred 误提自然失败
+                lo, hi = 0.2, 0.4
+            q = max(lo, min(hi, q))
         comp["q"] = max(0.05, min(1.0, q))
         pa = c.get("pa")
         try:
@@ -376,22 +395,36 @@ def _normalize_component(c: dict) -> Optional[dict]:
         comp["pa"] = max(-180.0, min(180.0, pa))
 
     if model == "sersic":
+        n_in = c.get("n")
+        try:
+            n_in = float(n_in) if n_in is not None else None
+        except (TypeError, ValueError):
+            n_in = None
         if role == "bar":
-            comp["n"] = 0.5
-            comp["fix"]["n"] = 0  # bar 的 n 强制锁定
-        else:
-            n = c.get("n")
+            expert_n = (expert_gt or {}).get("sersic_bar", 0) if expert_gt else 0
             try:
-                n = float(n) if n is not None else 1.0
+                expert_n = float(expert_n)
             except (TypeError, ValueError):
-                n = 1.0
-            comp["n"] = max(0.1, min(8.0, n))
+                expert_n = 0
+            if expert_n and expert_n > 0:
+                # 有 Gadotti: 真值 ±20%, free 让 GALFIT 微调
+                lo, hi = max(0.1, expert_n * 0.8), min(8.0, expert_n * 1.2)
+                default_n = expert_n
+                comp["n"] = max(lo, min(hi, n_in if n_in is not None else default_n))
+                comp["fix"]["n"] = 1
+            else:
+                # 无 Gadotti: 教科书 0.5 fix, 让 unbarred 误提自然失败
+                comp["n"] = 0.5
+                comp["fix"]["n"] = 0
+        else:
+            comp["n"] = max(0.1, min(8.0, n_in if n_in is not None else 1.0))
     return comp
 
 
-def parse_model_spec(vlm_response: str, parent_components: list) -> Optional[dict]:
+def parse_model_spec(vlm_response: str, parent_components: list, expert_gt: Optional[dict] = None) -> Optional[dict]:
     """
     解析 VLM 输出的完整模型规格；校验 ≤1 成分增减；返回携带 spec/coarse_label/diff 的 action。
+    expert_gt: Gadotti 专家真值（如有），用于指导 bar 等成分的 clamp 范围。
     """
     raw = _extract_json_object_from_text(vlm_response)
     if not raw:
@@ -406,7 +439,7 @@ def parse_model_spec(vlm_response: str, parent_components: list) -> Optional[dic
 
     comps = []
     for c in raw_comps:
-        nc = _normalize_component(c)
+        nc = _normalize_component(c, expert_gt=expert_gt)
         if nc is None:
             print("    ⚠️ [VLM Proposal] 成分缺 mag/非法，整条规格丢弃")
             return None
@@ -521,6 +554,7 @@ async def _call_vlm_single(
     temperature: float,
     parent_components: list,
     call_idx: int,
+    expert_gt: Optional[dict] = None,
 ) -> Tuple[Optional[dict], Optional[dict]]:
     try:
         print(f"      🧠 [VLM Call {call_idx}] temp={temperature:.2f} 调用中...")
@@ -533,7 +567,7 @@ async def _call_vlm_single(
                 temperature=temperature,
             )
         )
-        decision = parse_model_spec(response_text, parent_components)
+        decision = parse_model_spec(response_text, parent_components, expert_gt=expert_gt)
         if decision:
             decision["full_response"] = response_text
             print(f"      ✅ [VLM Call {call_idx}] 解析成功: {decision['coarse_label']}, "
@@ -553,9 +587,11 @@ async def _call_vlm_with_retry(
     temperature: float,
     parent_components: list,
     call_idx: int,
+    expert_gt: Optional[dict] = None,
 ) -> Tuple[Optional[dict], Optional[dict]]:
     decision, usage = await _call_vlm_single(
-        image_path, prompt_text, model_name, temperature, parent_components, call_idx
+        image_path, prompt_text, model_name, temperature, parent_components, call_idx,
+        expert_gt=expert_gt,
     )
     if decision is not None:
         return decision, usage
@@ -563,7 +599,8 @@ async def _call_vlm_with_retry(
     retry_temp = min(temperature + 0.15, 1.0)
     print(f"      🔄 [VLM Call {call_idx}] 重试 (temp={retry_temp:.2f})...")
     decision, usage = await _call_vlm_single(
-        image_path, prompt_text, model_name, retry_temp, parent_components, call_idx
+        image_path, prompt_text, model_name, retry_temp, parent_components, call_idx,
+        expert_gt=expert_gt,
     )
     return decision, usage
 
@@ -611,16 +648,19 @@ async def generate_vlm_proposals(
         return [], None
 
     if num_calls <= 1:
-        temperatures = [0.5]
+        temperatures = [0.35]
     else:
-        temperatures = [0.3 + 0.6 * i / (num_calls - 1) for i in range(num_calls)]
+        # 2026-06 修订: 温度收窄到 [0.2, 0.5]，更聚焦专家 hint，减少高温乱猜
+        # 原: [0.3, 0.5, 0.7, 0.9] → 现: [0.2, 0.3, 0.4, 0.5]
+        temperatures = [0.2 + 0.3 * i / (num_calls - 1) for i in range(num_calls)]
 
     print(f"    🧠 [VLM Proposal] 并发 {num_calls} 次调用 ({model_name})，图片: {os.path.basename(image_path)}")
     if expert_gt:
         print(f"    🧠 [VLM Proposal] 已注入专家参数提示 (MType: {expert_gt.get('MType', '?')})")
 
     tasks = [
-        _call_vlm_with_retry(image_path, prompt_text, model_name, temp, parent_components, i)
+        _call_vlm_with_retry(image_path, prompt_text, model_name, temp, parent_components, i,
+                              expert_gt=expert_gt)
         for i, temp in enumerate(temperatures)
     ]
     results = await asyncio.gather(*tasks)

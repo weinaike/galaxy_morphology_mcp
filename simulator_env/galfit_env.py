@@ -149,10 +149,11 @@ class GalfitEnv(BaseSimulatorEnv):
             "metrics": metrics
         }
 
-    async def step(self, action: dict, current_feedme_path: str, current_png_path: str, output_dir: str, node_id: str, summary_path: str = None) -> dict:
+    async def step(self, action: dict, current_feedme_path: str, current_png_path: str, output_dir: str, node_id: str, summary_path: str = None, step_idx: int = None) -> dict:
         """
         核心步进函数（精准防漏账及边界保护版）：
         执行动作 -> 生成新配置 -> 拉起 GALFIT -> 滤渣 -> 解析指标 -> 返回状态
+        step_idx: 当前在搜索树中的深度(1-based)，用于 SSIM 阈值条件化(Step 1 add_* 时放宽)
         """
         os.makedirs(output_dir, exist_ok=True)
         new_feedme_path = os.path.join(output_dir, f"{node_id}.feedme")
@@ -216,12 +217,20 @@ class GalfitEnv(BaseSimulatorEnv):
             # 4. 纯残差高灵敏度 SSIM 物理滤渣
             #    纯调参(structural=none 或 方案B modify)放宽阈值: 参数微调本就只产生细微变化,
             #    用更高阈值(仅拦近乎逐像素相同),让合理微调能进入 reward 评估
+            #    2026-06 D4: Step 1 + add_* 时小幅放宽到 0.9995,缓解种树根早停(depth=0 占比 55%)
             is_param_only = (action.get("structural") == "none") or (action.get("coarse_label") == "modify")
-            ssim_threshold = 0.9999 if is_param_only else 0.999
+            coarse = action.get("coarse_label") or ""
+            is_step1_add = (step_idx == 1) and coarse.startswith("add_")
+            if is_param_only:
+                ssim_threshold = 0.9999
+            elif is_step1_add:
+                ssim_threshold = 0.9995
+            else:
+                ssim_threshold = 0.999
             if ssim_score > ssim_threshold:
                 return {
                     "status": "rejected_by_ssim",
-                    "msg": f"SSIM score {ssim_score:.4f} > {ssim_threshold} too high (无实质改变, param_only={is_param_only})",
+                    "msg": f"SSIM score {ssim_score:.4f} > {ssim_threshold} too high (无实质改变, param_only={is_param_only}, step1_add={is_step1_add})",
                     "metrics": metrics
                 }
                 

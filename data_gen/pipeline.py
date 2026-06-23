@@ -294,12 +294,13 @@ class DataGenPipeline:
                     
                     node_id = f"node_{step}_p{p_idx}_v{v_idx}"
                     task = self.env.step(
-                        action=action, 
-                        current_feedme_path=parent_node["feedme_path"], 
-                        current_png_path=parent_node["residual_path"], 
-                        output_dir=gal_out_dir, 
+                        action=action,
+                        current_feedme_path=parent_node["feedme_path"],
+                        current_png_path=parent_node["residual_path"],
+                        output_dir=gal_out_dir,
                         node_id=node_id,
-                        summary_path=parent_node["summary_path"] 
+                        summary_path=parent_node["summary_path"],
+                        step_idx=step,
                     )
                     step_tasks.append(task)
                     task_info.append((node_id, action, parent_node))

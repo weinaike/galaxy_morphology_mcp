@@ -323,9 +323,9 @@ def _normalize_component(c: dict, expert_gt: Optional[dict] = None) -> Optional[
 
     bar 参数处理原则（2026-06 修订）：
       - VLM 输出永远是基础事实
-      - 有 Gadotti 真值：以真值为中心 ±20% 作合理范围，VLM 输出超界才 clamp；n 释放为 free
-      - 无 Gadotti 真值：用教科书边界（q∈[0.2,0.4], n=0.5 fix），让 VLM 误提的 bar
-        在 unbarred 星系上自然失败（→ DPO 负样本）
+      - 无论有无 Gadotti 真值，统一用教科书边界：q∈[0.2,0.4], n=0.5 fix
+      - Gadotti 的作用仅体现在 VLM prompt 中注入专家提示，后处理不开特殊通道
+      - 让 VLM 误提的 bar 在 unbarred 星系上自然失败（→ DPO 负样本）
     """
     if not isinstance(c, dict):
         return None
@@ -373,19 +373,7 @@ def _normalize_component(c: dict, expert_gt: Optional[dict] = None) -> Optional[
         except (TypeError, ValueError):
             q = 0.5
         if role == "bar":
-            expert_q = (expert_gt or {}).get("axis_ratio_bar", 0) if expert_gt else 0
-            try:
-                expert_q = float(expert_q)
-            except (TypeError, ValueError):
-                expert_q = 0
-            if expert_q and expert_q > 0:
-                # 有 Gadotti: 真值 ±20%
-                lo = max(0.05, expert_q * 0.8)
-                hi = min(1.0, expert_q * 1.2)
-            else:
-                # 无 Gadotti: 教科书,让 unbarred 误提自然失败
-                lo, hi = 0.2, 0.4
-            q = max(lo, min(hi, q))
+            q = max(0.2, min(0.4, q))
         comp["q"] = max(0.05, min(1.0, q))
         pa = c.get("pa")
         try:
@@ -401,21 +389,8 @@ def _normalize_component(c: dict, expert_gt: Optional[dict] = None) -> Optional[
         except (TypeError, ValueError):
             n_in = None
         if role == "bar":
-            expert_n = (expert_gt or {}).get("sersic_bar", 0) if expert_gt else 0
-            try:
-                expert_n = float(expert_n)
-            except (TypeError, ValueError):
-                expert_n = 0
-            if expert_n and expert_n > 0:
-                # 有 Gadotti: 真值 ±20%, free 让 GALFIT 微调
-                lo, hi = max(0.1, expert_n * 0.8), min(8.0, expert_n * 1.2)
-                default_n = expert_n
-                comp["n"] = max(lo, min(hi, n_in if n_in is not None else default_n))
-                comp["fix"]["n"] = 1
-            else:
-                # 无 Gadotti: VLM 为 base，教科书 0.5 做兜底，fix 住
-                comp["n"] = n_in if n_in is not None else 0.5
-                comp["fix"]["n"] = 0
+            comp["n"] = n_in if n_in is not None else 0.5
+            comp["fix"]["n"] = 0
         else:
             comp["n"] = max(0.1, min(8.0, n_in if n_in is not None else 1.0))
     return comp

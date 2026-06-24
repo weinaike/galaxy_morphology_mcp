@@ -20,7 +20,7 @@ from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfit
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
 from tools.fourier_mode_analysis import fourier_mode_analysis
-from tools.bar_lopsidedness_detection import detect_bar_lopsidedness
+from tools.bar_lopsidedness_detection import detect_bar_lopsidedness, detect_galfits_bar_lopsidedness
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix
@@ -54,6 +54,7 @@ def _register_tools_and_prompts():
         app.add_tool(run_galfits_image_fitting)
         app.add_tool(run_galfits_sed_fitting)
         app.add_tool(run_galfits_image_sed_fitting)
+        app.add_tool(detect_galfits_bar_lopsidedness)
 
         app.add_prompt(workflow_galfits)
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")

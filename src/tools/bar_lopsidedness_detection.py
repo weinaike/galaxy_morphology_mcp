@@ -23,8 +23,11 @@ from .bar_lopsidedness_core import (
     analyze_dolfi_a1,
     analyze_center_offset_v2,
 )
-# 本项目工具
-from .parse_lyric import extract_fits_metadata
+from .parse_lyric import (
+    extract_fits_metadata, 
+    parse_image_infos_from_lyric, 
+    parse_region_info_from_lyric
+)
 from .parse_feedme import parse_feedme
 
 warnings.filterwarnings('ignore')
@@ -184,11 +187,117 @@ def detect_bar_lopsidedness(
 
     return _to_jsonable(result)
 
+def detect_galfits_bar_lopsidedness(
+    lyric_file: Annotated[str, "Absolute path to a lyric file containing galfits configurations"],
+    survey: Annotated[Literal["JWST", "SDSS"], "Data survey type"],
+)-> dict[str, Any]:
+    """Detect bar and lopsidedness from a lyric file containing galfits configurations.
+
+    Args:
+        lyric_file: Absolute path to a lyric file containing galfits configurations.
+        survey: 'JWST' or 'SDSS' (selects PSF FWHM for center-offset method).
+    Returns:
+        dict with status, bar {detected}, lopsidedness {detected} by bands.
+        Only the detection conclusions are returned; detailed fit
+        parameters (e_max, PA, A1, offsets, etc.) are filtered out.
+    """
+    lyric_file = os.path.abspath(lyric_file)
+    if not os.path.exists(lyric_file):
+        return {"status": "failure", "error": f"Lyric file not found: {lyric_file}"}
+
+    try:
+        image_infos = parse_image_infos_from_lyric(lyric_file)
+        region_info = parse_region_info_from_lyric(lyric_file)
+    except Exception as e:
+        return {"status": "failure", "error": f"Failed to parse lyric file: {e}"}
+
+    results = []
+    for info in image_infos:
+        image_path = info.image[0]
+        mask_path = info.mask[0]
+        if not image_path or not os.path.exists(image_path):
+            results.append({"band": info.band, "error": f"Image file not found: {image_path}"})
+            continue
+
+        _shape, _pixsc, _x0, _y0, _delta_ang, _wcs = extract_fits_metadata(
+            image_path, ra=region_info.ra, dec=region_info.dec)
+        image = fits.getdata(image_path).astype(np.float64)
+        nonfinite = ~np.isfinite(image)
+        if mask_path and os.path.exists(mask_path):
+            mask = (np.asarray(fits.getdata(mask_path)) > 0) | nonfinite
+        elif nonfinite.any():
+            mask = nonfinite
+        else:
+            mask = None
+            
+        band_or_survey = 'r' if survey.upper() == 'SDSS' else info.band    
+        psf_fwhw = PSF_FWHM_ARCSEC.get(survey.upper(), 0.067)
+        try:
+            _df_s1, df_s2, df_s3, _info = fit_isophotes(
+                image, mask, info.pixscale, band_or_survey
+            )
+        except Exception as e:
+            results.append({"band": info.band, "error": f"Isophote fitting failed: {e}"})
+            continue
+        
+        if 'eps' in df_s3.columns and len(df_s3) >= 5:
+            bar_result = detect_bar(df_s3, criteria=CGS_Z0_CRITERIA)
+            dolfi = analyze_dolfi_a1(df_s3)
+        else:
+            bar_result = {
+                'bar_detected': False, 'classification': '', 'e_max': np.nan,
+                'bar_length_arcsec': np.nan, 'bar_pa_mean': np.nan,
+                'bar_pa_var': np.nan, 'failure_reason': 'too_few_isophotes',
+            }
+            dolfi = {'lopsided_dolfi': False, 'A1_mean': np.nan,
+                     'phi1_mean': np.nan, 'r50': np.nan, 'r90': np.nan}
+        
+        if 'x0_pix' in df_s2.columns and len(df_s2) >= 3:
+            center = analyze_center_offset_v2(
+                df_s2, info.pixscale, survey.lower(), band_or_survey
+            )
+        else:
+            center = {'lopsided_center': False, 'x_trend_r': np.nan,
+                      'y_trend_r': np.nan, 'dr_norm': np.nan}
+        is_lopsided = bool(dolfi['lopsided_dolfi'] and center['lopsided_center'])
+        bar_detected = bool(bar_result['bar_detected'])
+        result = {
+            "band": info.band,
+            "bar": {"detected": bar_detected},
+            "lopsidedness": {"detected": bool(is_lopsided)},
+        }
+        if bar_detected:
+            e_max = bar_result.get('e_max')
+            pa_deg = _round(bar_result.get('bar_pa_mean'), 2)
+            # NOTE: galfit的0度是y轴正方向, 逆时针为正; galfits的0度由fits文件中指定，此处需要转换
+            pa_deg = ((pa_deg + _delta_ang + 90) % 360 + 180) % 360 - 180
+            result["bar"]["pa_deg"] = pa_deg
+            result["bar"]["b_over_a"] = _round(1.0 - e_max, 3) if e_max is not None else None
+        if is_lopsided:
+            result["lopsidedness"]["mag"] = _round(dolfi.get('A1_mean'), 4)
+            phase_deg = _round(dolfi.get('phi1_mean'), 2)
+            # NOTE: galfit的0度是y轴正方向, 逆时针为正; galfits的0度由fits文件中指定，此处需要转换
+            phase_deg = ((phase_deg + _delta_ang + 90) % 360 + 180) % 360 - 180
+            result["lopsidedness"]["phase_deg"] = phase_deg
+        results.append(_to_jsonable(result))    
+        
+    return {"status": "success", "results": results}
+
+def TEST_detect_galfits_bar_lopsidedness():
+    lyric_file = "/home/jiangbo/jwst/1803/obj_1803.lyric"
+    survey = "JWST"
+    import time
+    start_time = time.time()
+    result = detect_galfits_bar_lopsidedness(lyric_file, survey)
+    end_time = time.time()
+    print(f"Execution time: {end_time - start_time} seconds")
+    print(result)
 
 if __name__ == '__main__':
     # 手动冒烟测试入口: python -m tools.bar_lopsidedness_detection <feedme> <survey>
-    import json as _json
-    _feedme = sys.argv[1] if len(sys.argv) > 1 else ""
-    _survey = sys.argv[2] if len(sys.argv) > 2 else "JWST"
-    _res = detect_bar_lopsidedness(_feedme, _survey)  # type: ignore[arg-type]
-    print(_json.dumps(_res, indent=2, ensure_ascii=False))
+    # import json as _json
+    # _feedme = sys.argv[1] if len(sys.argv) > 1 else ""
+    # _survey = sys.argv[2] if len(sys.argv) > 2 else "JWST"
+    # _res = detect_bar_lopsidedness(_feedme, _survey)  # type: ignore[arg-type]
+    # print(_json.dumps(_res, indent=2, ensure_ascii=False))
+    TEST_detect_galfits_bar_lopsidedness()

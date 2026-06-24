@@ -94,7 +94,7 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 - 严格按照以下示例的格式撰写 Working Note，确保信息的完整性和清晰度。
 
 <example>
-- Round 0: 原图成分预测
+- Round 0 (20260624T011517.77c05864): 原图成分预测
   - 总体判断：这是 xxx星系，特征是xxx
   - 高概率存在成分:
     - Disk: 证据xxx, (需要描述是否包含 lopsidedness 及其关键参数)
@@ -104,7 +104,7 @@ G) galaxy.cons      # Parameter constraint file (empty string)
     - 伴星2：坐标
   - 不确定是否存在，
     - Bar
-- Round 1.a : Disk + Bar
+- Round 1.a (20260624T012258.77c05864) : Disk + Bar
   - 成分分析要点：
     - component_analysis分析摘要：xxx
     - 【这部分必须有】预估存在的物理成分类型，包含 Disk + Bugle + Bar（
@@ -114,14 +114,14 @@ G) galaxy.cons      # Parameter constraint file (empty string)
     - 拟合后成分类型与关键参数（位置、星等、尺寸、形状参数等）xxxx, 距离预期目标的偏差
     - 拟合统计指标（如 reduced chi-square, BIC/AIC 等
   -【这部分必须有】距离预期目标的偏差
-- Round 1.b : Disk + Bar
+- Round 1.b (20260624T013233.77c05864): Disk + Bar
   - 【这部分必须有】预估存在的物理成分类型，包含 Disk + Bugle + Bar
   - 参数设置摘要：上一轮 Mag 拟合后偏低， 考虑调整 mag 初值再次拟合。
   - galfit拟合结果摘要：
     - 拟合后成分类型与关键参数（位置、星等、尺寸、形状参数等）xxxx, 距离预期目标的偏差
     - 拟合统计指标（如 reduced chi-square, BIC/AIC 等
   - 【这部分必须有】距离预期目标的偏差
-- Round 2.a : Disk + Bugle + Bar
+- Round 2.a (20260624T013908.77c05864): Disk + Bugle + Bar
   - 成分分析要点：
     - component_analysis分析摘要：xxx
     - 【这部分必须有】预估存在的物理成分类型，包含 Disk + Bugle + Bar

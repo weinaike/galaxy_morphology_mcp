@@ -52,7 +52,14 @@ SYSTEM_MESSAGE = """你是一位专业的星系残差不对称性分析专家。
 ## 3. 傅里叶模式决策
 - recommend_fourier: yes/no
 - 理由：（基于残差特征分析）
-- 若 yes，提供傅里叶模式参数建议（am、theta_m 初始值及依据）"""
+- 若 yes，提供傅里叶模式参数建议（am、theta_m 初始值及依据）
+
+## 4. 科学目标差异
+- 对于 JWST的数据，由于科学目标非常关心偏心结果。 所以对于 JWST 数据无论图像特征如何， recommend_fourier 都要输出 yes
+- 对于 SDSS的数据，则正常判断。
+"""
+
+
 
 
 def fourier_mode_analysis(

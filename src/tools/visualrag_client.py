@@ -39,7 +39,7 @@ DEFAULT_TIMEOUT = 120  # seconds (server does a DINOv2 forward + FAISS search)
 # interleaved with each image (see openai_analysis._build_interleaved...), so
 # this only states the layout and that the LAST image is the analysis target.
 REFERENCE_INTRO = (
-    "下面先给出若干参考样例用于校准判别（按顺序：基线样例/困难反例/正样例），"
+    "下面先给出若干参考样例用于校准判别（按顺序：基线样例/困难反例/正样例），最多包含 3 个参考样例，但是可能因为检索匹配原因，部分参考样可能会缺失，"
     "每张图后附其专家图注；最后一张才是本轮待分析的目标星系。"
     "请结合参考样例中可迁移的「视觉特征→诊断→处方」规则，对最后一张目标星系"
     "完成阶段一的客观视觉特征提取。"
@@ -248,7 +248,7 @@ def query_service(image_file: str, top_k: int | None = None,
     """
     if not _enabled():
         return None
-    top_k = top_k or int(os.environ.get("VISUALRAG_TOP_K", "5"))
+    top_k = top_k or int(os.environ.get("VISUALRAG_TOP_K", "1"))
     strategy = strategy or os.environ.get("VISUALRAG_STRATEGY", "both")
     try:
         zip_bytes = collect_material(image_file)

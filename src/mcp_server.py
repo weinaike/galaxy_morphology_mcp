@@ -44,7 +44,7 @@ def _register_tools_and_prompts():
 
     if has_galfit:
         app.add_tool(run_galfit)
-    
+        app.add_tool(component_analysis)
         app.add_prompt(workflow_galfit)
         app.add_tool(detect_bar_lopsidedness)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
@@ -55,20 +55,17 @@ def _register_tools_and_prompts():
         app.add_tool(run_galfits_sed_fitting)
         app.add_tool(run_galfits_image_sed_fitting)
         app.add_tool(detect_galfits_bar_lopsidedness)
-
+        app.add_tool(analyze_multiband_components)
+        app.add_tool(check_lyric_file)
+        app.add_tool(pix2radec)
+        app.add_tool(re_arcsec2pix)        
         app.add_prompt(workflow_galfits)
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
 
     # Shared tools — always available
     app.add_tool(view_original_image)
-    app.add_tool(render_original)
-    app.add_tool(component_analysis)
-    app.add_tool(analyze_multiband_components)
-    app.add_tool(check_lyric_file)
-    
+    app.add_tool(render_original)  
     app.add_tool(fourier_mode_analysis)
-    app.add_tool(pix2radec)
-    app.add_tool(re_arcsec2pix)
 
     if not has_galfit and not has_galfits:
         logger.warning(

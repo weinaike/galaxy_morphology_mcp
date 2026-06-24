@@ -102,6 +102,13 @@ GS_DATA_PATH=/path/to/gs_data      # GalfitS 数据目录
 
 # HTTP 服务（可选）
 MCP_ALLOWED_HOSTS=*                # 允许的主机，默认允许所有
+
+# visualRAG 残差检索增强（可选，仅 ANALYSIS_MODE=vlm 时生效）
+# 留空 VISUALRAG_SERVICE_URL 即关闭（静默降级为无参考样例的单图分析）
+VISUALRAG_SERVICE_URL=http://127.0.0.1:8765   # 检索服务地址；空 = 关闭（唯一真正的开启开关）
+VISUALRAG_ENABLED=1                # kill-switch，仅 =0 关闭（判据 != "0"，故 =false/no/off 不生效，须写 0）
+VISUALRAG_TOP_K=5                  # 每个 role（baseline/positive/hard_negative）检索返回上限
+VISUALRAG_STRATEGY=both            # 检索策略：both = DINOv2 视觉嵌入 + 参数化特征双特征
 ```
 
 ## 使用方法
@@ -163,6 +170,38 @@ python -m mcp_server --transport http --port 38507
 > - `cc`：通过 Claude Code Agent SDK 调用 Anthropic API，需配置 `CLAUDECODE_API_KEY`。支持通过 [Claude Code Router](https://github.com/musistudio/claude-code-router) 代理到其他 LLM 提供商。
 > - `acp`：通过 Gemini CLI ACP 模式调用分析，默认使用 `gemini login` 后的本地会话。
 
+## visualRAG 检索增强（可选）
+
+visualRAG 是一个**在线残差检索服务**，为 `component_analysis` 的 `vlm` 分析模式提供 Few-shot 参考样例。开启后，分析的第 1 轮（turn-1）会在目标星系图之前注入若干「参考样例图 + 专家图注」（按顺序：基线样例 / 困难反例 / 正样例），帮助多模态模型校准「视觉特征 → 诊断 → 处方」的判别规则；最后一张图仍是本轮待分析的目标星系。
+
+> 仅在 `ANALYSIS_MODE=vlm` 时生效；`cc` / `acp` 模式不调用。客户端实现见 `src/tools/visualrag_client.py`。
+
+### 触发与数据流
+
+每次 `component_analysis`（vlm 模式）执行 turn-1 前，会调用 `_maybe_fetch_reference_blocks`：
+
+1. 从 comparison PNG 路径反推 GALFIT archive 目录（以 `galfit.[0-9]*` 为标记）。
+2. 收集本轮原料打成一个自包含 zip 上传（文件路径引用改写为 basename）：
+   - feedme、**模型输出 cube**（`*_galfit.fits`）、mask、sigma、最新的 `galfit.NN`。
+   - **不上传原始科学图像**——服务端只依据模型 cube + mask + sigma + feedme 抽特征。
+3. POST 到 `{VISUALRAG_SERVICE_URL}/query`，服务端用 **DINOv2 视觉嵌入 + 主导成分参数化特征**（Re / n / b/a / mag）做 FAISS 检索。
+4. 返回 JSON，含 `baseline`（基线）、`positive`（正样例）、`hard_negatives`（困难反例）、`perfect`、`query`（查询特征）、`warnings`。
+5. 按 Few-shot 顺序 `[baseline → hard_negative → positive]` 下载各样例对比 PNG 到临时文件，拼到 turn-1 图像序列最前面；分析结束后清理临时文件。
+
+整个过程是 **best-effort**：服务关闭 / 不可用 / 返回空 → 静默降级为普通单图 turn-1（无参考样例），不影响分析流程。
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `VISUALRAG_SERVICE_URL` | `""`（空） | 检索服务地址（如 `http://127.0.0.1:8765`）。**空 = 检索关闭**，是唯一真正的开启开关。 |
+| `VISUALRAG_ENABLED` | `"1"` | 显式 kill-switch。仅 `=0` 关闭；判据是 `!= "0"`，故 `=false`/`=no`/`=off` **不会**关闭（须写 `0`）。 |
+| `VISUALRAG_TOP_K` | `5` | 每个 role 检索返回上限。 |
+| `VISUALRAG_STRATEGY` | `both` | 检索策略：`both` = 视觉 + 参数化双特征。 |
+
+配置方式与其它变量一致（`.env` 或 `.mcp.json` 的 `env` 字段）。注意 `query_service` 对 `top_k`/`strategy` 的回退顺序是「显式参数 → 环境变量 → 默认值」，且用 `or` 判断，因此传 `0`/空串会被当成未传而回退到默认值。服务端库规模、模型等可通过 `GET {VISUALRAG_SERVICE_URL}/health` 查看。
+
+
 ## 项目结构
 
 ```
@@ -174,6 +213,7 @@ src/
 │   ├── analyze_image.py   # VLM 多模态分析（GALFIT/GalfitS 结果）
 │   ├── view_original_image.py  # 原始星系图像形态分类
 │   ├── component_analysis.py   # 残差分析与组件诊断
+│   ├── visualrag_client.py     # visualRAG Few-shot 检索客户端（vlm 模式）
 │   ├── modify_feedme.py   # GALFIT feedme 配置文件修改
 │   ├── extract_summary_galfit.py  # GALFIT 参数摘要提取
 │   ├── pix2radec.py       # 像素坐标转赤经赤纬

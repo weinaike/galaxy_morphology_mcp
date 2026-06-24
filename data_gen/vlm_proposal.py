@@ -413,8 +413,8 @@ def _normalize_component(c: dict, expert_gt: Optional[dict] = None) -> Optional[
                 comp["n"] = max(lo, min(hi, n_in if n_in is not None else default_n))
                 comp["fix"]["n"] = 1
             else:
-                # 无 Gadotti: 教科书 0.5 fix, 让 unbarred 误提自然失败
-                comp["n"] = 0.5
+                # 无 Gadotti: VLM 为 base，教科书 0.5 做兜底，fix 住
+                comp["n"] = n_in if n_in is not None else 0.5
                 comp["fix"]["n"] = 0
         else:
             comp["n"] = max(0.1, min(8.0, n_in if n_in is not None else 1.0))

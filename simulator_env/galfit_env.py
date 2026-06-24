@@ -215,18 +215,16 @@ class GalfitEnv(BaseSimulatorEnv):
                 new_cropped_png = new_png
 
             # 4. 纯残差高灵敏度 SSIM 物理滤渣
-            #    纯调参(structural=none 或 方案B modify)放宽阈值: 参数微调本就只产生细微变化,
-            #    用更高阈值(仅拦近乎逐像素相同),让合理微调能进入 reward 评估
-            #    2026-06 D4: Step 1 + add_* 时小幅放宽到 0.9995,缓解种树根早停(depth=0 占比 55%)
+            #    只拦真正完全一样的残差图，让有微弱变化的提议进入 reward 评估
             is_param_only = (action.get("structural") == "none") or (action.get("coarse_label") == "modify")
             coarse = action.get("coarse_label") or ""
             is_step1_add = (step_idx == 1) and coarse.startswith("add_")
             if is_param_only:
-                ssim_threshold = 0.9999
+                ssim_threshold = 0.99999
             elif is_step1_add:
-                ssim_threshold = 0.9995
+                ssim_threshold = 0.9999
             else:
-                ssim_threshold = 0.999
+                ssim_threshold = 0.9995
             if ssim_score > ssim_threshold:
                 return {
                     "status": "rejected_by_ssim",

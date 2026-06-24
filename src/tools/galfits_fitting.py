@@ -357,23 +357,39 @@ REQUIRED_PARAMETERS = {
     "{profile_name}_Z_value",
 }
 
-# Precompile regex patterns for better performance (compile once)
+# Precompile regex patterns for better performance (compile once).
+# Whitespace handling: lists may contain spaces after commas (e.g.
+# "[9.0, 6, 12, 0.1, 0]"). To preserve any existing whitespace on output, the
+# separator-and-value portion that must be carried over verbatim is captured as
+# a single group (the ",min,max,step," run including all internal whitespace).
+# Only the init value (group 2 / even groups) and the vary flag (last value per
+# bin) are replaced; everything else is re-emitted untouched.
 PATTERNS = {
     "Px9": \
         r"(P{label}9\)\s*\[\[)"
-        r"(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
-        r"(\],\[)"
-        r"(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
-        r"(\],\[)"
-        r"(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
-        r"(\],\[)"
-        r"(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
-        r"(\],\[)"
-        r"(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
+        r"(-?\d+\.?\d*)"
+        r"(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)"
+        r"(-?\d+\.?\d*)"
+        r"(\]\s*,\s*\[)"
+        r"(-?\d+\.?\d*)"
+        r"(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)"
+        r"(-?\d+\.?\d*)"
+        r"(\]\s*,\s*\[)"
+        r"(-?\d+\.?\d*)"
+        r"(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)"
+        r"(-?\d+\.?\d*)"
+        r"(\]\s*,\s*\[)"
+        r"(-?\d+\.?\d*)"
+        r"(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)"
+        r"(-?\d+\.?\d*)"
+        r"(\]\s*,\s*\[)"
+        r"(-?\d+\.?\d*)"
+        r"(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)"
+        r"(-?\d+\.?\d*)"
         r"(\]\])",
-    "Px11": r"(P{label}11\)\s*\[\[)(-?\d+\.?\d*)(,-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*),(-?\d+\.?\d*)(\]\])",
-    "Px12": r"(P{label}12\)\s*\[\[)(-?\d+\.?\d*)(,-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*),(-?\d+\.?\d*)(\]\])",
-    "Px14": r"(P{label}14\)\s*\[)(-?\d+\.?\d*)(,-?\d+\.?\d*,-?\d+\.?\d*,-?\d+\.?\d*),(-?\d+\.?\d*)(\])",
+    "Px11": r"(P{label}11\)\s*\[\[)(-?\d+\.?\d*)(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)(-?\d+\.?\d*)(\]\])",
+    "Px12": r"(P{label}12\)\s*\[\[)(-?\d+\.?\d*)(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)(-?\d+\.?\d*)(\]\])",
+    "Px14": r"(P{label}14\)\s*\[)(-?\d+\.?\d*)(,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*-?\d+\.?\d*,\s*)(-?\d+\.?\d*)(\])",
 }
 
 
@@ -449,16 +465,16 @@ def replace_Px9(label: str, text: str, values: list) -> str:
     v1, v2, v3, v4, v5 = values
     replacement = (
         r"\g<1>"
-        f"{v1},\g<3>,\g<4>,\g<5>,1"
-        r"\g<7>"
-        f"{v2},\g<9>,\g<10>,\g<11>,1"
+        f"{v1}\g<3>1"
+        r"\g<5>"
+        f"{v2}\g<7>1"
+        r"\g<9>"
+        f"{v3}\g<11>1"
         r"\g<13>"
-        f"{v3},\g<15>,\g<16>,\g<17>,1"
-        r"\g<19>"
-        f"{v4},\g<21>,\g<22>,\g<23>,1"
-        r"\g<25>"
-        f"{v5},\g<27>,\g<28>,\g<29>,1"
-        r"\g<31>"
+        f"{v4}\g<15>1"
+        r"\g<17>"
+        f"{v5}\g<19>1"
+        r"\g<21>"
     )
     return re.compile(PATTERNS["Px9"].format(label=label)).sub(replacement, text)
 
@@ -468,7 +484,7 @@ def replace_single_value(pattern_key: str, label: str, text: str, value: float) 
 
     Handles Px11, Px12, Px14 patterns.
     """
-    return re.compile(PATTERNS[pattern_key].format(label=label)).sub(rf"\g<1>{value}\g<3>,1\g<5>", text)
+    return re.compile(PATTERNS[pattern_key].format(label=label)).sub(rf"\g<1>{value}\g<3>1\g<5>", text)
 
 
 def update_lyric_with_gssummaries(
@@ -583,7 +599,7 @@ def PureSEDFitting(lyric_file, workplace, new_lyric_file, mock_root=None, args=[
 if __name__ == '__main__':
 
     lyric_file = "/home/jiangbo/GALFITS_examples_2/10766/obj10766.lyric"
-    workplace =  "/home/jiangbo/GALFITS_examples_2/10766/output/20260605_105037_obj10766"
+    workplace =  "/home/jiangbo/GALFITS_examples_2/10766/output/20260616_130333_obj10766_iter3"
     new_lyric_file = "/tmp/updated2.lyric"
     args = ["--fit_method", "ES"]
     result = PureSEDFitting(lyric_file=lyric_file, workplace=workplace, new_lyric_file=new_lyric_file, mock_root=None, args=args)

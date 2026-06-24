@@ -561,9 +561,12 @@ def create_multiband_comparison_png(
             f.write(f"- Band: {bdata['band']}\n")
             for comp in bdata['components']:
                 f.write(f"    - Component {comp['name']}:\n")
-                for attr, val in comp.items():
-                    if attr not in ['name']:
-                        f.write(f"        {attr}: {val}\n")
+                line = '  '.join(
+                    f"{k}:{f'{v:.4f}' if isinstance(v, float) else v}"
+                    for k, v in comp.items()
+                    if k != 'name'
+                )
+                f.write(f"        {line}\n")
             f.write("\n")
 
     return png_filename, component_attr_file
@@ -814,9 +817,9 @@ async def run_galfits_image_sed_fitting(
     return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
 
 def TEST_create_multiband_comparison_png():
-    lyric_file = "/home/jiangbo/jwst/216/output/20260621_134739_obj_216/obj_216.lyric"
-    gssummary_file = "/home/jiangbo/jwst/216/output/20260621_134739_obj_216/obj216.gssummary"
-    result_fits_file_list = glob("/home/jiangbo/jwst/216/output/20260621_134739_obj_216/*_result.fits")
+    lyric_file = "/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/obj_317_iter6.lyric"
+    gssummary_file = "/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/obj317.gssummary"
+    result_fits_file_list = glob("/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/*_result.fits")
     png_path, component_attr_file = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
     print(f"Generated comparison PNG: {png_path}")
     print(f"Generated component attributes file: {component_attr_file}")

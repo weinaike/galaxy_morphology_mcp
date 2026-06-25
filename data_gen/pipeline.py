@@ -39,7 +39,9 @@ class DataGenPipeline:
                          use_history_for_vlm: bool = False,
                          history_max_steps: int = 0,
                          beam_top_k: int = 0,
-                         vlm_reward_image_mode: str = "cutoff"):
+                         vlm_reward_image_mode: str = "cutoff",
+                         force_greedy: bool = True,
+                         max_patience: int = 2):
         """
         处理单个星系，并返回该星系的局部统计报告。
         """
@@ -144,7 +146,6 @@ class DataGenPipeline:
         current_layer_nodes = [root_node]
 
         patience_counter = 0
-        max_patience = 2 # 允许原地踏步的最大次数
 
         # 动作标签：兼容 方案B完整规格(coarse_label) / 统一决策(structural) / 旧A/B/C/D(type)
         def _atype(act: dict) -> str:
@@ -428,7 +429,7 @@ class DataGenPipeline:
                 else:
                     tree["analytics"]["not_improved_count"] += 1
 
-                is_accepted, acceptance_reason = judge_acceptance(delta_r=step_delta_r, temperature=0.5)
+                is_accepted, acceptance_reason = judge_acceptance(delta_r=step_delta_r, temperature=0.5, force_greedy=force_greedy)
                 
                 node_record = {
                     "node_id": node_id,

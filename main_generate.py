@@ -24,6 +24,8 @@ USE_HISTORY_FOR_VLM = True  # 是否把历史轮次摘要(父链路:采纳动作
 VLM_HISTORY_MAX_STEPS = 0  # 历史轮次最多取最近多少步（0=全部，N=只取最近 N 步，控制 prompt 长度）
 BEAM_TOP_K = 6  # 每个 step 后保留 chi2_nu 最好的 K 个 accepted 父节点（防止深层分支爆炸 + 自动剪相似分支）
 VLM_REWARD_IMAGE_MODE = "full"  # VLM reward 看图模式: "full"=完整 comparison.png (1×4: orig|model|residual|1D SB); "cutoff"=仅残差面板裁剪图
+FORCE_GREEDY = True  # 贪心接受开关: True=只接受改善(delta_r>=0)的变体; False=启用 Metropolis-Hastings 退火,允许小幅回退以探索更深轨迹
+MAX_PATIENCE = 2  # 连续多少步全部变体未被接受时触发早停（默认2；探索模式建议4-5）
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
@@ -63,6 +65,8 @@ async def main():
     print(f"  VLM_HISTORY_MAX_STEPS     = {VLM_HISTORY_MAX_STEPS} (0=全部)")
     print(f"  BEAM_TOP_K                = {BEAM_TOP_K} (每层保留 chi2_nu 最好的 K 个父节点)")
     print(f"  VLM_REWARD_IMAGE_MODE     = {VLM_REWARD_IMAGE_MODE} (full=完整comparison.png, cutoff=仅残差面板)")
+    print(f"  FORCE_GREEDY              = {FORCE_GREEDY} (True=纯贪心, False=MH退火探索)")
+    print(f"  MAX_PATIENCE              = {MAX_PATIENCE} (连续N步零接受触发早停)")
     print(f"  PROJECT_ROOT              = {PROJECT_ROOT}")
     print(f"  GADOTTI_ROOT              = {GADOTTI_ROOT}")
     print(f"  OUTPUT_ROOT               = {OUTPUT_ROOT}")
@@ -191,6 +195,8 @@ async def main():
             history_max_steps=VLM_HISTORY_MAX_STEPS,
             beam_top_k=BEAM_TOP_K,
             vlm_reward_image_mode=VLM_REWARD_IMAGE_MODE,
+            force_greedy=FORCE_GREEDY,
+            max_patience=MAX_PATIENCE,
         )
         
         if not gal_report.get("success", False):

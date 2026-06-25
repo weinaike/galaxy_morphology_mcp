@@ -13,6 +13,7 @@ from data_gen.pipeline import DataGenPipeline
 # 🛠️ 任务控制面板 (全局配置)
 # ==========================================
 TEST_MODE = True
+EXPERIMENT_ID = "E3"  # 实验编号，输出目录和日志自动带上（E1/E2/E3/E4/E5/E6）
 USE_LLM_REWARD = True  # 大模型视觉打分全局开关
 PROPOSAL_STRATEGY = "vlm_generated" # 提议策略: "rule_based", "expert_guided", "vlm_generated"
 VLM_REWARD_MODEL_NAME = "gemini-3.1-pro-preview" # 大模型视觉打分模型名
@@ -52,6 +53,7 @@ async def main():
     print("📋 [本次运行配置]")
     print("=" * 70)
     print(f"  RUN_ID                    = {run_id}")
+    print(f"  EXPERIMENT_ID             = {EXPERIMENT_ID}")
     print(f"  TEST_MODE                 = {TEST_MODE}")
     print(f"  PROPOSAL_STRATEGY         = {PROPOSAL_STRATEGY}")
     print(f"  TARGET_BANDS              = {TARGET_BANDS}")
@@ -114,7 +116,7 @@ async def main():
             strategy_folder += "_hist"
 
     # 每次运行附加 RUN_ID 后缀,避免相同配置反复跑导致目录覆盖,便于按时间维度管理实验
-    strategy_folder = f"{strategy_folder}__{run_id}"
+    strategy_folder = f"{EXPERIMENT_ID}__{strategy_folder}__{run_id}" if EXPERIMENT_ID else f"{strategy_folder}__{run_id}"
 
     pipeline = DataGenPipeline(
         base_project_dir=GADOTTI_ROOT, # ⚠️ 注意这里传的是 Gadotti 的根目录，方便应对跨目录寻址

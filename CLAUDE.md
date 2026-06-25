@@ -61,9 +61,11 @@ GALFITS uses `.lyric` config files. Key parameter format:
 | Bulge | Sersic, n=4 (range 0.1-8) | Re = small, q = round |
 | Bar | Sersic, **n=0.5 fixed** | q = 0.2-0.4, PA from image |
 | Edge-on Disk | edgeondisk | h_s (scale-height), R_s (scale-length) |
-| AGN/Nucleus | PSF (when Re < 0.2 pixel) or Sersic | x, y, mag only |
+| AGN/Nucleus | PSF (only when Re < 0.2 px in ALL bands) or Sersic | x, y, mag only |
 
 Note: In the fitting input and output configurations, the Effective Radius ($R_e$) is strictly defined in units of arcseconds (arcsec). Before evaluating the fitting results, $R_e$ must be dynamically converted into pixel units using the WCS (World Coordinate System) metadata extracted from the corresponding FITS headers. This step is essential to accurately map the analytical model profiles onto the actual observational image grid, especially since the physical pixel scale ($arcsec/\text{pixel}$) varies across different wavebands.
+
+**AGN/PSF replacement rule**: A Bulge may be replaced by a PSF/AGN component **only when its fitted $R_e$ is < 0.2 px in EVERY band** (convert $R_e$ to pixels in each band separately via the FITS WCS). If $R_e$ ≥ 0.2 px in any single band, the component is resolved and must remain a Sersic profile — do not switch to PSF/AGN even if $R_e$ hits the lower bound in the lyric; instead, widen the lower bound and refit.
 
 ---
 
@@ -84,15 +86,15 @@ obj195/
 
 ### Rules
 - New config files must be written to the **galaxy's main directory** (where the original .lyric is), with `_iter{n}` suffix
-- When you need to reuse parameters from earlier fittings, add the argument --readsummary <prev.gssummary>.
+- To reuse parameters from an earlier fitting, manually extract the fitted values from the previous round's `.gssummary` and write them as the `initial_value` of the corresponding parameters in the new `.lyric` file. **Do NOT use `--readsummary`** (see Core Principles #6).
 - If you need to constrain galaxy components to share the same center (e.g., make bulge, bar and disk have identical centers), complete the following three steps:
     - In the .lyric configuration file, set the x and y parameters (maybe Pb3, Pb4, Pc3, Pc4, it depends) of bulge and bar to fixed.
     - Create a constraint file named iter{n}.constrain with the following content (python function):
           def Update_Constraints(pardictlc):
               pardictlc['bulge_xcen'] = pardictlc['bar_xcen'] = 1 * pardictlc['disk_xcen']
-              pardictlc['bulge_xcen'] = pardictlc['bar_xcen'] = 1 * pardictlc['disk_xcen']
-    - Add the parameter --parconstrain iter{n}.constrain when calling Galfits fitting methods to load this constraint file.          
-- `run_galfits` automatically creates output directories; do NOT manually create directories    
+              pardictlc['bulge_ycen'] = pardictlc['bar_ycen'] = 1 * pardictlc['disk_ycen']
+    - Add the parameter --parconstrain iter{n}.constrain when calling Galfits fitting methods to load this constraint file.
+- `run_galfits` automatically creates output directories; do NOT manually create directories
 
 ---
 
@@ -138,8 +140,10 @@ Classify galaxy morphology from original image using VLM.
 | Parameter | Purpose | When to Use |
 |-----------|---------|-------------|
 | `--fit_method ES` | Evolution Strategy optimizer | All fitting rounds (REQUIRED) |
-| `--readsummary <file>` | Carry forward best-fit params | Every round after Round 1 |
+| `--parconstrain <file>` | Apply center/parameter constraints | When sharing params across components |
 | `--prior <file>` | Apply mass/size constraints | When prior file available |
+
+**Deprecated — do NOT use:** `--readsummary`. It uses `astropy.ascii.read` which only parses the `# free parameters:` section, silently dropping any parameter that was `vary=0` in the previous round. Manually copy fitted values from `.gssummary` into the new `.lyric` instead (see Core Principles #6).
 
 ---
 

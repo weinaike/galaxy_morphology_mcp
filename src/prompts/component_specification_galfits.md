@@ -6,9 +6,19 @@
 - **Bulge（核球）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 4（范围 0.1–8）。
 - **Edge-on Disk（侧视盘）**：Profile type 选用 `edgeondisk`。
 - **Bar（棒）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 0.5。
-- **AGN / 致密核**：当拟合结果的 Re < 0.2 pixel（注意是pixel，不是arcsec）时，应将该成分替换为 AGN（N 块）。
+- **AGN / 致密核**：当拟合结果的 Re < 0.2 pixel（注意是pixel，不是arcsec）时，应将该成分替换为 AGN（N 块）。**每个波段各自用 WCS 把 Re 转成 px 后必须全部 < 0.2 px** 才能替换为 PSF/AGN；任意一个波段 Re ≥ 0.2 px 则保持 Sersic（不要因 Re 触到 lyric 下界就切换，应放宽下界重新拟合）。
 - 如果星系已有一个 Disk 成分，而外围（outskirt）残差仍有系统性正残差，可添加第二个 Disk（sersic, n < 1, Re 较大），以捕捉延展结构。
 - **仅关注盘、核球、侧视盘、棒、AGN 核这五种物理成分**，其他残差特征可以选择保留不拟合。
+
+## 多波段融合判据（Bar）
+
+GalfitS 多波段图像和残差图中各波段并排展示时，Bar 的判别遵循 **跨波段 OR-logic**：
+
+- **逐波段独立判别**。只要**任意一个波段**的图像或残差上能识别出 Bar 特征（"一字型"/"花生型"亮区、内层等照度线明显比外层更扁等），即认定 Bar 存在，需添加 Bar 成分。
+- 即使其他波段看不到，也不据此否定（不同波段 PSF FWHM、波长覆盖、SNR 不同）。
+- 只有**所有波段都看不到** Bar 特征时，才能下"无 Bar"的结论。
+
+注意：蓝端波段（如 F115W）PSF 更锐利，对中心结构更敏感，是 Bar 判别的主要依据。
 
 ## 成分初始参数的设置参考
 
@@ -93,7 +103,7 @@ Pa7) [<PA>, min, max, step, vary]   # 位置角 [deg]
 
 ### AGN / 致密核 — N 块（Nuclei）
 
-当拟合结果的某个成分 Re < 0.2 pixel（注意，是pixel，不是arcsec）时，应将该成分替换为 AGN（N 块）。
+当拟合结果的某个成分 Re < 0.2 pixel（注意，是pixel，不是arcsec）时，应将该成分替换为 AGN（N 块）。**每个波段各自用 WCS 把 Re 转成 px 后必须全部 < 0.2 px** 才能替换为 PSF/AGN；任意一个波段 Re ≥ 0.2 px 则该成分已被分辨，保持 Sersic（不要因 Re 触到 lyric 下界就切换，应放宽下界重新拟合）。
 
 ```text
 Na1) <component_name>                            # 成分名称（如 AGN, nucleus）

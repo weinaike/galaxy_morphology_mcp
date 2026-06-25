@@ -91,6 +91,7 @@ Typical bar features:
 - **Do NOT mistake overall inclined elliptical galaxy as bar**
 - When judging bar, look at whether **inner high-brightness contours are obviously more elongated than outer contours, forming a centrally-dominated linear structure**
 - If only entire galaxy uniformly elongated but inner/outer contour shapes similar, more likely elliptical galaxy or high-inclination disk, not definite bar
+- **Multi-band images (OR-logic):** When the image contains multiple bands side-by-side, judge bar independently in each band, then apply OR-logic — bar is `present` if **ANY** band shows bar features. Only conclude `absent` when **ALL** bands lack bar evidence.
 
 ### 4. How to Judge Spiral Arms
 

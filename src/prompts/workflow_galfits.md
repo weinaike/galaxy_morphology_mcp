@@ -45,6 +45,7 @@
 阶段四. SED拟合
 SED拟合通常需要基于最优的Image拟合（在阶段三中已经确认）：
 * 调用`run_galfits_sed_fitting`进行SED fitting。注意：`run_galfits_sed_fitting`使用的配置文件是最优的Image fitting使用的配置文件，同时，由于SED拟合需要基于image fitting得到的星系成分参数进行质量估计，需要指定最优image fitting对应的输出目录（通常是output目录下的某个子目录，例如20260414T093323.c1993a48）
+    - SED拟合时不能传入约束文件，因为它基于单个成分进行拟合，且空间参数被固定
     - SED拟合只需要成功拟合一次即可
     - 若SED拟合失败，需要分析原因并重新SED拟合
     - SED拟合成功后，会生成一个新的配置文件，该文件是Image-SED联合拟合的输入文件

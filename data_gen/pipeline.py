@@ -231,7 +231,8 @@ class DataGenPipeline:
                 else:
                     label = act.get("coarse_label", "?")
                     note = (act.get("target") or act.get("reasoning") or "").strip().replace("\n", " ")[:50]
-                    lines.append(f"- 第{depth}步 采纳[{label}] → {metric_str}{('；' + note) if note else ''}")
+                    mh_tag = "(退火接受,质量未改善)" if n.get("mh_accepted") else ""
+                    lines.append(f"- 第{depth}步 采纳[{label}]{mh_tag} → {metric_str}{('；' + note) if note else ''}")
                 # 同层被拒尝试（n 的兄弟里未被接受的）
                 sibs = children_by_parent.get(n.get("parent_id"), [])
                 rej = [s for s in sibs if s.get("node_id") != n.get("node_id") and not s.get("is_accepted")]
@@ -430,21 +431,23 @@ class DataGenPipeline:
                     tree["analytics"]["not_improved_count"] += 1
 
                 is_accepted, acceptance_reason = judge_acceptance(delta_r=step_delta_r, temperature=0.5, force_greedy=force_greedy)
-                
+                mh_accepted = is_accepted and step_delta_r < 0
+
                 node_record = {
                     "node_id": node_id,
                     "parent_id": parent_node["node_id"],
-                    "depth": step,
+                    "depth": parent_node.get("depth", 0) + 1,
+                    "step": step,
                     "action_from_parent": action,
                     "feedme_path": res.get("feedme_path"),
-                    # "residual_path": res.get("image_file"),
                     "residual_path": next_img,
                     "metrics": res.get("metrics", {}),
                     "delta_R": step_delta_r,
                     "reward_detail": r_detail,
                     "is_accepted": is_accepted,
+                    "mh_accepted": mh_accepted,
                     "status": res.get("status"),
-                    "summary_path": res.get("summary_file") or res.get("summary_path") 
+                    "summary_path": res.get("summary_file") or res.get("summary_path")
                 }
                 tree["nodes"].append(node_record)
                 
@@ -455,7 +458,9 @@ class DataGenPipeline:
                     tree["analytics"]["per_step_stats"][step_key]["rejected"] += 1
                     
                 flag = "✅ [Accepted]" if is_accepted else "🚫 [Rejected]"
-                print(f"    {flag} {node_id} | 父: {parent_node['node_id']} | 动作: {action_type} | 增益: {step_delta_r:.3f} | {acceptance_reason}")
+                depth_info = f"depth={node_record['depth']}" if node_record['depth'] != step else ""
+                mh_tag = " [MH]" if mh_accepted else ""
+                print(f"    {flag}{mh_tag} {node_id} | 父: {parent_node['node_id']} | 动作: {action_type} | 增益: {step_delta_r:.3f} | {acceptance_reason}{(' | ' + depth_info) if depth_info else ''}")
 
             if next_layer_nodes:
                 # Beam pruning: 每层保留 chi2_nu 最好的 K 个,防止深层分支爆炸 + 自动剪相似分支
@@ -482,7 +487,14 @@ class DataGenPipeline:
         # 新增：结算耗时
         end_time = time.time()
         elapsed_time = end_time - start_time
-        tree["analytics"]["elapsed_seconds"] = round(elapsed_time, 2) # 保留两位小数落盘
+        tree["analytics"]["elapsed_seconds"] = round(elapsed_time, 2)
+
+        # 新增：真实深度统计（基于 accepted 节点的 depth 字段）
+        accepted_depths = [n["depth"] for n in tree["nodes"] if n.get("is_accepted") and n.get("depth", 0) > 0]
+        mh_accepted_count = sum(1 for n in tree["nodes"] if n.get("mh_accepted"))
+        tree["analytics"]["max_depth"] = max(accepted_depths) if accepted_depths else 0
+        tree["analytics"]["avg_depth"] = round(sum(accepted_depths) / len(accepted_depths), 2) if accepted_depths else 0
+        tree["analytics"]["mh_accepted_count"] = mh_accepted_count
         
         save_trajectory(tree, gal_out_dir)
         # 修改：把耗时打印在最终的战报里

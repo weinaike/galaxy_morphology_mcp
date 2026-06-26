@@ -22,7 +22,7 @@ USE_PARAM_CHECK = True  # 参数合理性审查（仅 USE_LLM_REWARD=True 时生
 VLM_PROPOSAL_NUM_CALLS = 4  # VLM 提议并发调用次数（仅 vlm_generated 策略生效）。深层分支爆炸由 BEAM_TOP_K 兜底
 USE_EXPERT_HINT_FOR_VLM = True  # 是否用 Gadotti_params.json 引导 VLM 提议（仅 vlm_generated 策略生效）
 USE_HISTORY_FOR_VLM = True  # 是否把历史轮次摘要(父链路:采纳动作/指标/同层被拒)注入 VLM 提议 prompt（仅 vlm_generated）
-VLM_HISTORY_MAX_STEPS = 0  # 历史轮次最多取最近多少步（0=全部，N=只取最近 N 步，控制 prompt 长度）
+VLM_HISTORY_MAX_STEPS = 3  # 历史轮次最多取最近多少步（0=全部，N=只取最近 N 步，控制 prompt 长度）
 BEAM_TOP_K = 6  # 每个 step 后保留 chi2_nu 最好的 K 个 accepted 父节点（防止深层分支爆炸 + 自动剪相似分支）
 VLM_REWARD_IMAGE_MODE = "full"  # VLM reward 看图模式: "full"=完整 comparison.png (1×4: orig|model|residual|1D SB); "cutoff"=仅残差面板裁剪图
 FORCE_GREEDY = True  # 贪心接受开关: True=只接受改善(delta_r>=0)的变体; False=启用 Metropolis-Hastings 退火,允许小幅回退以探索更深轨迹
@@ -167,7 +167,12 @@ async def main():
         "vlm_proposal_completion_tokens": 0,
         "vlm_reward_model_name": VLM_REWARD_MODEL_NAME,
         "per_step_stats": {},
-        # 🚀 新增：耗时统计专用字典
+        # 深度统计
+        "depth_stats": {
+            "max_depths": [],
+            "mh_accepted_total": 0,
+        },
+        # 耗时统计专用字典
         "timing_stats": {
             "total_elapsed_seconds": 0.0,
             "total_elapsed_str": "",
@@ -215,6 +220,8 @@ async def main():
         global_total["ssim_filtered_count"] += analytics.get("ssim_filtered_count", 0)
         global_total["physics_crashed_count"] += analytics.get("physics_crashed_count", 0)
         global_total["improved_count"] += analytics.get("improved_count", 0)
+        global_total["depth_stats"]["max_depths"].append(analytics.get("max_depth", 0))
+        global_total["depth_stats"]["mh_accepted_total"] += analytics.get("mh_accepted_count", 0)
         global_total["not_improved_count"] += analytics.get("not_improved_count", 0)
         
         for act in ["A", "B", "C"]:
@@ -286,8 +293,18 @@ async def main():
         print(f"  └─ 有效评估总数: {valid_count}")
         print(f"     ├─ 成功优化残差: {global_total['improved_count']}")
         print(f"     └─ 优化失败/平庸: {global_total['not_improved_count']}")
-        
-        # 🚀 打印耗时统计模块
+
+        # 深度统计
+        max_depths = global_total['depth_stats']['max_depths']
+        mh_total = global_total['depth_stats']['mh_accepted_total']
+        avg_max_depth = round(sum(max_depths) / len(max_depths), 2) if max_depths else 0
+        overall_max = max(max_depths) if max_depths else 0
+        print(f"\n📏 [深度统计]")
+        print(f"  ├─ 平均最大深度: {avg_max_depth}")
+        print(f"  ├─ 全局最大深度: {overall_max}")
+        print(f"  └─ 退火接受(MH)总数: {mh_total}")
+
+        # 打印耗时统计模块
         print("\n⏱️ [算力消耗统计]")
         print(f"  ├─ 总计耗时: {global_total['timing_stats']['total_elapsed_str']}")
         print(f"  └─ 平均耗时: {global_total['timing_stats']['average_seconds_per_galaxy']} 秒/星系")

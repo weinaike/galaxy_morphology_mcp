@@ -87,8 +87,9 @@ def extract_from_trajectory(traj):
             continue
         if node.get("status") is not None and node["status"] != "success":
             continue
+        if _is_mh_accepted(node):
+            continue
 
-        mh = _is_mh_accepted(node)
         parent = node_map.get(node["parent_id"], {})
         act = node.get("action_from_parent", {})
 
@@ -102,7 +103,6 @@ def extract_from_trajectory(traj):
             "depth": node.get("depth", 0),
             "step": node.get("step", node.get("depth", 0)),
             "coarse_label": _get_coarse_label(node),
-            "mh_accepted": mh,
             "real_improvement_depth": real_depth,
             "spec": act.get("spec"),
             "parent_metrics": parent.get("metrics", {}),
@@ -125,8 +125,8 @@ def extract_from_trajectory(traj):
         ]
         losers = [
             c for c in children
-            if not c.get("is_accepted")
-            and c.get("status") == "success"
+            if c.get("status") == "success"
+            and (not c.get("is_accepted") or _is_mh_accepted(c))
         ]
 
         if not winners or not losers:
@@ -162,17 +162,10 @@ def extract_from_trajectory(traj):
 def build_report(all_sft, all_dpo, num_files, num_galaxies):
     """生成统计报告字典。"""
     total_sft = len(all_sft)
-    mh_count = sum(1 for s in all_sft if s["mh_accepted"])
-    real_count = total_sft - mh_count
 
-    by_depth = defaultdict(lambda: {"total": 0, "real": 0, "mh": 0})
+    by_depth = defaultdict(int)
     for s in all_sft:
-        d = s["depth"]
-        by_depth[d]["total"] += 1
-        if s["mh_accepted"]:
-            by_depth[d]["mh"] += 1
-        else:
-            by_depth[d]["real"] += 1
+        by_depth[s["depth"]] += 1
 
     by_label = defaultdict(int)
     for s in all_sft:
@@ -193,8 +186,6 @@ def build_report(all_sft, all_dpo, num_files, num_galaxies):
         "num_galaxies": num_galaxies,
         "sft": {
             "total": total_sft,
-            "real_improvement": real_count,
-            "mh_accepted": mh_count,
             "by_depth": {str(k): v for k, v in sorted(by_depth.items())},
             "by_coarse_label": dict(sorted(by_label.items(), key=lambda x: -x[1])),
             "by_real_improvement_depth": {str(k): v for k, v in sorted(by_real_depth.items())},
@@ -221,16 +212,12 @@ def print_report(report):
     print(f"有效星系数: {report['num_galaxies']}")
 
     sft = report["sft"]
-    print(f"\n--- SFT样本统计 ---")
+    print(f"\n--- SFT样本统计 (仅improvement=1) ---")
     print(f"总数: {sft['total']}")
-    real_pct = (sft['real_improvement'] / sft['total'] * 100) if sft['total'] > 0 else 0
-    mh_pct = (sft['mh_accepted'] / sft['total'] * 100) if sft['total'] > 0 else 0
-    print(f"  真实改善: {sft['real_improvement']} ({real_pct:.1f}%)")
-    print(f"  MH退火接受: {sft['mh_accepted']} ({mh_pct:.1f}%)")
 
     print(f"\n按depth分布:")
-    for d, v in sorted(sft["by_depth"].items(), key=lambda x: int(x[0])):
-        print(f"  depth={d}: {v['total']} (真实{v['real']}, MH{v['mh']})")
+    for d, count in sorted(sft["by_depth"].items(), key=lambda x: int(x[0])):
+        print(f"  depth={d}: {count}")
 
     print(f"\n按coarse_label分布:")
     for label, count in sft["by_coarse_label"].items():

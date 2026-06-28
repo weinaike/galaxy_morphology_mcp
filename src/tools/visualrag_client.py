@@ -240,22 +240,40 @@ def _enabled() -> bool:
 
 
 def query_service(image_file: str, top_k: int | None = None,
-                  strategy: str | None = None) -> dict | None:
+                  strategy: str | None = None,
+                  min_score: float | None = None) -> dict | None:
     """Query the retrieval service for the galaxy behind `image_file`.
 
     Returns the parsed JSON response (dict) or None when disabled / unavailable
     / empty (caller degrades to no-reference turn-1).
+
+    ``min_score`` is the retrieval quality floor and a per-query override of the
+    server's configured default: the server drops any case whose final
+    ``score < min_score`` (a dropped positive takes its hard-negs with it).
+    Leave it ``None`` and unset in env to omit the field, so the server applies
+    its own ``rt.cfg.min_score`` default. Unlike ``top_k``/``strategy`` this
+    uses an ``is None`` check (not ``or``): an explicit ``0.0`` is sent as-is,
+    not mistaken for "unset".
     """
     if not _enabled():
         return None
     top_k = top_k or int(os.environ.get("VISUALRAG_TOP_K", "1"))
     strategy = strategy or os.environ.get("VISUALRAG_STRATEGY", "both")
+    # min_score: explicit float wins; else VISUALRAG_MIN_SCORE env. None/empty ->
+    # field omitted so the server falls back to its configured default.
+    if min_score is None:
+        ms_env = os.environ.get("VISUALRAG_MIN_SCORE", "").strip()
+        if ms_env:
+            min_score = float(ms_env)
     try:
         zip_bytes = collect_material(image_file)
+        data: dict = {"top_k": str(top_k), "strategy": strategy}
+        if min_score is not None:
+            data["min_score"] = str(min_score)
         r = requests.post(
             f"{_service_url()}/query",
             files={"archive": ("archive.zip", zip_bytes, "application/zip")},
-            data={"top_k": str(top_k), "strategy": strategy},
+            data=data,
             timeout=DEFAULT_TIMEOUT,
         )
         r.raise_for_status()

@@ -85,7 +85,8 @@ def fourier_mode_analysis(
     Args:
         image_file (str): Path to the combined image file from the best round,
                          containing three stamps: Original | Model | Residual.
-        source_id (str): Identifier for the source/galaxy.
+        source_id (str): Identifier for the source/galaxy. e.g. sdss-Plate0271_MJD51883_Fiber005_r / jwst-obj28_s1_f277w 
+                            Characterization data sources: SDSS, JWST, HST, S4G......
         custom_instructions (str): Optional context, e.g. scientific objective
                                   or specific analysis requirements.
 

@@ -2,23 +2,19 @@
 # 成分添加规范
 
 ## Galfit 添加成分类型的规范 （必须严格遵守）
-- 要增加Disk, 
-  - 1. Face-on要求选用指数衰减的星系盘 expdisk。
-  - 2. Edge-on要求选用的星系盘是 edgedisk。
-  - 3. 星系是 Face-on、Edge-on需要需要先区分, 有助于提升 Disk的选择和初值设置的准确性；
-  - 4. 一个expdisk拟合后（b/a）小于 0.3，可以考虑切换为Edge-on 的edgedisk 可能更为合适；
-  - 5. edgedisk 不能添加 fourier 模式， 因为不支持。
+- 要增加Disk, Component type选用 expdisk.
 - 要增加成分BULGE： Component type选用 sersic.
 - 当添加的 Bulge的 Re 小于 0.2 pixel(大于0.2px 保持sersic类型), 需要更换类型， 采用Component type为psf
 - 要增加棒 Bar：Component type选用  n=0.5[fix] 的 Sersic 模型.
 - 如果星系已经有一个 Disk 成分了，针对星系外围（Outskirt）未拟合上的情况，可以添加第二个 Disk 成分或 Sérsic 成分（这时通常Re较大，n较小<1），以捕捉更延展的结构，
 - 如果星系是elliptical， 只有单个成分，这直接选用 sersic 模型即可，
-  - 但如果一个星系用单 sersic 成分拟合后，出现 axis ratio （q<0.5）, 那么elliptical判断需要调整，应该有 disk。有 disk 就应该考虑 bulge。
+  - 但如果一个星系用单 sersic 成分拟合后，出现 axis ratio （q<0.5）, 那么elliptical判断需要调整，应该有 disk。有 disk 就应该考虑 bulge,或者更多成分。
+- Fourier mode 只能添加于 Disk 成分； 不能加在 Bulge 或者 Bar上。 对于单成分可以加在 Sersic上
 
 ## 成分初始参数的设置参考
 
 在深入各个模型之前，以下参数的获取方式通常是通用的，
-- x 和 y（中心位置）：直接读取图像上该成分的亮度峰值像素坐标。如果多个成分同心（如核球+盘），添加约束条件使得它们的初始 x、y 绑定在一起，保证同心。
+- x 和 y（中心位置）：直接读取图像上该成分的亮度峰值像素坐标。如果多个成分同心（如核球+盘），添加约束条件使得它们的初始 x、y 绑定在一起，保证同心。（无同轴/同PA要求）
 - mag（积分星等）：如果是多成分拟合，初值设定方法。需要考虑 mag 的值，需要基于原来的 sersic 星等下调整；避免初始值差异过大导致拟合失败
   - a. 建议将成分间的通量差异分为“Comparable（相当）”
   - b. “Faint（较暗，约 1/3）”
@@ -75,22 +71,6 @@ Z) 0                      #  Skip this model?
 - R_s（盘标长 Scale-length）：表面亮度下降 $e$ 倍（约 2.718 倍）的距离。它与有效半径 $R_e$ 的数学关系为：$R_e \approx 1.678 R_s$。初始化方法：如果你知道盘的半光半径（通过测光或肉眼估计盘的范围），除以 1.678 即可作为 R_s 的初始值。肉眼看的话，大概是盘的整体可见半径的 1/3 到 1/4 左右。
 
 ---
-1. edgedisk — 常用于沿着视线方向几乎垂直观察的薄盘（$Z$ 轴方向的亮度分布）。
-
-0) edgedisk               #  Component type
-1) <x>  <y>  1 1          #  Position x, y
-3) <mu0>       1          #  Mu(0) [mag/arcsec^2]
-4) <h_s>       1          #  h_s (disk scale-height) [pix]
-5) <R_s>       1          #  R_s (disk scale-length) [pix]
-10) <PA>       1          #  Position angle (PA) [deg: Up=0, Left=90]
-Z) 0                      #  Skip this model?
-
-关键参数：h_s（标高）、R_s（标长）。
-- mu0（中心表面亮度）：同上，盘中心的表面亮度。
-- h_s（标高 Scale-height）：代表盘的厚度。初始化方法：在图中观察侧向盘在垂直方向的可见厚度，取其 1/3 或 1/4 作为初始值。
-- R_s（标长 Scale-length）：代表盘的水平延伸。在长轴方向测量可见长度，除以 3 或 4 作为初始值。
-
----
 1. psf — (常用于 活动星系核 AGN / 恒星 / 极其致密的核)
 
 0) psf                    #  Component type
@@ -122,7 +102,7 @@ B2)  0.01      1       # Bending mode 2 (banana shape)
 B3)  0.03      1       # Bending mode 3 (S-shape)
 
 - Azimuthal fourier modes
-F1)  0.07  30.1  1  1  # Az. Fourier mode 1, amplitude and phase angle
+F1)  0.07  30.1  1  1  # Az. Fourier mode 1, amplitude and phase angle （amplitude 大于 阈值 0.02 就可以保留。不需要移除）
 
 - Traditional Diskyness/Boxyness parameter c
 C0) 0.1         0      # traditional diskyness(-)/boxyness(+)

@@ -332,6 +332,7 @@ def create_multiband_comparison_png(
     """
     region_info = parse_region_info_from_lyric(lyric_file)
     image_infos = parse_image_infos_from_lyric(lyric_file)
+    all_subcomps = generate_subcomps(lyric_file=lyric_file, gssummary_file=gssummary_file)
 
     # --- Collect valid band data ---
     band_data = []
@@ -363,7 +364,14 @@ def create_multiband_comparison_png(
             dec=region_info.dec,
         )
 
-        comp_imgs, comp_types = generate_subcomps(image_info, components)
+        comp_imgs, comp_names = [], []
+        if all_subcomps and band in all_subcomps:
+            comp_imgs, comp_names = all_subcomps[band]['comp_images'], all_subcomps[band]['comp_names']
+        comp_names = [name.split("_")[-1] for name in comp_names]  # Remove galaxy prefix from names  
+        name2type = {comp["name"]: comp["type"] for comp in components}
+        comp_types = [name2type[name] for name in comp_names]
+        components_dict = {comp["name"]: comp for comp in components}
+        components_sorted = [components_dict[name] for name in comp_names]
 
         band_data.append({
             'band': band,
@@ -530,7 +538,7 @@ def create_multiband_comparison_png(
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
         render_sb_profile(
             ax_sb, ax_sb_resid, original_data, sigma_data, model_data,
-            None, components, region,
+            None, components_sorted, region,
             comp_images=comp_imgs, comp_types=comp_types,
             mask=mask, auto_sky=True,
             zeropoint=image_info.magzp,
@@ -555,8 +563,8 @@ def create_multiband_comparison_png(
 
     component_attr_file = os.path.join(output_dir, "component_attributes.txt")
     with open(component_attr_file, "w") as f:
-        f.write("# NOTE that the units of x, y, Re are transformed from arcsec to pixel.\n")
-        f.write("Component Attributes by Band\n")
+        f.write("# Note that the spatial units of x, y and effective radius Re are converted from arcseconds to image pixels. Meanwhile, the reference datum for the position angle (PA) is adjusted: originally measured clockwise from celestial north, the PA in the pixel coordinate system is instead defined relative to the positive y-axis of the image, with angles increasing counterclockwise.\n\n")
+        f.write("Component Attributes by Band\n\n")
         for bdata in band_data:
             f.write(f"- Band: {bdata['band']}\n")
             for comp in bdata['components']:
@@ -817,12 +825,19 @@ async def run_galfits_image_sed_fitting(
     return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
 
 def TEST_create_multiband_comparison_png():
-    lyric_file = "/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/obj_317_iter6.lyric"
-    gssummary_file = "/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/obj317.gssummary"
-    result_fits_file_list = glob("/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/*_result.fits")
+    lyric_file = "/home/jiangbo/jwst/317_pred2/output/20260623_114403_obj_317_iter6/obj_317_iter6.lyric"
+    gssummary_file = "/home/jiangbo/jwst/317_pred2/output/20260623_114403_obj_317_iter6/obj317.gssummary"
+    result_fits_file_list = glob("/home/jiangbo/jwst/317_pred2/output/20260623_114403_obj_317_iter6/*_result.fits")
     png_path, component_attr_file = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
     print(f"Generated comparison PNG: {png_path}")
     print(f"Generated component attributes file: {component_attr_file}")
+
+    # lyric_file = "/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/obj_317_iter6.lyric"
+    # gssummary_file = "/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/obj317.gssummary"
+    # result_fits_file_list = glob("/home/jiangbo/jwst/317_pred2/output/20260623_115349_obj_317_iter6_sed/*_result.fits")
+    # png_path, component_attr_file = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
+    # print(f"Generated comparison PNG: {png_path}")
+    # print(f"Generated component attributes file: {component_attr_file}")
 
 def TEST_sed_fitting():
     # config_file = "/home/jiangbo/GALFITS_examples_2/6978/obj6978_iter4.lyric"

@@ -3,12 +3,12 @@ from typing import Annotated, Any, List
 import ast
 from dataclasses import dataclass
 import os
-from astropy.io import fits
+from astropy.io import fits, ascii
 from astropy.wcs import WCS
-import tempfile
-import shutil
-import subprocess
+from galfits import gsutils
 import numpy as np
+import jax
+import jax.numpy as jnp
 
 @dataclass
 class RegionInfo:
@@ -569,44 +569,121 @@ def generate_feedme(image_info: ImageInfo, components, feedme_file):
             else:
                 pass
 
-def generate_subcomps(image_info: ImageInfo, components) -> tuple[list, list] | None:
-    """Generate individual component images via GALFIT subcomps mode (P=3).
+# def generate_subcomps(image_info: ImageInfo, components) -> tuple[list, list] | None:
+#     """Generate individual component images via GALFIT subcomps mode (P=3).
 
-    Returns (comp_images, comp_types) where comp_types are raw GALFIT type
-    strings (e.g. "sersic", "expdisk"), or None on failure.
-    """
-    tmpdir = tempfile.mkdtemp(prefix="galfits_subcomps_")
-    try:
-        subcomps_feedme = os.path.join(tmpdir, "subcomps.feedme")
-        generate_feedme(image_info, components=components, feedme_file=subcomps_feedme)
-        galfit_bin = os.getenv("GALFIT_BIN", "galfit")
-        subprocess.run(
-            [galfit_bin, subcomps_feedme],
-            cwd=tmpdir,
-            capture_output=True, text=True, timeout=300,
-        )
-        subcomps_path = os.path.join(tmpdir, "subcomps.fits")
-        if not os.path.exists(subcomps_path):
-            return (None, None)
+#     Returns (comp_images, comp_types) where comp_types are raw GALFIT type
+#     strings (e.g. "sersic", "expdisk"), or None on failure.
+#     """
+#     tmpdir = tempfile.mkdtemp(prefix="galfits_subcomps_")
+#     try:
+#         subcomps_feedme = os.path.join(tmpdir, "subcomps.feedme")
+#         generate_feedme(image_info, components=components, feedme_file=subcomps_feedme)
+#         galfit_bin = os.getenv("GALFIT_BIN", "galfit")
+#         subprocess.run(
+#             [galfit_bin, subcomps_feedme],
+#             cwd=tmpdir,
+#             capture_output=True, text=True, timeout=300,
+#         )
+#         subcomps_path = os.path.join(tmpdir, "subcomps.fits")
+#         if not os.path.exists(subcomps_path):
+#             return (None, None)
 
-        comp_images = []
-        comp_types = []
-        known_components = {"sersic", "expdisk", "edgedisk", "devauc", "king",
-                            "nuker", "psf", "gaussian", "moffat", "ferrer", "sky"}
-        with fits.open(subcomps_path) as hdul:
-            for i in range(1, len(hdul)):
-                obj = hdul[i].header.get("OBJECT", f"Component {i-1}")
-                if obj.lower() not in known_components:
-                    continue
-                comp_images.append(hdul[i].data.astype(np.float64))
-                comp_types.append(obj.lower())
+#         comp_images = []
+#         comp_types = []
+#         known_components = {"sersic", "expdisk", "edgedisk", "devauc", "king",
+#                             "nuker", "psf", "gaussian", "moffat", "ferrer", "sky"}
+#         with fits.open(subcomps_path) as hdul:
+#             for i in range(1, len(hdul)):
+#                 obj = hdul[i].header.get("OBJECT", f"Component {i-1}")
+#                 if obj.lower() not in known_components:
+#                     continue
+#                 comp_images.append(hdul[i].data.astype(np.float64))
+#                 comp_types.append(obj.lower())
 
-        return (comp_images, comp_types) if comp_images else (None, None)
+#         return (comp_images, comp_types) if comp_images else (None, None)
 
-    except Exception:
-        return (None, None)
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+#     except Exception:
+#         return (None, None)
+#     finally:
+#         shutil.rmtree(tmpdir, ignore_errors=True)
+
+def generate_subcomps(lyric_file, gssummary_file):
+    if not os.path.exists(lyric_file):
+        return None
+    if not os.path.exists(gssummary_file):
+        return None
+    workplace = os.path.dirname(os.path.abspath(gssummary_file))
+
+    Myfitter, targ, fs = gsutils.read_config_file(lyric_file, workplace)
+    smfile = ascii.read(gssummary_file)
+    for loopx in range(len(smfile)):
+        name, best_value = smfile['pname'][loopx], smfile['best_value'][loopx]
+        if np.isnan(best_value) or name not in Myfitter.lmParameters:
+            continue
+        Myfitter.lmParameters[name].value = best_value
+    Myfitter.loose_fix_pars()
+    pardict = Myfitter.pardict
+    Myfitter.cal_model_image()
+
+    GSdata = Myfitter.GSdata
+    gmodel_list = Myfitter.gmodel_list  # galaxy models in imagefitter_phot
+    # Collect (gmodel, key) pairs across all galaxy models
+    comp_keys = [(gm, k) for gm in gmodel_list for k in gm.subCs.keys()]
+    print('total components per band:', len(comp_keys),
+          '->', [(gm.name + ':' + k) for gm, k in comp_keys])
+
+    all_results = {}
+
+    for loop_group, group_image_indices in enumerate(GSdata.imageset):
+        # mass_map state: regenerate at GROUP grid (matches imagefitter_phot pipeline)
+        ny, nx = GSdata.imagesizes[loop_group]
+        group_transpar = GSdata.coordinates_transfer_paras[loop_group]
+        for gm in gmodel_list:
+            gm.generate_mass_map((ny, nx), transpar=group_transpar)
+
+        for im_idx in group_image_indices:
+            im = GSdata.get_image(im_idx)
+            band = im.band
+            sky = float(pardict['sky_{0}'.format(band)])
+            cut_image_sub = np.asarray(im.cut_image, dtype=float) - sky
+            image_model_sub = np.asarray(im.model_image, dtype=float) - sky
+
+            # Per-band scale_and_translate params (mirror imagefitter_phot.cal_model_image:3602-3609)
+            nyl, nxl = im.cut_image.shape
+            scale0 = group_transpar['pixsc'] / im.coordinates_transfer_para['pixsc']
+            scale = jnp.array([scale0, scale0], dtype=jnp.float32)
+            shiftx = (im.coordinates_transfer_para['x0shift']
+                      + im.coordinates_transfer_para['x0']
+                      - (group_transpar['x0shift'] + group_transpar['x0']) * scale0
+                      + 0.5)
+            shifty = (im.coordinates_transfer_para['y0shift']
+                      + im.coordinates_transfer_para['y0']
+                      - (group_transpar['y0shift'] + group_transpar['y0']) * scale0
+                      + 0.5)
+            trans = jnp.array([shifty, shiftx], dtype=jnp.float32)
+
+            comp_images, comp_names = [], []
+            for gm, key in comp_keys:
+                logN = pardict['logNorm_{0}_{1}'.format(key, band)]
+                imm0 = (10.0 ** logN) * gm.mass_map[key]                # group-grid component
+                imm = jax.image.scale_and_translate(imm0, (nyl, nxl), (0, 1), scale, trans, 'cubic')
+                imm = imm / scale0 ** 2                                  # flux conservation
+                imm = jax.scipy.signal.fftconvolve(imm, im.PSF, mode='same')
+                imm = imm * im.phys_to_counts_rate
+                arr = np.asarray(imm, dtype=float)
+                assert arr.shape == cut_image_sub.shape, (
+                    'shape mismatch band {} comp {}: {} vs {}'.format(
+                        band, key, arr.shape, cut_image_sub.shape))
+                comp_images.append(arr)
+                comp_names.append('{}_{}'.format(gm.name, key))
+
+            all_results[band] = dict(
+                data=cut_image_sub, model=image_model_sub,
+                comp_images=comp_images, comp_names=comp_names,
+            )
+
+    return all_results
 
 def TEST_parse_image_infos_from_lyric_success():
     path = "/home/jiangbo/GALFITS_examples/40/obj40.lyric"

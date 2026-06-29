@@ -151,43 +151,90 @@ def create_perband_comparison_png(
     lyric_file: str,
     gssummary_file: str,
     result_fits_file_list: List[str],
-) -> Dict[str, str] | None:
+) -> Tuple[Dict[str, str], str | None]:
+    """
+    Create one comparison PNG per band (1x5 layout each):
+      Original (99.5) | Original (99.99) | Model | Residual / sigma | SB Profile
+
+    Returns a dict mapping band -> png path (or error message) and the path to
+    the combined component attributes file, or None if no valid bands found.
+    """
     region_info = parse_region_info_from_lyric(lyric_file)
     image_infos = parse_image_infos_from_lyric(lyric_file)
-    pngs = {}
+    all_subcomps = generate_subcomps(lyric_file=lyric_file, gssummary_file=gssummary_file)
+
+    pngs: Dict[str, str] = {}
+    band_data = []
+
+    # --- Collect valid band data ---
     for image_info in image_infos:
         band = image_info.band
-        result_fits_file = [
-            fits_file for fits_file in result_fits_file_list if fits_file.find(band) != -1
-        ]
-        if result_fits_file is None or len(result_fits_file) != 1:
+        matched = [f for f in result_fits_file_list if band in f]
+        if len(matched) != 1:
             pngs[band] = "comparison png not created: no unique result fits file found for band %s" % band
             continue
-        result_fits_file = result_fits_file[0]
+        result_fits_file = matched[0]
 
         with fits.open(result_fits_file) as hdul:
             if len(hdul) != 5:
                 pngs[band] = "comparison png not created: expected 5 HDUs in result fits file, found %d" % len(hdul)
                 continue
-            original_data = hdul[4].data    
+            original_data = hdul[4].data
             model_data = hdul[3].data
             sigma_data = hdul[2].data
             residual_data = hdul[0].data
             mask_data = hdul[1].data
             if mask_data is None:
-                mask_data = np.zeros_like(original_data, dtype=np.float)
+                mask_data = np.zeros_like(original_data, dtype=float)
             mask = np.where(mask_data > 0, 1, 0)
 
-        region = image_info.fitting_region
         components = extract_component_attributes(
             summary_file=gssummary_file,
             config_file=lyric_file,
             fits_file=image_info.image[0],
             band=image_info.band,
             ra=region_info.ra,
-            dec=region_info.dec
+            dec=region_info.dec,
         )
-        comp_imgs, comp_types = generate_subcomps(image_info, components)
+
+        comp_imgs, comp_names = [], []
+        if all_subcomps and band in all_subcomps:
+            comp_imgs, comp_names = all_subcomps[band]['comp_images'], all_subcomps[band]['comp_names']
+        comp_names = [name.split("_")[-1] for name in comp_names]  # Remove galaxy prefix from names
+        name2type = {comp["name"]: comp["type"] for comp in components}
+        comp_types = [name2type[name] for name in comp_names]
+        components_dict = {comp["name"]: comp for comp in components}
+        components_sorted = [components_dict[name] for name in comp_names]
+
+        band_data.append({
+            'band': band,
+            'image_info': image_info,
+            'result_fits_file': result_fits_file,
+            'original_data': original_data,
+            'model_data': model_data,
+            'sigma_data': sigma_data,
+            'residual_data': residual_data,
+            'mask': mask,
+            'components': components_sorted,
+            'comp_imgs': comp_imgs,
+            'comp_types': comp_types,
+        })
+
+    if not band_data:
+        return pngs, None
+
+    # --- Render one PNG per band ---
+    for bdata in band_data:
+        image_info = bdata['image_info']
+        original_data = bdata['original_data']
+        sigma_data = bdata['sigma_data']
+        model_data = bdata['model_data']
+        residual_data = bdata['residual_data']
+        mask = bdata['mask']
+        components_sorted = bdata['components']
+        comp_imgs = bdata['comp_imgs']
+        comp_types = bdata['comp_types']
+        region = image_info.fitting_region
 
         fig = plt.figure(figsize=(40, 8))
         gs = GridSpec(1, 5, figure=fig, wspace=0.18,
@@ -196,7 +243,9 @@ def create_perband_comparison_png(
 
         # === Col 0: Original Image (99.5th percentile) ===
         ax1 = fig.add_subplot(gs[0, 0])
-        orig_info = render_asinh_panel(ax1, original_data, mask, region=region, show_isophotes=True)
+        orig_info = render_asinh_panel(
+            ax1, original_data, mask, region=region,
+            components=components_sorted, show_isophotes=True)
         title_orig = (
             f"Original Data (vmax=99.5th pctl)\n"
             f"asinh: a={orig_info['asinh_a']:.4f}, vmin={orig_info['vmin_sigma']:.1f}$\\sigma$\n"
@@ -208,8 +257,9 @@ def create_perband_comparison_png(
 
         # === Col 1: Original Image (99.99th percentile) ===
         ax1b = fig.add_subplot(gs[0, 1])
-        orig_info_9999 = render_asinh_panel(ax1b, original_data, mask, region=region, 
-                                            show_isophotes=True, vmax_percentile=99.99)
+        orig_info_9999 = render_asinh_panel(
+            ax1b, original_data, mask, region=region,
+            components=components_sorted, show_isophotes=True, vmax_percentile=99.99)
         title_orig_9999 = (
             f"Original Data (vmax=99.99th pctl)\n"
             f"asinh: a={orig_info_9999['asinh_a']:.4f}, vmin={orig_info_9999['vmin_sigma']:.1f}$\\sigma$\n"
@@ -222,11 +272,12 @@ def create_perband_comparison_png(
         # === Col 2: Model Image (same asinh stretch as original 99.5) ===
         ax2 = fig.add_subplot(gs[0, 2])
         if model_data is not None:
-            render_asinh_panel(ax2, model_data, mask, region=region,
-                               show_isophotes=False, show_mask=False,
-                               norm_params=orig_info,
-                               components=components,
-                               fit_region=region)
+            render_asinh_panel(
+                ax2, model_data, mask, region=region,
+                show_isophotes=False, show_mask=False,
+                norm_params=orig_info,
+                components=components_sorted,
+                fit_region=region)
         else:
             ax2.text(0.5, 0.5, 'No Model', ha='center', va='center', transform=ax2.transAxes)
 
@@ -248,10 +299,7 @@ def create_perband_comparison_png(
 
             # Normalize by background std from original image (significance map)
             bg_std = orig_info.get("std", 1.0)
-            if bg_std > 0:
-                resid_norm = resid_display / bg_std
-            else:
-                resid_norm = resid_display
+            resid_norm = resid_display / bg_std if bg_std > 0 else resid_display
             # Set masked pixels to 0 before normalization
             if mask is not None:
                 resid_norm[mask > 0] = 0
@@ -263,8 +311,8 @@ def create_perband_comparison_png(
                 plot_extent = None
 
             im3 = ax3.imshow(resid_norm, cmap='seismic', vmin=-10, vmax=10,
-                           origin='lower', extent=plot_extent, interpolation='nearest',
-                           aspect='auto')
+                             origin='lower', extent=plot_extent, interpolation='nearest',
+                             aspect='auto')
 
             # Overlay mask on residual (Opaque White)
             if mask is not None:
@@ -295,26 +343,47 @@ def create_perband_comparison_png(
 
         # === Col 4: 1D Surface Brightness Profile ===
         gs_sb = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[0, 4],
-                                         height_ratios=[3, 1], hspace=0.05)
+                                        height_ratios=[3, 1], hspace=0.05)
         ax_sb = fig.add_subplot(gs_sb[0])
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
         render_sb_profile(
             ax_sb, ax_sb_resid, original_data, sigma_data, model_data,
-            None, components, region,
+            None, components_sorted, region,
             comp_images=comp_imgs, comp_types=comp_types,
-            mask=mask, zeropoint=image_info.magzp, pixscale=image_info.pixscale
+            mask=mask, auto_sky=True,
+            zeropoint=image_info.magzp,
+            pixscale=image_info.pixscale,
         )
 
-        # Save figure
-        fits_dir = os.path.dirname(result_fits_file)
-        base_name = os.path.splitext(os.path.basename(result_fits_file))[0]
+        # Save figure (one PNG per band)
+        fits_dir = os.path.dirname(bdata['result_fits_file'])
+        base_name = os.path.splitext(os.path.basename(bdata['result_fits_file']))[0]
         png_filename = os.path.join(fits_dir, f"{base_name}_comparison.png")
         target_dpi = 1024 / 15
         plt.savefig(png_filename, dpi=target_dpi)
         plt.close(fig)
 
-        pngs[band] = png_filename
-    return pngs
+        pngs[bdata['band']] = png_filename
+
+    # --- Write combined component attributes file ---
+    output_dir = os.path.dirname(band_data[0]['result_fits_file'])
+    component_attr_file = os.path.join(output_dir, "component_attributes.txt")
+    with open(component_attr_file, "w") as f:
+        f.write("# Note that the spatial units of x, y and effective radius Re are converted from arcseconds to image pixels. Meanwhile, the reference datum for the position angle (PA) is adjusted: originally measured clockwise from celestial north, the PA in the pixel coordinate system is instead defined relative to the positive y-axis of the image, with angles increasing counterclockwise.\n\n")
+        f.write("Component Attributes by Band\n\n")
+        for bdata in band_data:
+            f.write(f"- Band: {bdata['band']}\n")
+            for comp in bdata['components']:
+                f.write(f"    - Component {comp['name']}:\n")
+                line = '  '.join(
+                    f"{k}:{f'{v:.4f}' if isinstance(v, float) else v}"
+                    for k, v in comp.items()
+                    if k != 'name'
+                )
+                f.write(f"        {line}\n")
+            f.write("\n")
+
+    return pngs, component_attr_file
             
 def create_multiband_comparison_png(
     lyric_file: str,
@@ -382,7 +451,7 @@ def create_multiband_comparison_png(
             'sigma_data': sigma_data,
             'residual_data': residual_data,
             'mask': mask,
-            'components': components,
+            'components': components_sorted,
             'comp_imgs': comp_imgs,
             'comp_types': comp_types,
         })
@@ -419,7 +488,7 @@ def create_multiband_comparison_png(
         model_data = bdata['model_data']
         residual_data = bdata['residual_data']
         mask = bdata['mask']
-        components = bdata['components']
+        components_sorted = bdata['components']
         comp_imgs = bdata['comp_imgs']
         comp_types = bdata['comp_types']
         region = image_info.fitting_region
@@ -440,7 +509,7 @@ def create_multiband_comparison_png(
         # ---- Col 0: Original (99.5th percentile) ----
         ax1 = fig.add_subplot(gs[r0, 0])
         orig_info = render_asinh_panel(
-            ax1, original_data, mask, region=region, components=components, show_isophotes=True)
+            ax1, original_data, mask, region=region, components=components_sorted, show_isophotes=True)
         ax1.set_title(
             f"Original Data (vmax=99.5th pctl)\n"
             f"asinh: a={orig_info['asinh_a']:.4f}, "
@@ -453,7 +522,7 @@ def create_multiband_comparison_png(
         # ---- Col 1: Original (99.99th percentile) ----
         ax1b = fig.add_subplot(gs[r0, 1])
         orig_info_9999 = render_asinh_panel(
-            ax1b, original_data, mask, region=region, components=components,
+            ax1b, original_data, mask, region=region, components=components_sorted,
             show_isophotes=True, vmax_percentile=99.99)
         ax1b.set_title(
             f"Original Data (vmax=99.99th pctl)\n"
@@ -471,7 +540,7 @@ def create_multiband_comparison_png(
                 ax2, model_data, mask, region=region,
                 show_isophotes=False, show_mask=False,
                 norm_params=orig_info,
-                components=components,
+                components=components_sorted,
                 fit_region=region)
         else:
             ax2.text(0.5, 0.5, 'No Model',
@@ -825,9 +894,9 @@ async def run_galfits_image_sed_fitting(
     return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
 
 def TEST_create_multiband_comparison_png():
-    lyric_file = "/home/jiangbo/jwst/317_pred2/output/20260623_114403_obj_317_iter6/obj_317_iter6.lyric"
-    gssummary_file = "/home/jiangbo/jwst/317_pred2/output/20260623_114403_obj_317_iter6/obj317.gssummary"
-    result_fits_file_list = glob("/home/jiangbo/jwst/317_pred2/output/20260623_114403_obj_317_iter6/*_result.fits")
+    lyric_file = "/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/104/output/20260629_112402_obj_104_iter6/obj_104_iter6.lyric"
+    gssummary_file = "/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/104/output/20260629_112402_obj_104_iter6/obj104.gssummary"
+    result_fits_file_list = glob("/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/104/output/20260629_112402_obj_104_iter6/*_result.fits")
     png_path, component_attr_file = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
     print(f"Generated comparison PNG: {png_path}")
     print(f"Generated component attributes file: {component_attr_file}")

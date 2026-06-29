@@ -446,9 +446,9 @@ def render_sb_profile(ax_main, ax_resid, original_data, sigma_data, model_data,
             mu_c = intensity_to_sb(intens_c, zeropoint, pltscale)
 
             color = DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
-            if comp_type.lower() == 'sersic' and components and i < len(components):
+            if comp_type.lower() in ['sersic', 'sersic_f'] and components and i < len(components):
                 n_val = components[i].get('n')
-                label = f'sersic(n={n_val:.2f}) {comp_fractions[i]:.3f}' if n_val is not None else f'sersic {comp_fractions[i]:.3f}'
+                label = f'{comp_type.lower()}(n={n_val:.2f}) {comp_fractions[i]:.3f}' if n_val is not None else f'{comp_type.lower()} {comp_fractions[i]:.3f}'
             else:
                 label = f'{comp_type} {comp_fractions[i]:.3f}'
             ax_main.plot(sma_c, mu_c, '-', color=color, linewidth=1.2,

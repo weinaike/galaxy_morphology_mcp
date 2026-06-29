@@ -894,9 +894,9 @@ async def run_galfits_image_sed_fitting(
     return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
 
 def TEST_create_multiband_comparison_png():
-    lyric_file = "/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/104/output/20260629_112402_obj_104_iter6/obj_104_iter6.lyric"
-    gssummary_file = "/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/104/output/20260629_112402_obj_104_iter6/obj104.gssummary"
-    result_fits_file_list = glob("/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/104/output/20260629_112402_obj_104_iter6/*_result.fits")
+    lyric_file = "/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/1071/output/20260629_191313_obj_1071_iter5_sed/obj_1071_iter5_for_image_sed_fitting.lyric"
+    gssummary_file = "/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/1071/output/20260629_191313_obj_1071_iter5_sed/obj1071.gssummary"
+    result_fits_file_list = glob("/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/1071/output/20260629_191313_obj_1071_iter5_sed/obj1071_nircam_f277w_*result.fits")
     png_path, component_attr_file = create_multiband_comparison_png(lyric_file, gssummary_file, result_fits_file_list)
     print(f"Generated comparison PNG: {png_path}")
     print(f"Generated component attributes file: {component_attr_file}")

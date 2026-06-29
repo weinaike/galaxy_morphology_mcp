@@ -665,7 +665,8 @@ def generate_subcomps(lyric_file, gssummary_file):
 
             comp_images, comp_names = [], []
             for gm, key in comp_keys:
-                logN = pardict['logNorm_{0}_{1}'.format(key, band)]
+                logN_key = 'logNorm_{0}_{1}'.format(key, band)
+                logN = pardict[logN_key] if logN_key in pardict else -7.5 # TODO: work around with a default value if logN_key doesnot exist. will be fixed later
                 imm0 = (10.0 ** logN) * gm.mass_map[key]                # group-grid component
                 imm = jax.image.scale_and_translate(imm0, (nyl, nxl), (0, 1), scale, trans, 'cubic')
                 imm = imm / scale0 ** 2                                  # flux conservation

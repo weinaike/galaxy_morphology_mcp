@@ -76,7 +76,7 @@ AGN (Active Galactic Nucleus) models in GalfitS capture the characteristics of t
 
 ```text
 # Nuclei A
-Na1) AGN                                        # name of the nuclei component
+Na1) AGN                                        # Name of the nuclear component, which must follow the rules for legal identifiers (letters, digits, and underscores only)
 Na2) [0.061,0.011,0.111,0.01,0]                 # redshift of the nuclei
 Na3) 0.055                                      # the EB-V of Galactic dust reddening
 Na4) [0,-5,5,0.1,1]                             # x-center [arcsec]
@@ -102,7 +102,7 @@ Na23) [0.5,0.25,1.5,0.05,0]                     # torus h
 Na24) [7,5,10,0.5,0]                            # torus N0
 Na25) [15,0,90,5,0]                             # torus i
 Na26) [1.,0.2,5,0.1,1]                          # normalization of images_atlas
-Na27) [40,38,42,0.1,0]                          # log luminosity of 1200 K black body
+Na27) [[40,38,42,0.1,0],[39,38,43,0.1,1]        # This parameter is optional. It accepts a list containing two 5-element tuples, corresponding to Lhotdust and Thotdust in sequence.
 ```
 
 ## Broad Emission Lines (Na12)

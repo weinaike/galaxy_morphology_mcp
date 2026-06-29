@@ -630,8 +630,8 @@ def generate_subcomps(lyric_file, gssummary_file):
     gmodel_list = Myfitter.gmodel_list  # galaxy models in imagefitter_phot
     # Collect (gmodel, key) pairs across all galaxy models
     comp_keys = [(gm, k) for gm in gmodel_list for k in gm.subCs.keys()]
-    print('total components per band:', len(comp_keys),
-          '->', [(gm.name + ':' + k) for gm, k in comp_keys])
+    # print('total components per band:', len(comp_keys),
+    #       '->', [(gm.name + ':' + k) for gm, k in comp_keys])
 
     all_results = {}
 

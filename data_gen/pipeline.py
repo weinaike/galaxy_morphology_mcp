@@ -41,6 +41,7 @@ class DataGenPipeline:
                          beam_top_k: int = 0,
                          vlm_reward_image_mode: str = "cutoff",
                          force_greedy: bool = True,
+                         accept_all: bool = False,
                          max_patience: int = 2):
         """
         处理单个星系，并返回该星系的局部统计报告。
@@ -430,7 +431,7 @@ class DataGenPipeline:
                 else:
                     tree["analytics"]["not_improved_count"] += 1
 
-                is_accepted, acceptance_reason = judge_acceptance(delta_r=step_delta_r, temperature=0.5, force_greedy=force_greedy)
+                is_accepted, acceptance_reason = judge_acceptance(delta_r=step_delta_r, temperature=0.5, force_greedy=force_greedy, accept_all=accept_all)
                 mh_accepted = is_accepted and step_delta_r < 0
 
                 node_record = {

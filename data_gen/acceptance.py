@@ -8,15 +8,21 @@ import math
 import random
 from typing import Tuple
 
-def judge_acceptance(delta_r: float, temperature: float = 0.5, force_greedy: bool = True) -> Tuple[bool, str]:
+def judge_acceptance(delta_r: float, temperature: float = 0.5, force_greedy: bool = True, accept_all: bool = False) -> Tuple[bool, str]:
     """
     基于 Metropolis-Hastings 准则的退火接受逻辑。
-    
+
     :param delta_r: 复合 Reward 的差值 (R_new - R_old)
     :param temperature: 温度 T。T 越高越容易探索，T 越低越贪婪。
     :param force_greedy: 强制贪婪模式开关。如果为 True，则只要变差直接拒绝。
+    :param accept_all: 全部接受模式。无论reward结果如何一律接受，模拟MCP交互式流程。
     :return: (是否接受, 理由说明)
     """
+    # 0. 全部接受模式：模拟交互式agent流程，不做任何质量门控
+    if accept_all:
+        tag = "改善" if delta_r >= 0 else "变差"
+        return True, f"全部接受模式 (delta_r={delta_r:+.2f}, {tag})"
+
     # 1. 永远贪婪接受变好的结果
     if delta_r >= 0:
         return True, "Reward 变好 (增益 >= 0)"

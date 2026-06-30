@@ -67,15 +67,19 @@ def find_deepest_leaf(traj):
 
     叶节点 = accepted 且没有任何 accepted 子节点。
     多个同深度叶节点时取 chi2_nu 最小的那个。
-    返回 node dict 或 None。
+    返回 (node, is_root_fallback)。
+    若没有任何 accepted 改进 (max_depth=0)，回退到 root 节点 (该实验在此星系卡在初始拟合)。
     """
     nodes = traj.get("nodes", [])
     if not nodes:
-        return None
+        return None, False
+
+    root = next((n for n in nodes if n.get("parent_id") is None), None)
 
     accepted = [n for n in nodes if n.get("is_accepted") and n.get("parent_id") is not None]
     if not accepted:
-        return None
+        # 没有任何 accepted 改进 → 终点就是初始拟合 (root)
+        return root, True
 
     accepted_ids = {n["node_id"] for n in accepted}
     has_accepted_child = set()
@@ -91,23 +95,44 @@ def find_deepest_leaf(traj):
     max_depth = max(n.get("depth", 0) for n in leaves)
     deepest = [n for n in leaves if n.get("depth", 0) == max_depth]
     deepest.sort(key=lambda n: n.get("metrics", {}).get("chi2_nu", 9999.0))
-    return deepest[0]
+    return deepest[0], False
+
+
+def _resolve_path(p, traj):
+    """残差图/summary 路径解析: 绝对路径不存在时，尝试相对 trajectory 文件所在目录。"""
+    if not p:
+        return p
+    if os.path.exists(p):
+        return p
+    # 尝试相对 trajectory 所在的实验目录重新拼接 (兼容跨机器/目录搬移)
+    src = traj.get("_source_file")
+    if src:
+        traj_dir = os.path.dirname(os.path.abspath(src))
+        # p 里通常含 galaxy_id 子目录，取 basename 之上若干层去拼
+        cand = os.path.join(traj_dir, os.path.basename(p))
+        if os.path.exists(cand):
+            return cand
+    return p
 
 
 def get_endpoint(traj, image_mode="full"):
-    """返回终点节点的 (residual_image_path, summary_path, metrics, node_id)。"""
-    leaf = find_deepest_leaf(traj)
+    """返回终点节点信息 dict，或 None (连 root 都没有)。"""
+    leaf, is_root_fallback = find_deepest_leaf(traj)
     if leaf is None:
         return None
 
     residual = leaf.get("residual_path")
     if image_mode == "full":
         residual = _to_full(residual)
-    summary = leaf.get("summary_path")
+    residual = _resolve_path(residual, traj)
+    summary = _resolve_path(leaf.get("summary_path"), traj)
+
     return {
         "node_id": leaf.get("node_id"),
         "depth": leaf.get("depth", 0),
+        "is_root_fallback": is_root_fallback,
         "residual_path": residual,
+        "residual_exists": bool(residual and os.path.exists(str(residual))),
         "summary_path": summary,
         "metrics": leaf.get("metrics", {}),
     }
@@ -130,17 +155,29 @@ def classify_verdict(result):
 
 
 def compare_one(gid, ep_a, ep_b, model_name, api_key):
-    """对单个星系做一次【无顺序偏置】对决 (内部正反各跑一次)。返回结果 dict。"""
-    # 缺图直接判:谁有终点谁赢
-    a_ok = ep_a and ep_a.get("residual_path") and os.path.exists(str(ep_a["residual_path"]))
-    b_ok = ep_b and ep_b.get("residual_path") and os.path.exists(str(ep_b["residual_path"]))
+    """对单个星系做一次【无顺序偏置】对决 (内部正反各跑一次)。返回结果 dict。
 
-    if not a_ok and not b_ok:
-        return {"galaxy_id": gid, "verdict": "skip", "reason": "两个实验都缺终点残差图"}
-    if not a_ok:
-        return {"galaxy_id": gid, "verdict": "exp_b", "reason": "exp_a 缺终点残差图，exp_b 默认胜", "by_default": True}
-    if not b_ok:
-        return {"galaxy_id": gid, "verdict": "exp_a", "reason": "exp_b 缺终点残差图，exp_a 默认胜", "by_default": True}
+    缺图不再"默认胜"：图缺失是数据问题，不代表哪个实验拟合更好，单独记 no_endpoint。
+    注意: 没有 accepted 改进的实验，终点回退到 root (初始拟合)，仍可正常参与对决。
+    """
+    a_ok = ep_a and ep_a.get("residual_exists")
+    b_ok = ep_b and ep_b.get("residual_exists")
+
+    if not a_ok or not b_ok:
+        missing = []
+        if not a_ok:
+            missing.append("exp_a")
+        if not b_ok:
+            missing.append("exp_b")
+        return {
+            "galaxy_id": gid,
+            "verdict": "no_endpoint",
+            "reason": f"缺终点残差图({','.join(missing)})，不计胜负",
+            "exp_a_residual_path": ep_a.get("residual_path") if ep_a else None,
+            "exp_b_residual_path": ep_b.get("residual_path") if ep_b else None,
+            "exp_a_is_root": ep_a.get("is_root_fallback") if ep_a else None,
+            "exp_b_is_root": ep_b.get("is_root_fallback") if ep_b else None,
+        }
 
     try:
         result = compare_two_fits_symmetric(
@@ -164,6 +201,10 @@ def compare_one(gid, ep_a, ep_b, model_name, api_key):
         "reason": fwd.get("reason", ""),
         "forward_verdict": fwd.get("verdict"),
         "backward_verdict_translated": result.get("backward_verdict_translated"),
+        "exp_a_residual_path": ep_a["residual_path"],
+        "exp_b_residual_path": ep_b["residual_path"],
+        "exp_a_is_root": ep_a.get("is_root_fallback"),
+        "exp_b_is_root": ep_b.get("is_root_fallback"),
         "exp_a_chi2_nu": ep_a["metrics"].get("chi2_nu"),
         "exp_b_chi2_nu": ep_b["metrics"].get("chi2_nu"),
         "exp_a_bic": ep_a["metrics"].get("bic"),
@@ -212,9 +253,22 @@ def main():
         ep_a = get_endpoint(trajs_a[gid], args.image_mode)
         ep_b = get_endpoint(trajs_b[gid], args.image_mode)
         print(f"\n>>> 对决星系: {gid}")
+        # 打印判别用的图路径,方便人工核对
+        def _ep_desc(ep, name):
+            if not ep:
+                return f"    [{name}] 无任何节点(连root都没有)"
+            tag = "root初始拟合" if ep.get("is_root_fallback") else f"叶节点depth={ep.get('depth')}"
+            exists = "✓存在" if ep.get("residual_exists") else "✗缺失"
+            return (f"    [{name}] {ep.get('node_id')} ({tag}) | 图[{exists}]: {ep.get('residual_path')}")
+        print(_ep_desc(ep_a, name_a))
+        print(_ep_desc(ep_b, name_b))
+
         r = compare_one(gid, ep_a, ep_b, args.model, api_key)
         verdict = r["verdict"]
-        winner = {"exp_a": name_a, "exp_b": name_b, "tie": "平手", "skip": "跳过", "error": "错误"}.get(verdict, verdict)
+        winner = {
+            "exp_a": name_a, "exp_b": name_b, "tie": "平手",
+            "no_endpoint": "无终点(不计胜负)", "error": "错误",
+        }.get(verdict, verdict)
         robust_tag = "" if r.get("robust") is None else (" [双向一致]" if r.get("robust") else " [双向矛盾→tie]")
         print(f"    判定: {winner}{robust_tag} | "
               f"{name_a}χ²/ν={r.get('exp_a_chi2_nu')} vs {name_b}χ²/ν={r.get('exp_b_chi2_nu')}")
@@ -225,22 +279,26 @@ def main():
     a_wins = sum(1 for r in results if r["verdict"] == "exp_a")
     b_wins = sum(1 for r in results if r["verdict"] == "exp_b")
     ties = sum(1 for r in results if r["verdict"] == "tie")
-    skips = sum(1 for r in results if r["verdict"] in ("skip", "error"))
+    no_endpoint = sum(1 for r in results if r["verdict"] == "no_endpoint")
+    errors = sum(1 for r in results if r["verdict"] == "error")
     conflicts = sum(1 for r in results if r.get("robust") is False)
 
+    valid = a_wins + b_wins + ties  # 真正参与对决的星系数(不含无终点/错误)
     report = {
         "exp_a": {"name": name_a, "dir": exp_a_dir},
         "exp_b": {"name": name_b, "dir": exp_b_dir},
         "model": args.model,
         "image_mode": args.image_mode,
         "bias_free": "symmetric (内部正反各跑一次,双向一致才算胜)",
-        "num_compared": len(results),
+        "num_common_galaxies": len(results),
+        "num_valid_compared": valid,
         "summary": {
             f"{name_a}_wins": a_wins,
             f"{name_b}_wins": b_wins,
             "ties": ties,
             "direction_conflicts(判tie)": conflicts,
-            "skip_or_error": skips,
+            "no_endpoint(不计胜负)": no_endpoint,
+            "errors": errors,
         },
         "details": results,
     }
@@ -248,10 +306,12 @@ def main():
     print("\n" + "=" * 60)
     print(f"  对决总结: {name_a} vs {name_b}")
     print("=" * 60)
+    print(f"  有效对决星系: {valid} (公共{len(results)} - 无终点{no_endpoint} - 错误{errors})")
     print(f"  {name_a} 胜: {a_wins}")
     print(f"  {name_b} 胜: {b_wins}")
     print(f"  平手:    {ties}  (其中双向矛盾判tie: {conflicts})")
-    print(f"  跳过/错误: {skips}")
+    print(f"  无终点(不计胜负): {no_endpoint}")
+    print(f"  错误: {errors}")
     print("=" * 60)
 
     output_path = args.output or os.path.join(

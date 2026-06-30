@@ -28,7 +28,7 @@ import json
 import os
 import glob
 
-from data_gen.reward import calculate_reward_model_with_param
+from data_gen.reward import compare_two_fits_symmetric
 
 
 def _to_full(p):
@@ -114,24 +114,23 @@ def get_endpoint(traj, image_mode="full"):
 
 
 def classify_verdict(result):
-    """把 VLM 返回的判定翻译成 exp_a / exp_b / tie 胜负。
+    """把对称对决返回的 verdict 翻译成 exp_a / exp_b / tie。
 
-    注意: exp_a=Image1(prev), exp_b=Image2(next)。
-    judge 描述 "Image2 相对 Image1" 的变化。
-
-    函数末尾把 improvement_level 重命名为 residual_improvement_level (reward.py:1538)，
-    这里以 residual_improvement_level 为主信号。
+    compare_two_fits_symmetric 里 image_a=exp_a, image_b=exp_b：
+      "A_better" → exp_a 胜
+      "B_better" → exp_b 胜
+      "tie"      → 平手 (含两个方向矛盾被判 tie 的情况)
     """
-    level = result.get("residual_improvement_level") or result.get("improvement_level") or "no_improvement"
-    if level in ("clear_improvement", "slight_improvement"):
-        return "exp_b"   # Image2(exp_b) 残差更干净
-    if level == "worse":
-        return "exp_a"   # Image2(exp_b) 更差 → exp_a 胜
-    return "tie"         # no_improvement
+    v = result.get("verdict", "tie")
+    if v == "A_better":
+        return "exp_a"
+    if v == "B_better":
+        return "exp_b"
+    return "tie"
 
 
 def compare_one(gid, ep_a, ep_b, model_name, api_key):
-    """对单个星系做一次 VLM 对决。返回结果 dict。"""
+    """对单个星系做一次【无顺序偏置】对决 (内部正反各跑一次)。返回结果 dict。"""
     # 缺图直接判:谁有终点谁赢
     a_ok = ep_a and ep_a.get("residual_path") and os.path.exists(str(ep_a["residual_path"]))
     b_ok = ep_b and ep_b.get("residual_path") and os.path.exists(str(ep_b["residual_path"]))
@@ -144,11 +143,11 @@ def compare_one(gid, ep_a, ep_b, model_name, api_key):
         return {"galaxy_id": gid, "verdict": "exp_a", "reason": "exp_b 缺终点残差图，exp_a 默认胜", "by_default": True}
 
     try:
-        result = calculate_reward_model_with_param(
-            prev_residual_image_path=ep_a["residual_path"],
-            next_residual_image_path=ep_b["residual_path"],
-            prev_summary_path=ep_a.get("summary_path"),
-            new_summary_path=ep_b.get("summary_path"),
+        result = compare_two_fits_symmetric(
+            image_a_path=ep_a["residual_path"],
+            image_b_path=ep_b["residual_path"],
+            summary_a_path=ep_a.get("summary_path"),
+            summary_b_path=ep_b.get("summary_path"),
             model_name=model_name,
             api_key=api_key,
         )
@@ -156,12 +155,15 @@ def compare_one(gid, ep_a, ep_b, model_name, api_key):
         return {"galaxy_id": gid, "verdict": "error", "reason": f"VLM 调用失败: {e}"}
 
     verdict = classify_verdict(result)
+    fwd = result.get("forward", {})
     return {
         "galaxy_id": gid,
         "verdict": verdict,
-        "improvement_level": result.get("residual_improvement_level") or result.get("improvement_level"),
-        "confidence": result.get("confidence"),
-        "reason": result.get("reason", ""),
+        "robust": result.get("robust"),
+        "confidence": fwd.get("confidence"),
+        "reason": fwd.get("reason", ""),
+        "forward_verdict": fwd.get("verdict"),
+        "backward_verdict_translated": result.get("backward_verdict_translated"),
         "exp_a_chi2_nu": ep_a["metrics"].get("chi2_nu"),
         "exp_b_chi2_nu": ep_b["metrics"].get("chi2_nu"),
         "exp_a_bic": ep_a["metrics"].get("bic"),
@@ -174,9 +176,9 @@ def compare_one(gid, ep_a, ep_b, model_name, api_key):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="跨实验轨迹质量 VLM 对决")
-    parser.add_argument("--exp-a", required=True, help="实验A的output目录 (作为 Image1/prev)")
-    parser.add_argument("--exp-b", required=True, help="实验B的output目录 (作为 Image2/next)")
+    parser = argparse.ArgumentParser(description="跨实验轨迹质量 VLM 对决 (无顺序偏置)")
+    parser.add_argument("--exp-a", required=True, help="实验A的output目录")
+    parser.add_argument("--exp-b", required=True, help="实验B的output目录")
     parser.add_argument("--model", default="gemini-3.1-pro-preview", help="VLM模型名")
     parser.add_argument("--image-mode", default="full", choices=["full", "cutoff"], help="残差图模式")
     parser.add_argument("--output", default=None, help="输出JSON路径")
@@ -213,7 +215,8 @@ def main():
         r = compare_one(gid, ep_a, ep_b, args.model, api_key)
         verdict = r["verdict"]
         winner = {"exp_a": name_a, "exp_b": name_b, "tie": "平手", "skip": "跳过", "error": "错误"}.get(verdict, verdict)
-        print(f"    判定: {winner} | level={r.get('improvement_level')} | "
+        robust_tag = "" if r.get("robust") is None else (" [双向一致]" if r.get("robust") else " [双向矛盾→tie]")
+        print(f"    判定: {winner}{robust_tag} | "
               f"{name_a}χ²/ν={r.get('exp_a_chi2_nu')} vs {name_b}χ²/ν={r.get('exp_b_chi2_nu')}")
         if r.get("reason"):
             print(f"    理由: {r['reason'][:160]}")
@@ -223,17 +226,20 @@ def main():
     b_wins = sum(1 for r in results if r["verdict"] == "exp_b")
     ties = sum(1 for r in results if r["verdict"] == "tie")
     skips = sum(1 for r in results if r["verdict"] in ("skip", "error"))
+    conflicts = sum(1 for r in results if r.get("robust") is False)
 
     report = {
         "exp_a": {"name": name_a, "dir": exp_a_dir},
         "exp_b": {"name": name_b, "dir": exp_b_dir},
         "model": args.model,
         "image_mode": args.image_mode,
+        "bias_free": "symmetric (内部正反各跑一次,双向一致才算胜)",
         "num_compared": len(results),
         "summary": {
             f"{name_a}_wins": a_wins,
             f"{name_b}_wins": b_wins,
             "ties": ties,
+            "direction_conflicts(判tie)": conflicts,
             "skip_or_error": skips,
         },
         "details": results,
@@ -244,7 +250,7 @@ def main():
     print("=" * 60)
     print(f"  {name_a} 胜: {a_wins}")
     print(f"  {name_b} 胜: {b_wins}")
-    print(f"  平手:    {ties}")
+    print(f"  平手:    {ties}  (其中双向矛盾判tie: {conflicts})")
     print(f"  跳过/错误: {skips}")
     print("=" * 60)
 

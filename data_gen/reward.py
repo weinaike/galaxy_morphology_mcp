@@ -1561,6 +1561,366 @@ Definitions:
 
 
 
+def get_openAI_response_two_images_neutral(
+    api_key: str,
+    model_name: str,
+    prompt: str,
+    image_a_path: str,
+    image_b_path: str,
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    timeout: int = 300,
+    url: str = "https://api.road2all.com/v1/chat/completions",
+    max_retries: int = 3,
+    retry_sleep: int = 10,
+):
+    """
+    与 get_openAI_response_two_images 相同的调用机制，但图片标签【中性】：
+    用 "Image A" / "Image B"，不含 previous/next 的先后暗示，用于无顺序偏置对决。
+    """
+    api_key = api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("api_key 未提供：请在 .env 中设置 OPENAI_API_KEY（不要硬编码到源码）")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    mime_type_a = get_image_mime_type(image_a_path)
+    mime_type_b = get_image_mime_type(image_b_path)
+
+    content = [
+        {"type": "text", "text": prompt},
+        {"type": "text", "text": "Image A: a GALFIT comparison image. Focus on its residual panel."},
+        {"type": "image_url", "image_url": {"url": f"data:{mime_type_a};base64,{encode_image(image_a_path)}"}},
+        {"type": "text", "text": "Image B: a GALFIT comparison image. Focus on its residual panel."},
+        {"type": "image_url", "image_url": {"url": f"data:{mime_type_b};base64,{encode_image(image_b_path)}"}},
+    ]
+
+    data = {
+        "model": model_name,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": [{"role": "user", "content": content}],
+        "stream": False,
+    }
+
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.post(url, headers=headers, json=data, timeout=timeout)
+            response.raise_for_status()
+            resp_json = response.json()
+            return (
+                resp_json["choices"][0]["message"]["content"],
+                resp_json.get("usage", {}),
+            )
+        except requests.exceptions.HTTPError as e:
+            last_error = e
+            status_code = e.response.status_code if e.response is not None else None
+            print(f"    ⚠️ [API HTTPError] attempt {attempt}/{max_retries}, status_code={status_code}, error={e}")
+            if status_code in [429, 500, 502, 503, 504] and attempt < max_retries:
+                time.sleep(retry_sleep * attempt)
+                continue
+            raise
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            print(f"    ⚠️ [API RequestException] attempt {attempt}/{max_retries}, error={e}")
+            if attempt < max_retries:
+                time.sleep(retry_sleep * attempt)
+                continue
+            raise
+
+    raise RuntimeError(f"API request failed after {max_retries} retries: {last_error}")
+
+
+def _compare_two_fits_single(
+    image_a_path: str,
+    image_b_path: str,
+    summary_a_content: str,
+    summary_b_content: str,
+    model_name: str,
+    api_key: str,
+    temperature: float = 0.1,
+    max_tokens: int = 8192,
+    timeout: int = 300,
+):
+    """对称对决的【单次】调用：判定 Image A vs Image B 哪个拟合更好。
+
+    保留 calculate_reward_model_with_param 的全部天文知识（残差结构、hard warning、
+    参数合理性、chisq/chisq_nu/BIC 指标规则），但框架改为【对称】：
+    不预设谁是基准、谁是候选，只问 A 和 B 哪个是更好的拟合。
+
+    返回 dict，含 verdict ∈ {"A_better","B_better","tie"} 及各项理由字段。
+    """
+    prompt = """
+You are an astronomer experienced in GALFIT galaxy component decomposition.
+
+You will be given exactly two images:
+
+* Image A: one GALFIT fitting result.
+* Image B: another GALFIT fitting result of the SAME galaxy.
+
+Both are independent candidate fits of the same galaxy. NEITHER is a baseline or a
+"previous step". Your task is a SYMMETRIC comparison: decide which fit is better,
+or whether they are of equal quality. Do not assume either image is the reference.
+
+Each image may be a residual-only image or a full GALFIT comparison figure.
+If multiple panels are present, focus primarily on the residual panel, usually titled
+"Residual/σ", "Residual", "data-model", or similar. Ignore the observed data panel,
+fitted model panel, and surface-brightness profile panel unless needed to check
+image-summary correspondence.
+
+The judgement must consider, symmetrically for both fits:
+
+1. galaxy-related residual structures (cleaner residual is better);
+2. physical plausibility of the parameters;
+3. statistical reasonability of chisq, chisq/nu, and BIC;
+4. image-summary consistency;
+5. severe residual or fitting warnings.
+
+========================================
+Input Pairing
+=============
+
+Image A corresponds only to fitting summary A.
+Image B corresponds only to fitting summary B.
+Do not use parameters or warnings from one summary to interpret the other image.
+
+Fitting summary for Image A:
+
+""" + summary_a_content + """
+
+Fitting summary for Image B:
+
+""" + summary_b_content + """
+
+========================================
+Part 1: Residual Image Quality (judge each fit, then compare)
+=============================================================
+
+For EACH image independently, assess the galaxy-related residual structures:
+
+* central positive or negative residuals;
+* dipole-like red/blue residuals;
+* compact clumps near the galaxy center;
+* ring, spiral, bar, lens-like, or asymmetric structures;
+* coherent large-scale residual patterns.
+
+Ignore features unrelated to the target galaxy: masked regions, foreground stars,
+isolated far artifacts, unchanged background noise.
+
+The fit whose residual is visually cleaner / flatter / more structure-free in the
+galaxy region is better on the residual dimension. If both residuals are visually
+indistinguishable, residuals are a tie.
+
+========================================
+Part 2: Hard Warning Check (each fit)
+=====================================
+
+For EACH image, check severe warnings:
+
+* "fit_not_converged": summary indicates the fit did not converge.
+* "linear_gradient": residual shows a strong large-scale linear background gradient.
+* "chaotic_dark_patches": residual contains large irregular dark patches.
+* "diffuse_fragments": widespread diffuse fragments unrelated to galaxy structure.
+* "unmasked_artifact": residual dominated by unmasked stars, cosmic rays, bad pixels,
+  saturated sources, or other artifacts.
+
+A fit with a severe Hard Warning is strongly penalized. If one fit has a hard warning
+and the other does not, the clean one is better.
+
+========================================
+Part 3: Parameter Plausibility (each fit)
+=========================================
+
+For EACH fit, judge whether parameters are physically plausible. Serious issues:
+
+* Sérsic index n < 0.1 or n > 8, unless physically justified (e.g. BCG/cD);
+* effective radius Re < 0.2 pixel;
+* Re unreasonably large, approaching the image size;
+* axis ratio q < 0.05 or q > 1.0;
+* large center offsets between components that should be co-centered;
+* implausible size hierarchy (unreasonable bulge/disk/bar relation);
+* redundant or nearly duplicated components;
+* negligible-flux components (mag difference > 5 from major components);
+* parameter runaway, severe degeneracy, or unstable parameters;
+* more components without residual or metric support.
+
+The fit with more physically plausible parameters is better on the parameter dimension.
+
+========================================
+Part 4: Metric Reasonability (compare A vs B)
+=============================================
+
+Compare chisq, chisq/nu, and BIC between summary A and summary B.
+
+* chisq, chisq/nu, BIC are all better when smaller.
+* chisq/nu measures normalized fitting quality.
+* BIC penalizes model complexity; especially important when residuals look similar.
+
+Rules:
+* The fit with clearly smaller chisq/nu is better, UNLESS achieved via implausible
+  parameters or obvious overfitting.
+* When residuals and chisq/nu are similar, the fit with clearly smaller BIC is better
+  (more parsimonious, fewer unjustified components).
+* A smaller chisq achieved only by adding suspicious/unphysical components, with BIC
+  increasing, is NOT better — that is overfitting.
+* If both fits have comparable metrics, plausible parameters, and similar residuals,
+  the result is a tie.
+
+========================================
+Final Symmetric Verdict
+=======================
+
+Weigh the dimensions holistically (residual quality is primary; parameter plausibility
+and BIC guard against overfitting). Decide:
+
+* "A_better": Image A is the better fit overall.
+* "B_better": Image B is the better fit overall.
+* "tie": the two fits are of essentially equal quality, or evidence is too ambiguous
+  to prefer one.
+
+Be conservative: if one fit reaches lower chisq/nu only through unphysical parameters,
+overfitting, or hard warnings, prefer the other (or call it a tie).
+
+========================================
+Output Format
+=============
+
+Output strictly in JSON. No Markdown. No text outside the JSON.
+
+{
+"verdict": "A_better",
+"confidence": 0.75,
+"a_residual_quality": "clean | minor_structure | strong_structure",
+"b_residual_quality": "clean | minor_structure | strong_structure",
+"a_param_plausible": true,
+"b_param_plausible": true,
+"a_hard_warnings": [],
+"b_hard_warnings": [],
+"chisq_nu_compare": "A_lower | B_lower | similar | unavailable",
+"bic_compare": "A_lower | B_lower | similar | unavailable",
+"reason": "Concise explanation comparing residual quality, parameter plausibility, hard warnings, and chisq/chisq_nu/BIC between the two fits, and why the chosen verdict holds."
+}
+
+Definitions:
+* verdict: one of ["A_better", "B_better", "tie"]. The holistic symmetric judgement.
+* confidence: float between 0 and 1.
+* a_residual_quality / b_residual_quality: one of ["clean", "minor_structure", "strong_structure"].
+* a_param_plausible / b_param_plausible: boolean.
+* a_hard_warnings / b_hard_warnings: list from ["fit_not_converged","linear_gradient","chaotic_dark_patches","diffuse_fragments","unmasked_artifact"]. Empty list if none.
+* chisq_nu_compare / bic_compare: one of ["A_lower","B_lower","similar","unavailable"].
+* reason: concise explanation.
+"""
+
+    raw_response, usage = get_openAI_response_two_images_neutral(
+        api_key=api_key,
+        model_name=model_name,
+        prompt=prompt,
+        image_a_path=image_a_path,
+        image_b_path=image_b_path,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+
+    if raw_response is None or not str(raw_response).strip():
+        raise ValueError("Model returned empty response in symmetric comparison.")
+
+    result = extract_json_from_text(raw_response)
+    verdict = result.get("verdict", "tie")
+    if verdict not in ("A_better", "B_better", "tie"):
+        verdict = "tie"
+    result["verdict"] = verdict
+    result["usage"] = usage
+    return result
+
+
+def compare_two_fits_symmetric(
+    image_a_path: str,
+    image_b_path: str,
+    summary_a_path: str = None,
+    summary_b_path: str = None,
+    model_name: str = "gemini-3.1-pro-preview",
+    api_key: str = None,
+    temperature: float = 0.1,
+    max_tokens: int = 8192,
+    timeout: int = 300,
+):
+    """无顺序偏置的两拟合对决。
+
+    保留 calculate_reward_model_with_param 的全部天文知识，但：
+    1. prompt 框架对称（不预设谁是基准），图片标签中性（Image A/B）；
+    2. 内部自动跑两次 —— (A,B) 和 调换位置的 (B,A) —— 只有两次判同一赢家才算数，
+       否则判 tie。这从机制上彻底消除顺序偏置。
+
+    返回 dict:
+      {
+        "verdict": "A_better" | "B_better" | "tie",
+        "robust": bool,                 # 两个方向是否一致
+        "forward":  {...单次结果...},   # (A作Image A, B作Image B)
+        "backward": {...单次结果...},   # (B作Image A, A作Image B)
+      }
+    """
+    if api_key is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("api_key is None. Please pass api_key or set OPENAI_API_KEY.")
+
+    for p in (image_a_path, image_b_path):
+        if not p or not os.path.exists(p):
+            raise FileNotFoundError(f"Comparison image not found: {p}")
+
+    def _read(p):
+        if p and os.path.exists(p):
+            try:
+                return read_summary_md(p)
+            except Exception as e:
+                print(f"    ⚠️ [Symmetric] summary 读取失败 {p}: {e}")
+        return "(参数摘要不可用)"
+
+    summary_a_content = _read(summary_a_path)
+    summary_b_content = _read(summary_b_path)
+
+    # 方向1: A=Image A, B=Image B
+    fwd = _compare_two_fits_single(
+        image_a_path, image_b_path, summary_a_content, summary_b_content,
+        model_name, api_key, temperature, max_tokens, timeout,
+    )
+    # 方向2: 调换 —— 把真实的 B 放到 Image A 槽位，真实的 A 放到 Image B 槽位
+    bwd_raw = _compare_two_fits_single(
+        image_b_path, image_a_path, summary_b_content, summary_a_content,
+        model_name, api_key, temperature, max_tokens, timeout,
+    )
+
+    # 把方向2的 verdict 翻译回 A/B 语义 (方向2里 "A_better" 实际指真实的 B)
+    bwd_verdict_raw = bwd_raw.get("verdict", "tie")
+    bwd_verdict_translated = {
+        "A_better": "B_better",
+        "B_better": "A_better",
+        "tie": "tie",
+    }[bwd_verdict_raw]
+
+    # 稳健判定：两个方向一致才采纳，否则 tie
+    if fwd.get("verdict") == bwd_verdict_translated:
+        final_verdict = fwd["verdict"]
+        robust = True
+    else:
+        final_verdict = "tie"
+        robust = False
+
+    return {
+        "verdict": final_verdict,
+        "robust": robust,
+        "forward": fwd,
+        "backward": bwd_raw,
+        "backward_verdict_translated": bwd_verdict_translated,
+    }
+
+
+
 def calculate_reward(old_metrics: dict, new_metrics: dict, action: dict, step: int,
                      prev_image_path: str = None, next_image_path: str = None,
                      use_llm: bool = False, vlm_reward_model_name: str = "gemini-3.1-pro-preview",

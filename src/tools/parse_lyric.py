@@ -5,7 +5,6 @@ from dataclasses import dataclass
 import os
 from astropy.io import fits, ascii
 from astropy.wcs import WCS
-from galfits import gsutils
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -614,6 +613,11 @@ def generate_subcomps(lyric_file, gssummary_file):
     if not os.path.exists(gssummary_file):
         return None
     workplace = os.path.dirname(os.path.abspath(gssummary_file))
+
+    # Lazy import: gsutils pulls in the GalfitS package (and reproject), which is
+    # only needed on the run_galfits / GalfitS path. Keeping it out of module
+    # top-level lets the run_galfit (GALFIT_BIN binary) path load without it.
+    from galfits import gsutils
 
     Myfitter, targ, fs = gsutils.read_config_file(lyric_file, workplace)
     smfile = ascii.read(gssummary_file)

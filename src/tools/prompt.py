@@ -16,10 +16,6 @@ except ImportError as e:
     from prompts import prompts
 from mcp.server.fastmcp.prompts import Prompt as MCP_Prompt
 
-GALFIT_SYSTEM_MESSAGE = prompts.GALFIT_SYSTEM_MESSAGE
-GALFITS_SYSTEM_MESSAGE = prompts.GALFITS_SYSTEM_MESSAGE
-get_galfit_analysis_prompt = prompts.get_galfit_analysis_prompt
-get_galfits_analysis_prompt = prompts.get_galfits_analysis_prompt
 CLASSIFICATION_SYSTEM_MESSAGE = prompts.get_classification_system_message()
 get_classification_prompt = prompts.get_classification_prompt
 RESIDUAL_ANALYSIS_SYSTEM_MESSAGE = prompts.get_residual_analysis_system_message()

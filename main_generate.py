@@ -13,32 +13,43 @@ from data_gen.pipeline import DataGenPipeline
 # 🛠️ 任务控制面板 (全局配置)
 # ==========================================
 TEST_MODE = True
-EXPERIMENT_ID = "E3"  # 实验编号，输出目录和日志自动带上（E1/E2/E3/E4/E5/E6）
+EXPERIMENT_ID = "E6r"  # 实验编号，输出目录和日志自动带上（E1/E2/E3/E4/E5/E6/E6r）
 USE_LLM_REWARD = True  # 大模型视觉打分全局开关
 PROPOSAL_STRATEGY = "vlm_generated" # 提议策略: "rule_based", "expert_guided", "vlm_generated"
 VLM_REWARD_MODEL_NAME = "gemini-3.1-pro-preview" # 大模型视觉打分模型名
 VLM_PROPOSAL_MODEL_NAME = "gemini-3.1-pro-preview" # VLM 提议分布模型名（独立于 reward 模型）
 USE_PARAM_CHECK = True  # 参数合理性审查（仅 USE_LLM_REWARD=True 时生效，让 VLM 同时审查拟合参数物理合理性）
 VLM_PROPOSAL_NUM_CALLS = 4  # VLM 提议并发调用次数（仅 vlm_generated 策略生效）。深层分支爆炸由 BEAM_TOP_K 兜底
-USE_EXPERT_HINT_FOR_VLM = True  # 是否用 Gadotti_params.json 引导 VLM 提议（仅 vlm_generated 策略生效）
+USE_EXPERT_HINT_FOR_VLM = False  # 是否用 Gadotti_params.json 引导 VLM 提议（仅 vlm_generated 策略生效）
 USE_HISTORY_FOR_VLM = True  # 是否把历史轮次摘要(父链路:采纳动作/指标/同层被拒)注入 VLM 提议 prompt（仅 vlm_generated）
 VLM_HISTORY_MAX_STEPS = 3  # 历史轮次最多取最近多少步（0=全部，N=只取最近 N 步，控制 prompt 长度）
 BEAM_TOP_K = 6  # 每个 step 后保留 chi2_nu 最好的 K 个 accepted 父节点（防止深层分支爆炸 + 自动剪相似分支）
 VLM_REWARD_IMAGE_MODE = "full"  # VLM reward 看图模式: "full"=完整 comparison.png (1×4: orig|model|residual|1D SB); "cutoff"=仅残差面板裁剪图
-FORCE_GREEDY = True  # 贪心接受开关: True=只接受改善(delta_r>=0)的变体; False=启用 Metropolis-Hastings 退火,允许小幅回退以探索更深轨迹
+FORCE_GREEDY = False  # 贪心接受开关: True=只接受改善(delta_r>=0)的变体; False=启用 Metropolis-Hastings 退火,允许小幅回退以探索更深轨迹
 MAX_PATIENCE = 2  # 连续多少步全部变体未被接受时触发早停（默认2；探索模式建议4-5）
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
-    "SDSS_gband",
-    # "SDSS_rband",
+    # "SDSS_gband",
+    "SDSS_rband",
     # "SDSS_iband"
 ]
 
 # 🎯 指定星系过滤：非空时只跑列表里的星系（按 id 后缀匹配，兼容带/不带波段前缀）。
 # 空列表 = 维持原行为（TEST_MODE 取前20）。用于在特定数据集上对标（如 MCP 70% 的20个r波段星系）。
 # 注意：用此功能对标时，TARGET_BANDS 要包含对应波段（如 SDSS_rband）。
-GALAXY_ID_FILTER = []
+GALAXY_ID_FILTER = [
+    "Plate0270_MJD51909_Fiber095_r", "Plate0271_MJD51883_Fiber005_r",
+    "Plate0274_MJD51913_Fiber503_r", "Plate0276_MJD51909_Fiber629_r",
+    "Plate0284_MJD51943_Fiber397_r", "Plate0295_MJD51985_Fiber525_r",
+    "Plate0300_MJD51943_Fiber581_r", "Plate0330_MJD52370_Fiber568_r",
+    "Plate0391_MJD51782_Fiber072_r", "Plate0391_MJD51782_Fiber501_r",
+    "Plate0414_MJD51901_Fiber247_r", "Plate0436_MJD51883_Fiber493_r",
+    "Plate0461_MJD51910_Fiber109_r", "Plate0501_MJD52235_Fiber338_r",
+    "Plate0535_MJD51999_Fiber497_r", "Plate0536_MJD52024_Fiber323_r",
+    "Plate0556_MJD51991_Fiber236_r", "Plate0721_MJD52228_Fiber011_r",
+    "Plate0765_MJD52254_Fiber182_r", "Plate0887_MJD52376_Fiber382_r",
+]
 
 # 自动获取当前 GalDecomp_Gen 的根目录
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))

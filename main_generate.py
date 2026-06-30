@@ -30,10 +30,15 @@ MAX_PATIENCE = 2  # 连续多少步全部变体未被接受时触发早停（默
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
-    "SDSS_gband", 
-    # "SDSS_rband", 
+    "SDSS_gband",
+    # "SDSS_rband",
     # "SDSS_iband"
 ]
+
+# 🎯 指定星系过滤：非空时只跑列表里的星系（按 id 后缀匹配，兼容带/不带波段前缀）。
+# 空列表 = 维持原行为（TEST_MODE 取前20）。用于在特定数据集上对标（如 MCP 70% 的20个r波段星系）。
+# 注意：用此功能对标时，TARGET_BANDS 要包含对应波段（如 SDSS_rband）。
+GALAXY_ID_FILTER = []
 
 # 自动获取当前 GalDecomp_Gen 的根目录
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -128,7 +133,24 @@ async def main():
     print(f"🔍 运行模式: {'测试' if TEST_MODE else '正式'} | VLM打分: {'开启' if USE_LLM_REWARD else '关闭'}")
 
     # 控制跑测试集还是全量集
-    if TEST_MODE:
+    if GALAXY_ID_FILTER:
+        # 🎯 指定星系模式：从全集(train+test)中按 id 后缀匹配挑出指定星系
+        all_galaxies = all_train_set + all_test_set
+        def _match(g):
+            gid = g["id"]
+            return any(gid == f or gid.endswith(f) or gid.endswith("_" + f) for f in GALAXY_ID_FILTER)
+        target_galaxies = [g for g in all_galaxies if _match(g)]
+        matched_ids = {g["id"] for g in target_galaxies}
+        # 报告哪些指定星系没找到，避免静默漏跑
+        missing = [f for f in GALAXY_ID_FILTER
+                   if not any(g["id"] == f or g["id"].endswith(f) or g["id"].endswith("_" + f)
+                              for g in all_galaxies)]
+        print(f"  🎯 指定星系模式: 请求 {len(GALAXY_ID_FILTER)} 个, 匹配到 {len(target_galaxies)} 个")
+        if missing:
+            print(f"  ⚠️ 未在数据集中找到的星系({len(missing)}个): {missing}")
+        max_steps = 6
+        num_variants = 16
+    elif TEST_MODE:
         # 测试模式下，我们从收集到的全集中切片跑前几个
         target_galaxies = all_train_set[:20]
         max_steps = 6 # 8

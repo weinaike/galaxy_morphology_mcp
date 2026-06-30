@@ -62,13 +62,29 @@ def load_trajectories(exp_dir):
     return out
 
 
-def find_deepest_leaf(traj):
-    """取最深的 accepted 叶节点 (代表轨迹自然终止时的状态)。
+def _leaf_sort_key(node):
+    """叶子排序键: BIC 优先 (内置过拟合惩罚), BIC 缺失则回退 chi2_nu。
+
+    返回 (bic_or_inf, chi2_nu_or_inf): 先按 BIC 升序, BIC 相同/都缺失时按 chi2_nu 升序。
+    BIC 缺失的节点排到最后 (用 inf), 避免"没算出BIC"被误当成最优。
+    """
+    m = node.get("metrics", {}) or {}
+    bic = m.get("bic")
+    chi2_nu = m.get("chi2_nu")
+    bic_key = bic if isinstance(bic, (int, float)) else float("inf")
+    chi2_key = chi2_nu if isinstance(chi2_nu, (int, float)) else float("inf")
+    return (bic_key, chi2_key)
+
+
+def find_best_leaf(traj):
+    """取 BIC 最优的 accepted 叶节点作为该方法在此星系的"终点代表"。
+
+    用 BIC (而非深度) 选代表, 因为 BIC 内置过拟合惩罚, 能避开"靠堆简并成分走深"
+    的过拟合死叶。BIC 缺失时回退 chi2_nu。
 
     叶节点 = accepted 且没有任何 accepted 子节点。
-    多个同深度叶节点时取 chi2_nu 最小的那个。
     返回 (node, is_root_fallback)。
-    若没有任何 accepted 改进 (max_depth=0)，回退到 root 节点 (该实验在此星系卡在初始拟合)。
+    若没有任何 accepted 改进, 回退到 root 节点 (该实验在此星系卡在初始拟合)。
     """
     nodes = traj.get("nodes", [])
     if not nodes:
@@ -92,10 +108,9 @@ def find_deepest_leaf(traj):
     if not leaves:
         leaves = accepted
 
-    max_depth = max(n.get("depth", 0) for n in leaves)
-    deepest = [n for n in leaves if n.get("depth", 0) == max_depth]
-    deepest.sort(key=lambda n: n.get("metrics", {}).get("chi2_nu", 9999.0))
-    return deepest[0], False
+    # 按 BIC 最优选代表 (BIC 缺失回退 chi2_nu)
+    leaves.sort(key=_leaf_sort_key)
+    return leaves[0], False
 
 
 def _resolve_path(p, traj):
@@ -117,7 +132,7 @@ def _resolve_path(p, traj):
 
 def get_endpoint(traj, image_mode="full"):
     """返回终点节点信息 dict，或 None (连 root 都没有)。"""
-    leaf, is_root_fallback = find_deepest_leaf(traj)
+    leaf, is_root_fallback = find_best_leaf(traj)
     if leaf is None:
         return None
 
@@ -139,13 +154,16 @@ def get_endpoint(traj, image_mode="full"):
 
 
 def classify_verdict(result):
-    """把对称对决返回的 verdict 翻译成 exp_a / exp_b / tie。
+    """把对称对决返回的 verdict 翻译成 exp_a / exp_b / tie / conflict。
 
     compare_two_fits_symmetric 里 image_a=exp_a, image_b=exp_b：
       "A_better" → exp_a 胜
       "B_better" → exp_b 胜
-      "tie"      → 平手 (含两个方向矛盾被判 tie 的情况)
+      "tie"      → 平手
+    若两个方向矛盾 (robust=False)，标 conflict (不再混入平手)。
     """
+    if result.get("robust") is False:
+        return "conflict"
     v = result.get("verdict", "tie")
     if v == "A_better":
         return "exp_a"
@@ -154,30 +172,82 @@ def classify_verdict(result):
     return "tie"
 
 
-def compare_one(gid, ep_a, ep_b, model_name, api_key):
-    """对单个星系做一次【无顺序偏置】对决 (内部正反各跑一次)。返回结果 dict。
+def _metric_verdict(ep_a, ep_b, eps_bic=2.0, eps_chi2=0.01):
+    """纯客观指标对决: 先比 BIC (差异 > eps_bic 才算赢), 否则比 chi2_nu。
+
+    BIC 差异阈值 eps_bic=2.0 对应统计学上 "positive evidence" 的最低门槛。
+    返回 (verdict, basis): verdict ∈ {exp_a, exp_b, tie}, basis 说明依据。
+    """
+    a = ep_a.get("metrics", {}) or {}
+    b = ep_b.get("metrics", {}) or {}
+    a_bic, b_bic = a.get("bic"), b.get("bic")
+    a_chi, b_chi = a.get("chi2_nu"), b.get("chi2_nu")
+
+    if isinstance(a_bic, (int, float)) and isinstance(b_bic, (int, float)):
+        if abs(a_bic - b_bic) > eps_bic:
+            return ("exp_a" if a_bic < b_bic else "exp_b", f"BIC ({a_bic:.2f} vs {b_bic:.2f})")
+        # BIC 接近 → 用 chi2_nu 做 tiebreaker
+        if isinstance(a_chi, (int, float)) and isinstance(b_chi, (int, float)) and abs(a_chi - b_chi) > eps_chi2:
+            return ("exp_a" if a_chi < b_chi else "exp_b", f"BIC接近,chi2_nu ({a_chi:.3f} vs {b_chi:.3f})")
+        return ("tie", f"BIC接近 ({a_bic:.2f} vs {b_bic:.2f}), chi2_nu接近")
+
+    # BIC 缺失 → 退回 chi2_nu
+    if isinstance(a_chi, (int, float)) and isinstance(b_chi, (int, float)):
+        if abs(a_chi - b_chi) > eps_chi2:
+            return ("exp_a" if a_chi < b_chi else "exp_b", f"无BIC,chi2_nu ({a_chi:.3f} vs {b_chi:.3f})")
+        return ("tie", f"无BIC,chi2_nu接近 ({a_chi:.3f} vs {b_chi:.3f})")
+
+    return ("tie", "无可用指标")
+
+
+def compare_one(gid, ep_a, ep_b, model_name, api_key, mode="both"):
+    """对单个星系做对决。mode ∈ {metric, vlm, both}。返回结果 dict。
 
     缺图不再"默认胜"：图缺失是数据问题，不代表哪个实验拟合更好，单独记 no_endpoint。
     注意: 没有 accepted 改进的实验，终点回退到 root (初始拟合)，仍可正常参与对决。
+    顶层 verdict 取自 mode: metric→指标判定; vlm→VLM判定; both→以指标为准, VLM作旁证。
     """
     a_ok = ep_a and ep_a.get("residual_exists")
     b_ok = ep_b and ep_b.get("residual_exists")
 
+    base = {
+        "galaxy_id": gid,
+        "exp_a_residual_path": ep_a.get("residual_path") if ep_a else None,
+        "exp_b_residual_path": ep_b.get("residual_path") if ep_b else None,
+        "exp_a_is_root": ep_a.get("is_root_fallback") if ep_a else None,
+        "exp_b_is_root": ep_b.get("is_root_fallback") if ep_b else None,
+        "exp_a_chi2_nu": (ep_a.get("metrics", {}) or {}).get("chi2_nu") if ep_a else None,
+        "exp_b_chi2_nu": (ep_b.get("metrics", {}) or {}).get("chi2_nu") if ep_b else None,
+        "exp_a_bic": (ep_a.get("metrics", {}) or {}).get("bic") if ep_a else None,
+        "exp_b_bic": (ep_b.get("metrics", {}) or {}).get("bic") if ep_b else None,
+        "exp_a_depth": ep_a.get("depth") if ep_a else None,
+        "exp_b_depth": ep_b.get("depth") if ep_b else None,
+        "exp_a_node": ep_a.get("node_id") if ep_a else None,
+        "exp_b_node": ep_b.get("node_id") if ep_b else None,
+    }
+
+    # 指标判定不需要图，只要有 metrics 就能算
+    has_metrics = ep_a and ep_b
+    if has_metrics:
+        m_verdict, m_basis = _metric_verdict(ep_a, ep_b)
+        base["metric_verdict"] = m_verdict
+        base["metric_basis"] = m_basis
+    else:
+        base["metric_verdict"] = "no_endpoint"
+        base["metric_basis"] = "缺节点"
+
+    # ---- metric-only 模式: 不调 VLM ----
+    if mode == "metric":
+        base["verdict"] = base["metric_verdict"]
+        return base
+
+    # ---- 需要 VLM, 但缺图 → 该星系 VLM 部分判 no_endpoint ----
     if not a_ok or not b_ok:
-        missing = []
-        if not a_ok:
-            missing.append("exp_a")
-        if not b_ok:
-            missing.append("exp_b")
-        return {
-            "galaxy_id": gid,
-            "verdict": "no_endpoint",
-            "reason": f"缺终点残差图({','.join(missing)})，不计胜负",
-            "exp_a_residual_path": ep_a.get("residual_path") if ep_a else None,
-            "exp_b_residual_path": ep_b.get("residual_path") if ep_b else None,
-            "exp_a_is_root": ep_a.get("is_root_fallback") if ep_a else None,
-            "exp_b_is_root": ep_b.get("is_root_fallback") if ep_b else None,
-        }
+        missing = [n for n, ok in [("exp_a", a_ok), ("exp_b", b_ok)] if not ok]
+        base["vlm_verdict"] = "no_endpoint"
+        base["reason"] = f"缺终点残差图({','.join(missing)})，VLM跳过"
+        base["verdict"] = base["metric_verdict"] if mode == "both" else "no_endpoint"
+        return base
 
     try:
         result = compare_two_fits_symmetric(
@@ -189,37 +259,34 @@ def compare_one(gid, ep_a, ep_b, model_name, api_key):
             api_key=api_key,
         )
     except Exception as e:
-        return {"galaxy_id": gid, "verdict": "error", "reason": f"VLM 调用失败: {e}"}
+        base["vlm_verdict"] = "error"
+        base["reason"] = f"VLM 调用失败: {e}"
+        base["verdict"] = base.get("metric_verdict") if mode == "both" else "error"
+        return base
 
-    verdict = classify_verdict(result)
+    vlm_verdict = classify_verdict(result)
     fwd = result.get("forward", {})
-    return {
-        "galaxy_id": gid,
-        "verdict": verdict,
-        "robust": result.get("robust"),
-        "confidence": fwd.get("confidence"),
-        "reason": fwd.get("reason", ""),
-        "forward_verdict": fwd.get("verdict"),
-        "backward_verdict_translated": result.get("backward_verdict_translated"),
-        "exp_a_residual_path": ep_a["residual_path"],
-        "exp_b_residual_path": ep_b["residual_path"],
-        "exp_a_is_root": ep_a.get("is_root_fallback"),
-        "exp_b_is_root": ep_b.get("is_root_fallback"),
-        "exp_a_chi2_nu": ep_a["metrics"].get("chi2_nu"),
-        "exp_b_chi2_nu": ep_b["metrics"].get("chi2_nu"),
-        "exp_a_bic": ep_a["metrics"].get("bic"),
-        "exp_b_bic": ep_b["metrics"].get("bic"),
-        "exp_a_depth": ep_a["depth"],
-        "exp_b_depth": ep_b["depth"],
-        "exp_a_node": ep_a["node_id"],
-        "exp_b_node": ep_b["node_id"],
-    }
+    bwd = result.get("backward", {})
+    base["vlm_verdict"] = vlm_verdict
+    base["vlm_robust"] = result.get("robust")
+    base["vlm_confidence"] = fwd.get("confidence")
+    base["reason"] = fwd.get("reason", "")
+    base["forward_verdict"] = fwd.get("verdict")
+    base["forward_reason"] = fwd.get("reason", "")
+    base["backward_verdict_translated"] = result.get("backward_verdict_translated")
+    base["backward_reason"] = bwd.get("reason", "")
+
+    # 顶层 verdict: both→以客观指标为准(VLM作旁证); vlm→VLM判定
+    base["verdict"] = base["metric_verdict"] if mode == "both" else vlm_verdict
+    return base
 
 
 def main():
-    parser = argparse.ArgumentParser(description="跨实验轨迹质量 VLM 对决 (无顺序偏置)")
+    parser = argparse.ArgumentParser(description="跨实验终点质量对决 (客观指标 + 无顺序偏置VLM)")
     parser.add_argument("--exp-a", required=True, help="实验A的output目录")
     parser.add_argument("--exp-b", required=True, help="实验B的output目录")
+    parser.add_argument("--mode", default="both", choices=["metric", "vlm", "both"],
+                        help="metric=纯客观BIC/chi2(零成本); vlm=仅VLM视觉; both=两者都跑,顶层以客观指标为准")
     parser.add_argument("--model", default="gemini-3.1-pro-preview", help="VLM模型名")
     parser.add_argument("--image-mode", default="full", choices=["full", "cutoff"], help="残差图模式")
     parser.add_argument("--output", default=None, help="输出JSON路径")
@@ -232,11 +299,11 @@ def main():
     name_b = os.path.basename(exp_b_dir.rstrip("/")).split("__")[0] or "exp_b"
 
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("[ERROR] 未设置 API key (OPENAI_API_KEY)")
+    if args.mode in ("vlm", "both") and not api_key:
+        print("[ERROR] 该模式需要 VLM, 未设置 API key (OPENAI_API_KEY)。或改用 --mode metric")
         return
 
-    print(f"实验A ({name_a}): {exp_a_dir}")
+    print(f"模式: {args.mode} | 实验A ({name_a}): {exp_a_dir}")
     print(f"实验B ({name_b}): {exp_b_dir}")
 
     trajs_a = load_trajectories(exp_a_dir)
@@ -259,60 +326,82 @@ def main():
                 return f"    [{name}] 无任何节点(连root都没有)"
             tag = "root初始拟合" if ep.get("is_root_fallback") else f"叶节点depth={ep.get('depth')}"
             exists = "✓存在" if ep.get("residual_exists") else "✗缺失"
-            return (f"    [{name}] {ep.get('node_id')} ({tag}) | 图[{exists}]: {ep.get('residual_path')}")
+            m = ep.get("metrics", {}) or {}
+            return (f"    [{name}] {ep.get('node_id')} ({tag}) | "
+                    f"BIC={m.get('bic')} χ²/ν={m.get('chi2_nu')} | 图[{exists}]: {ep.get('residual_path')}")
         print(_ep_desc(ep_a, name_a))
         print(_ep_desc(ep_b, name_b))
 
-        r = compare_one(gid, ep_a, ep_b, args.model, api_key)
-        verdict = r["verdict"]
-        winner = {
-            "exp_a": name_a, "exp_b": name_b, "tie": "平手",
+        r = compare_one(gid, ep_a, ep_b, args.model, api_key, mode=args.mode)
+        name_map = {
+            "exp_a": name_a, "exp_b": name_b, "tie": "平手", "conflict": "VLM双向分歧",
             "no_endpoint": "无终点(不计胜负)", "error": "错误",
-        }.get(verdict, verdict)
-        robust_tag = "" if r.get("robust") is None else (" [双向一致]" if r.get("robust") else " [双向矛盾→tie]")
-        print(f"    判定: {winner}{robust_tag} | "
-              f"{name_a}χ²/ν={r.get('exp_a_chi2_nu')} vs {name_b}χ²/ν={r.get('exp_b_chi2_nu')}")
-        if r.get("reason"):
-            print(f"    理由: {r['reason'][:160]}")
+        }
+        # 打印客观指标判定
+        mv = r.get("metric_verdict")
+        if mv:
+            print(f"    [客观指标] {name_map.get(mv, mv)} | 依据: {r.get('metric_basis')}")
+        # 打印VLM判定
+        vv = r.get("vlm_verdict")
+        if vv:
+            print(f"    [VLM视觉]  {name_map.get(vv, vv)}")
+            if vv == "conflict":
+                print(f"        正向: {name_map.get('exp_a' if r.get('forward_verdict')=='A_better' else ('exp_b' if r.get('forward_verdict')=='B_better' else 'tie'))} | {str(r.get('forward_reason',''))[:120]}")
+                print(f"        反向: {str(r.get('backward_reason',''))[:120]}")
+            elif r.get("reason"):
+                print(f"        理由: {str(r['reason'])[:140]}")
         results.append(r)
 
-    a_wins = sum(1 for r in results if r["verdict"] == "exp_a")
-    b_wins = sum(1 for r in results if r["verdict"] == "exp_b")
-    ties = sum(1 for r in results if r["verdict"] == "tie")
-    no_endpoint = sum(1 for r in results if r["verdict"] == "no_endpoint")
-    errors = sum(1 for r in results if r["verdict"] == "error")
-    conflicts = sum(1 for r in results if r.get("robust") is False)
+    # ---- 客观指标维度汇总 ----
+    def _count(key, val):
+        return sum(1 for r in results if r.get(key) == val)
 
-    valid = a_wins + b_wins + ties  # 真正参与对决的星系数(不含无终点/错误)
+    m_a = _count("metric_verdict", "exp_a")
+    m_b = _count("metric_verdict", "exp_b")
+    m_tie = _count("metric_verdict", "tie")
+    m_none = _count("metric_verdict", "no_endpoint")
+
+    # ---- VLM 维度汇总 ----
+    v_a = _count("vlm_verdict", "exp_a")
+    v_b = _count("vlm_verdict", "exp_b")
+    v_tie = _count("vlm_verdict", "tie")
+    v_conflict = _count("vlm_verdict", "conflict")
+    v_none = _count("vlm_verdict", "no_endpoint")
+    v_err = _count("vlm_verdict", "error")
+
     report = {
         "exp_a": {"name": name_a, "dir": exp_a_dir},
         "exp_b": {"name": name_b, "dir": exp_b_dir},
+        "mode": args.mode,
         "model": args.model,
         "image_mode": args.image_mode,
-        "bias_free": "symmetric (内部正反各跑一次,双向一致才算胜)",
+        "leaf_selection": "按BIC最低选代表叶(内置过拟合惩罚), BIC缺失回退chi2_nu",
         "num_common_galaxies": len(results),
-        "num_valid_compared": valid,
-        "summary": {
-            f"{name_a}_wins": a_wins,
-            f"{name_b}_wins": b_wins,
-            "ties": ties,
-            "direction_conflicts(判tie)": conflicts,
-            "no_endpoint(不计胜负)": no_endpoint,
-            "errors": errors,
+        "metric_summary": {
+            f"{name_a}_wins": m_a,
+            f"{name_b}_wins": m_b,
+            "ties": m_tie,
+            "no_endpoint": m_none,
         },
+        "vlm_summary": {
+            f"{name_a}_wins": v_a,
+            f"{name_b}_wins": v_b,
+            "ties": v_tie,
+            "conflicts(双向分歧)": v_conflict,
+            "no_endpoint": v_none,
+            "errors": v_err,
+        } if args.mode in ("vlm", "both") else None,
         "details": results,
     }
 
-    print("\n" + "=" * 60)
-    print(f"  对决总结: {name_a} vs {name_b}")
-    print("=" * 60)
-    print(f"  有效对决星系: {valid} (公共{len(results)} - 无终点{no_endpoint} - 错误{errors})")
-    print(f"  {name_a} 胜: {a_wins}")
-    print(f"  {name_b} 胜: {b_wins}")
-    print(f"  平手:    {ties}  (其中双向矛盾判tie: {conflicts})")
-    print(f"  无终点(不计胜负): {no_endpoint}")
-    print(f"  错误: {errors}")
-    print("=" * 60)
+    print("\n" + "=" * 64)
+    print(f"  对决总结: {name_a} vs {name_b}  (mode={args.mode})")
+    print("=" * 64)
+    print(f"  [客观指标 BIC/chi2]  {name_a}胜 {m_a} | {name_b}胜 {m_b} | 平手 {m_tie} | 无终点 {m_none}")
+    if args.mode in ("vlm", "both"):
+        print(f"  [VLM 视觉对决]       {name_a}胜 {v_a} | {name_b}胜 {v_b} | 平手 {v_tie} | "
+              f"双向分歧 {v_conflict} | 无终点 {v_none} | 错误 {v_err}")
+    print("=" * 64)
 
     output_path = args.output or os.path.join(
         os.getcwd(), f"compare_{name_a}_vs_{name_b}.json"

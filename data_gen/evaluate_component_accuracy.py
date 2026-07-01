@@ -18,8 +18,37 @@ from collections import defaultdict
 
 
 def load_gadotti_gt(data_dir: str) -> dict:
-    """扫描data_dir下所有Gadotti_params.json，返回 {galaxy_id: set(components)}。"""
+    """扫描data_dir下所有Gadotti_params.json，返回 {galaxy_id: set(components)}。
+
+    支持两种目录结构：
+    1. 平铺: data_dir/<source>_Gadotti_params.json (文件内含source字段)
+    2. 嵌套: data_dir/<band>/<obj>/Gadotti_params.json
+    """
     gt = {}
+
+    flat_files = glob.glob(os.path.join(data_dir, "*_Gadotti_params.json"))
+    if flat_files:
+        for path in flat_files:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                continue
+            source = data.get("source", "")
+            if not source:
+                source = os.path.basename(path).replace("_Gadotti_params.json", "")
+            galaxy_id = f"SDSS_rband_{source}"
+
+            components = set()
+            if data.get("re_disk", 0.0) > 0:
+                components.add("Disk")
+            if data.get("re_bulge", 0.0) > 0:
+                components.add("Bulge")
+            if data.get("re_bar", 0.0) > 0:
+                components.add("Bar")
+            gt[galaxy_id] = components
+        return gt
+
     pattern = os.path.join(data_dir, "**", "Gadotti_params.json")
     for path in glob.glob(pattern, recursive=True):
         try:

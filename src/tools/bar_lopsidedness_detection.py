@@ -11,9 +11,10 @@ image WCS 读取
 import os
 import sys
 import warnings
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Optional
 
 import numpy as np
+import pandas as pd
 from astropy.io import fits
 
 # 核心算法 (自包含, 迁移自管线包, 见 bar_lopsidedness_core.py)
@@ -79,6 +80,169 @@ def _round(v: Any, ndigits: int) -> Any:
     return round(f, ndigits) if np.isfinite(f) else None
 
 
+def _read_image_and_mask(
+    image_path: str,
+    mask_path: Optional[str],
+) -> tuple[np.ndarray, Optional[np.ndarray]]:
+    """Read science image and optional bad-pixel mask.
+
+    The pipeline convention is mask > 0 means bad pixel. Non-finite image pixels
+    are always folded into the mask before fitting.
+    """
+    image = fits.getdata(image_path).astype(np.float64)
+    nonfinite = ~np.isfinite(image)
+    if mask_path and os.path.exists(mask_path):
+        raw_mask = np.asarray(fits.getdata(mask_path)) > 0
+        if raw_mask.shape != image.shape:
+            raise ValueError(
+                f"Mask shape {raw_mask.shape} does not match image shape {image.shape}"
+            )
+        mask = raw_mask | nonfinite
+    elif nonfinite.any():
+        mask = nonfinite
+    else:
+        mask = None
+    return image, mask
+
+
+def _apply_fit_region(
+    image: np.ndarray,
+    mask: Optional[np.ndarray],
+    region: Optional[tuple[int, int, int, int]],
+    *,
+    one_indexed_inclusive: bool,
+) -> tuple[np.ndarray, Optional[np.ndarray]]:
+    """Crop image/mask to a GALFIT fitting region.
+
+    ``parse_feedme`` returns GALFIT H) bounds as 1-indexed inclusive pixel
+    coordinates. ``parse_lyric`` returns 0-indexed, exclusive Python slice
+    bounds. This helper normalizes both forms before isophote fitting.
+    """
+    if region is None:
+        return image, mask
+
+    xmin, xmax, ymin, ymax = [int(v) for v in region]
+    if one_indexed_inclusive:
+        x0, x1 = xmin - 1, xmax
+        y0, y1 = ymin - 1, ymax
+    else:
+        x0, x1 = xmin, xmax
+        y0, y1 = ymin, ymax
+
+    ny, nx = image.shape
+    x0, x1 = max(0, x0), min(nx, x1)
+    y0, y1 = max(0, y0), min(ny, y1)
+    if x0 >= x1 or y0 >= y1:
+        raise ValueError(f"Invalid fitting region after clipping: {region}")
+
+    cropped_image = np.ascontiguousarray(image[y0:y1, x0:x1])
+    cropped_mask = None if mask is None else np.ascontiguousarray(mask[y0:y1, x0:x1])
+    return cropped_image, cropped_mask
+
+
+def _empty_bar_result(reason: str) -> dict[str, Any]:
+    return {
+        'bar_detected': False, 'classification': '', 'e_max': np.nan,
+        'bar_length_arcsec': np.nan, 'bar_pa_mean': np.nan,
+        'bar_pa_var': np.nan, 'failure_reason': reason,
+    }
+
+
+def _empty_dolfi_result() -> dict[str, Any]:
+    return {'lopsided_dolfi': False, 'A1_mean': np.nan,
+            'phi1_mean': np.nan, 'r50': np.nan, 'r90': np.nan}
+
+
+def _empty_center_result() -> dict[str, Any]:
+    return {'lopsided_center': False, 'x_trend_r': np.nan,
+            'y_trend_r': np.nan, 'dr_norm': np.nan}
+
+
+def _classify_profiles(
+    df_s2: pd.DataFrame,
+    df_s3: pd.DataFrame,
+    pixscale: float,
+    survey_uc: str,
+    band_or_survey: str,
+) -> dict[str, Any]:
+    """Run the current bar and lopsidedness criteria on Step 2/3 profiles."""
+    if 'eps' in df_s3.columns and len(df_s3) >= 5:
+        bar_result = detect_bar(df_s3, criteria=CGS_Z0_CRITERIA)
+        dolfi = analyze_dolfi_a1(df_s3)
+    else:
+        bar_result = _empty_bar_result('too_few_isophotes')
+        dolfi = _empty_dolfi_result()
+
+    if 'x0_pix' in df_s2.columns and len(df_s2) >= 3:
+        center = analyze_center_offset_v2(
+            df_s2, pixscale, survey_uc.lower(), band_or_survey
+        )
+    else:
+        center = _empty_center_result()
+
+    return {
+        'bar_result': bar_result,
+        'dolfi': dolfi,
+        'center': center,
+        'is_lopsided': bool(dolfi['lopsided_dolfi'] and center['lopsided_center']),
+    }
+
+
+def _format_detection_result(
+    classified: dict[str, Any],
+    *,
+    band: Optional[str] = None,
+    delta_ang: Optional[float] = None,
+    include_status: bool = True,
+    include_diagnostics: bool = False,
+) -> dict[str, Any]:
+    """Format core classification output for the MCP-facing JSON response."""
+    bar_result = classified['bar_result']
+    dolfi = classified['dolfi']
+    center = classified['center']
+    is_lopsided = bool(classified['is_lopsided'])
+    bar_detected = bool(bar_result['bar_detected'])
+
+    result: dict[str, Any] = {}
+    if include_status:
+        result["status"] = "success"
+    if band is not None:
+        result["band"] = band
+    result["bar"] = {"detected": bar_detected}
+    result["lopsidedness"] = {"detected": is_lopsided}
+
+    if bar_detected:
+        e_max = bar_result.get('e_max')
+        pa_deg = _round(bar_result.get('bar_pa_mean'), 2)
+        if delta_ang is not None and pa_deg is not None:
+            pa_deg = ((pa_deg + delta_ang + 90) % 360 + 180) % 360 - 180
+        result["bar"]["pa_deg"] = pa_deg
+        result["bar"]["b_over_a"] = _round(1.0 - e_max, 3) if e_max is not None else None
+
+    if is_lopsided:
+        result["lopsidedness"]["mag"] = _round(dolfi.get('A1_mean'), 4)
+        phase_deg = _round(dolfi.get('phi1_mean'), 2)
+        if delta_ang is not None and phase_deg is not None:
+            phase_deg = ((phase_deg + delta_ang + 90) % 360 + 180) % 360 - 180
+        result["lopsidedness"]["phase_deg"] = phase_deg
+
+    if include_diagnostics:
+        result["bar"]["failure_reason"] = bar_result.get('failure_reason')
+        result["bar"]["e_max"] = _round(bar_result.get('e_max'), 4)
+        result["lopsidedness"].update({
+            "dolfi_detected": bool(dolfi.get('lopsided_dolfi', False)),
+            "center_detected": bool(center.get('lopsided_center', False)),
+            "dolfi_A1_mean": _round(dolfi.get('A1_mean'), 4),
+            "dolfi_r50": _round(dolfi.get('r50'), 4),
+            "dolfi_r90": _round(dolfi.get('r90'), 4),
+            "center_dr_norm": _round(center.get('dr_norm'), 4),
+            "center_x_trend_r": _round(center.get('x_trend_r'), 4),
+            "center_y_trend_r": _round(center.get('y_trend_r'), 4),
+        })
+
+    return _to_jsonable(result)
+
+
 def detect_bar_lopsidedness(
     feedme_file: Annotated[str, "Absolute path to a single-band GALFIT feedme file"],
     survey: Annotated[Literal["JWST", "SDSS"], "Data survey type"],
@@ -109,17 +273,16 @@ def detect_bar_lopsidedness(
         return {"status": "failure",
                 "error": f"Input image (A) not found in feedme: {image_path}"}
 
-    # 2) 读 image + mask (mask>0 = bad pixel); NaN/inf 像素并入 mask
-    #    管线 run_isophote 假设数据已无 NaN (如 *_nonan.fits); 真实 drizzle
-    #    图像常含 NaN, 此处把非有限值并入 mask 以适配, 不改变检测算法。
-    image = fits.getdata(image_path).astype(np.float64)
-    nonfinite = ~np.isfinite(image)
-    if mask_path and os.path.exists(mask_path):
-        mask = (np.asarray(fits.getdata(mask_path)) > 0) | nonfinite
-    elif nonfinite.any():
-        mask = nonfinite
-    else:
-        mask = None
+    # 2) Read image + mask, then honor the GALFIT H) fitting box.  The
+    # original pipeline fits already-prepared cutouts; running on a full
+    # feedme image without this crop changes the Step 2/3 profiles directly.
+    try:
+        image, mask = _read_image_and_mask(image_path, mask_path)
+        image, mask = _apply_fit_region(
+            image, mask, paths.get("fit_region"), one_indexed_inclusive=True
+        )
+    except Exception as e:
+        return {"status": "failure", "error": f"Failed to load/crop image: {e}"}
 
     # 3) 像素尺度从 WCS 读 (唯一接口适配)
     try:
@@ -131,10 +294,7 @@ def detect_bar_lopsidedness(
     # band_or_survey 决定 compute_mu 表面亮度零点: SDSS/'r' -> SDSS, 否则 JWST
     band_or_survey = 'r' if survey_uc == 'SDSS' else 'F200W'
 
-    # 4) PSF FWHM (原硬编码)
-    psf_fwhm = PSF_FWHM_ARCSEC.get(survey_uc, 0.067)
-
-    # 5) 三步等照度拟合 (纯函数, 原算法)
+    # 4) 三步等照度拟合 (纯函数, 原算法)
     try:
         _df_s1, df_s2, df_s3, _info = fit_isophotes(
             image, mask, pixscale, band_or_survey
@@ -142,50 +302,8 @@ def detect_bar_lopsidedness(
     except Exception as e:
         return {"status": "failure", "error": f"Isophote fitting failed: {e}"}
 
-    # 6-8) 棒/偏侧检测 (原函数, 原阈值)。等照度表为空时跳过检测 (防 detect_bar
-    #      对空 DataFrame 取列时 KeyError), 返回未检出 + failure 标记。
-    if 'eps' in df_s3.columns and len(df_s3) >= 5:
-        bar_result = detect_bar(df_s3, criteria=CGS_Z0_CRITERIA)
-        dolfi = analyze_dolfi_a1(df_s3)
-    else:
-        bar_result = {
-            'bar_detected': False, 'classification': '', 'e_max': np.nan,
-            'bar_length_arcsec': np.nan, 'bar_pa_mean': np.nan,
-            'bar_pa_var': np.nan, 'failure_reason': 'too_few_isophotes',
-        }
-        dolfi = {'lopsided_dolfi': False, 'A1_mean': np.nan,
-                 'phi1_mean': np.nan, 'r50': np.nan, 'r90': np.nan}
-
-    if 'x0_pix' in df_s2.columns and len(df_s2) >= 3:
-        center = analyze_center_offset_v2(
-            df_s2, pixscale, survey_uc.lower(), band_or_survey
-        )
-    else:
-        center = {'lopsided_center': False, 'x_trend_r': np.nan,
-                  'y_trend_r': np.nan, 'dr_norm': np.nan}
-
-    is_lopsided = bool(dolfi['lopsided_dolfi'] and center['lopsided_center'])
-
-    # ---- 组装 JSON (仅检测结论; 命中时附带关键量) ----
-    bar_detected = bool(bar_result['bar_detected'])
-    result = {
-        "status": "success",
-        "bar": {"detected": bar_detected},
-        "lopsidedness": {"detected": bool(is_lopsided)},
-    }
-
-    # 命中 bar: 附带位置角 PA 与轴比 b/a (= 1 - e_max)
-    if bar_detected:
-        e_max = bar_result.get('e_max')
-        result["bar"]["pa_deg"] = _round(bar_result.get('bar_pa_mean'), 2)
-        result["bar"]["b_over_a"] = _round(1.0 - e_max, 3) if e_max is not None else None
-
-    # 命中 lopsidedness: 附带 m=1 振幅 mag (≈A1) 与相位 (deg)
-    if is_lopsided:
-        result["lopsidedness"]["mag"] = _round(dolfi.get('A1_mean'), 4)
-        result["lopsidedness"]["phase_deg"] = _round(dolfi.get('phi1_mean'), 2)
-
-    return _to_jsonable(result)
+    classified = _classify_profiles(df_s2, df_s3, pixscale, survey_uc, band_or_survey)
+    return _format_detection_result(classified)
 
 def detect_galfits_bar_lopsidedness(
     lyric_file: Annotated[str, "Absolute path to a lyric file containing galfits configurations"],
@@ -221,17 +339,16 @@ def detect_galfits_bar_lopsidedness(
 
         _shape, _pixsc, _x0, _y0, _delta_ang, _wcs = extract_fits_metadata(
             image_path, ra=region_info.ra, dec=region_info.dec)
-        image = fits.getdata(image_path).astype(np.float64)
-        nonfinite = ~np.isfinite(image)
-        if mask_path and os.path.exists(mask_path):
-            mask = (np.asarray(fits.getdata(mask_path)) > 0) | nonfinite
-        elif nonfinite.any():
-            mask = nonfinite
-        else:
-            mask = None
+        try:
+            image, mask = _read_image_and_mask(image_path, mask_path)
+            image, mask = _apply_fit_region(
+                image, mask, info.fitting_region, one_indexed_inclusive=False
+            )
+        except Exception as e:
+            results.append({"band": info.band, "error": f"Failed to load/crop image: {e}"})
+            continue
             
         band_or_survey = 'r' if survey.upper() == 'SDSS' else info.band    
-        psf_fwhw = PSF_FWHM_ARCSEC.get(survey.upper(), 0.067)
         try:
             _df_s1, df_s2, df_s3, _info = fit_isophotes(
                 image, mask, info.pixscale, band_or_survey
@@ -239,49 +356,75 @@ def detect_galfits_bar_lopsidedness(
         except Exception as e:
             results.append({"band": info.band, "error": f"Isophote fitting failed: {e}"})
             continue
-        
-        if 'eps' in df_s3.columns and len(df_s3) >= 5:
-            bar_result = detect_bar(df_s3, criteria=CGS_Z0_CRITERIA)
-            dolfi = analyze_dolfi_a1(df_s3)
-        else:
-            bar_result = {
-                'bar_detected': False, 'classification': '', 'e_max': np.nan,
-                'bar_length_arcsec': np.nan, 'bar_pa_mean': np.nan,
-                'bar_pa_var': np.nan, 'failure_reason': 'too_few_isophotes',
-            }
-            dolfi = {'lopsided_dolfi': False, 'A1_mean': np.nan,
-                     'phi1_mean': np.nan, 'r50': np.nan, 'r90': np.nan}
-        
-        if 'x0_pix' in df_s2.columns and len(df_s2) >= 3:
-            center = analyze_center_offset_v2(
-                df_s2, info.pixscale, survey.lower(), band_or_survey
-            )
-        else:
-            center = {'lopsided_center': False, 'x_trend_r': np.nan,
-                      'y_trend_r': np.nan, 'dr_norm': np.nan}
-        is_lopsided = bool(dolfi['lopsided_dolfi'] and center['lopsided_center'])
-        bar_detected = bool(bar_result['bar_detected'])
-        result = {
-            "band": info.band,
-            "bar": {"detected": bar_detected},
-            "lopsidedness": {"detected": bool(is_lopsided)},
-        }
-        if bar_detected:
-            e_max = bar_result.get('e_max')
-            pa_deg = _round(bar_result.get('bar_pa_mean'), 2)
-            # NOTE: galfit的0度是y轴正方向, 逆时针为正; galfits的0度由fits文件中指定，此处需要转换
-            pa_deg = ((pa_deg + _delta_ang + 90) % 360 + 180) % 360 - 180
-            result["bar"]["pa_deg"] = pa_deg
-            result["bar"]["b_over_a"] = _round(1.0 - e_max, 3) if e_max is not None else None
-        if is_lopsided:
-            result["lopsidedness"]["mag"] = _round(dolfi.get('A1_mean'), 4)
-            phase_deg = _round(dolfi.get('phi1_mean'), 2)
-            # NOTE: galfit的0度是y轴正方向, 逆时针为正; galfits的0度由fits文件中指定，此处需要转换
-            phase_deg = ((phase_deg + _delta_ang + 90) % 360 + 180) % 360 - 180
-            result["lopsidedness"]["phase_deg"] = phase_deg
+
+        classified = _classify_profiles(
+            df_s2, df_s3, info.pixscale, survey.upper(), band_or_survey
+        )
+        result = _format_detection_result(
+            classified, band=info.band, delta_ang=_delta_ang, include_status=False
+        )
         results.append(_to_jsonable(result))    
         
     return {"status": "success", "results": results}
+
+
+def _infer_pixscale_from_profiles(
+    df_s2: pd.DataFrame,
+    df_s3: pd.DataFrame,
+    survey_uc: str,
+    band: Optional[str],
+) -> float:
+    """Infer pixel scale from saved isophote tables, with pipeline defaults."""
+    for df in (df_s3, df_s2):
+        if {'sma_arcsec', 'sma_pix'}.issubset(df.columns):
+            ratio = df['sma_arcsec'] / df['sma_pix']
+            ratio = ratio.replace([np.inf, -np.inf], np.nan).dropna()
+            ratio = ratio[ratio > 0]
+            if len(ratio) > 0:
+                return float(np.median(ratio))
+
+    if survey_uc == 'SDSS':
+        return 0.396
+    band_uc = (band or 'F200W').upper()
+    if band_uc in {'F277W', 'F356W', 'F410M', 'F444W'}:
+        return 0.04
+    return 0.02
+
+
+def detect_bar_lopsidedness_from_isophote_tables(
+    step2_csv: Annotated[str, "Path to Step 2 free-center isophote CSV"],
+    step3_csv: Annotated[str, "Path to Step 3 fixed-center isophote CSV"],
+    survey: Annotated[Literal["JWST", "SDSS"], "Data survey type"],
+    band: Annotated[Optional[str], "Band label, e.g. F200W or r"] = None,
+    pixscale: Annotated[Optional[float], "Pixel scale override in arcsec/pixel"] = None,
+) -> dict[str, Any]:
+    """Reproduce bar/lopsidedness decisions from saved pipeline profiles.
+
+    This is the strict regression path for comparing against the reference
+    bar_lopsidedness pipeline outputs: Step 2 supplies the free-center offset
+    profile and Step 3 supplies the fixed-center bar/Dolfi A1 profile.
+    """
+    if not os.path.exists(step2_csv):
+        return {"status": "failure", "error": f"Step 2 CSV not found: {step2_csv}"}
+    if not os.path.exists(step3_csv):
+        return {"status": "failure", "error": f"Step 3 CSV not found: {step3_csv}"}
+
+    survey_uc = str(survey).upper()
+    band_or_survey = 'r' if survey_uc == 'SDSS' else (band or 'F200W')
+    try:
+        df_s2 = pd.read_csv(step2_csv)
+    except pd.errors.EmptyDataError:
+        df_s2 = pd.DataFrame()
+    try:
+        df_s3 = pd.read_csv(step3_csv)
+    except pd.errors.EmptyDataError:
+        df_s3 = pd.DataFrame()
+    pix = pixscale
+    if pix is None:
+        pix = _infer_pixscale_from_profiles(df_s2, df_s3, survey_uc, band)
+
+    classified = _classify_profiles(df_s2, df_s3, pix, survey_uc, band_or_survey)
+    return _format_detection_result(classified, include_diagnostics=True)
 
 def TEST_detect_galfits_bar_lopsidedness():
     lyric_file = "/home/jiangbo/jwst/1803/obj_1803.lyric"

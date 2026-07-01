@@ -305,7 +305,7 @@ def extract_isophote_table(iso_result, pixscl, band_or_survey):
             'grad': iso.grad if hasattr(iso, 'grad') else np.nan,
             'grad_err': iso.grad_error if hasattr(iso, 'grad_error') else np.nan,
             'mu_mag_arcsec2': compute_mu(iso.intens, band_or_survey),
-            'a1': a1, 'b1': b1, 'a2': b2, 'b2': b2,
+            'a1': a1, 'b1': b1, 'a2': a2, 'b2': b2,
             'a3': iso.a3 if hasattr(iso, 'a3') else np.nan,
             'b3': iso.b3 if hasattr(iso, 'b3') else np.nan,
             'a3_err': iso.a3_err if hasattr(iso, 'a3_err') else np.nan,

@@ -20,7 +20,11 @@ from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfit
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
 from tools.fourier_mode_analysis import fourier_mode_analysis
-from tools.bar_lopsidedness_detection import detect_bar_lopsidedness, detect_galfits_bar_lopsidedness
+from tools.bar_lopsidedness_detection import (
+    detect_bar_lopsidedness,
+    detect_bar_lopsidedness_from_isophote_tables,
+    detect_galfits_bar_lopsidedness,
+)
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix
@@ -66,6 +70,7 @@ def _register_tools_and_prompts():
     app.add_tool(view_original_image)
     app.add_tool(render_original)  
     app.add_tool(fourier_mode_analysis)
+    app.add_tool(detect_bar_lopsidedness_from_isophote_tables)
 
     if not has_galfit and not has_galfits:
         logger.warning(

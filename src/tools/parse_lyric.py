@@ -6,8 +6,12 @@ import os
 from astropy.io import fits, ascii
 from astropy.wcs import WCS
 import numpy as np
-import jax
-import jax.numpy as jnp
+try:
+    import jax
+    import jax.numpy as jnp
+except ModuleNotFoundError:
+    jax = None
+    jnp = None
 
 @dataclass
 class RegionInfo:

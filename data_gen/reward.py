@@ -11,7 +11,7 @@ import mimetypes
 import requests
 import time
 import traceback
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, List, Tuple
 from PIL import Image
 
 def calculate_reward_rule(old_metrics: dict, new_metrics: dict, action: dict, step: int, 

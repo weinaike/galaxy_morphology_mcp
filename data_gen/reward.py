@@ -476,6 +476,96 @@ def get_openAI_response_one_image(
     raise RuntimeError(f"API request failed after {max_retries} retries: {last_error}")
 
 
+def get_openAI_response_multiturn(
+    model_name: str,
+    system_prompt: str,
+    turn_prompts: list,
+    image_path: str = None,
+    api_key: str = None,
+    temperature: float = 0.3,
+    max_tokens: int = 8192,
+    timeout: int = 300,
+    url: str = "https://api.road2all.com/v1/chat/completions",
+    max_retries: int = 3,
+    retry_sleep: int = 10,
+) -> Tuple[List[str], Dict[str, Any]]:
+    """
+    多轮对话 API 调用。第1轮带图片，后续轮次靠对话历史。
+    返回 (每轮 assistant 回复列表, 累计 usage)。
+    """
+    api_key = api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("api_key 未提供：请在 .env 中设置 OPENAI_API_KEY")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    image_content = None
+    if image_path and os.path.exists(image_path):
+        mime_type, _ = mimetypes.guess_type(image_path)
+        if mime_type is None:
+            ext = os.path.splitext(image_path)[1].lower()
+            mime_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                         ".png": "image/png", ".webp": "image/webp"}.get(ext, "image/png")
+        image_content = {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime_type};base64,{encode_image(image_path)}"},
+        }
+
+    messages = [{"role": "system", "content": system_prompt}]
+    total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    responses = []
+
+    for i, turn_prompt in enumerate(turn_prompts):
+        if i == 0 and image_content:
+            user_msg = {"role": "user", "content": [
+                {"type": "text", "text": turn_prompt},
+                image_content,
+            ]}
+        else:
+            user_msg = {"role": "user", "content": turn_prompt}
+        messages.append(user_msg)
+
+        data = {
+            "model": model_name,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+            "stream": False,
+        }
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.post(url, headers=headers, json=data, timeout=timeout)
+                response.raise_for_status()
+                resp_json = response.json()
+                assistant_text = resp_json["choices"][0]["message"]["content"]
+                usage = resp_json.get("usage", {})
+                total_usage["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                total_usage["completion_tokens"] += usage.get("completion_tokens", 0)
+                messages.append({"role": "assistant", "content": assistant_text})
+                responses.append(assistant_text)
+                last_error = None
+                break
+            except (requests.exceptions.HTTPError, requests.exceptions.RequestException) as e:
+                last_error = e
+                status_code = getattr(getattr(e, 'response', None), 'status_code', None)
+                print(f"    ⚠️ [Multiturn API] Turn {i+1} attempt {attempt}/{max_retries}, "
+                      f"status={status_code}, error={e}")
+                if attempt < max_retries and (status_code in [429, 500, 502, 503, 504] or status_code is None):
+                    time.sleep(retry_sleep * attempt)
+                    continue
+                raise
+
+        if last_error:
+            raise RuntimeError(f"Multiturn API Turn {i+1} failed after {max_retries} retries: {last_error}")
+
+    return responses, total_usage
+
+
 def is_good_fit(
     residual_image_path: str,
     param: bool = False,

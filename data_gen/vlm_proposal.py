@@ -17,6 +17,7 @@ from typing import List, Dict, Tuple, Optional
 
 from data_gen.reward import (
     get_openAI_response_one_image,
+    get_openAI_response_multiturn,
     read_summary_md,
 )
 
@@ -225,6 +226,134 @@ def build_proposal_prompt(
 请在阶段一到三完成精炼分析后，用 ```json``` 代码块输出完整模型规格 JSON。"""
 
     return prompt
+
+
+def build_multiturn_prompts(
+    summary_content: str,
+    step: int,
+    max_steps: int,
+    num_sersic: int,
+    expert_gt: dict = None,
+    current_components: list = None,
+    history_summary: str = None,
+) -> Tuple[str, List[str]]:
+    """拆分为3轮对话 prompt，返回 (system_prompt, [turn1, turn2, turn3])。"""
+    cur_lines = []
+    if current_components:
+        for i, c in enumerate(current_components):
+            parts = [f"  [{i}] model={c.get('model','?')}"]
+            for k in ("mag", "re", "n", "q", "pa"):
+                if c.get(k) is not None:
+                    parts.append(f"{k}={c[k]:.3f}")
+            fixed = [k for k, v in (c.get("fix") or {}).items() if v == 0 and k in ("mag", "re", "n", "q", "pa")]
+            if fixed:
+                parts.append(f"fixed={fixed}")
+            cur_lines.append(" ".join(parts))
+    current_model_desc = "\n".join(cur_lines) if cur_lines else "  (单 Sersic 基线，待分解)"
+
+    history_block = ""
+    if history_summary:
+        history_block = f"\n\n**历史轮次摘要（请参考，避免重复已失败的尝试，并在此基础上逐步改善）**：\n{history_summary}\n"
+
+    # Turn 1: 视觉特征提取（仅客观描述，不做判断和决策）
+    turn1 = f"""请分析以下 GALFIT 拟合结果图像（包含原图、模型图、2D残差图、1D表面亮度轮廓图）。
+
+当前状态：第 {step}/{max_steps} 步。当前模型成分：
+{current_model_desc}{history_block}
+
+**本轮任务：多模态视觉特征提取（仅客观描述，不做判断，不要输出 JSON）**
+1. 描述原图中心星系的特征，推测高概率存在的星系成分（需提供强特征证据支持）
+2. 对比原图与模型图的**总体骨架轮廓**：两者是否一致？差异点在哪里？（如外围轮廓是否匹配、中心亮度分布是否吻合）
+3. 描述 2D 残差图核心区的空间分布形态（如偶极、环状、一字型等）
+4. 描述 2D 残差图外围区的分布特征（如同心环、条带、随机噪声等）
+5. 描述 1D 亮度曲线中 Data 与 Model 之间的差异区域，特别关注：
+   - 如果存在 sky 成分，sky 成分线是否与 Sky Background 虚线齐平？（偏高或偏低说明 sky 漂移）
+   - 各成分的 Re 位置与残差曲线峰值是否对应？（残差峰值出现在某成分 Re 附近说明该成分参数需要调整）
+
+请仔细、详细地描述你观察到的所有特征，尤其注意残差图中心区域是否存在"一字型"、"X型"等非对称结构。"""
+
+    # Turn 2: 参数审查 + 专家推理（基于 Turn 1 的观察做推理，不输出 JSON）
+    expert_section = ""
+    if expert_gt:
+        hint_lines = []
+        mtype = expert_gt.get("MType", "unknown")
+        mtype2 = expert_gt.get("MType2", "")
+        type_desc = f"{mtype}" + (f" ({mtype2})" if mtype2 else "")
+        hint_lines.append(f"该星系形态类型: {type_desc}，专家标注包含以下成分：")
+        if expert_gt.get("re_disk", 0) > 0:
+            hint_lines.append(f"- Disk: Re={expert_gt['re_disk']:.2f}px, mag={expert_gt.get('mag_disk', 'N/A')}, n={expert_gt.get('sersic_disk', 1)}, q={expert_gt.get('axis_ratio_disk', 'N/A')}")
+        if expert_gt.get("re_bulge", 0) > 0:
+            hint_lines.append(f"- Bulge: Re={expert_gt['re_bulge']:.2f}px, mag={expert_gt.get('mag_bulge', 'N/A')}, n={expert_gt.get('sersic_bulge', 'N/A')}, q={expert_gt.get('axis_ratio_bulge', 'N/A')}")
+        if expert_gt.get("re_bar", 0) > 0:
+            hint_lines.append(f"- Bar: Re={expert_gt['re_bar']:.2f}px, mag={expert_gt.get('mag_bar', 'N/A')}, n={expert_gt.get('sersic_bar', 'N/A')}, q={expert_gt.get('axis_ratio_bar', 'N/A')}")
+        expert_section = f"\n\n**参考信息（专家标注）**：\n" + "\n".join(hint_lines) + "\n请以此作为参数初值参考，但仍需根据残差图独立判断结构决策。"
+
+    turn2 = f"""基于你刚才的视觉观察，请完成以下两项分析（**不要输出 JSON，只做文字推理**）：
+
+**参数审查**
+结合以下拟合参数摘要，审查当前各成分的参数收敛情况：
+{summary_content}
+
+逐一检查：
+1. 各成分的 Re、n、mag、q、PA 当前值是多少？收敛是否合理？
+2. 是否有参数触碰边界（n>8, Re<0.2px, q<0.05）？是否存在异常参数值？
+3. **重要：遇到参数异常时，应优先分析原因并尝试调参方案（如调整 Re/mag 分配），不要急于添加新成分。**
+
+**专家推理**
+
+首先，基于残差诊断树做**结构分析**：
+- 是否存在全局系统性异常（整体正/负大面积残差 → sky 问题；对称光晕残差 → PSF 问题）？
+- 当前成分是否缺失 Disk/Bulge/Bar/Nucleus？判断依据：
+  · Disk+Bulge：大尺度对称亮区（中心过亮外围过暗）→ 需要双成分
+  · Bar：中心区域"一字型"或"X型"亮区 → 添加低 n(~0.5) 高椭率 Sersic
+  · Nucleus/AGN：1D profile 左侧(<5pix) 明显尖峰且无法通过调参解决 → PSF
+- 残差是否已接近"电视机雪花"般的纯随机分布（可终止拟合）？
+- 分析顺序：**先总体后细节**——先保障原图与模型的总体轮廓相近（如 Disk 亮度区域、Bar 方向大小），总体轮廓匹配后再处理中心细节（Bulge/Nucleus）。
+
+然后，做**参数分析**（尤其当成分结构已基本完整，即已有 {num_sersic} 个成分时，应优先考虑参数微调而非继续添加成分）：
+- 各成分 Re 的大小关系是否合理？通常应满足 Re_disk > Re_bar > Re_bulge。如果 Bulge 的 Re 大于 Disk 的 Re，可能成分角色互换了，需要交换标签或重新分配参数。
+- mag 通量分配是否均衡？将单成分拆为双成分时，按 3:7 或 4:6 比例分配通量。如果某成分通量占比极低（远暗于主成分 3+ mag），需要重新分配。
+- n 值是否符合物理预期？Bulge 的 n 一般在 0.1~8 之间；如果 n<1 且 q<0.5，该成分可能实际上是 Bar 而非 Bulge。Disk 的 n 不一定等于 1，也可以 <1（平缓盘）。
+- 如果星系边缘仍存在明显正残差，说明 Disk 的 Re 或 Mag 设置过低，同时可能挤压了 Bulge 的 Re，需要重新分配 Disk 和 Bulge 的参数初始值。
+
+**请结合你第一轮的视觉观察和上述参数信息，给出你的诊断结论和推荐的下一步操作方向。**{expert_section}"""
+
+    # Turn 3: 输出决策 JSON
+    turn3 = f"""基于你前两轮的视觉分析和推理，现在请输出**下一轮完整模型规格**。
+
+决策优先级：**结构缺陷 > 参数分配不合理 > 细节微调**。即使不增减成分，也应给出参数/ fix 的合理调整（如释放 Bulge n、把 Bar 的 n 固定 0.5、重分配通量）。
+
+**输出格式**：用 ```json``` 代码块输出，格式如下：
+
+{{
+  "components": [
+    {{"role":"bulge|disk|bar|nucleus|companion","model":"sersic|expdisk|psf",
+      "x":<float或null>,"y":<float或null>,"mag":<float>,
+      "re":<float>,"n":<float>,"q":<float>,"pa":<float>,
+      "fix":{{"n":0}}}}
+  ],
+  "sky": {{"value": <float或null>, "fix": 0}},
+  "target": "<本轮物理目标，一句话>",
+  "confidence": <0-1>,
+  "reasoning": "<简要原因>"
+}}
+
+字段说明：
+- "components": 下一轮**全部**成分（含从上一轮继承、可修改的成分 + 至多新增 1 个）。每个成分：
+  - "role": 物理角色 bulge/disk/bar/nucleus/companion
+  - "model": **disk 用 expdisk；bulge/bar 用 sersic；nucleus/AGN（Re<0.2px）用 psf**
+  - "x","y": 像素坐标；同心成分填 null（自动继承中心），仅伴星系需给绝对坐标
+  - "mag": 积分星等（拆分时按 3:7 或 4:6 分配通量）
+  - "re": 有效半径(pix)；expdisk 也填 Re（系统会自动转 Rs）；psf 不需要
+  - "n": Sersic 指数；expdisk/psf 省略；**bar 固定 0.5**
+  - "q","pa": 轴比、位置角；bar 的 q 取 0.2-0.4
+  - "fix": 逐参数冻结标志，**1=free（拟合），0=fixed（冻结）**；只列需要冻结的参数（如 {{"n":0}} 锁住 n），未列默认 free
+- "sky": value 为 null 表示沿用当前 sky 值；fix 恒为 0（冻结到背景）
+- "confidence": 0-1；"target"/"reasoning": 简述本轮目标与依据
+
+请严格输出 ```json``` 代码块，确保 JSON 完整闭合、不被截断。"""
+
+    return SYSTEM_PROMPT, [turn1, turn2, turn3]
 
 
 def _derive_full_comparison_path(cropped_path: str) -> Optional[str]:
@@ -580,16 +709,60 @@ async def _call_vlm_with_retry(
     return decision, usage
 
 
+async def _call_vlm_multiturn_single(
+    image_path: str,
+    system_prompt: str,
+    turn_prompts: list,
+    model_name: str,
+    temperature: float,
+    parent_components: list,
+    call_idx: int,
+    expert_gt: Optional[dict] = None,
+) -> Tuple[Optional[dict], Optional[dict]]:
+    try:
+        print(f"      🧠 [VLM Call {call_idx}] temp={temperature:.2f} 多轮调用中 (3 turns)...")
+        responses, usage = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: get_openAI_response_multiturn(
+                model_name=model_name,
+                system_prompt=system_prompt,
+                turn_prompts=turn_prompts,
+                image_path=image_path,
+                temperature=temperature,
+            )
+        )
+        response_text = responses[-1] if responses else ""
+        decision = parse_model_spec(response_text, parent_components, expert_gt=expert_gt)
+        if decision:
+            decision["full_response"] = "\n\n---\n\n".join(responses)
+            decision["thinking_chain"] = {
+                "visual_analysis": responses[0] if len(responses) > 0 else "",
+                "parameter_review_and_reasoning": responses[1] if len(responses) > 1 else "",
+                "decision_raw": responses[2] if len(responses) > 2 else "",
+            }
+            print(f"      ✅ [VLM Call {call_idx}] 多轮解析成功: {decision['coarse_label']}, "
+                  f"成分数={len(decision['components'])}, conf={decision['confidence']:.2f}")
+        else:
+            print(f"      ⚠️ [VLM Call {call_idx}] 多轮解析失败/规格非法，跳过")
+        return decision, usage
+    except Exception as e:
+        print(f"      ❌ [VLM Call {call_idx}] 多轮调用失败: {e}")
+        return None, None
+
+
 async def generate_vlm_proposals(
     state_context: dict,
     current_step: int,
     num_calls: int = 4,
     model_name: str = "gemini-3.1-pro-preview",
     max_steps: int = 10,
+    multiturn: bool = False,
 ) -> Tuple[List[dict], Optional[dict]]:
     """
     方案B：VLM 完整模型规格提议生成入口（异步）。
     并发调用 VLM num_calls 次，每次输出 1 份完整模型规格，去重后返回。
+    multiturn=True 时使用3轮对话模式（Turn1视觉→Turn2推理→Turn3决策），
+    返回的 decision 额外包含 thinking_chain。
     Returns: (unique_decisions_list, aggregated_usage_or_None)
     """
     num_sersic = state_context.get("num_sersic", 1)
@@ -610,13 +783,6 @@ async def generate_vlm_proposals(
     expert_gt = state_context.get("expert_gt")
     history_summary = state_context.get("history_summary")
 
-    prompt = build_proposal_prompt(
-        summary_content, current_step, max_steps, num_sersic,
-        expert_gt=expert_gt, current_components=parent_components,
-        history_summary=history_summary,
-    )
-    prompt_text = SYSTEM_PROMPT + "\n\n" + prompt
-
     image_path = _derive_full_comparison_path(residual_path)
     if not image_path or not os.path.exists(image_path):
         print(f"    ⚠️ [VLM Proposal] 对比图不存在: {image_path}，返回空提议")
@@ -625,19 +791,38 @@ async def generate_vlm_proposals(
     if num_calls <= 1:
         temperatures = [0.35]
     else:
-        # 2026-06 修订: 温度收窄到 [0.2, 0.5]，更聚焦专家 hint，减少高温乱猜
-        # 原: [0.3, 0.5, 0.7, 0.9] → 现: [0.2, 0.3, 0.4, 0.5]
         temperatures = [0.2 + 0.3 * i / (num_calls - 1) for i in range(num_calls)]
 
-    print(f"    🧠 [VLM Proposal] 并发 {num_calls} 次调用 ({model_name})，图片: {os.path.basename(image_path)}")
+    mode_tag = "多轮3-turn" if multiturn else "单轮"
+    print(f"    🧠 [VLM Proposal] 并发 {num_calls} 次{mode_tag}调用 ({model_name})，图片: {os.path.basename(image_path)}")
     if expert_gt:
         print(f"    🧠 [VLM Proposal] 已注入专家参数提示 (MType: {expert_gt.get('MType', '?')})")
 
-    tasks = [
-        _call_vlm_with_retry(image_path, prompt_text, model_name, temp, parent_components, i,
-                              expert_gt=expert_gt)
-        for i, temp in enumerate(temperatures)
-    ]
+    if multiturn:
+        system_prompt, turn_prompts = build_multiturn_prompts(
+            summary_content, current_step, max_steps, num_sersic,
+            expert_gt=expert_gt, current_components=parent_components,
+            history_summary=history_summary,
+        )
+        tasks = [
+            _call_vlm_multiturn_single(
+                image_path, system_prompt, turn_prompts, model_name, temp,
+                parent_components, i, expert_gt=expert_gt)
+            for i, temp in enumerate(temperatures)
+        ]
+    else:
+        prompt = build_proposal_prompt(
+            summary_content, current_step, max_steps, num_sersic,
+            expert_gt=expert_gt, current_components=parent_components,
+            history_summary=history_summary,
+        )
+        prompt_text = SYSTEM_PROMPT + "\n\n" + prompt
+        tasks = [
+            _call_vlm_with_retry(image_path, prompt_text, model_name, temp, parent_components, i,
+                                  expert_gt=expert_gt)
+            for i, temp in enumerate(temperatures)
+        ]
+
     results = await asyncio.gather(*tasks)
 
     all_decisions = []

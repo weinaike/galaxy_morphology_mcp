@@ -42,7 +42,8 @@ class DataGenPipeline:
                          vlm_reward_image_mode: str = "cutoff",
                          force_greedy: bool = True,
                          accept_all: bool = False,
-                         max_patience: int = 2):
+                         max_patience: int = 2,
+                         vlm_proposal_multiturn: bool = False):
         """
         处理单个星系，并返回该星系的局部统计报告。
         """
@@ -269,6 +270,7 @@ class DataGenPipeline:
                     proposal_strategy=self.proposal_strategy,
                     vlm_proposal_model_name=vlm_proposal_model_name,
                     vlm_proposal_num_calls=vlm_proposal_num_calls,
+                    vlm_proposal_multiturn=vlm_proposal_multiturn,
                 )
 
                 if vlm_usage:
@@ -473,12 +475,15 @@ class DataGenPipeline:
                 current_layer_nodes = next_layer_nodes
                 patience_counter = 0 # 只要有进步，耐心值清零
             else:
-                patience_counter += 1
-                print(f"    ⚠️ 步进 {step} 所有变体均未达标。当前耐心值: {patience_counter}/{max_patience}")
-                
-                if patience_counter >= max_patience:
-                    print(f"    🛑 连续 {max_patience} 步未达标，触发早停机制 (模拟 Action D 收敛)！提前结束本星系搜索。")
-                    break # 🚀 直接跳出 for 循环，进入落盘结算环节！
+                if accept_all:
+                    print(f"    ⚠️ 步进 {step} 所有变体被SSIM拦截，ACCEPT_ALL模式下跳过patience计数，继续下一步")
+                else:
+                    patience_counter += 1
+                    print(f"    ⚠️ 步进 {step} 所有变体均未达标。当前耐心值: {patience_counter}/{max_patience}")
+
+                    if patience_counter >= max_patience:
+                        print(f"    🛑 连续 {max_patience} 步未达标，触发早停机制 (模拟 Action D 收敛)！提前结束本星系搜索。")
+                        break
 
         # ==================== 落盘结束 ====================
         best_final_node = min(current_layer_nodes, key=lambda x: x["metrics"].get("chi2_nu", 999.0))

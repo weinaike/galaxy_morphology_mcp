@@ -105,6 +105,7 @@ def extract_from_trajectory(traj):
             "coarse_label": _get_coarse_label(node),
             "real_improvement_depth": real_depth,
             "spec": act.get("spec"),
+            "thinking_chain": act.get("thinking_chain"),
             "parent_metrics": parent.get("metrics", {}),
             "child_metrics": node.get("metrics", {}),
             "delta_R": node.get("delta_R", 0),
@@ -175,6 +176,8 @@ def build_report(all_sft, all_dpo, num_files, num_galaxies):
     for s in all_sft:
         by_real_depth[s["real_improvement_depth"]] += 1
 
+    with_thinking_chain = sum(1 for s in all_sft if s.get("thinking_chain"))
+
     dpo_by_depth = defaultdict(int)
     for p in all_dpo:
         dpo_by_depth[p["depth"]] += 1
@@ -186,6 +189,7 @@ def build_report(all_sft, all_dpo, num_files, num_galaxies):
         "num_galaxies": num_galaxies,
         "sft": {
             "total": total_sft,
+            "with_thinking_chain": with_thinking_chain,
             "by_depth": {str(k): v for k, v in sorted(by_depth.items())},
             "by_coarse_label": dict(sorted(by_label.items(), key=lambda x: -x[1])),
             "by_real_improvement_depth": {str(k): v for k, v in sorted(by_real_depth.items())},
@@ -214,6 +218,8 @@ def print_report(report):
     sft = report["sft"]
     print(f"\n--- SFT样本统计 (仅improvement=1) ---")
     print(f"总数: {sft['total']}")
+    if sft.get("with_thinking_chain", 0) > 0:
+        print(f"含thinking_chain(CoT): {sft['with_thinking_chain']}/{sft['total']}")
 
     print(f"\n按depth分布:")
     for d, count in sorted(sft["by_depth"].items(), key=lambda x: int(x[0])):

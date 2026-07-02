@@ -126,7 +126,8 @@ def _inject_expert_patch_to_action(action: dict, expert_gt: dict) -> dict:
 async def generate_proposals(state_context: dict, current_step: int, num_variants: int = 16,
                        max_steps: int = 10, proposal_strategy: str = "rule_based",
                        vlm_proposal_model_name: str = None,
-                       vlm_proposal_num_calls: int = 4) -> tuple:
+                       vlm_proposal_num_calls: int = 4,
+                       vlm_proposal_multiturn: bool = False) -> tuple:
     """
     统一提议生成入口 — 三策略完全独立分发。
 
@@ -144,6 +145,7 @@ async def generate_proposals(state_context: dict, current_step: int, num_variant
             state_context, current_step, num_calls=vlm_proposal_num_calls,
             model_name=vlm_proposal_model_name or "gemini-3.1-pro-preview",
             max_steps=max_steps,
+            multiturn=vlm_proposal_multiturn,
         )
 
     # rule_based / expert_guided：原有逻辑

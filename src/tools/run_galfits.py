@@ -16,6 +16,7 @@ from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 from astropy.io import fits
 from typing import Any, Annotated, List, Dict, Tuple
 
+from .pix2radec import suppress_stdout_stderr
 from .render_original import render_asinh_panel
 from .sb_profile import render_sb_profile
 from .parse_lyric import (
@@ -161,7 +162,8 @@ def create_perband_comparison_png(
     """
     region_info = parse_region_info_from_lyric(lyric_file)
     image_infos = parse_image_infos_from_lyric(lyric_file)
-    all_subcomps = generate_subcomps(lyric_file=lyric_file, gssummary_file=gssummary_file)
+    with suppress_stdout_stderr():
+        all_subcomps = generate_subcomps(lyric_file=lyric_file, gssummary_file=gssummary_file)
 
     pngs: Dict[str, str] = {}
     band_data = []
@@ -401,7 +403,8 @@ def create_multiband_comparison_png(
     """
     region_info = parse_region_info_from_lyric(lyric_file)
     image_infos = parse_image_infos_from_lyric(lyric_file)
-    all_subcomps = generate_subcomps(lyric_file=lyric_file, gssummary_file=gssummary_file)
+    with suppress_stdout_stderr():
+        all_subcomps = generate_subcomps(lyric_file=lyric_file, gssummary_file=gssummary_file)
 
     # --- Collect valid band data ---
     band_data = []

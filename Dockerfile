@@ -17,7 +17,7 @@ RUN python -m ensurepip && python -m pip install --upgrade pip
 RUN python --version && pip --version
 
 COPY . .
-RUN cd jnesty && pip install . -i https://mirrors.aliyun.com/pypi/simple
+RUN cd jnesty && pip install . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 RUN cd GalfitS && bash ./install_galfits_gpu.sh
 
 # 追加环境变量和别名到 ~/.bashrc
@@ -25,4 +25,4 @@ RUN echo 'export PYTHONPATH="/app/GalfitS/src:$PYTHONPATH"' >> ~/.bashrc && \
     echo 'export GS_DATA_PATH="/app/galfits-data"' >> ~/.bashrc && \
     echo 'alias galfits="python /app/GalfitS/src/galfits/galfitS.py --config "' >> ~/.bashrc
 
-RUN pip install --no-cache-dir . -i https://mirrors.aliyun.com/pypi/simple
+RUN pip install --no-cache-dir . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn

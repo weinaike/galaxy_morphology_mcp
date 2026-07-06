@@ -572,6 +572,71 @@ def generate_feedme(image_info: ImageInfo, components, feedme_file):
             else:
                 pass
 
+def pixel2arcsec_offset(
+    pix_x: Annotated[float, "Component's X position on the science image, in the FITS/astropy 1-based pixel frame (i.e. the same frame used by wcs.all_pix2world(..., 1)). If you only have 0-based numpy indices, add 1 before passing them here."],
+    pix_y: Annotated[float, "Component's Y position on the science image, in the FITS/astropy 1-based pixel frame."],
+    lyric_file: Annotated[str, "Path to the .lyric config file. It must declare the galaxy center as R2) [ra, dec] (in degrees) and contain at least one image block pointing to a science FITS whose header carries the WCS."],
+    band: Annotated[str, "Band label (e.g. 'nircam_f115w', 'nircam_f150w', 'sloan_r') of the science image to use for the WCS. It must match exactly one of bands defined in the .lyric file."],
+)-> tuple[float, float] | dict[str, str]:
+    """Convert an image pixel position into the arcsecond-offset format used by .lyric files.
+
+    In a GalfitS ``.lyric`` config a component centroid is stored *not* as an
+    absolute sky position but as an **arcsecond offset relative to the galaxy
+    center** ``(ra, dec)`` declared in the ``R2)`` line.  The two values
+    returned by this function are exactly what should be written into that
+    component's ``PX3)`` (xcen) and ``PX4)`` (ycen) slots, e.g.::
+
+        Pa3) [<ra_offset_arcsec>,  min, max, step, vary]   # xcen
+        Pa4) [<dec_offset_arcsec>, min, max, step, vary]   # ycen
+
+    This function is the inverse of the forward (arcsec -> pixel) conversion
+    performed in :func:`extract_component_attributes`
+    (see the ``wcs.all_world2pix(ra + xcen/3600., dec + ycen/3600., 1)``
+    branch in ``parse_lyric.py``).
+
+    Procedure:
+        1. Parse ``R2)`` from *lyric_file* to get the reference ``(ra, dec)``.
+        2. Take the first image block (``Id1)``) and read the WCS from its FITS header.
+        3. Project ``(pix_x, pix_y)`` to sky coordinates via ``wcs.all_pix2world(..., 1)``.
+        4. Subtract the reference ``(ra, dec)`` and multiply by 3600 to express
+           the result in arcseconds.
+
+    Args:
+        pix_x: Component's X position on the science image, in the FITS/astropy
+            **1-based** pixel frame (same convention as
+            ``wcs.all_pix2world(..., 1)``).  If your coordinates are 0-based
+            numpy array indices, add 1 before passing them here.
+        pix_y: Component's Y position on the science image, 1-based pixel frame.
+        lyric_file: Path to the ``.lyric`` config file. Must contain ``R2)``
+            (galaxy center ``[ra, dec]`` in degrees) and at least one image
+            block ``Id1)`` pointing to a science FITS whose header carries the WCS.
+
+    Returns:
+        ``(ra_offset_arcsec, dec_offset_arcsec)`` — angular offsets in arcseconds
+        relative to ``(ra, dec)`` from ``R2)``.  ``ra_offset_arcsec`` goes into
+        ``PX3)`` (xcen), ``dec_offset_arcsec`` goes into ``PX4)`` (ycen).
+    
+    Note:
+        The "X" in PX3) and PX4) is the component's letter label (e.g. "a", "b", "c").
+    """
+    region_info = parse_region_info_from_lyric(lyric_file) # get (ra, dec)
+    image_infos = parse_image_infos_from_lyric(lyric_file) # get list of ImageInfo objects defined in the lyric file
+    fits_file = None
+    for image_info in image_infos:
+        if image_info.band == band:
+            fits_file = image_info.image[0]
+            break
+    if fits_file is None:
+        return {"status": "error", "message": f"'{band}' not found in lyric file."}
+
+    with fits.open(fits_file) as hdul:
+        header = hdul[0].header
+        wcs = WCS(header)
+    ra_comp, dec_comp = wcs.all_pix2world(pix_x, pix_y, 1)
+    ra_offset = (ra_comp - region_info.ra) * 3600.0
+    dec_offset = (dec_comp - region_info.dec) * 3600.0
+    return ra_offset, dec_offset
+
 # def generate_subcomps(image_info: ImageInfo, components) -> tuple[list, list] | None:
 #     """Generate individual component images via GALFIT subcomps mode (P=3).
 
@@ -724,6 +789,23 @@ def TEST_lyric_to_feedme():
         generate_feedme(image_info, components, feedme_file)
         print(f"Generated .feedme file at: {feedme_file}")
 
+def TEST_pixel2arcsec_offset():
+    pix_x, pix_y = 72, 86
+    lyric_file = "/home/jiangbo/jwst/1182/obj_1182.lyric"
+    band = "nircam_f277w"
+
+    print(f"Converting pixel coordinates ({pix_x}, {pix_y}) to arcsecond offsets using lyric file: {lyric_file}")
+    ra_offset, dec_offset = pixel2arcsec_offset(pix_x, pix_y, lyric_file, band)
+    print(f"Resulting offsets: RA offset = {ra_offset:.6f} arcsec, Dec offset = {dec_offset:.6f} arcsec")
+
+    pix_x, pix_y = 144, 172 
+    lyric_file = "/home/jiangbo/jwst/1182/obj_1182.lyric"
+    band = "nircam_f115w"
+
+    print(f"Converting pixel coordinates ({pix_x}, {pix_y}) to arcsecond offsets using lyric file: {lyric_file}")
+    ra_offset, dec_offset = pixel2arcsec_offset(pix_x, pix_y, lyric_file, band)
+    print(f"Resulting offsets: RA offset = {ra_offset:.6f} arcsec, Dec offset = {dec_offset:.6f} arcsec")
 
 if __name__ == '__main__':
-    TEST_parse_image_infos_from_lyric_success()
+    #TEST_parse_image_infos_from_lyric_success()
+    TEST_pixel2arcsec_offset()

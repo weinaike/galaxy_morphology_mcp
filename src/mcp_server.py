@@ -15,6 +15,7 @@ from typing import Any
 from mcp.server import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from tools.modify_lyric import check_lyric_file
+from tools.parse_lyric import pixel2arcsec_offset
 from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 
@@ -63,6 +64,7 @@ def _register_tools_and_prompts():
         app.add_tool(check_lyric_file)
         app.add_tool(pix2radec)
         app.add_tool(re_arcsec2pix)        
+        app.add_tool(pixel2arcsec_offset)
         app.add_prompt(workflow_galfits)
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
 

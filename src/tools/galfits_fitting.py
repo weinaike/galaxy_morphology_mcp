@@ -17,13 +17,15 @@ __all__ = ["ImageFitting", "PureSEDFitting", "ImageSEDFitting"]
 
 ALL_BANDS = [
     "nircam_f115w", "nircam_f150w", "nircam_f200w",
-    "nircam_f277w", "nircam_f356w", "nircam_f410m", 
-    "nircam_f444w"
+    "nircam_f277w", "nircam_f356w", "nircam_f410m",
+    "nircam_f444w",
+    "sloan_r", "sloan_g", "sloan_u", "sloan_i", "sloan_z",
 ]
 MAG_ZERO_POINTS = [
-    28.96697568756239, 28.96697568756239, 28.96697568756239, 
-    27.461825709242483, 27.461825709242483, 27.461825709242483, 
-    27.461825709242483
+    28.96697568756239, 28.96697568756239, 28.96697568756239,
+    27.461825709242483, 27.461825709242483, 27.461825709242483,
+    27.461825709242483,
+    22.5, 22.5, 22.5, 22.5, 22.5,
 ]
 BANDS_ZEROPOINTS = {band: zp for band, zp in zip (ALL_BANDS, MAG_ZERO_POINTS)}
 
@@ -128,8 +130,10 @@ def calculate_profile_fluxes(config_lyric, workplace, prior_path=None):
             for band in bands:
                 img = Myfitter.GSdata.get_image(band)
 
-                logNorm = Myfitter.pardict[f"logNorm_{profile_name}_{band}"]
-                logMass = Myfitter.pardict[f"logM_{profile_name}"]
+                logNorm_key = f"logNorm_{profile_name}_{band}"
+                logNorm = Myfitter.pardict[logNorm_key] if logNorm_key in Myfitter.pardict else -7.5
+                logMass_key = f"logM_{profile_name}"
+                logMass = Myfitter.pardict[logMass_key] if logMass_key in Myfitter.pardict else 9.0
                 mag = img.magzp - 2.5*(logNorm + logMass)
                 flux_mJy = 3631* 10**(-0.4*mag) * 1e3 ## mmJy = 1e-3 Jy
 

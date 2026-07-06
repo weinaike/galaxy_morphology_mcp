@@ -94,6 +94,7 @@ obj195/
               pardictlc['bulge_xcen'] = pardictlc['bar_xcen'] = 1 * pardictlc['disk_xcen']
               pardictlc['bulge_ycen'] = pardictlc['bar_ycen'] = 1 * pardictlc['disk_ycen']
     - Add the parameter --parconstrain iter{n}.constrain when calling Galfits fitting methods to load this constraint file.
+- When including companion galaxies in the fitting, the galaxy central coordinates must be constrained in the Lyric file to prevent positional drift of companion galaxies during the fitting process. The offset between the model center and the detected galaxy center is generally limited to within 5 pixels. Note that the position unit for all galaxy components in the Lyric file is arcsec; unit conversion from pixels to arcsec is therefore required beforehand.
 - `run_galfits` automatically creates output directories; do NOT manually create directories
 
 ---

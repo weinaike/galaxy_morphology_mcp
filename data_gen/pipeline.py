@@ -43,7 +43,9 @@ class DataGenPipeline:
                          force_greedy: bool = True,
                          accept_all: bool = False,
                          max_patience: int = 2,
-                         vlm_proposal_multiturn: bool = False):
+                         vlm_proposal_multiturn: bool = False,
+                         run_id: str = None,
+                         config_signature: str = None):
         """
         处理单个星系，并返回该星系的局部统计报告。
         """
@@ -129,8 +131,16 @@ class DataGenPipeline:
         init_state = await self.env.initialize(init_feedme, gal_out_dir, galaxy_id)
         if init_state["status"] != "success":
             print(f"❌ 初始化崩溃，跳过 {galaxy_id}。原因: {init_state.get('error')}")
-            # 失败时依然返回空的统计报告，方便主程序汇总
-            return {"analytics": tree["analytics"], "llm_stats": tree["llm_stats"], "success": False}
+            # 写终态 failed 记录（带 completed 标记），计为「已处理」避免续跑时无限重试
+            tree["metadata"]["completed"] = True
+            tree["metadata"]["status"] = "failed_init"
+            tree["metadata"]["run_id"] = run_id
+            tree["metadata"]["config_signature"] = config_signature
+            tree["metadata"]["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            tree["metadata"]["init_error"] = str(init_state.get("error"))
+            save_trajectory(tree, gal_out_dir)
+            return {"analytics": tree["analytics"], "llm_stats": tree["llm_stats"],
+                    "success": False, "fail_reason": "init_crash"}
 
         root_node = {
             "node_id": "node_0_root",
@@ -272,6 +282,14 @@ class DataGenPipeline:
                     vlm_proposal_num_calls=vlm_proposal_num_calls,
                     vlm_proposal_multiturn=vlm_proposal_multiturn,
                 )
+
+                # API 中断检测：vlm 策略下所有提议调用均在 API 层失败(usage=None,非解析失败)
+                # → 判定 API 故障，抛出让上层熔断处理；不落完成标记，该星系下次重跑
+                if self.proposal_strategy == "vlm_generated" and not actions and vlm_usage is None:
+                    raise RuntimeError(
+                        f"VLM proposal API failure @ step {step} (galaxy {galaxy_id}): "
+                        f"所有提议调用均在API层失败，疑似 key 失效/限流"
+                    )
 
                 if vlm_usage:
                     tree["llm_stats"]["vlm_proposal_calls"] += vlm_usage.get("total_calls", 1)
@@ -501,7 +519,14 @@ class DataGenPipeline:
         tree["analytics"]["max_depth"] = max(accepted_depths) if accepted_depths else 0
         tree["analytics"]["avg_depth"] = round(sum(accepted_depths) / len(accepted_depths), 2) if accepted_depths else 0
         tree["analytics"]["mh_accepted_count"] = mh_accepted_count
-        
+
+        # 完成标记（原子写盘 + 此标记 = 续跑判据「真完成」）
+        tree["metadata"]["completed"] = True
+        tree["metadata"]["status"] = "success"
+        tree["metadata"]["run_id"] = run_id
+        tree["metadata"]["config_signature"] = config_signature
+        tree["metadata"]["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
         save_trajectory(tree, gal_out_dir)
         # 修改：把耗时打印在最终的战报里
         minutes, seconds = divmod(elapsed_time, 60)

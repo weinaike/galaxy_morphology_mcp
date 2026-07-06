@@ -16,6 +16,9 @@ import re
 import glob
 from collections import defaultdict
 
+# 只参与精确匹配比对的三类（与 Gadotti GT 对齐）；其余类别忽略（魏老师确认）
+COMPARE_CLASSES = {"Disk", "Bulge", "Bar"}
+
 
 def load_gadotti_gt(data_dir: str) -> dict:
     """扫描data_dir下所有Gadotti_params.json，返回 {galaxy_id: set(components)}。
@@ -191,8 +194,87 @@ def predict_from_trajectory(traj: dict) -> set:
     return components
 
 
-def evaluate(input_dir: str, data_dir: str) -> dict:
-    """执行评估，返回结果字典。"""
+def _select_best_leaf(traj: dict):
+    """选最优叶节点：accepted 叶节点里 chi2_nu 最小；无则回退 root。返回 node 或 None。"""
+    nodes = traj.get("nodes", [])
+    if not nodes:
+        return None
+    node_map = {n["node_id"]: n for n in nodes}
+
+    accepted_leaves = []
+    for node in nodes:
+        if not node.get("is_accepted") or node.get("parent_id") is None:
+            continue
+        is_leaf = not any(
+            o.get("parent_id") == node["node_id"] and o.get("is_accepted") for o in nodes
+        )
+        if is_leaf:
+            accepted_leaves.append(node)
+
+    if accepted_leaves:
+        return min(accepted_leaves, key=lambda n: n.get("metrics", {}).get("chi2_nu", 999))
+    # 回退 root
+    return node_map.get("node_0_root") or nodes[0]
+
+
+def predict_from_trajectory_vlm(traj: dict, model_name: str, api_key: str = None,
+                                cache: dict = None) -> tuple:
+    """对齐 MCP 口径：对最优叶节点调 VLM 判定物理成分。
+
+    Returns: (components_set, meta_dict)  —— components 为归一化后的全部类别集合。
+    """
+    from data_gen.component_labeler import label_components_via_vlm
+    from data_gen.vlm_proposal import _derive_full_comparison_path
+
+    galaxy_id = traj.get("galaxy_id", "")
+
+    # 缓存命中直接返回
+    if cache is not None and galaxy_id in cache:
+        entry = cache[galaxy_id]
+        return set(entry.get("components", [])), entry.get("meta", {})
+
+    best_leaf = _select_best_leaf(traj)
+    if not best_leaf:
+        return set(), {"error": "no_node"}
+
+    # 参数表内容
+    summary_content = ""
+    summary_path = best_leaf.get("summary_path")
+    if summary_path and os.path.exists(summary_path):
+        try:
+            with open(summary_path, "r", encoding="utf-8") as f:
+                summary_content = f.read()
+        except Exception as e:
+            summary_content = f"(参数表读取失败: {e})"
+
+    # 完整对比图（原图|模型|残差|1D）
+    comparison_img = _derive_full_comparison_path(best_leaf.get("residual_path"))
+    if not comparison_img:
+        return set(), {"error": f"no_comparison_image (residual_path={best_leaf.get('residual_path')})"}
+
+    components, meta = label_components_via_vlm(
+        summary_content=summary_content,
+        comparison_image_path=comparison_img,
+        model_name=model_name,
+        api_key=api_key,
+    )
+    meta["best_leaf_node_id"] = best_leaf.get("node_id")
+    meta["comparison_image"] = comparison_img
+
+    if cache is not None:
+        cache[galaxy_id] = {"components": sorted(components), "meta": meta}
+
+    return components, meta
+
+
+def evaluate(input_dir: str, data_dir: str, use_vlm: bool = True,
+             model_name: str = "gemini-3.1-pro-preview", api_key: str = None,
+             refresh: bool = False) -> dict:
+    """执行评估，返回结果字典。
+
+    use_vlm=True（默认，对齐 MCP 口径）：对最优叶节点调 VLM 判成分。
+    use_vlm=False：回退旧 n 阈值 + action 回溯口径。
+    """
     gt_all = load_gadotti_gt(data_dir)
     if not gt_all:
         print(f"[ERROR] 在 {data_dir} 下未找到Gadotti_params.json")
@@ -204,6 +286,17 @@ def evaluate(input_dir: str, data_dir: str) -> dict:
     if not traj_files:
         print(f"[ERROR] 在 {input_dir} 下未找到trajectory.json文件")
         return {}
+
+    # VLM 预测缓存（重跑默认复用，避免重复付费；--refresh 忽略）
+    cache_path = os.path.join(input_dir, "component_pred_cache.json")
+    cache = {}
+    if use_vlm and not refresh and os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+            print(f"  已加载预测缓存: {len(cache)} 条 ({cache_path})")
+        except Exception:
+            cache = {}
 
     results = []
     for tf in traj_files:
@@ -223,15 +316,27 @@ def evaluate(input_dir: str, data_dir: str) -> dict:
                 print(f"  [WARN] {galaxy_id} 无GT数据，跳过")
                 continue
 
-        gt_components = gt_all[galaxy_id]
-        pred_components = predict_from_trajectory(traj)
+        gt_components = gt_all[galaxy_id]  # GT 天然只含 Disk/Bulge/Bar
+
+        raw_pred = None
+        if use_vlm:
+            pred_all, meta = predict_from_trajectory_vlm(traj, model_name, api_key, cache)
+            raw_pred = sorted(pred_all)
+            if meta.get("error"):
+                print(f"  [WARN] {galaxy_id} VLM判定异常: {meta['error']}")
+            # 只保留三类参与比对（其余忽略，魏老师确认）
+            pred_components = pred_all & COMPARE_CLASSES
+        else:
+            pred_components = predict_from_trajectory(traj) & COMPARE_CLASSES
+
+        gt_components = gt_components & COMPARE_CLASSES
 
         correct = gt_components == pred_components
         tp = gt_components & pred_components
         fp = pred_components - gt_components
         fn = gt_components - pred_components
 
-        results.append({
+        row = {
             "galaxy_id": galaxy_id,
             "gt": sorted(gt_components),
             "pred": sorted(pred_components),
@@ -239,7 +344,20 @@ def evaluate(input_dir: str, data_dir: str) -> dict:
             "tp": sorted(tp),
             "fp": sorted(fp),
             "fn": sorted(fn),
-        })
+        }
+        if raw_pred is not None:
+            row["pred_raw_all_classes"] = raw_pred  # 含 Nucleus/Companion 等，供复核
+        results.append(row)
+
+    # 落盘缓存
+    if use_vlm:
+        try:
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(cache, f, indent=2, ensure_ascii=False)
+            print(f"  预测缓存已保存: {cache_path}")
+        except Exception as e:
+            print(f"  [WARN] 缓存保存失败: {e}")
+
 
     if not results:
         print("[ERROR] 无有效评估结果")
@@ -304,11 +422,21 @@ def print_report(report: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="评估pipeline成分预测准确率")
+    parser = argparse.ArgumentParser(description="评估pipeline成分预测准确率（默认对齐MCP：VLM输出成分标签）")
     parser.add_argument("--input", required=True, help="实验output目录")
     parser.add_argument("--data-dir", required=True, help="Gadotti数据目录(含Gadotti_params.json)")
     parser.add_argument("--output", default=None, help="输出JSON路径(默认=input/component_accuracy.json)")
+    parser.add_argument("--model", default="gemini-3.1-pro-preview", help="成分判定模型(对标同款)")
+    parser.add_argument("--no-vlm", action="store_true", help="回退旧口径(n阈值+action回溯)")
+    parser.add_argument("--refresh", action="store_true", help="忽略预测缓存，强制重调VLM")
+    parser.add_argument("--api-key", default=None, help="API key(默认读环境变量 OPENAI_API_KEY)")
     args = parser.parse_args()
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+    except ImportError:
+        pass
 
     input_dir = os.path.abspath(args.input)
     data_dir = os.path.abspath(args.data_dir)
@@ -316,8 +444,10 @@ def main():
 
     print(f"实验目录: {input_dir}")
     print(f"GT数据目录: {data_dir}")
+    print(f"口径: {'旧(n阈值)' if args.no_vlm else f'MCP对齐(VLM={args.model})'}")
 
-    report = evaluate(input_dir, data_dir)
+    report = evaluate(input_dir, data_dir, use_vlm=not args.no_vlm,
+                      model_name=args.model, api_key=args.api_key, refresh=args.refresh)
     if not report:
         return
 

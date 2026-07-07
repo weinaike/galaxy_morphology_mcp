@@ -85,6 +85,7 @@ data/
 output/
 *.gal
 config.toml
+.best_round.json
 
 # Logs
 *.log

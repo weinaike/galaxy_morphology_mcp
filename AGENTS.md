@@ -90,7 +90,7 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 # Working Note 的撰写规范
 
 - Working Note 是记录每轮拟合分析过程的核心文档，必须详细记录每轮的分析要点、参数设置、拟合结果以及距离预期目标的偏差等关键信息。 example示例中提到的 【必填】 的内容是必须包含的关键信息。
-- Working Note 中必须包含<Round 0: 原图成分预测>，必须明确指出<高概率存在的成分>。数据来源于 detect_bar_lopsidedness 的结论优先级更高。
+- Working Note 中必须包含<Round 0: 原图成分预测>，必须明确指出<高概率存在的成分>。数据来源于 detect_bar_lopsidedness 的结论优先级更高。（仅作为初始猜测，实际以拟合效果为准）
 - 严格按照以下示例的格式撰写 Working Note，确保信息的完整性和清晰度。
 
 <example>
@@ -150,3 +150,9 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 - 指标条件：以上成分、拟合、物理、尝试、校验五个维度的条件都满足的情况下，基于残差质量选择
   - component_analysis 分析工具每次调用都会输出最优轮次（残差视觉判断）以及卡方值信息，他们是残差质量的重要参考
   - 两个轮次的差异仅在 F1时，F1 成分的 amplitude 大于 阈值 0.02 就可以保留,选择包含 F1 成分的轮次。
+
+### 落锁强制审计（enforcement）
+上述六维标准在执行中容易被遗漏，因此**正式锁定最优轮次之前，必须调用 subagent `best-round-verifier`**（定义见 `.claude/agents/best-round-verifier.md`）对候选轮做独立、机械、可追溯的校验：
+- 该 subagent 为**只读审计**，按上述六个维度逐条核查并给出证据，返回 `verdict: PASS|FAIL`。
+- `FAIL` → 严禁落锁，按其"阻断性问题"清单修复后重拟、复审至 `PASS`；`PASS`（含 WARN）方可落锁。
+- 工作流（`workflow_galfit` / `workflow_galfits`）的阶段三锁定步骤已内嵌此审计门。

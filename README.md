@@ -11,13 +11,13 @@
 | `run_galfit` | 执行 GALFIT 单波段拟合，返回优化的 FITS 文件、对比图像和拟合摘要 | 需设置 `GALFIT_BIN` |
 | `run_galfits` | 执行 GalfitS 多波段同时拟合，返回摘要文件、图像、SED 模型等结果 | 需设置 `GALFITS_BIN` |
 | `view_original_image` | 分析原始星系图像，提取形态分类和结构组件信息 | 要求提供2 panel图 |
-| `component_analysis` | 分析拟合残差图像，诊断缺失或配置不当的物理组件（bulge、disk、bar、AGN 等） | 始终可用 |
+| `component_analysis` | 分析拟合残差图像，诊断缺失或配置不当的物理组件（bulge、disk、bar、AGN 等）；多轮迭代中维护"最优轮次"登记并做轮间对比 | 始终可用 |
 
 ### 输出说明
 
 **GALFIT 输出：**
 - `optimized_fits_file`: 包含原始数据、模型和残差的 FITS 文件
-- `image_file`: 三栏对比图（原始数据 | 模型 | 残差/σ）
+- `image_file`: 2×3 科学对比图（行0：低/高动态范围原图 \| 模型；行1：全场残差/σ \| 残差放大 \| 1D 表面亮度剖面）
 - `summary_file`: Markdown 格式的拟合参数摘要
 
 **GalfitS 输出：**
@@ -203,6 +203,23 @@ visualRAG 是一个**在线残差检索服务**，为 `component_analysis` 的 `
 配置方式与其它变量一致（`.env` 或 `.mcp.json` 的 `env` 字段）。注意 `query_service` 对 `top_k`/`strategy` 的回退顺序是「显式参数 → 环境变量 → 默认值」，且用 `or` 判断，因此传 `0`/空串会被当成未传而回退到默认值。`min_score` 不同：用 `is None` 判断，空串/未设 = 不传该字段（服务端走其默认 `0.3`），而显式 `0` 会被如实发送（含义为「丢弃负分样例」）。服务端库规模、模型、当前 `min_score` 默认等可通过 `GET {VISUALRAG_SERVICE_URL}/health` 查看。
 
 
+## 最优轮次登记与轮间对比（best-round registry）
+
+`component_analysis` 在多轮迭代拟合中会维护一个**最优轮次登记表**（`src/tools/best_round_registry.py`），按星系主目录索引，记录当前星系的历史最优轮次及其成分参数、卡方、component_analysis 结论。
+
+- 每轮分析前，若存在历史最优且与当前轮不同，会自动生成一份**轮间对比**（`run_round_comparison`）：把历史最优轮与当前轮的对比图交给多模态模型判定 `CURRENT_BETTER / HISTORICAL_BETTER / EQUAL`；判定退步（`HISTORICAL_BETTER`）时额外输出结构化字段 `regression_focus / salvage / direction(REVERT|AUGMENT)`，指明下一轮应回到历史最优轮起点重拟（`REVERT`），还是在当前方向上补全缺失要素（`AUGMENT`）。
+- 退步结论作为**软参考**注入 `component_analysis` 的参数审查阶段（turn-2），不干预 turn-1 的视觉特征提取。
+- 登记状态默认持久化到星系主目录下的 `.best_round.json`（已加入 `.gitignore`），便于跨会话恢复；设置环境变量 `BEST_ROUND_PERSIST=0` 可关闭，退化为纯内存登记。
+
+### 落锁前强制审计（best-round-verifier）
+
+正式锁定"最优轮次"之前，工作流（`workflow_galfit` / `workflow_galfits`）的阶段三会调用只读 subagent **`best-round-verifier`**（定义见 `.claude/agents/best-round-verifier.md`），对候选轮按**成分 / 拟合 / 物理 / 参数 / 校验 / 指标**六个维度做独立、机械、可追溯的审计，返回 `PASS | FAIL`：
+
+- `FAIL` → 严禁落锁，按"阻断性问题"清单修复后重拟、复审至 `PASS`；
+- `PASS`（含 `WARN`）→ 方可落锁。
+
+审计细则与工作流约束详见 `AGENTS.md`。
+
 ## 项目结构
 
 ```
@@ -214,6 +231,7 @@ src/
 │   ├── analyze_image.py   # VLM 多模态分析（GALFIT/GalfitS 结果）
 │   ├── view_original_image.py  # 原始星系图像形态分类
 │   ├── component_analysis.py   # 残差分析与组件诊断
+│   ├── best_round_registry.py  # 最优轮次登记与轮间对比（持久化 .best_round.json）
 │   ├── visualrag_client.py     # visualRAG Few-shot 检索客户端（vlm 模式）
 │   ├── modify_feedme.py   # GALFIT feedme 配置文件修改
 │   ├── extract_summary_galfit.py  # GALFIT 参数摘要提取

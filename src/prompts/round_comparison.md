@@ -37,3 +37,16 @@ CURRENT_BETTER
 - `CURRENT_BETTER`：当前轮次（最后一张图）拟合质量更高，应用其替换历史最优。
 - `HISTORICAL_BETTER`：历史最优轮次（第一张图）更优，保持不变。
 - `EQUAL`：两轮质量相当，默认保持历史最优不变。
+
+【退步时的结构化字段（仅当 verdict = HISTORICAL_BETTER 时输出）】
+当判定当前轮退步（HISTORICAL_BETTER）时，在 verdict fenced block 之后，再输出以下三行（每行一个字段，单行写完，不要换行折叠）：
+
+regression_focus: <当前轮相对最优轮，退步具体落在哪——哪个残差区域变差、哪个成分参数变得不物理>
+salvage: <即使整体退步，有没有哪个局部/方向反而改善了；无则写"无">
+direction: <REVERT 或 AUGMENT> — <具体动作>
+
+direction 取值含义：
+- `REVERT`：上一轮修改方向有误，下一轮应回到历史最优轮的配置作为起点，不在当前退步配置上继续修补。
+- `AUGMENT`：方向正确但不全（salvage 非空），应保留本轮方向、补充缺失要素或重分配通量，使总体改善、避免陷入局部最优。
+
+verdict 为 CURRENT_BETTER 或 EQUAL 时，**不要**输出这三行。

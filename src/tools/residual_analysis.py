@@ -166,6 +166,11 @@ def analyze_multiband_components(
             if working_note_content:
                 custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要：\n{working_note_content}"
 
+        # Soft "best-round regression" reference (only present when the comparison
+        # judged the current round worse than the historical best). Fed into turn-2
+        # (parameter review / reasoning), never turn-1 visual extraction.
+        if _best_info and _best_info.get("comparison_conclusion"):
+            custom_instructions += "\n\n" + _best_info["comparison_conclusion"]
         phase_param = prompt.get_phase_parameter_review(summary_content, custom_instructions)
         turn2 = phase_param + "\n\n" + phase_reason
 
@@ -236,12 +241,10 @@ def analyze_multiband_components(
 
 
 def component_analysis(
-    image_file: Annotated[str, "Path to the combined residual image file [png file] containing three stamps: original, model, residual"],
-    #comparison_file: Annotated[str, "Path to the comparison image file [png file] containing the original image, model image, 2D residual image, and 1D surface brightness profile residual plot"],
+    image_file: Annotated[str, "Path to the combined residual image file [png file] containing three stamps: original, model, residual"],    
     summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
-    mode: Annotated[str, "Fitting mode: 'single-band' for GALFIT or 'multi-band' for GalfitS"],
     working_note_file: Annotated[str, "File path of the working_note.md to track iterative fitting progress"] = "",
-    custom_instructions: Annotated[str, "Context for this round of analysis: must include (1) scientific objective of this fitting task  (2) file path of `working_note.md`"] = "",
+    custom_instructions: Annotated[str, "Context for this round of analysis: must include scientific objective of this fitting task"] = "",
 ) -> dict[str, Any]:
     """
     Analyze galaxy fitting results to determine component composition and parameter adjustments.
@@ -253,20 +256,16 @@ def component_analysis(
     Args:
         image_file (str): Path to the combined residual image file containing three stamps: original, model, residual
         summary_file (str): Path to the optimization summary file containing detailed fitting information
-        mode (str): Fitting mode: 'single-band' for GALFIT or 'multi-band' for GalfitS
-        custom_instructions (str): Context for this round of analysis: must include (1) scientific objective of this fitting task  (2) file path of `working_note.md`
-                        - Model image (fitted model)
-                        - Residual image (Original - Model)
-                        For multi-band fitting, each band has its own set of stamps.
+        working_note_file (str): File path of the working_note.md to track iterative fitting progress
+        custom_instructions (str): Context for this round of analysis: must include (1) scientific objective of this fitting task
+
         summary_file (str): Path to the optimization summary file containing:
                           - Fitted parameter values and their uncertainties
                           - Chi-squared statistics and goodness-of-fit metrics
                           - Component descriptions
-        mode (str): 'single-band' for GALFIT or 'multi-band' for GalfitS.
         custom_instructions (str): Required context for multi-round iterative fitting. Must contain:
-            1. **Scientific objective** — the scientific goal of this fitting task (e.g., bulge-disk decomposition, bar identification, AGN detection, galaxy morphology classification).
-            2. **Round history summary** — file path of `working_note.md`                 
-            Additional specific requirements or constraints can also be appended.
+            1. **Scientific objective** — the scientific goal of this fitting task (e.g., bulge-disk decomposition, 
+                bar identification, AGN detection, galaxy morphology classification).
 
     Returns:
         dict[str, Any]: A dictionary containing:
@@ -291,10 +290,7 @@ def component_analysis(
     # Build system message from templates
     system_message = prompt.RESIDUAL_ANALYSIS_SYSTEM_MESSAGE
 
-    if mode == "multi-band":
-        component_spec = prompt.get_component_specification_galfits()
-    else:
-        component_spec = prompt.get_component_specification_galfit()
+    component_spec = prompt.get_component_specification_galfit()
 
     if component_spec:
         system_message = system_message + "\n\n" + component_spec
@@ -387,6 +383,11 @@ def component_analysis(
             if working_note_content:
                 custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要：\n{working_note_content}"
 
+        # Soft "best-round regression" reference (only present when the comparison
+        # judged the current round worse than the historical best). Fed into turn-2
+        # (parameter review / reasoning), never turn-1 visual extraction.
+        if _best_info and _best_info.get("comparison_conclusion"):
+            custom_instructions += "\n\n" + _best_info["comparison_conclusion"]
         phase_param = prompt.get_phase_parameter_review(summary_content, custom_instructions)
         turn2 = phase_param + "\n\n" + phase_reason
 
@@ -415,7 +416,20 @@ def component_analysis(
 
     # analysis is guaranteed to be str when error is None
     assert analysis is not None, "Analysis should not be None when error is None"
+    
+    require = '''
 
+# 决策落实守则
+- 必须严格落实【调整决策】中的要求，基于上一轮的拟合结果的基础上调整初始参数。
+    - 落实过程中，不可以私自增减（即使因为拟合出现异常），增减成分的决策权归属 component_analysis 所有。
+    - 若【调整决策】涉及到多个成分增减，需要遵循一次只增减一个成分的原则，避免陷入局部最优或者拟合崩溃。
+        - example1: 目标：sersic->(expdisk + F1 + Bulge);实际要分三步：sersic->expdisk->(expdisk + F1)->(expdisk + F1 + Bulge)
+        - example2: 目标：sersic->(expdisk + companion);实际要分两步：sersic->expdisk->(expdisk + companion)        
+        - 这里的一次是执行一次 run_galfit，一个调整策略可以执行多次run_galfit，调整与执行的优先级持续参考 example1、example2 的顺序。(后步骤要基于前步骤的输出结果参数基础上继续调整)
+    - 落实过程中，可以对参数细节做调整，比如参数初值、fix/free等，但必须保证调整的方向和目标与 component_analysis 输出的决策完全一致。
+- 决策落实（多次调参拟合）完成后，无论结果如何，都必须必须向 component_analysis 汇报进展并获取下一轮的分析并获取调整意见，严禁私自决定。
+- 你可以怀疑 component_analysis 的判断，但只能保留意见，必须严格执行 component_analysis 的决策，直到所有决策落地执行（可以反馈意见，严禁私自篡改决策）。
+'''
     # Save analysis
     base_name = os.path.splitext(os.path.basename(image_file))[0]
     if session_id:
@@ -424,7 +438,7 @@ def component_analysis(
         output_file = os.path.join(os.path.dirname(image_file), f"{base_name}_component_analysis.md")
     try:
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(analysis)
+            f.write(analysis + require)
         print(f"Component analysis saved to: {output_file}")
     except Exception as e:
         print(f"Warning: Failed to save analysis to file: {e}")
@@ -433,12 +447,7 @@ def component_analysis(
     if _best_info is not None:
         _brr.attach_analysis_to_best(image_file, analysis)
 
-    require = '''
-- 必须严格落实【调整决策】中的要求，基于上一轮的拟合结果的基础上调整初始参数。
-    - 落实过程中，不可以私自增减（即使因为拟合出现异常），增减成分的决策权归属 component_analysis 所有。
-- 落实过程中，可以对参数细节做调整，比如参数初值、fix/free等，但必须保证调整的方向和目标与 component_analysis 输出的决策完全一致。
-- 决策落实完成后，及时调用 component_analysis 进行下一轮的分析和调整，直到达到满意的拟合结果为止。
-'''
+
     result = {
         "status": "success",
         "analysis": analysis + require,

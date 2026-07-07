@@ -502,6 +502,11 @@ def extract_component_attributes(
 
         # 轴比与位置角
         ba = p('axrat')
+        if ba is None and ptype == 'edgeondisk':
+            rs = p('rs')
+            hs = p('hs')
+            if rs is not None and hs is not None and rs > 0:
+                ba = hs / rs
         pa = p('ang')
         # 注意：Galfit 的 PA 定义为从 +y 逆时针到 +x 的角度，Galfits的PA是相对于正北方向逆时针旋转到半长轴的角度，而天文中通常定义为从北向东的角度。因此需要转换：
         pa = (pa + _delta_ang + 90) % 360 if pa is not None else None

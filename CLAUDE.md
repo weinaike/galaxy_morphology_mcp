@@ -20,6 +20,17 @@ GALFITS uses `.lyric` config files. Key parameter format:
 
 - `vary=1`: free parameter | `vary=0`: fixed parameter
 
+### Critical: never write `min == max`
+
+lmfit raises `ValueError: Parameter '...' has min == max` at load time **regardless of `vary`** — a fixed parameter is NOT exempt. GalfitS aborts before any iteration, leaving an empty output directory.
+
+Rule: even when `vary=0`, always provide a non-degenerate range `[v, v-d, v+d, step, 0]`.
+
+- Bar n=0.5 fixed → `[0.5, 0.4, 0.6, 0.1, 0]` ✅ (not `[0.5, 0.5, 0.5, 0.1, 0]`)
+- Disk n=1 fixed   → `[1.0, 0.5, 2.0, 0.1, 0]` ✅ (not `[1.0, 1.0, 1.0, 0.1, 0]`)
+
+The only allowed exception is the all-zero unused-slot convention `[0, 0, 0, 0, 0]` for slots galfits never reads (e.g. `Pb10`–`Pb16`). `check_lyric_file` enforces this and will reject the lyric otherwise.
+
 ### Phase-Specific Parameter Flags
 
 | Phase | Ia15 (Use SED) | Pa3-Pa8 (Spatial) | Pa9-Pa16 (SED) |
@@ -60,8 +71,12 @@ GALFITS uses `.lyric` config files. Key parameter format:
 | Disk | Sersic, n~1 (can be <1 for smooth disk) | Re = large, q = moderate |
 | Bulge | Sersic, n=4 (range 0.1-8) | Re = small, q = round |
 | Bar | Sersic, **n=0.5 fixed** | q = 0.2-0.4, PA from image |
-| Edge-on Disk | edgeondisk | h_s (scale-height), R_s (scale-length) |
+| Edge-on Disk | edgeondisk | Pa5 = R_s (scale-length), Pa6 = h_s (scale-height), Pa7 = PA, Pa8 unused/fixed |
 | AGN/Nucleus | PSF (only when Re < 0.2 px in ALL bands) or Sersic | x, y, mag only |
+
+### Edge-on Disk Selection Rule
+
+Use `edgeondisk` only for genuinely edge-on disks: first fit a Sersic disk with free axis ratio, then convert to `edgeondisk` only when the fitted disk has **b/a < 0.17** (equivalent to inclination >80° under the thin-disk approximation) **and** the residual/original image shows edge-on vertical structure such as a dust lane or disk thickness. If b/a ≥ 0.17, keep a Sersic disk with n≈1 instead of forcing `edgeondisk`; this preserves the inclination information and avoids over-constraining moderately inclined disks. For `edgeondisk`, Pa5 is `rs`, Pa6 is `hs`, Pa7 is PA, and Pa8 is not used and should be fixed.
 
 Note: In the fitting input and output configurations, the Effective Radius ($R_e$) is strictly defined in units of arcseconds (arcsec). Before evaluating the fitting results, $R_e$ must be dynamically converted into pixel units using the WCS (World Coordinate System) metadata extracted from the corresponding FITS headers. This step is essential to accurately map the analytical model profiles onto the actual observational image grid, especially since the physical pixel scale ($arcsec/\text{pixel}$) varies across different wavebands.
 

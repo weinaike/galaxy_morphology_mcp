@@ -125,15 +125,21 @@ Pa30) [1.0, 0.47, 7.32, 0.1, 0]     # qPAH (PAH fraction)
 Pa31) [1.0, 1.0, 3.0, 0.1, 0]       # Alpha (radiation field slope)
 Pa32) [0.1, 0, 1.0, 0.1, 0]         # Gamma (illuminated fraction)
 
-# Profile B - Disk
+# Profile B - Disk (Sersic)
 Pb1) disk
-Pa2) sersic                         # Profile type: sersic, sersic_b, sersic_r, sersic_f, sersic_rf, sersic_bf, ferrer, edgeondisk, GauRing, ferrer_f, GauRing_f, const
+Pb2) sersic                         # Profile type: sersic, sersic_b, sersic_r, sersic_f, sersic_rf, sersic_bf, ferrer, edgeondisk, GauRing, ferrer_f, GauRing_f, const
 Pb3) [0,-5,5,0.1,1]
 Pb4) [0,-5,5,0.1,1]
-Pb5) [2.69,0.67,10.75,0.1,1]        # Larger Re for disk
-Pb6) [1,0.5,3,0.1,1]                # Lower n for disk
-Pb7) [-60,-90,90,1,1]               # Different PA
-Pb8) [0.5,0.2,1,0.01,1]             # Thinner disk
+Pb5) [2.69,0.67,10.75,0.1,1]        # Effective radius Re [arcsec]
+Pb6) [1,0.5,3,0.1,1]                # Sersic index n
+Pb7) [-60,-90,90,1,1]               # Position angle [deg]
+Pb8) [0.5,0.2,1,0.01,1]             # Axis ratio b/a
+# For an edge-on disk, use this profile-specific spatial block instead:
+# Pb2) edgeondisk
+# Pb5) [2.69,0.3,15.0,0.1,1]        # rs, radial scale length [arcsec]
+# Pb6) [0.3,0.05,2.0,0.05,1]        # hs, vertical scale height [arcsec]
+# Pb7) [-60,-90,90,1,1]             # Position angle [deg]
+# Pb8) [0.5,0.1,1.0,0.01,0]         # unused by edgeondisk, keep fixed
 # SED parameters (different from bulge)
 Pb9)  [[-1,-4,0,0.1,1]]             # Higher sSFR
 Pb10) [0,0.1,0.27,0.7,1.86,4.94]    # burst age or Bins [Gyr]
@@ -243,6 +249,23 @@ def modify_lyric(
         match = re.search(r'```lyric\s*(.*?)\s*```', content, re.DOTALL)
         if match:
             new_content = match.group(1)
+            # Force R and I fields to be identical to the original lyric.
+            # These describe the observation setup (target, coords, redshift,
+            # image paths, band, sigma, psf, mask, magzp, sky, shift, use-SED)
+            # and must not drift between iterations -- a previous run silently
+            # rewrote I*14 shift values, breaking the band alignment.
+            locked_re = re.compile(r'^(R\d+|I[A-Za-z]\d+)\)\s*.*$', re.MULTILINE)
+            orig_lines = {}
+            for m in locked_re.finditer(original_config):
+                key = re.match(r'(R\d+|I[A-Za-z]\d+)\)', m.group(0)).group(1)
+                orig_lines[key] = m.group(0)
+
+            def _restore_locked(m):
+                key = re.match(r'(R\d+|I[A-Za-z]\d+)\)', m.group(0)).group(1)
+                return orig_lines.get(key, m.group(0))
+
+            if orig_lines:
+                new_content = locked_re.sub(_restore_locked, new_content)
             try:
                 with open(new_lyric_file, 'w') as f:
                     f.write(new_content)
@@ -289,19 +312,24 @@ def _validate_5tuple(t, key, lineno, errors):
     Rules:
       - flag must be 0 or 1;
       - init must lie within [min, max] inclusive;
-      - for a free parameter (flag=1) min must be strictly less than max;
-        for a fixed parameter (flag=0) min == max is allowed -- it is the
-        standard way to pin a value (e.g. bar Sersic n fixed to 0.5, or an
-        unused slot zeroed as [0,0,0,0,0]) -- so only min > max is rejected.
+      - min must be strictly less than max. lmfit rejects min == max at
+        load time regardless of vary (it raises ``ValueError: Parameter
+        '...' has min == max``), so this rule applies to fixed parameters
+        too -- a pinned value must be written as
+        ``[v, v-d, v+d, step, 0]`` rather than ``[v, v, v, step, 0]``.
+        The only exemption is the all-zero unused-slot convention
+        ``[0, 0, 0, 0, 0]`` (slots galfits never reads).
     """
     init, lo, hi, _step, flag = t
     if flag not in (0, 1):
         errors.append(f"Line {lineno}: {key} flag must be 0 or 1, got {flag!r}")
-    if not (lo < hi):
+    is_unused_slot = (init == 0 and lo == 0 and hi == 0)
+    if not is_unused_slot and not (lo < hi):
         errors.append(
-            f"Line {lineno}: {key} requires min < max, got min={lo}, max={hi}"
+            f"Line {lineno}: {key} requires min < max (lmfit rejects min == max "
+            f"regardless of vary); got min={lo}, max={hi}"
         )
-    if not (lo <= init <= hi):
+    if not is_unused_slot and not (lo <= init <= hi):
         errors.append(f"Line {lineno}: {key} init {init} outside [{lo}, {hi}]")
 
 
@@ -333,7 +361,25 @@ def check_lyric_file(lyric_file: Annotated[str, "path to the lyric file"]) -> di
         one, and every key's index is within the family's valid range;
       * any value that is a 5-tuple ``[init, min, max, step, flag]`` (or a list
         of such 5-tuples) is checked: ``flag`` is 0 or 1, ``init`` lies within
-        ``[min, max]`` inclusive, and ``min < max`` for all parameters.
+        ``[min, max]`` inclusive, and ``min < max`` (lmfit rejects
+        ``min == max`` regardless of ``vary``, so this applies to fixed
+        parameters too; only the all-zero ``[0,0,0,0,0]`` unused-slot
+        convention is exempted);
+      * ``edgeondisk`` profile blocks are checked semantically: ``P*5`` is
+        radial scale length ``rs``, ``P*6`` is vertical scale height ``hs``,
+        both are positive, and optional ``P*8`` is fixed because it is unused.
+      * identifier lint on A/P/N/G/F section names (``Ax1``, ``Px1``, ``Nx1``,
+        ``Gx1``, ``Fx1``): values must be valid Python identifiers (letters,
+        digits, underscores; no spaces, hyphens, or leading digits). galfits
+        uses these names verbatim to build lmfit parameter names like
+        ``Ni_<Na1>_<Aa1>`` and ``<Pa1>_xcen``, and lmfit rejects names that
+        aren't valid identifiers. This catches the common ``Aa1) 'img list'``
+        failure mode at static-check time instead of run time.
+      * AGN ``Nx27`` (hot dust) shape: must be a list of two 5-tuples
+        ``[[L_init,L_min,L_max,L_step,L_flag],[T_init,T_min,T_max,T_step,T_flag]]``
+        for Lhotdust and Thotdust. galfits indexes this as ``nx27[0][0]`` etc.,
+        so a flat 5-tuple raises ``TypeError: 'int' object is not subscriptable``
+        during read_config_file.
 
     Args:
         lyric_file: The file name of the lyric file to be checked.
@@ -356,6 +402,7 @@ def check_lyric_file(lyric_file: Annotated[str, "path to the lyric file"]) -> di
 
     config_data = {}
     key_counts = {}
+    key_lines = {}
     errors = []
     sections = {}
     # decompose key into family (one uppercase letter), label letters, index.
@@ -397,6 +444,7 @@ def check_lyric_file(lyric_file: Annotated[str, "path to the lyric file"]) -> di
         key = key_part + ')'
         key_counts[key] = key_counts.get(key, 0) + 1
         config_data[key] = value
+        key_lines[key] = lineno
 
         # ---- section schema checks ----
         if family not in LYRIC_SECTION_SCHEMA:
@@ -464,6 +512,93 @@ def check_lyric_file(lyric_file: Annotated[str, "path to the lyric file"]) -> di
     r3 = config_data.get('R3)')
     if 'R3)' in config_data and not isinstance(r3, (int, float)):
         errors.append(f"R3) must be a numeric redshift, got {r3!r}")
+
+    for label in sorted(sections.get('P', set())):
+        prefix = f'P{label}'
+        profile_type = config_data.get(f'{prefix}2)')
+        if profile_type != 'edgeondisk':
+            continue
+
+        rs_key = f'{prefix}5)'
+        hs_key = f'{prefix}6)'
+        for key, param_name in ((rs_key, 'rs'), (hs_key, 'hs')):
+            value = config_data.get(key)
+            lineno = key_lines.get(key, '?')
+            if not _looks_like_5tuple(value):
+                errors.append(f"Line {lineno}: {key} must be a 5-tuple for edgeondisk {param_name}")
+                continue
+            init, lo, hi, _step, _flag = value
+            if init <= 0 or lo < 0 or hi <= 0:
+                errors.append(f"Line {lineno}: {key} edgeondisk {param_name} must be positive")
+
+        unused_key = f'{prefix}8)'
+        if unused_key in config_data:
+            value = config_data[unused_key]
+            lineno = key_lines.get(unused_key, '?')
+            if not _looks_like_5tuple(value):
+                errors.append(f"Line {lineno}: {unused_key} must be a fixed 5-tuple if present for edgeondisk")
+            elif value[4] != 0:
+                errors.append(f"Line {lineno}: {unused_key} is unused by edgeondisk and must be fixed with flag=0")
+
+    # ---- identifier lint: A/P/N/G/F names feed into lmfit parameter names ----
+    # galfits builds parameter names like f'Ni_{Nx1}_{Ax1}', f'{Px1}_xcen',
+    # f'{Gx1}_xcen', etc. lmfit rejects names that aren't valid Python identifiers,
+    # so spaces, hyphens, dots, or leading digits in these name slots cause a
+    # KeyError at runtime. Reject them statically here.
+    def _is_safe_param_identifier(s):
+        return isinstance(s, str) and s.isidentifier()
+
+    name_field_hint = {
+        'A': 'atlas name',
+        'P': 'profile/component name',
+        'N': 'nuclei/AGN name',
+        'G': 'galaxy name',
+        'F': 'foreground star name',
+    }
+    has_nuclei = bool(sections.get('N'))
+    for family, hint in name_field_hint.items():
+        # The atlas name (Ax1) only enters a parameter name when an AGN/Nuclei
+        # block exists (galfits builds f'Ni_<Na1>_<Aa1>'); without N, atlas
+        # names like 'img list' are tolerated by lmfit. Skip A* in that case.
+        if family == 'A' and not has_nuclei:
+            continue
+        for label in sorted(sections.get(family, set())):
+            name_key = f'{family}{label}1)'
+            name_value = config_data.get(name_key)
+            if name_value is None:
+                continue
+            if _is_safe_param_identifier(name_value):
+                continue
+            suggestion = re.sub(r'[^A-Za-z0-9_]', '_', str(name_value))
+            if suggestion and suggestion[0].isdigit():
+                suggestion = '_' + suggestion
+            errors.append(
+                f"Line {key_lines[name_key]}: {name_key} value {name_value!r} is not a "
+                f"valid identifier. galfits uses this {hint} to build lmfit parameter "
+                f"names (e.g. 'Ni_<Na1>_<Aa1>', '<Pa1>_xcen'), and lmfit rejects names "
+                f"with spaces or special characters. Use letters/digits/underscores only "
+                f"(e.g. {suggestion!r})."
+            )
+
+    # ---- AGN Nx27 shape: list of two 5-tuples (Lhotdust, Thotdust) ----
+    # gsutils.read_config_file indexes Nx27 as nx27[0][0], nx27[0][1], ...
+    # A flat 5-tuple here raises TypeError("'int' object is not subscriptable").
+    for label in sorted(sections.get('N', set())):
+        nx27_key = f'N{label}27)'
+        if nx27_key not in config_data:
+            continue
+        nx27 = config_data[nx27_key]
+        lineno = key_lines[nx27_key]
+        ok = (
+            isinstance(nx27, (list, tuple)) and len(nx27) == 2
+            and all(isinstance(e, (list, tuple)) and len(e) == 5 for e in nx27)
+        )
+        if not ok:
+            errors.append(
+                f"Line {lineno}: {nx27_key} must be a list of two 5-tuples "
+                f"[[L_init,L_min,L_max,L_step,L_flag],[T_init,T_min,T_max,T_step,T_flag]] "
+                f"(Lhotdust and Thotdust). Got {nx27!r}."
+            )
 
     if errors:
         bullet = "\n  - ".join(errors)

@@ -1,6 +1,7 @@
 
 要求严格遵循工作流开展多波段(multi-band)星系拟合分析工作。
-主星系仅关注拟合盘、核球、棒、AGN核、偏心（Disk 上的 m=1 Fourier 模式）、伴星系这七种物理成分，仅可对这七种成分的残差添加模型成分拟合，其他残差特征可以选择保留不拟合。其中偏心（Fourier m=1）在阶段三单独评估，不参与阶段二的结构迭代。
+
+仅关注拟合盘、核球、侧视盘、棒、AGN核、偏心（Disk 上的 m=1 Fourier 模式）、伴星系这七种物理成分，仅可对这七种成分的残差添加模型成分拟合，其他残差特征可以选择保留不拟合。其中偏心（Fourier m=1）的添加由阶段一 detect_galfits_bar_lopsidedness 的检出结果驱动：lopsidedness 检出时，应作为最高优先级修正项参与阶段二的结构迭代（在增加其他成分之前先加 m=1）；未检出时进入阶段三再由 fourier_mode_analysis 做残差二次确认。
 图像分析与拟合执行只能使用 galmcp 中的工具，不能直接 shell 执行 GalfitS 命令。所有 GalfitS 拟合必须使用 `--fit_method ES`。严禁使用4_5v_mcp的相关工具。
 必须建立 todos 并独立完成所有阶段，直到 Image-SED 联合拟合成功。
 
@@ -11,8 +12,9 @@
 * **查看原始数据与图像：** 使用 render_original, view_original_image, detect_galfits_bar_lopsidedness 工具分析原图，确认星系的基本形态特征（如是否存在明显的核球、盘、棒结构等）。这将为后续的拟合提供初始猜测值。
 * **detect_galfits_bar_lopsidedness 结果解读与固化：**
     - 工具返回结构为 `{"results": [{band, bar:{detected, pa_deg, b_over_a}, lopsidedness:{detected, mag, phase_deg}}, ...]}`，按波段列表。
-    - **跨波段 OR-logic**：任一波段 `bar.detected=True` → 认定 Bar 存在；任一波段 `lopsidedness.detected=True` → 认定偏心存在，作为阶段三是否启用 Fourier m=1 的先验依据。
+    - **跨波段 OR-logic**：任一波段 `bar.detected=True` → 认定 Bar 存在；任一波段 `lopsidedness.detected=True` → 认定偏心存在，作为阶段二高优先级添加 Fourier m=1 的依据。
     - **PA 取值规则**：Bar 的 PA 优先取蓝端波段（如 F115W）的返回值；红端（F200W/F444W）作参考。
+    - **偏心添加决策**：任一波段 `lopsidedness.detected=True` → 在 `working_note.md` 头部标记 "m=1 Fourier 高优先级"，阶段二每次调用 `analyze_multiband_components` 前需提示该标签，确保在 Disk 已建立后第一时间将 Disk 的 `Pa2) sersic` 改为 `sersic_f`。
     - **写入 working_note.md 头部**：将每波段 bar/lop 检测结论、PA、b/a、A1、phi1 固化到 `working_note.md`，供后续所有迭代轮次的 `analyze_multiband_components` 读取。
 
 阶段二. 结构搜索与动态校验 (Structure Search & Dynamic Validation)
@@ -37,10 +39,9 @@
 阶段三. 结果分析与报告撰写
 * 锁定最佳结果（选择模型中参数符合物理意义且参数收敛的最优轮次）。并给出其对应的形态学物理意义（如：成分 A 代表经典的盘结构，成分 B 代表致密的核心星团）。
 * **偏心成分（Fourier m=1）评估**：科学目标关心偏心的影响。
-    - 如果最佳结果的 Disk 成分已经是 `sersic_f`（含 Fourier），跳过本步。
-    - 否则，调用 `fourier_mode_analysis`：输入图为最佳轮次 **F200W 波段**的对比 PNG（原图/模型/残差），分析是否存在 m=1 傅里叶模式可修正的偏心非对称残差。
-    - 工具返回 recommend_fourier=yes → 把 Disk 的 `Pa2) sersic` 改为 `sersic_f` 并设置 `Pa21) 1` 等参数（详见 component_specification_galfits.md），回到阶段二步骤 1-2 重新拟合。
-    - 最终是否保留 Fourier 成分，依据<最优轮次锁定的标准>与奥卡姆剃刀判断。
+    - 如果最佳结果的 Disk 成分已经是 `sersic_f`（阶段一 lop 检出后于阶段二已添加），跳过本步。
+    - 如果阶段一 lop 未检出但仍有疑虑：调用 `fourier_mode_analysis`，输入图为最佳轮次 **F200W 波段**的对比 PNG（原图/模型/残差），分析是否存在 m=1 傅里叶模式可修正的偏心非对称残差。工具返回 recommend_fourier=yes → 把 Disk 的 `Pa2) sersic` 改为 `sersic_f` 并设置 `Pa21) 1` 等参数（详见 component_specification_galfits.md），回到阶段二步骤 1-2 重新拟合。
+    - m=1 Fourier 成分的保留/移除判据遵循 `analyze_multiband_components` 的策略输出，只有证明 Fourier 成分导致拟合不合理（参数发散、物理不成立）时才删除。
 * 使用 `write_file` 工具将分析结论写入当前星系目录：`analysis_report_xxx.md`。
 * **报告内容包含：**
     * **生成时间：** 日期和时分秒。

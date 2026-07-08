@@ -10,10 +10,11 @@ except ImportError:  # dotenv 非必需：环境变量可能已由 shell 设置
     def load_dotenv(*a, **k):
         return False
 
-from data_gen.dataset_utils import get_train_test_split
+from data_gen.dataset_utils import get_train_test_split, get_cross_band_train_test_split, _to_physical_id
 from data_gen.pipeline import DataGenPipeline
 import glob
 import hashlib
+import random
 import shutil
 
 
@@ -24,7 +25,10 @@ def compute_config_signature(cfg: dict) -> str:
 
 
 def is_galaxy_complete(gal_dir: str, gid: str, config_signature: str) -> bool:
-    """星系「已完成」= trajectory.json 存在、合法、带 completed 标记、且配置签名一致。"""
+    """星系「已完成」= trajectory.json 存在、合法、且满足以下任一条件:
+    1. 新格式: metadata.completed=True 且配置签名一致
+    2. 旧格式(兼容): 无 completed 标记但有 ≥1 个 node（E7/E7r/E7r_rand 旧代码产出）
+    """
     fp = os.path.join(gal_dir, f"{gid}_trajectory.json")
     if not os.path.exists(fp):
         return False
@@ -34,11 +38,16 @@ def is_galaxy_complete(gal_dir: str, gid: str, config_signature: str) -> bool:
     except Exception:
         return False  # 损坏/截断 → 视为未完成
     meta = tree.get("metadata", {})
-    if not meta.get("completed"):
-        return False
-    if config_signature and meta.get("config_signature") not in (None, config_signature):
-        return False  # 配置变了，重跑
-    return True
+    # 新格式: 有 completed 标记
+    if meta.get("completed"):
+        if config_signature and meta.get("config_signature") not in (None, config_signature):
+            return False  # 配置变了，重跑
+        return True
+    # 旧格式兼容: 无 completed 标记，但有合法 nodes → 视为已完成（E7 系列旧代码产出）
+    nodes = tree.get("nodes", [])
+    if len(nodes) >= 1:
+        return True
+    return False
 
 
 def reset_galaxy_dir(gal_dir: str):
@@ -99,8 +108,8 @@ def _aggregate_into_global(global_total: dict, analytics: dict, llm_stats: dict,
 # ==========================================
 # 🛠️ 任务控制面板 (全局配置)
 # ==========================================
-TEST_MODE = True
-EXPERIMENT_ID = "E7r"  # 实验编号，输出目录和日志自动带上（E1/E2/E3/E4/E5/E6/E6r/E7/E7r）
+TEST_MODE = False
+EXPERIMENT_ID = "E7_full"  # 实验编号，输出目录和日志自动带上
 USE_LLM_REWARD = True  # 大模型视觉打分全局开关
 PROPOSAL_STRATEGY = "vlm_generated" # 提议策略: "rule_based", "expert_guided", "vlm_generated"
 VLM_REWARD_MODEL_NAME = "gemini-3.1-pro-preview" # 大模型视觉打分模型名
@@ -121,28 +130,24 @@ MAX_STEPS = 15  # 最大搜索深度（覆盖TEST_MODE默认的6步；ACCEPT_ALL
 # 断点续跑配置
 FRESH_START = False  # True=清空实验目录从头跑; False=续跑(跳过已完成星系,重跑未完成的)
 MAX_CONSECUTIVE_API_FAIL = 3  # 连续N个星系因API故障失败→判定key失效,保存进度干净退出
+TRAIN_FRACTION = 0.25  # 训练集采样比例: 1.0=全量, 0.25=1/4（按物理星系切片，各波段同步）
 
 # 🚀 升级：多波段支持！你可以把想跑的波段全写进这个列表里
 TARGET_BANDS = [
-    # "SDSS_gband",
+    "SDSS_gband",
     "SDSS_rband",
-    # "SDSS_iband"
+    "SDSS_iband",
 ]
 
 # 🎯 指定星系过滤：非空时只跑列表里的星系（按 id 后缀匹配，兼容带/不带波段前缀）。
-# 空列表 = 维持原行为（TEST_MODE 取前20）。用于在特定数据集上对标（如 MCP 70% 的20个r波段星系）。
-# 注意：用此功能对标时，TARGET_BANDS 要包含对应波段（如 SDSS_rband）。
-GALAXY_ID_FILTER = [
-    "Plate0270_MJD51909_Fiber095_r", "Plate0271_MJD51883_Fiber005_r",
-    "Plate0274_MJD51913_Fiber503_r", "Plate0276_MJD51909_Fiber629_r",
-    "Plate0284_MJD51943_Fiber397_r", "Plate0295_MJD51985_Fiber525_r",
-    "Plate0300_MJD51943_Fiber581_r", "Plate0330_MJD52370_Fiber568_r",
-    "Plate0391_MJD51782_Fiber072_r", "Plate0391_MJD51782_Fiber501_r",
-    "Plate0414_MJD51901_Fiber247_r", "Plate0436_MJD51883_Fiber493_r",
-    "Plate0461_MJD51910_Fiber109_r", "Plate0501_MJD52235_Fiber338_r",
-    "Plate0535_MJD51999_Fiber497_r", "Plate0536_MJD52024_Fiber323_r",
-    "Plate0556_MJD51991_Fiber236_r", "Plate0721_MJD52228_Fiber011_r",
-    "Plate0765_MJD52254_Fiber182_r", "Plate0887_MJD52376_Fiber382_r",
+# 空列表 = 维持原行为（TEST_MODE 取前20 / 全量）。
+GALAXY_ID_FILTER = []
+
+# 复用已有E7系列实验的轨迹（同配置）：启动时从这些目录复制已完成的trajectory到E7_full目录，续跑逻辑自动跳过。
+REUSE_EXPERIMENT_DIRS = [
+    "E7__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist",
+    "E7r__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist",
+    "E7r_rand__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist",
 ]
 
 # 自动获取当前 GalDecomp_Gen 的根目录
@@ -182,31 +187,32 @@ async def main():
     print(f"  ACCEPT_ALL                = {ACCEPT_ALL} (True=全部接受,模拟MCP交互式流程)")
     print(f"  MAX_PATIENCE              = {MAX_PATIENCE} (连续N步零接受触发早停)")
     print(f"  MAX_STEPS                 = {MAX_STEPS} (最大搜索深度)")
+    print(f"  TRAIN_FRACTION            = {TRAIN_FRACTION} (训练集采样比例, 1.0=全量)")
+    print(f"  REUSE_EXPERIMENT_DIRS     = {REUSE_EXPERIMENT_DIRS}")
     print(f"  PROJECT_ROOT              = {PROJECT_ROOT}")
     print(f"  GADOTTI_ROOT              = {GADOTTI_ROOT}")
     print(f"  OUTPUT_ROOT               = {OUTPUT_ROOT}")
     print("=" * 70)
 
     print(f"\n🔍 正在启动多波段扫描任务，目标波段: {TARGET_BANDS}")
-    
-    # 🚀 自动遍历收集所有波段的数据
-    all_train_set = []
-    all_test_set = []
-    
-    for band in TARGET_BANDS:
-        band_dir = os.path.join(GADOTTI_ROOT, band)
-        if not os.path.exists(band_dir):
-            print(f"⚠️ 警告: 找不到波段目录 {band_dir}，已跳过。")
-            continue
-            
-        print(f"\n📂 正在扫描波段: {band}")
-        # 这里依然调用我们的 get_train_test_split
-        train_set, test_set = get_train_test_split(band_dir, num_test=10) # 假设每个波段抽 10 个做测试
-        
-        all_train_set.extend(train_set)
-        all_test_set.extend(test_set)
-        
-    print(f"\n📦 多波段数据合并完毕: 总测试集 {len(all_test_set)} 个，总训练集 {len(all_train_set)} 个。")
+
+    # 🚀 跨波段统一切分：按物理星系 ID 做 train/test，保证各波段归属一致
+    if len(TARGET_BANDS) > 1:
+        all_train_set, all_test_set = get_cross_band_train_test_split(
+            GADOTTI_ROOT, TARGET_BANDS, num_test=10, seed=42)
+    else:
+        # 单波段兼容旧逻辑
+        all_train_set, all_test_set = [], []
+        for band in TARGET_BANDS:
+            band_dir = os.path.join(GADOTTI_ROOT, band)
+            if not os.path.exists(band_dir):
+                print(f"⚠️ 警告: 找不到波段目录 {band_dir}，已跳过。")
+                continue
+            train_set, test_set = get_train_test_split(band_dir, num_test=10)
+            all_train_set.extend(train_set)
+            all_test_set.extend(test_set)
+
+    print(f"\n📦 数据合并完毕: 总训练集 {len(all_train_set)} 个，总测试集 {len(all_test_set)} 个。")
 
     if not all_test_set and not all_train_set:
         print("❌ 致命错误: 在所有指定的波段中均没有找到任何数据文件！")
@@ -238,7 +244,7 @@ async def main():
         "reward_model": VLM_REWARD_MODEL_NAME, "multiturn": VLM_PROPOSAL_MULTITURN,
         "num_calls": VLM_PROPOSAL_NUM_CALLS, "accept_all": ACCEPT_ALL,
         "force_greedy": FORCE_GREEDY, "max_steps": MAX_STEPS, "beam_top_k": BEAM_TOP_K,
-        "bands": TARGET_BANDS, "use_param_check": USE_PARAM_CHECK,
+        "use_param_check": USE_PARAM_CHECK,
         "expert_hint": USE_EXPERT_HINT_FOR_VLM, "use_history": USE_HISTORY_FOR_VLM,
     })
 
@@ -281,11 +287,62 @@ async def main():
         max_steps = MAX_STEPS
         num_variants = 16
     else:
-        target_galaxies = all_train_set
+        # 正式模式：支持 TRAIN_FRACTION 按物理星系切片（各波段同步）
+        if TRAIN_FRACTION < 1.0:
+            phys_ids = sorted(set(_to_physical_id(g["id"]) for g in all_train_set))
+            n_take = max(1, int(len(phys_ids) * TRAIN_FRACTION))
+            random.seed(42)
+            random.shuffle(phys_ids)
+            selected_phys = set(phys_ids[:n_take])
+            target_galaxies = [g for g in all_train_set if _to_physical_id(g["id"]) in selected_phys]
+            print(f"  📊 TRAIN_FRACTION={TRAIN_FRACTION}: 物理星系 {len(phys_ids)} → 取 {n_take} 颗 → "
+                  f"各波段共 {len(target_galaxies)} 个目标")
+        else:
+            target_galaxies = all_train_set
         max_steps = MAX_STEPS
         num_variants = 16
 
     print(f"  → 本次跑 {len(target_galaxies)} 个星系 | max_steps={max_steps} | num_variants={num_variants} | strategy_folder={strategy_folder}\n")
+
+    # ==========================================
+    # 🔁 复用已有 E7 系列实验的轨迹
+    # ==========================================
+    strategy_out_root_abs = os.path.join(OUTPUT_ROOT, strategy_folder)
+    if REUSE_EXPERIMENT_DIRS and not FRESH_START:
+        reused_count = 0
+        # 支持精确目录名 + 自动匹配 output/ 下以指定前缀开头的目录
+        reuse_dirs_found = set()
+        for reuse_entry in REUSE_EXPERIMENT_DIRS:
+            exact = os.path.join(OUTPUT_ROOT, reuse_entry)
+            if os.path.isdir(exact):
+                reuse_dirs_found.add(exact)
+            else:
+                # 前缀匹配：REUSE_EXPERIMENT_DIRS 条目可能是旧格式（带时间戳等），按前缀扫描
+                if os.path.isdir(OUTPUT_ROOT):
+                    for d in os.listdir(OUTPUT_ROOT):
+                        if d.startswith(reuse_entry) or d.startswith(reuse_entry.split("__")[0] + "__"):
+                            full = os.path.join(OUTPUT_ROOT, d)
+                            if os.path.isdir(full) and full != strategy_out_root_abs:
+                                reuse_dirs_found.add(full)
+        for reuse_dir in sorted(reuse_dirs_found):
+            for gal_sub in os.listdir(reuse_dir):
+                traj_file = os.path.join(reuse_dir, gal_sub, f"{gal_sub}_trajectory.json")
+                if not os.path.exists(traj_file):
+                    continue
+                dest_dir = os.path.join(strategy_out_root_abs, gal_sub)
+                dest_file = os.path.join(dest_dir, f"{gal_sub}_trajectory.json")
+                if os.path.exists(dest_file):
+                    continue  # 已经复制过或本轮已跑过
+                try:
+                    os.makedirs(dest_dir, exist_ok=True)
+                    shutil.copy2(traj_file, dest_file)
+                    reused_count += 1
+                except Exception as e:
+                    print(f"  [WARN] 复用 {traj_file} 失败: {e}")
+        if reused_count:
+            print(f"  ♻️ 从已有 E7 系列实验复用了 {reused_count} 个星系的轨迹")
+        if reuse_dirs_found:
+            print(f"  📂 扫描到的复用目录: {[os.path.basename(d) for d in sorted(reuse_dirs_found)]}")
 
     # ==========================================
     # 🚀 全局总账本 (Map-Reduce 核心 + 留存高级 Token 统计)

@@ -14,7 +14,7 @@ RUN test -f /usr/bin/python || ln -s /usr/bin/python3.11 /usr/bin/python
 
 RUN python -m ensurepip && python -m pip install --upgrade pip
 
-RUN python --version && pip --version
+RUN pip install pandas -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY . .
 RUN cd jnesty && pip install . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn

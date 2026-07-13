@@ -148,7 +148,6 @@ def fourier_mode_analysis(
     try:
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(analysis)
-        print(f"Fourier mode analysis saved to: {output_file}")
     except Exception as e:
         print(f"Warning: Failed to save analysis to file: {e}")
         output_file = None

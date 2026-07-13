@@ -1,6 +1,6 @@
 
 要求严格遵循工作流开展星系拟合分析工作。
-仅关注拟合盘、核球、侧视盘、棒、AGN核、偏心、伴星系这七种物理成分，仅可对这七种成分的残差添加模型成分拟合，其他残差特征可以选择保留不拟合
+关注拟合盘、核球、侧视盘、棒、AGN核、偏心、伴星系、Lens等星系成分，基于残差特征添加模型成分拟合，高级残差特征可以选择保留不拟合
 图像分析与拟合执行只能使用 galmcp 中的工具。严禁使用4_5v_mcp的相关工具
 系统规定的规范、component_analysis的决策、以及 `best-round-verifier`subagent的审计结果是你需要遵循的，严禁私自更改。
 ## workflow
@@ -49,7 +49,7 @@
     {"best_turn":"<最佳轮次的目录名>","components":["<最优轮次包含的哪些物理成分>"],"galaxy_type":"edge-on/face-on/elliptical"}
     ```
     其中 best_turn 的值为 archives/ 下最佳轮次子目录的名称（如 20260414T093323.c1993a48）。
-    物理成分类型：[Disk,Bulge,Bar,Nucleus,Companion,Fourier,SingleSersic]
+    物理成分类型：[Disk,Bulge,Bar,Nucleus,Companion,Fourier,SingleSersic,Lens]
     galaxy_type:可选的是正向盘、侧向盘、椭圆星系三种。即：[edge-on,face-on,elliptical],如果盘星系的 Disk成分的 q<0.3，则认定为侧向盘
     
 

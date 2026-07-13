@@ -6,6 +6,7 @@
 - 要增加成分BULGE： Component type选用 sersic.
 - 当添加的 Bulge的 Re 小于 0.2 pixel(大于0.2px 保持sersic类型), 需要更换类型， 采用Component type为psf
 - 要增加棒 Bar：Component type选用  n=0.5[fix] 的 Sersic 模型.
+- 但增加Lens时，Component type选用 n<0.5 的 Sersic 模型. q>0.5, 初值设置，遵循 Re_disk > Re_lens > Re_bar
 - 如果星系已经有一个 Disk 成分了，针对星系外围（Outskirt）未拟合上的情况，可以添加第二个 Disk 成分或 Sérsic 成分（这时通常Re较大，n较小<1），以捕捉更延展的结构，
 - 如果星系是elliptical， 只有单个成分，这直接选用 sersic 模型即可，
   - 但如果一个星系用单 sersic 成分拟合后，出现 axis ratio （q<0.5）, 那么elliptical判断需要调整，应该有 disk。有 disk 就应该考虑 bulge,或者更多成分。

@@ -509,9 +509,9 @@ def extract_component_attributes(
                 ba = hs / rs
         pa = p('ang')
         # 注意：Galfit 的 PA 定义为从 +y 逆时针到 +x 的角度，Galfits的PA是相对于正北方向逆时针旋转到半长轴的角度，而天文中通常定义为从北向东的角度。因此需要转换：
-        pa = (pa + _delta_ang + 90) % 360 if pa is not None else None
-
-        result.append({
+        pa = ((pa + _delta_ang + 90 + 180) % 360 - 180) if pa is not None else None
+        
+        comp_attrs = {
             'name': comp_name,
             'type': ptype,
             'x': float(x_pix),
@@ -521,7 +521,24 @@ def extract_component_attributes(
             'n': float(n_val) if n_val is not None else None,
             'ba': float(ba) if ba is not None else None,
             'pa': float(pa) if pa is not None else None,
-        })
+        }
+        if ptype == 'sersic_f':
+            if p('r_in') is not None:
+                comp_attrs['r_in'] = float(p('r_in') / pixsc)
+            if p('r_out') is not None:
+                comp_attrs['r_out'] = float(p('r_out') / pixsc) 
+            if p('alpha_rc') is not None:
+                comp_attrs['alpha_rc'] = float(p('alpha_rc')) 
+            if p('theta_out') is not None:
+                comp_attrs['theta_out'] = float(p('theta_out')) 
+            if p('am') is not None:
+                comp_attrs['am'] = float(p('am'))
+            if p('theta_m') is not None:
+                comp_attrs['theta_m'] = float(p('theta_m'))
+            if p('i_arm') is not None:
+                comp_attrs['i_arm'] = float(p('i_arm')) 
+
+        result.append(comp_attrs)
 
     return result
 
@@ -578,54 +595,76 @@ def generate_feedme(image_info: ImageInfo, components, feedme_file):
                 pass
 
 def pixel2arcsec_offset(
-    pix_x: Annotated[float, "Component's X position on the science image, in the FITS/astropy 1-based pixel frame (i.e. the same frame used by wcs.all_pix2world(..., 1)). If you only have 0-based numpy indices, add 1 before passing them here."],
-    pix_y: Annotated[float, "Component's Y position on the science image, in the FITS/astropy 1-based pixel frame."],
-    lyric_file: Annotated[str, "Path to the .lyric config file. It must declare the galaxy center as R2) [ra, dec] (in degrees) and contain at least one image block pointing to a science FITS whose header carries the WCS."],
-    band: Annotated[str, "Band label (e.g. 'nircam_f115w', 'nircam_f150w', 'sloan_r') of the science image to use for the WCS. It must match exactly one of bands defined in the .lyric file."],
-)-> tuple[float, float] | dict[str, str]:
+    pix_x: Annotated[float, "Component's X pixel position on the science image. Use the *origin* parameter to select the convention: 1 = FITS/astropy 1-based (the frame used by wcs.all_pix2world(..., 1)); 0 = 0-based numpy/display indices where the bottom-left corner of the image is (0, 0)."],
+    pix_y: Annotated[float, "Component's Y pixel position on the science image (same *origin* convention as pix_x)."],
+    lyric_file: Annotated[str, "Absolute path to the .lyric config file. It must declare the galaxy center as R2) [ra, dec] (in degrees) and contain at least one image block pointing to a science FITS whose header carries the WCS."],
+    band: Annotated[str, "Band label (e.g. 'nircam_f115w', 'nircam_f150w', 'sloan_r') of the science image whose WCS is used for the conversion. It must match exactly one of the bands defined in the .lyric file."],
+    origin: Annotated[int, "Pixel-coordinate origin convention: 1 = FITS 1-based (default, matches wcs.all_pix2world(..., 1)); 0 = 0-based numpy/display indices. Pass 0 when your coordinates come from matplotlib, DS9 array view, or other tools that put the bottom-left corner at (0, 0)."] = 1,
+) -> tuple[float, float] | dict[str, str]:
     """Convert an image pixel position into the arcsecond-offset format used by .lyric files.
 
-    In a GalfitS ``.lyric`` config a component centroid is stored *not* as an
-    absolute sky position but as an **arcsecond offset relative to the galaxy
-    center** ``(ra, dec)`` declared in the ``R2)`` line.  The two values
-    returned by this function are exactly what should be written into that
-    component's ``PX3)`` (xcen) and ``PX4)`` (ycen) slots, e.g.::
+    In a GalfitS ``.lyric`` config a component centroid is stored as an
+    **arcsecond offset relative to the galaxy center** ``(ra, dec)`` declared
+    in the ``R2)`` line.  The two values returned by this function go into
+    that component's ``PX3)`` (xcen) and ``PX4)`` (ycen) slots::
 
         Pa3) [<ra_offset_arcsec>,  min, max, step, vary]   # xcen
         Pa4) [<dec_offset_arcsec>, min, max, step, vary]   # ycen
 
-    This function is the inverse of the forward (arcsec -> pixel) conversion
-    performed in :func:`extract_component_attributes`
-    (see the ``wcs.all_world2pix(ra + xcen/3600., dec + ycen/3600., 1)``
-    branch in ``parse_lyric.py``).
+    This function is the **exact inverse** of the forward (arcsec -> pixel)
+    conversion that GalfitS performs internally with
+    :func:`coordinates_transfer` (``GalfitS/src/galfits/galaxy.py``).
+    It first reproduces the ``coordinates_transfer_para`` computation from
+    ``GalfitS/src/galfits/images.py:img_cut`` (projecting the galaxy center
+    and two sky-offset probes through the WCS to obtain the local affine
+    coefficients ``dxra, dxdec, dyra, dydec``), then applies the
+    ``coordinates_transfer_inverse`` closed-form inverse.  The offset it
+    returns therefore maps back to the *exact* input pixel when GalfitS
+    renders the model.
+
+    Because the offset is anchored to the absolute sky position ``(ra, dec)``
+    from ``R2)``, it is **band-independent**: the same sky position yields the
+    same offset regardless of which band's pixel coordinates are supplied —
+    each band simply contributes its own WCS for the pixel-to-arcsec mapping.
 
     Procedure:
         1. Parse ``R2)`` from *lyric_file* to get the reference ``(ra, dec)``.
-        2. Take the first image block (``Id1)``) and read the WCS from its FITS header.
-        3. Project ``(pix_x, pix_y)`` to sky coordinates via ``wcs.all_pix2world(..., 1)``.
-        4. Subtract the reference ``(ra, dec)`` and multiply by 3600 to express
-           the result in arcseconds.
+        2. Select the science FITS for *band* and read its WCS.
+        3. Project ``(ra, dec)`` to the galaxy-center pixel ``(srcXp, srcYp)``
+           via ``wcs.all_world2pix(..., 1)``.
+        4. Numerically derive the local affine coefficients by probing the
+           WCS at ``ra + 1/60°`` and ``dec + 1/60°`` (matching ``img_cut``).
+        5. Convert the input pixels to the 1-based FITS frame if *origin* == 0.
+        6. Apply the ``coordinates_transfer_inverse`` formula.
 
     Args:
-        pix_x: Component's X position on the science image, in the FITS/astropy
-            **1-based** pixel frame (same convention as
-            ``wcs.all_pix2world(..., 1)``).  If your coordinates are 0-based
-            numpy array indices, add 1 before passing them here.
-        pix_y: Component's Y position on the science image, 1-based pixel frame.
+        pix_x: X pixel position (see *origin*).
+        pix_y: Y pixel position (see *origin*).
         lyric_file: Path to the ``.lyric`` config file. Must contain ``R2)``
             (galaxy center ``[ra, dec]`` in degrees) and at least one image
-            block ``Id1)`` pointing to a science FITS whose header carries the WCS.
+            block ``Id1)`` pointing to a science FITS whose header carries WCS.
+        band: Band label matching one of the image blocks in the lyric.
+        origin: 1 for FITS 1-based pixel coordinates (default), 0 for
+            0-based numpy/display coordinates.
 
     Returns:
-        ``(ra_offset_arcsec, dec_offset_arcsec)`` — angular offsets in arcseconds
-        relative to ``(ra, dec)`` from ``R2)``.  ``ra_offset_arcsec`` goes into
-        ``PX3)`` (xcen), ``dec_offset_arcsec`` goes into ``PX4)`` (ycen).
-    
+        ``(ra_offset_arcsec, dec_offset_arcsec)`` — angular offsets in
+        arcseconds relative to ``(ra, dec)`` from ``R2)``, or an ``error``
+        dict on failure.  ``ra_offset_arcsec`` goes into ``PX3)`` (xcen),
+        ``dec_offset_arcsec`` goes into ``PX4)`` (ycen).
+
     Note:
-        The "X" in PX3) and PX4) is the component's letter label (e.g. "a", "b", "c").
+        The "X" in ``PX3)`` and ``PX4)`` is the component's letter label
+        (e.g. "a", "b", "c").
     """
-    region_info = parse_region_info_from_lyric(lyric_file) # get (ra, dec)
-    image_infos = parse_image_infos_from_lyric(lyric_file) # get list of ImageInfo objects defined in the lyric file
+    import warnings
+    warnings.filterwarnings('ignore')
+
+    region_info = parse_region_info_from_lyric(lyric_file)
+    if region_info.ra is None or region_info.dec is None:
+        return {"status": "error", "message": "R2) [ra, dec] not found or invalid in lyric file."}
+
+    image_infos = parse_image_infos_from_lyric(lyric_file)
     fits_file = None
     for image_info in image_infos:
         if image_info.band == band:
@@ -635,12 +674,45 @@ def pixel2arcsec_offset(
         return {"status": "error", "message": f"'{band}' not found in lyric file."}
 
     with fits.open(fits_file) as hdul:
-        header = hdul[0].header
-        wcs = WCS(header)
-    ra_comp, dec_comp = wcs.all_pix2world(pix_x, pix_y, 1)
-    ra_offset = (ra_comp - region_info.ra) * 3600.0
-    dec_offset = (dec_comp - region_info.dec) * 3600.0
-    return ra_offset, dec_offset
+        wcs = WCS(hdul[0].header)
+
+    ra, dec = region_info.ra, region_info.dec
+
+    # Galaxy-center pixel position and local affine coefficients.
+    # Always in the FITS 1-based frame, matching GalfitS img_cut
+    # (GalfitS/src/galfits/images.py, lines ~1397-1409).
+    src = wcs.all_world2pix(ra, dec, 1)
+    srcXp = float(src[0])
+    srcYp = float(src[1])
+
+    src_ra = wcs.all_world2pix(ra + 1. / 60., dec, 1)
+    src_dec = wcs.all_world2pix(ra, dec + 1. / 60., 1)
+    dxra = (float(src_ra[0]) - srcXp) / 60.
+    dyra = (float(src_ra[1]) - srcYp) / 60.
+    dxdec = (float(src_dec[0]) - srcXp) / 60.
+    dydec = (float(src_dec[1]) - srcYp) / 60.
+
+    # Convert input pixels to the 1-based FITS frame when needed.
+    if origin == 0:
+        pix_x_eff = float(pix_x) + 1.0
+        pix_y_eff = float(pix_y) + 1.0
+    else:
+        pix_x_eff = float(pix_x)
+        pix_y_eff = float(pix_y)
+
+    # coordinates_transfer_inverse — exact inverse of GalfitS
+    # coordinates_transfer (GalfitS/src/galfits/galaxy.py:211-213).
+    det = dxra * dydec - dyra * dxdec
+    if abs(det) < 1e-30:
+        return {"status": "error",
+                "message": f"Degenerate WCS (zero determinant) for band '{band}'."}
+
+    ra_offset = ((pix_x_eff - srcXp) * dydec
+                 - (pix_y_eff - srcYp) * dxdec) / det
+    dec_offset = ((pix_x_eff - srcXp) * dyra
+                  - (pix_y_eff - srcYp) * dxra) / (-det)
+
+    return float(ra_offset), float(dec_offset)
 
 # def generate_subcomps(image_info: ImageInfo, components) -> tuple[list, list] | None:
 #     """Generate individual component images via GALFIT subcomps mode (P=3).
@@ -795,21 +867,45 @@ def TEST_lyric_to_feedme():
         print(f"Generated .feedme file at: {feedme_file}")
 
 def TEST_pixel2arcsec_offset():
-    pix_x, pix_y = 72, 86
+    import warnings
+    warnings.filterwarnings('ignore')
+
     lyric_file = "/home/jiangbo/jwst/1182/obj_1182.lyric"
-    band = "nircam_f277w"
 
-    print(f"Converting pixel coordinates ({pix_x}, {pix_y}) to arcsecond offsets using lyric file: {lyric_file}")
-    ra_offset, dec_offset = pixel2arcsec_offset(pix_x, pix_y, lyric_file, band)
-    print(f"Resulting offsets: RA offset = {ra_offset:.6f} arcsec, Dec offset = {dec_offset:.6f} arcsec")
+    # --- Cross-band consistency: same sky point must give the same offset ---
+    # Pick one sky position, find its pixel in each band (1-based via WCS),
+    # convert to 0-based for the function call, then verify offsets match.
+    test_ra, test_dec = 215.01971, 53.01040
+    image_infos = parse_image_infos_from_lyric(lyric_file)
+    wcs_map = {}
+    for info in image_infos:
+        if info.band in ('nircam_f277w', 'nircam_f115w'):
+            with fits.open(info.image[0]) as hdul:
+                wcs_map[info.band] = WCS(hdul[0].header)
 
-    pix_x, pix_y = 144, 172 
-    lyric_file = "/home/jiangbo/jwst/1182/obj_1182.lyric"
-    band = "nircam_f115w"
+    print("=== Same sky point across bands (origin=0) ===")
+    results = {}
+    for band_name, wcs_obj in wcs_map.items():
+        px, py = wcs_obj.all_world2pix(test_ra, test_dec, 1)
+        px0, py0 = float(px) - 1, float(py) - 1  # 1-based -> 0-based
+        ra_off, dec_off = pixel2arcsec_offset(px0, py0, lyric_file, band_name, origin=0)
+        results[band_name] = (ra_off, dec_off)
+        print(f"  {band_name}: 0-based pixel ({px0:.3f}, {py0:.3f}) -> "
+              f"offset ({ra_off:.6f}, {dec_off:.6f}) arcsec")
+    r1, d1 = results['nircam_f277w']
+    r2, d2 = results['nircam_f115w']
+    print(f"  Cross-band diff: dRA={r2 - r1:.2e}, dDec={d2 - d1:.2e} arcsec")
+    print()
 
-    print(f"Converting pixel coordinates ({pix_x}, {pix_y}) to arcsecond offsets using lyric file: {lyric_file}")
-    ra_offset, dec_offset = pixel2arcsec_offset(pix_x, pix_y, lyric_file, band)
-    print(f"Resulting offsets: RA offset = {ra_offset:.6f} arcsec, Dec offset = {dec_offset:.6f} arcsec")
+    # --- Original test coordinates with origin=0 ---
+    print("=== Original test coordinates (origin=0) ===")
+    for pix_x, pix_y, band_name in [(72, 86, 'nircam_f277w'),
+                                     (144, 172, 'nircam_f115w'),
+                                     (144, 172, 'nircam_f150w'), 
+                                     (72, 86, 'nircam_f444w')]:
+        ra_off, dec_off = pixel2arcsec_offset(pix_x, pix_y, lyric_file, band_name, origin=0)
+        print(f"  {band_name}: 0-based pixel ({pix_x}, {pix_y}) -> "
+              f"offset ({ra_off:.6f}, {dec_off:.6f}) arcsec")
 
 if __name__ == '__main__':
     #TEST_parse_image_infos_from_lyric_success()

@@ -109,6 +109,7 @@ obj195/
               pardictlc['bulge_xcen'] = pardictlc['bar_xcen'] = 1 * pardictlc['disk_xcen']
               pardictlc['bulge_ycen'] = pardictlc['bar_ycen'] = 1 * pardictlc['disk_ycen']
     - Add the parameter --parconstrain iter{n}.constrain when calling Galfits fitting methods to load this constraint file.
+    - For multi-band AGN/Nuclei components, the center parameter names are `xcen_agn` and `ycen_agn`, not `agn_xcen` or `agn_ycen`. Use these exact names in `.constrain` files when tying AGN centers to other components.
 - When including companion galaxies in the fitting:
     - The galaxy central coordinates must be constrained in the Lyric file to prevent positional drift of companion galaxies during the fitting process. The offset between the model center and the detected galaxy center is generally limited to within 5 pixels. 
     - The position unit for all galaxy components in the Lyric file is arcsec; unit conversion from pixels to arcsec is therefore required beforehand. This conversion must be executed externally using the mcp tool rather than being calculated manually.

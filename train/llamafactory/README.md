@@ -72,3 +72,34 @@ llamafactory-cli export ...   # 参考 LLaMA-Factory 文档；全参训练无需
   human/gpt）并去掉 tags 块。
 - `deepspeed` 路径 `examples/deepspeed/ds_z3_offload_config.json` 相对 LLaMA-Factory 根目录；按实际调整。
 - 多轮版（UI-S1 风格，≤2 图 + 全动作）将来另写独立转换脚本，读同一批 trajectory，不影响本流程。
+
+---
+
+## 实测记录（A6000, 2026-07-15：QLoRA 冒烟已跑通）
+
+**基座模型（A6000 本地完整副本）**：`/media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct`
+> `/media/data/wyh/models/Qwen2.5-VL-7B-Instruct` **不完整（缺分片），勿用**。
+
+**`llama-factory` env 需补的依赖**（原装偏旧，当前 LLaMA-Factory 源码要求更新版本）：
+```bash
+conda activate llama-factory
+pip install bitsandbytes                 # QLoRA 4-bit（实测 0.49.2）
+pip install "peft>=0.18.0,<=0.20.0"      # 源码 check_dependencies 要求（实测 0.19.1）
+pip install "trl>=0.18.0,<=0.24.0"       # 需要 trl.models.utils.prepare_deepspeed（实测 0.24.0）
+```
+> pip 可能报 `llamafactory 0.9.4.dev0 requires peft<=0.17.1 / trl<=0.9.6` 冲突——那是 egg-info 元数据陈旧，
+> 运行无碍。若版本门仍拦，命令前加 `DISABLE_VERSION_CHECK=1`。
+
+**A6000 上 QLoRA 实跑命令**（去掉 max_samples/max_steps 即全量 3 epoch）：
+```bash
+cd /media/zhongling/wyh/LLaMA-Factory
+DATA=/media/zhongling/wyh/GalDecomp_Gen/train/llamafactory/data
+MODEL=/media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct
+DISABLE_VERSION_CHECK=1 llamafactory-cli train \
+    /media/zhongling/wyh/GalDecomp_Gen/train/llamafactory/qwen2_5vl_qlora_sft.yaml \
+    dataset_dir=$DATA model_name_or_path=$MODEL
+```
+冒烟结果（max_samples=64, max_steps=3）：train_loss≈1.27，eval_loss≈1.16，全流程通过。
+
+**全参微调（A100）**：另需 `pip install deepspeed`，并保持同样的 peft/trl/bnb 版本；用
+`qwen2_5vl_full_sft.yaml`（含 ZeRO-3 offload）。单卡 A6000 48G 放不下全参 7B-VL，故全参在 A100 跑。

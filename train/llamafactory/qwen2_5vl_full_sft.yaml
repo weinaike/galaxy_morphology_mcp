@@ -1,0 +1,57 @@
+### ==========================================================================
+### 星系形态分解 base SFT（单轮多模态）—— Qwen2.5-VL-7B 全参微调
+### 数据由 data_gen/convert_sft_to_llamafactory.py 生成（galaxy_sft_train/val）
+### 用法（在 LLaMA-Factory 根目录）：
+###   llamafactory-cli train <本文件路径>
+### 冒烟测试：追加 max_steps=5 覆盖，确认多模态数据能加载、<image> 对齐、loss 下降
+### ==========================================================================
+
+### model
+model_name_or_path: Qwen/Qwen2.5-VL-7B-Instruct   # 与 UI-S1 同族；显存/需求变动可换 32B
+trust_remote_code: true
+image_max_pixels: 262144        # 单图 token 上限(约 512x512)。合成图很宽,压这个控 seq_len
+image_min_pixels: 16384
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full           # 全参 SFT。A6000 单卡显存紧张时改用下面的 LoRA 段：
+# finetuning_type: lora
+# lora_rank: 16
+# lora_target: all
+freeze_vision_tower: true       # 冻结视觉塔省显存（残差图理解已足够；如需微调视觉塔改 false）
+deepspeed: examples/deepspeed/ds_z3_offload_config.json   # ZeRO-3 + offload；路径相对 LLaMA-Factory 根目录
+
+### dataset
+dataset: galaxy_sft_train       # 见 dataset_info.json
+eval_dataset: galaxy_sft_val
+template: qwen2_vl
+cutoff_len: 12288               # 对齐 UI-S1 max_prompt_length；含 1 张图 + 文字历史 + CoT+JSON
+max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 8
+dataloader_num_workers: 4
+
+### output
+output_dir: saves/qwen2_5vl-7b-galaxy-sft
+logging_steps: 5
+save_steps: 200
+plot_loss: true
+overwrite_output_dir: true
+report_to: none                 # 需要 swanlab/wandb 时改
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-5
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+gradient_checkpointing: true
+ddp_timeout: 180000000
+
+### eval
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 200

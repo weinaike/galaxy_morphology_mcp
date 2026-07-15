@@ -1,0 +1,55 @@
+### ==========================================================================
+### 星系形态分解 base SFT —— Qwen2.5-VL-7B QLoRA（4-bit，单卡 A6000 48G 可直接训）
+### 数据同 full 版；QLoRA 显存友好，适合在 A6000 上直接训练
+### 用法（LLaMA-Factory 根目录）：
+###   llamafactory-cli train <本文件> dataset_dir=/path/to/galaxy_sft_data
+### 需要 bitsandbytes：pip install bitsandbytes
+### ==========================================================================
+
+### model
+model_name_or_path: Qwen/Qwen2.5-VL-7B-Instruct
+trust_remote_code: true
+image_max_pixels: 262144
+image_min_pixels: 16384
+quantization_bit: 4              # QLoRA：4-bit 量化基座
+quantization_method: bnb         # bitsandbytes
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_target: all
+freeze_vision_tower: true        # 冻结视觉塔省显存
+
+### dataset
+dataset: galaxy_sft_train        # 见 dataset_info.json
+eval_dataset: galaxy_sft_val
+template: qwen2_vl
+cutoff_len: 12288
+overwrite_cache: true
+preprocessing_num_workers: 8
+dataloader_num_workers: 4
+
+### output
+output_dir: saves/qwen2_5vl-7b-galaxy-qlora
+logging_steps: 5
+save_steps: 200
+plot_loss: true
+overwrite_output_dir: true
+report_to: none
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4            # QLoRA 用比全参更高的 lr
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+gradient_checkpointing: true
+
+### eval
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 200

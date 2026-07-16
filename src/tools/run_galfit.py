@@ -19,7 +19,7 @@ import glob
 
 from .extract_summary_galfit import extract_summary_from_galfit
 from .parse_feedme import parse_feedme, parse_components
-from .render_original import render_asinh_panel
+from .render_original import render_asinh_panel, draw_re_ellipses, effective_re
 from .sb_profile import render_sb_profile
 
 # Residual-zoom panel geometry (mirrors v2 layout in rerender_comparisons.py)
@@ -344,7 +344,10 @@ def create_comparison_png(
             dmin = min(d2(c) for c in cands)
             central = [c for c in cands if d2(c) <= dmin + CENTER_CLUSTER_PX ** 2]
             main = min(central, key=lambda c: c.get("mag", 99))
-            cx, cy, re_fit = main["x"], main["y"], max(main.get("re") or 0, 0)
+            # re_fit = true effective radius of the main component (expdisk: Re=1.68·Rs).
+            # Used for the zoom-box fallback and the displayed $R_e^{fit}$.
+            cx, cy = main["x"], main["y"]
+            re_fit = effective_re(main)
         else:
             cx, cy = ctr_x, ctr_y
             re_fit = 0
@@ -358,6 +361,10 @@ def create_comparison_png(
         if im3 is not None:
             ax3.add_patch(Rectangle((zx0, zy0), zx1 - zx0, zy1 - zy0,
                                     fill=False, ec="lime", ls="--", lw=1.8))
+            # Disk (expdisk) 2·Re contour (Re = 1.68·Rs) overlaid for direct
+            # model↔residual comparison; only the disk, per the request.
+            disk_comps = [c for c in (components or []) if c.get("type") == "expdisk"]
+            draw_re_ellipses(ax3, disk_comps, edgecolor="cyan")
 
         # === Row 1, Col 1: Residual Zoom (±10σ, independent axes) ===
         ax_zoom = fig.add_subplot(gs[1, 1])

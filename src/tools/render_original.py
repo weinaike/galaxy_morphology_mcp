@@ -13,6 +13,54 @@ from typing import Any, Annotated
 from .parse_feedme import parse_feedme
 from .parse_lyric import parse_image_infos_from_lyric
 
+# expdisk param-4 is the exponential SCALE LENGTH h, not the effective radius; for a
+# pure exponential the half-light (effective) radius Re = 1.678·h ≈ 1.68·h. sersic
+# param-4 is already Re. Normalize both to Re so contours are comparable across types.
+EXPDISK_RE_FACTOR = 1.68
+
+
+def effective_re(comp: dict) -> float:
+    """Half-light (effective) radius [px] of a parsed component.
+
+    GALFIT stores Re as param 4 for sersic but the scale length h for expdisk; convert
+    the latter to Re (1.68·h) so every contour — and any Re-based geometry — uses the
+    true effective radius. Single source of truth for the expdisk Rs→Re conversion.
+    """
+    if comp.get("type") == "expdisk":
+        return EXPDISK_RE_FACTOR * comp["re"]
+    return comp["re"]
+
+
+def draw_re_ellipses(ax, components, edgecolor: str = "cyan",
+                     linewidth: float = 1.2, linestyle: str = "--") -> None:
+    """Draw a 2·Re dashed ellipse per component on ``ax`` (full-image pixel coords).
+
+    Shared by the model panel (all components) and the residual panel (disk only) so
+    the two are directly comparable. Components' (x, y) are in full-image space, which
+    matches the panels' extent, so no coordinate transform is needed.
+    """
+    if not components:
+        return
+    for comp in components:
+        cx, cy = comp["x"], comp["y"]
+        ba = comp["ba"]
+        # GALFIT PA: from +Y axis, CCW (Up=0, Left=90); matplotlib: from +X axis, CCW.
+        pa_mpl = comp["pa"] + 90.0
+        re = effective_re(comp)
+        # 2·Re contour: full major-axis diameter = 4·Re, minor = 4·Re·(b/a).
+        ax.add_patch(Ellipse(
+            xy=(cx, cy),
+            width=4 * re,
+            height=4 * re * ba,
+            angle=pa_mpl,
+            edgecolor=edgecolor,
+            facecolor="none",
+            linewidth=linewidth,
+            alpha=0.9,
+            linestyle=linestyle,
+            zorder=10,
+        ))
+
 
 def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
                        show_mask=True, norm_params=None, components=None,
@@ -79,34 +127,8 @@ def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
         mask_overlay[mask > 0] = [0, 0, 0, 1.0]
         ax.imshow(mask_overlay, origin="lower", extent=ext)
 
-    # Draw component 2*Re ellipses (for model panel)
-    # if components and fit_region is not None:
-    if components:    
-        # Note: components have coords in full image space, extent is also in full image space
-        # So we can use component coords directly - no transformation needed
-        for comp in components:
-            cx = comp["x"]  # Full image x coordinate
-            cy = comp["y"]  # Full image y coordinate
-            re = comp["re"]
-            ba = comp["ba"]
-            # GALFIT PA: from +Y axis, counter-clockwise (Up=0, Left=90)
-            # matplotlib angle: from +X axis, counter-clockwise
-            # Conversion: mpl_angle = 90 + galfit_pa
-            pa_mpl = comp["pa"] + 90.0
-            # 2*Re contour: semi-major = 2*Re, semi-minor = 2*Re * b/a
-            ellipse = Ellipse(
-                xy=(cx, cy),
-                width=4 * re,          # full diameter of 2*Re along major axis
-                height=4 * re * ba,    # full diameter of 2*Re*b/a along minor axis
-                angle=pa_mpl,
-                edgecolor="cyan",
-                facecolor="none",
-                linewidth=1.2,
-                alpha=0.9,
-                linestyle="--",
-                zorder=10,
-            )
-            ax.add_patch(ellipse)
+    # Draw component 2·Re ellipses (model panel). expdisk Re = 1.68·scale length.
+    draw_re_ellipses(ax, components)
 
     ax.tick_params(axis="both", which="major", direction="out", top=True, right=True,
                    labelsize=8, length=4, width=0.5)

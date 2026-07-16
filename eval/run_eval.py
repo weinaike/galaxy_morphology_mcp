@@ -2,159 +2,57 @@
 星系形态分解 SFT 模型评测：加载 QLoRA 模型，对测试集做推理，解析输出，计算指标。
 
 指标体系（step-level offline，teacher-forcing 风格）：
-  1. format_rate:  输出能否解析出有效 JSON spec（```json``` 块）
-  2. type_accuracy: 粗动作类型（add/modify/delete/stop）是否与 GT 一致
+  1. format_rate:  输出能否解析出有效 JSON spec
+  2. type_accuracy: 粗动作类型（add/modify/delete）是否与 GT 一致
   3. comp_count_match: 输出的成分数量是否与 GT 一致
-  4. parameter_metrics: 对齐的成分之间参数距离（mag/Re/n/q/pa/x/y）
+  4. param_scores: tolerance-normalized 参数精度（0~1）
+  5. param_mae: 原始 MAE（兼容旧指标）
 
 用法（在 A6000 上）：
     source /media/data/anaconda3/etc/profile.d/conda.sh && conda activate llama-factory
     cd /media/zhongling/wyh/GalDecomp_Gen
 
     # 第一步：准备测试数据
-    python -m eval.prepare_eval_data \
-        --input-dir output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist \
-        --test-galaxies output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist/test_galaxies.json \
+    python -m eval.prepare_eval_data \\
+        --input-dir output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist \\
+        --test-galaxies output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist/test_galaxies.json \\
         --out-dir eval/eval_data
 
     # 第二步：推理 + 评测
-    python -m eval.run_eval \
-        --eval-data eval/eval_data/galaxy_eval_test.jsonl \
-        --model-path /media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct \
-        --adapter-path /media/zhongling/wyh/LLaMA-Factory/saves/qwen2_5vl-7b-galaxy-qlora \
+    python -m eval.run_eval \\
+        --eval-data eval/eval_data/galaxy_eval_test.jsonl \\
+        --model-path /media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct \\
+        --adapter-path /media/zhongling/wyh/LLaMA-Factory/saves/qwen2_5vl-7b-galaxy-qlora \\
         --out-dir eval/eval_results
+
+    # 跳过推理，只重新评测 + 可视化
+    python -m eval.run_eval \\
+        --eval-data eval/eval_data/galaxy_eval_test.jsonl \\
+        --model-path dummy --adapter-path dummy \\
+        --out-dir eval/eval_results \\
+        --skip-inference --visualize
 """
 
 import argparse
 import json
 import os
-import re
 import time
-from collections import defaultdict
-
 import traceback
+from collections import defaultdict
 
 import torch
 from PIL import Image
 
-
-def _fix_json_escapes(s):
-    """修复模型输出中常见的非法 JSON 转义（如 LaTeX \\chi, \\nu 中的反斜杠）。"""
-    return re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', s)
-
-
-def parse_json_spec(text):
-    """从模型输出中提取 ```json``` 块，解析为 dict。"""
-    patterns = [
-        r'```json\s*\n(.*?)\n\s*```',
-        r'```json\s*(.*?)```',
-        r'```\s*\n(\{.*?\})\s*\n\s*```',
-        r'```\s*(\{.*?\})\s*```',
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, re.DOTALL)
-        if m:
-            raw = m.group(1)
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                pass
-            try:
-                return json.loads(_fix_json_escapes(raw))
-            except json.JSONDecodeError:
-                continue
-    try:
-        start = text.rfind('{"components')
-        if start < 0:
-            start = text.rfind('{')
-        end = text.rfind('}')
-        if start >= 0 and end > start:
-            candidate = text[start:end + 1]
-            return json.loads(candidate)
-    except Exception:
-        pass
-    return None
+from eval.evaluate_action import (
+    evaluate_galfit_action,
+    parse_json_spec,
+    normalize_coarse_label,
+)
 
 
-def _normalize_label(label):
-    """把细粒度 label 归一化到粗粒度：add_psf/add_disk/add_sersic → add，delete_* → delete。"""
-    if not label:
-        return "unknown"
-    label = label.lower().strip()
-    if label.startswith("add"):
-        return "add"
-    if label.startswith("delete") or label.startswith("remove"):
-        return "delete"
-    if label in ("modify", "stop", "unknown"):
-        return label
-    return label
-
-
-def derive_coarse_label(pred_spec, gt_spec):
-    """从 pred spec 的 target 文本推导粗动作类型。"""
-    if not pred_spec:
-        return "unknown"
-    target = (pred_spec.get("target") or "").lower()
-
-    if any(kw in target for kw in ["stop", "终止", "结束", "满意", "完美", "最终确认", "维持当前"]):
-        return "stop"
-    if any(kw in target for kw in ["删除", "移除", "去掉", "减少"]):
-        return "delete"
-    if any(kw in target for kw in ["添加", "增加", "新增", "拆分", "加入", "引入"]):
-        return "add"
-    return "modify"
-
-
-def match_components(pred_comps, gt_comps):
-    """按 role/model 匹配预测和 GT 的成分，返回 (matched_pairs, unmatched_pred, unmatched_gt)。"""
-    gt_available = list(range(len(gt_comps)))
-    matched = []
-    pred_used = set()
-
-    for pi, pc in enumerate(pred_comps):
-        p_role = (pc.get("role") or pc.get("name") or "").lower()
-        p_model = (pc.get("model") or "").lower()
-        best_gi = None
-        best_score = -1
-        for gi in gt_available:
-            gc = gt_comps[gi]
-            g_role = (gc.get("role") or gc.get("name") or "").lower()
-            g_model = (gc.get("model") or "").lower()
-            score = 0
-            if p_role and g_role and p_role == g_role:
-                score += 2
-            if p_model and g_model and p_model == g_model:
-                score += 1
-            if score > best_score:
-                best_score = score
-                best_gi = gi
-        if best_gi is not None and best_score > 0:
-            matched.append((pi, best_gi))
-            pred_used.add(pi)
-            gt_available.remove(best_gi)
-
-    unmatched_pred = [i for i in range(len(pred_comps)) if i not in pred_used]
-    unmatched_gt = gt_available
-    return matched, unmatched_pred, unmatched_gt
-
-
-PARAM_KEYS = ["mag", "re", "n", "q", "pa", "x", "y"]
-
-
-def compute_param_distance(pred_comp, gt_comp):
-    """计算两个成分之间的参数距离。返回 {param: abs_diff} dict。"""
-    diffs = {}
-    for k in PARAM_KEYS:
-        pv = pred_comp.get(k)
-        gv = gt_comp.get(k)
-        if pv is not None and gv is not None:
-            try:
-                pv, gv = float(pv), float(gv)
-                diffs[k] = abs(pv - gv)
-            except (ValueError, TypeError):
-                pass
-    return diffs
-
+# ============================================================
+# 模型加载与推理（保留原逻辑）
+# ============================================================
 
 def load_model_and_processor(model_path, adapter_path, use_4bit=True):
     """加载 Qwen2.5-VL base + LoRA adapter。"""
@@ -182,7 +80,7 @@ def load_model_and_processor(model_path, adapter_path, use_4bit=True):
 
 def run_inference_single(model, processor, system_content, user_text, image_path,
                          max_new_tokens=4096):
-    """对单条样本做推理，返回生成的文本。"""
+    """对单条样本做推理。"""
     user_text_clean = user_text
     if user_text_clean.startswith("<image>\n"):
         user_text_clean = user_text_clean[len("<image>\n"):]
@@ -220,49 +118,9 @@ def run_inference_single(model, processor, system_content, user_text, image_path
     return response
 
 
-def evaluate_sample(pred_text, gt_spec, gt_label):
-    """评测单条样本，返回指标 dict。"""
-    result = {
-        "format_ok": False,
-        "type_match": False,
-        "comp_count_match": False,
-        "pred_label": "unknown",
-        "gt_label": gt_label,
-        "pred_n_comps": 0,
-        "gt_n_comps": len(gt_spec.get("components", [])) if gt_spec else 0,
-        "param_diffs": {},
-        "n_matched_comps": 0,
-    }
-
-    pred_spec = parse_json_spec(pred_text)
-    if pred_spec is None:
-        return result
-
-    result["format_ok"] = True
-    pred_comps = pred_spec.get("components", [])
-    gt_comps = gt_spec.get("components", []) if gt_spec else []
-    result["pred_n_comps"] = len(pred_comps)
-    result["comp_count_match"] = len(pred_comps) == len(gt_comps)
-
-    pred_label = derive_coarse_label(pred_spec, gt_spec)
-    gt_label_norm = _normalize_label(gt_label)
-    result["pred_label"] = pred_label
-    result["gt_label"] = gt_label_norm
-    result["gt_label_raw"] = gt_label
-    result["type_match"] = (pred_label == gt_label_norm)
-
-    matched, _, _ = match_components(pred_comps, gt_comps)
-    result["n_matched_comps"] = len(matched)
-
-    all_diffs = defaultdict(list)
-    for pi, gi in matched:
-        diffs = compute_param_distance(pred_comps[pi], gt_comps[gi])
-        for k, v in diffs.items():
-            all_diffs[k].append(v)
-    result["param_diffs"] = dict(all_diffs)
-
-    return result
-
+# ============================================================
+# 评测汇总
+# ============================================================
 
 def aggregate_results(results):
     """汇总所有样本的评测结果。"""
@@ -277,32 +135,103 @@ def aggregate_results(results):
     type_acc = type_match / format_ok if format_ok > 0 else 0
     comp_match_rate = comp_match / format_ok if format_ok > 0 else 0
 
+    # 原始 MAE（兼容旧输出）
     param_all_diffs = defaultdict(list)
     for r in results:
         for k, vs in r.get("param_diffs", {}).items():
             param_all_diffs[k].extend(vs)
-
     param_mae = {}
     for k, vs in param_all_diffs.items():
         if vs:
             param_mae[k] = sum(vs) / len(vs)
 
+    # tolerance-normalized 参数得分
+    param_all_scores = defaultdict(list)
+    for r in results:
+        for k, v in r.get("param_scores", {}).items():
+            param_all_scores[k].append(v)
+    param_scores_avg = {}
+    for k, vs in param_all_scores.items():
+        if vs:
+            param_scores_avg[k] = sum(vs) / len(vs)
+
+    # acc_score 均值
+    acc_scores = [r["acc_score"] for r in results if r["format_ok"]]
+    mean_acc_score = sum(acc_scores) / len(acc_scores) if acc_scores else 0
+
+    # 混淆矩阵
     label_confusion = defaultdict(lambda: defaultdict(int))
     for r in results:
         label_confusion[r["gt_label"]][r["pred_label"]] += 1
+
+    # 按 type 分组
+    per_type = defaultdict(lambda: {"n": 0, "format_ok": 0, "type_match": 0,
+                                     "acc_scores": [], "param_diffs": defaultdict(list)})
+    for r in results:
+        gt = r["gt_label"]
+        pt = per_type[gt]
+        pt["n"] += 1
+        if r["format_ok"]:
+            pt["format_ok"] += 1
+        if r["type_match"]:
+            pt["type_match"] += 1
+        if r["format_ok"]:
+            pt["acc_scores"].append(r["acc_score"])
+        for k, vs in r.get("param_diffs", {}).items():
+            pt["param_diffs"][k].extend(vs)
+
+    per_type_report = {}
+    for gt_label, pt in per_type.items():
+        per_type_report[gt_label] = {
+            "n": pt["n"],
+            "format_rate": pt["format_ok"] / pt["n"] if pt["n"] > 0 else 0,
+            "type_accuracy": pt["type_match"] / pt["format_ok"] if pt["format_ok"] > 0 else 0,
+            "mean_acc_score": sum(pt["acc_scores"]) / len(pt["acc_scores"]) if pt["acc_scores"] else 0,
+            "param_mae": {k: sum(vs) / len(vs) for k, vs in pt["param_diffs"].items() if vs},
+        }
+
+    # 按 depth 分组
+    per_depth = defaultdict(lambda: {"n": 0, "format_ok": 0, "type_match": 0, "acc_scores": []})
+    for r in results:
+        d = r.get("depth", -1)
+        pd = per_depth[d]
+        pd["n"] += 1
+        if r["format_ok"]:
+            pd["format_ok"] += 1
+        if r["type_match"]:
+            pd["type_match"] += 1
+        if r["format_ok"]:
+            pd["acc_scores"].append(r["acc_score"])
+
+    per_depth_report = {}
+    for depth, pd in sorted(per_depth.items()):
+        per_depth_report[str(depth)] = {
+            "n": pd["n"],
+            "format_rate": pd["format_ok"] / pd["n"] if pd["n"] > 0 else 0,
+            "type_accuracy": pd["type_match"] / pd["format_ok"] if pd["format_ok"] > 0 else 0,
+            "mean_acc_score": sum(pd["acc_scores"]) / len(pd["acc_scores"]) if pd["acc_scores"] else 0,
+        }
 
     return {
         "n_samples": n,
         "format_rate": round(format_rate, 4),
         "type_accuracy": round(type_acc, 4),
         "comp_count_match_rate": round(comp_match_rate, 4),
+        "mean_acc_score": round(mean_acc_score, 4),
+        "param_scores": {k: round(v, 4) for k, v in param_scores_avg.items()},
         "param_mae": {k: round(v, 4) for k, v in param_mae.items()},
         "n_format_ok": format_ok,
         "n_type_match": type_match,
         "n_comp_match": comp_match,
         "label_confusion": {gt: dict(pred_counts) for gt, pred_counts in label_confusion.items()},
+        "per_type": per_type_report,
+        "per_depth": per_depth_report,
     }
 
+
+# ============================================================
+# 主流程
+# ============================================================
 
 def main():
     ap = argparse.ArgumentParser(description="SFT 模型评测: 推理 + 指标计算")
@@ -315,14 +244,16 @@ def main():
     ap.add_argument("--no-4bit", action="store_true", help="不用4-bit量化加载")
     ap.add_argument("--skip-inference", action="store_true",
                     help="跳过推理，直接从 predictions.jsonl 读取已有预测结果")
+    ap.add_argument("--visualize", action="store_true",
+                    help="生成可视化图表到 out_dir/plots/")
     args = ap.parse_args()
 
     out_dir = os.path.abspath(args.out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    print("="*60)
+    print("=" * 60)
     print("  星系形态分解 SFT 评测")
-    print("="*60)
+    print("=" * 60)
 
     with open(args.eval_data, "r", encoding="utf-8") as f:
         samples = [json.loads(line) for line in f if line.strip()]
@@ -334,6 +265,7 @@ def main():
 
     pred_path = os.path.join(out_dir, "predictions.jsonl")
 
+    # ---- 推理阶段 ----
     if not args.skip_inference:
         model, processor = load_model_and_processor(
             args.model_path, args.adapter_path, use_4bit=not args.no_4bit)
@@ -348,7 +280,7 @@ def main():
 
             gid = gt.get("galaxy_id", "?")
             nid = gt.get("node_id", "?")
-            print(f"\n[{i+1}/{len(samples)}] {gid} / {nid}")
+            print(f"\n[{i + 1}/{len(samples)}] {gid} / {nid}")
 
             if not os.path.isfile(image_path):
                 print(f"  [SKIP] 图像不存在: {image_path}")
@@ -381,9 +313,10 @@ def main():
         with open(pred_path, "r", encoding="utf-8") as f:
             predictions = [json.loads(line) for line in f if line.strip()]
 
-    print("\n" + "="*60)
+    # ---- 评测阶段 ----
+    print("\n" + "=" * 60)
     print("  计算评测指标")
-    print("="*60)
+    print("=" * 60)
 
     results = []
     for i, (sample, pred) in enumerate(zip(samples, predictions)):
@@ -391,9 +324,8 @@ def main():
         gt_spec = gt.get("spec", {})
         gt_label = gt.get("coarse_label", "unknown")
         pred_text = pred.get("prediction", "")
-        gt_assistant = sample["messages"][-1]["content"]
 
-        r = evaluate_sample(pred_text, gt_spec, gt_label)
+        r = evaluate_galfit_action(pred_text, gt_spec, gt_label)
         r["index"] = i
         r["galaxy_id"] = gt.get("galaxy_id")
         r["node_id"] = gt.get("node_id")
@@ -416,21 +348,52 @@ def main():
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(agg, f, ensure_ascii=False, indent=2)
 
-    print("\n" + "="*60)
+    # ---- 打印报告 ----
+    print("\n" + "=" * 60)
     print("  评测报告")
-    print("="*60)
+    print("=" * 60)
     print(f"  样本数:          {agg.get('n_samples', 0)}")
     print(f"  格式正确率:      {agg.get('format_rate', 0):.1%} ({agg.get('n_format_ok', 0)}/{agg.get('n_samples', 0)})")
     print(f"  动作类型准确率:  {agg.get('type_accuracy', 0):.1%} ({agg.get('n_type_match', 0)}/{agg.get('n_format_ok', 0)})")
     print(f"  成分数一致率:    {agg.get('comp_count_match_rate', 0):.1%} ({agg.get('n_comp_match', 0)}/{agg.get('n_format_ok', 0)})")
-    print(f"\n  参数 MAE (匹配成分):")
+    print(f"  综合参数精度:    {agg.get('mean_acc_score', 0):.3f}")
+
+    print(f"\n  参数得分 (tolerance-normalized, 0~1):")
+    for k, v in agg.get("param_scores", {}).items():
+        print(f"    {k:>5}: {v:.3f}")
+
+    print(f"\n  参数 MAE (原始):")
     for k, v in agg.get("param_mae", {}).items():
         print(f"    {k:>5}: {v:.4f}")
+
     print(f"\n  动作类型混淆矩阵 (GT → Pred):")
     for gt_label, preds in agg.get("label_confusion", {}).items():
         print(f"    {gt_label}: {dict(preds)}")
+
+    print(f"\n  按类型分组:")
+    for label, metrics in agg.get("per_type", {}).items():
+        print(f"    {label}: n={metrics['n']}, type_acc={metrics['type_accuracy']:.1%}, "
+              f"acc_score={metrics['mean_acc_score']:.3f}")
+
+    print(f"\n  按 depth 分组:")
+    for depth, metrics in agg.get("per_depth", {}).items():
+        print(f"    depth={depth}: n={metrics['n']}, type_acc={metrics['type_accuracy']:.1%}, "
+              f"acc_score={metrics['mean_acc_score']:.3f}")
+
     print(f"\n  详细结果: {detail_path}")
     print(f"  汇总报告: {report_path}")
+
+    # ---- 可视化 ----
+    if args.visualize:
+        try:
+            from eval.visualize import generate_plots
+            plots_dir = os.path.join(out_dir, "plots")
+            generate_plots(results, agg, plots_dir)
+            print(f"  可视化输出: {plots_dir}")
+        except ImportError:
+            print("  [WARN] eval.visualize 不可用，跳过可视化")
+        except Exception as e:
+            print(f"  [WARN] 可视化失败: {e}")
 
 
 if __name__ == "__main__":

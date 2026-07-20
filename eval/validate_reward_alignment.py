@@ -618,16 +618,45 @@ def main():
     if args.threshold is not None and args.threshold != "auto":
         threshold = float(args.threshold)
 
-    from data_gen.extract_training_data import load_trajectories
-    all_trajs = load_trajectories(args.input_dir)
-    print(f"加载 {len(all_trajs)} 条 trajectory")
+    import glob as _glob
+    import time as _time
+
+    print(f"正在扫描 trajectory 目录: {args.input_dir}", flush=True)
+    t0 = _time.time()
+    pattern = os.path.join(args.input_dir, "**", "*_trajectory.json")
+    traj_files = _glob.glob(pattern, recursive=True)
+    print(f"  找到 {len(traj_files)} 个 trajectory 文件 ({_time.time()-t0:.1f}s)", flush=True)
+
+    if len(traj_files) == 0:
+        print("  ERROR: 没有找到任何 *_trajectory.json 文件！检查路径是否正确。", flush=True)
+        return
+
+    import json as _json
+    all_trajs = []
+    for i, f in enumerate(sorted(traj_files)):
+        try:
+            with open(f, "r", encoding="utf-8") as fh:
+                data = _json.load(fh)
+            data["_source_file"] = f
+            all_trajs.append(data)
+        except Exception as e:
+            print(f"  [WARN] 跳过: {f}: {e}", flush=True)
+        if (i + 1) % 20 == 0 or (i + 1) == len(traj_files):
+            print(f"  加载进度: {i+1}/{len(traj_files)}", flush=True)
+
+    print(f"加载 {len(all_trajs)} 条 trajectory ({_time.time()-t0:.1f}s)", flush=True)
 
     pairs = extract_step_pairs(all_trajs)
-    print(f"提取 {len(pairs)} 个有 VLM reward 的步骤")
+    print(f"提取 {len(pairs)} 个有 VLM reward 的步骤", flush=True)
+
+    if len(pairs) == 0:
+        print("  ERROR: 没有提取到任何有 VLM reward 的步骤！", flush=True)
+        print("  检查 trajectory 数据中是否有 reward_detail.vlm_detail.improvement 字段", flush=True)
+        return
 
     vlm_pos = sum(1 for p in pairs if p["vlm_improvement"] == 1)
-    print(f"VLM improvement=1: {vlm_pos} ({vlm_pos / len(pairs):.1%})")
-    print(f"VLM improvement=0: {len(pairs) - vlm_pos} ({(len(pairs) - vlm_pos) / len(pairs):.1%})")
+    print(f"VLM improvement=1: {vlm_pos} ({vlm_pos / len(pairs):.1%})", flush=True)
+    print(f"VLM improvement=0: {len(pairs) - vlm_pos} ({(len(pairs) - vlm_pos) / len(pairs):.1%})", flush=True)
 
     run_alignment_validation(pairs, args.out_dir, args.val_ratio, threshold)
 

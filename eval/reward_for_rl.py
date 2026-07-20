@@ -376,10 +376,15 @@ def compute_rl_reward(
         result["chi2_vetoed"] = True
         return result
 
-    # BIC-chi2 联动门控：chi2 恶化时不奖励 BIC 改善
-    # 对齐 VLM 逻辑：metric-driven improvement 至少需要 chi2 不恶化
-    # 避免"参数跑飞但 BIC 恰好变好"的情况被误奖励
-    effective_r_bic = r_bic if r_chi2 >= 0 else min(r_bic, 0.0)
+    # BIC-chi2 联动门控：chi2 改善不显著时不奖励 BIC 改善
+    # 对齐 VLM 逻辑：metric-driven improvement 需要 chi2 有可感知的改善
+    # r_chi2 > 0.003 ≈ chi2_nu 改善 > 0.7%，防止噪声级改善触发 BIC 奖励
+    BIC_CHI2_GATE = 0.003
+    BIC_CAP = 2.0  # r_bic 上限，防止极端 BIC 改善独占 reward
+    if r_chi2 >= BIC_CHI2_GATE:
+        effective_r_bic = min(r_bic, BIC_CAP)
+    else:
+        effective_r_bic = min(r_bic, 0.0)  # chi2 没显著改善时只允许 BIC 负贡献
     result["effective_r_bic"] = effective_r_bic
 
     r_noise = 0.0

@@ -133,8 +133,8 @@ def compute_rule_reward_for_pair(pair):
     r_chi2 = compute_chi2_gain(pair["parent_metrics"], pair["child_metrics"])
     r_bic = compute_bic_gain(pair["parent_metrics"], pair["child_metrics"])
 
-    chi2_direction = "decreased" if r_chi2 > 0.01 else ("increased" if r_chi2 < -0.01 else "unchanged")
-    bic_direction = "decreased" if r_bic > 0.5 else ("increased" if r_bic < -0.5 else "unchanged")
+    chi2_direction = "decreased" if r_chi2 > 0.001 else ("increased" if r_chi2 < -0.001 else "unchanged")
+    bic_direction = "decreased" if r_bic > 0.05 else ("increased" if r_bic < -0.05 else "unchanged")
 
     return {
         "reward": rl_result["reward"],
@@ -245,16 +245,26 @@ def compute_dimension_alignment(pairs):
 
     # chi2 方向 vs VLM chisq_trend
     n_both = n_agree = 0
+    vlm_trend_dist = defaultdict(int)
+    rule_trend_dist = defaultdict(int)
+    crosstab = defaultdict(int)
     for p in pairs:
         vlm_trend = p["vlm_detail"].get("chisq_nu_trend")
+        vlm_trend_dist[str(vlm_trend)] += 1
+        rule_dir = p["rule_chi2_direction"]
+        rule_trend_dist[rule_dir] += 1
         if vlm_trend not in ("decreased", "increased", "unchanged"):
             continue
         n_both += 1
-        if p["rule_chi2_direction"] == vlm_trend:
+        crosstab[f"rule={rule_dir},vlm={vlm_trend}"] += 1
+        if rule_dir == vlm_trend:
             n_agree += 1
     results["chi2_direction_vs_vlm_chisq_nu_trend"] = {
         "n": n_both,
         "agreement": round(n_agree / n_both, 4) if n_both > 0 else None,
+        "vlm_trend_distribution": dict(vlm_trend_dist),
+        "rule_trend_distribution": dict(rule_trend_dist),
+        "crosstab": dict(crosstab),
     }
 
     # metric_consistent
@@ -424,7 +434,7 @@ def plot_reward_distribution(pairs, threshold, out_path):
 # 主流程
 # ============================================================
 
-def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None):
+def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip_test=False):
     """完整的对齐验证流程。"""
     os.makedirs(out_dir, exist_ok=True)
 
@@ -553,50 +563,55 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None):
             f.write(json.dumps(d, ensure_ascii=False, default=str) + "\n")
 
     # 4. Test 集评测（锁参）
-    print("\n" + "=" * 60)
-    print("  Test 集评测（锁参）")
-    print("=" * 60)
+    test_report = None
+    if not skip_test:
+        print("\n" + "=" * 60)
+        print("  Test 集评测（锁参）")
+        print("=" * 60)
 
-    test_metrics = compute_alignment_metrics(test_pairs, best_thr)
-    print(f"  Threshold: {best_thr:.4f} (from val)")
-    print(f"  Accuracy:  {test_metrics['accuracy']:.1%}")
-    print(f"  Precision: {test_metrics['precision']:.1%}")
-    print(f"  Recall:    {test_metrics['recall']:.1%}")
-    print(f"  F1:        {test_metrics['f1']:.1%}")
-    print(f"  TP={test_metrics['tp']} FP={test_metrics['fp']} TN={test_metrics['tn']} FN={test_metrics['fn']}")
+        test_metrics = compute_alignment_metrics(test_pairs, best_thr)
+        print(f"  Threshold: {best_thr:.4f} (from val)")
+        print(f"  Accuracy:  {test_metrics['accuracy']:.1%}")
+        print(f"  Precision: {test_metrics['precision']:.1%}")
+        print(f"  Recall:    {test_metrics['recall']:.1%}")
+        print(f"  F1:        {test_metrics['f1']:.1%}")
+        print(f"  TP={test_metrics['tp']} FP={test_metrics['fp']} TN={test_metrics['tn']} FN={test_metrics['fn']}")
 
-    test_per_type = compute_per_type_alignment(test_pairs, best_thr)
-    print(f"\n  按动作类型:")
-    for label, m in test_per_type.items():
-        print(f"    {label}: acc={m['accuracy']:.1%}, f1={m['f1']:.1%}, n={m['n']}")
+        test_per_type = compute_per_type_alignment(test_pairs, best_thr)
+        print(f"\n  按动作类型:")
+        for label, m in test_per_type.items():
+            print(f"    {label}: acc={m['accuracy']:.1%}, f1={m['f1']:.1%}, n={m['n']}")
 
-    test_disagreements = collect_disagreements(test_pairs, best_thr)
-    print(f"\n  不一致样本: {len(test_disagreements)}")
+        test_disagreements = collect_disagreements(test_pairs, best_thr)
+        print(f"\n  不一致样本: {len(test_disagreements)}")
 
-    plot_confusion_matrix(test_metrics, "Test Set: Rule vs VLM",
-                          os.path.join(out_dir, "test_confusion_matrix.png"))
-    plot_reward_distribution(test_pairs, best_thr,
-                             os.path.join(out_dir, "test_reward_distribution.png"))
+        plot_confusion_matrix(test_metrics, "Test Set: Rule vs VLM",
+                              os.path.join(out_dir, "test_confusion_matrix.png"))
+        plot_reward_distribution(test_pairs, best_thr,
+                                 os.path.join(out_dir, "test_reward_distribution.png"))
 
-    test_report = {
-        "threshold": best_thr,
-        "metrics": test_metrics,
-        "per_type": test_per_type,
-        "n_disagreements": len(test_disagreements),
-    }
-    with open(os.path.join(out_dir, "test_alignment_report.json"), "w", encoding="utf-8") as f:
-        json.dump(test_report, f, ensure_ascii=False, indent=2)
+        test_report = {
+            "threshold": best_thr,
+            "metrics": test_metrics,
+            "per_type": test_per_type,
+            "n_disagreements": len(test_disagreements),
+        }
+        with open(os.path.join(out_dir, "test_alignment_report.json"), "w", encoding="utf-8") as f:
+            json.dump(test_report, f, ensure_ascii=False, indent=2)
 
-    with open(os.path.join(out_dir, "test_disagreements.jsonl"), "w", encoding="utf-8") as f:
-        for d in test_disagreements:
-            f.write(json.dumps(d, ensure_ascii=False, default=str) + "\n")
+        with open(os.path.join(out_dir, "test_disagreements.jsonl"), "w", encoding="utf-8") as f:
+            for d in test_disagreements:
+                f.write(json.dumps(d, ensure_ascii=False, default=str) + "\n")
+    else:
+        print("\n  (--skip-test: 跳过 test 集评测)")
 
     # 总结
     print("\n" + "=" * 60)
     print("  总结")
     print("=" * 60)
     print(f"  Val  accuracy: {val_metrics['accuracy']:.1%} (n={val_metrics['n']})")
-    print(f"  Test accuracy: {test_metrics['accuracy']:.1%} (n={test_metrics['n']})")
+    if test_report:
+        print(f"  Test accuracy: {test_report['metrics']['accuracy']:.1%} (n={test_report['metrics']['n']})")
     if auc:
         print(f"  ROC AUC: {auc}")
     print(f"  Threshold: {best_thr:.4f}")
@@ -612,6 +627,8 @@ def main():
     ap.add_argument("--val-ratio", type=float, default=0.7)
     ap.add_argument("--threshold", default=None,
                     help="二值化 threshold（默认 auto: ROC 最优），可指定数值")
+    ap.add_argument("--skip-test", action="store_true",
+                    help="只跑 val 集，不跑 test（调参阶段用）")
     args = ap.parse_args()
 
     threshold = None
@@ -658,7 +675,8 @@ def main():
     print(f"VLM improvement=1: {vlm_pos} ({vlm_pos / len(pairs):.1%})", flush=True)
     print(f"VLM improvement=0: {len(pairs) - vlm_pos} ({(len(pairs) - vlm_pos) / len(pairs):.1%})", flush=True)
 
-    run_alignment_validation(pairs, args.out_dir, args.val_ratio, threshold)
+    run_alignment_validation(pairs, args.out_dir, args.val_ratio, threshold,
+                             skip_test=args.skip_test)
 
 
 if __name__ == "__main__":

@@ -95,14 +95,22 @@ def compute_chi2_gain(old_metrics: dict, new_metrics: dict) -> float:
 
 
 def compute_bic_gain(old_metrics: dict, new_metrics: dict) -> float:
-    """BIC 变化：降低为正（更好），升高为负。"""
+    """BIC 变化（对数归一化）：降低为正（更好），升高为负。
+
+    原始 BIC 差值动辄上千~上万，与 r_chi2（±0.1 量级）不可比。
+    用 sign(delta) * log10(1 + |delta|) 压缩到 ±4 范围。
+    """
     old_bic = old_metrics.get("bic")
     new_bic = new_metrics.get("bic")
 
     if old_bic is None or new_bic is None:
         return 0.0
 
-    return old_bic - new_bic
+    delta = old_bic - new_bic  # 正 = BIC 降低（改善）
+    if abs(delta) < 1e-6:
+        return 0.0
+    sign = 1.0 if delta > 0 else -1.0
+    return sign * math.log10(1.0 + abs(delta))
 
 
 # ============================================================

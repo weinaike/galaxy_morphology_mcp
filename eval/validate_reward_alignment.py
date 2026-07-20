@@ -508,19 +508,37 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
     rewards = [p["rule_reward"] for p in val_pairs]
     vlm_pos_rewards = [p["rule_reward"] for p in val_pairs if p["vlm_improvement"] == 1]
     vlm_neg_rewards = [p["rule_reward"] for p in val_pairs if p["vlm_improvement"] == 0]
+
+    def _dist_summary(arr, label):
+        a = np.array(arr)
+        pcts = np.percentile(a, [1, 5, 25, 50, 75, 95, 99])
+        print(f"    {label} (n={len(a)}):")
+        print(f"      mean={a.mean():.4f}, std={a.std():.4f}, min={a.min():.4f}, max={a.max():.4f}")
+        print(f"      p1={pcts[0]:.4f}, p5={pcts[1]:.4f}, p25={pcts[2]:.4f}, "
+              f"median={pcts[3]:.4f}, p75={pcts[4]:.4f}, p95={pcts[5]:.4f}, p99={pcts[6]:.4f}")
+
     print(f"\n  Reward 分布:")
-    print(f"    全体: mean={np.mean(rewards):.3f}, std={np.std(rewards):.3f}")
+    _dist_summary(rewards, "全体")
     if vlm_pos_rewards:
-        print(f"    VLM=1: mean={np.mean(vlm_pos_rewards):.3f}, std={np.std(vlm_pos_rewards):.3f}")
+        _dist_summary(vlm_pos_rewards, "VLM=1")
     if vlm_neg_rewards:
-        print(f"    VLM=0: mean={np.mean(vlm_neg_rewards):.3f}, std={np.std(vlm_neg_rewards):.3f}")
+        _dist_summary(vlm_neg_rewards, "VLM=0")
 
     # 各分量统计
     r_chi2s = [p["rule_r_chi2"] for p in val_pairs]
     r_bics = [p["rule_r_bic"] for p in val_pairs]
     print(f"\n  分量分布:")
-    print(f"    r_chi2: mean={np.mean(r_chi2s):.4f}, std={np.std(r_chi2s):.4f}")
-    print(f"    r_bic:  mean={np.mean(r_bics):.2f}, std={np.std(r_bics):.2f}")
+    _dist_summary(r_chi2s, "r_chi2")
+    _dist_summary(r_bics, "r_bic")
+
+    # 边界/否决统计
+    n_bounds_fail = sum(1 for p in val_pairs if not p["rule_bounds_ok"])
+    n_chi2_veto = sum(1 for p in val_pairs if p["rule_chi2_vetoed"])
+    n_zero_reward = sum(1 for p in val_pairs if p["rule_reward"] == 0.0)
+    print(f"\n  门控统计:")
+    print(f"    边界违规 (R=0): {n_bounds_fail} ({n_bounds_fail/len(val_pairs):.1%})")
+    print(f"    chi2 否决 (R=0): {n_chi2_veto} ({n_chi2_veto/len(val_pairs):.1%})")
+    print(f"    总 reward=0: {n_zero_reward} ({n_zero_reward/len(val_pairs):.1%})")
 
     # 不一致样本
     disagreements = collect_disagreements(val_pairs, best_thr)

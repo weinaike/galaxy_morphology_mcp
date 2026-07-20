@@ -1,16 +1,26 @@
 """
-RL Reward：对齐 pipeline VLM reward 的 rule-based 替代。
+RL Reward：对齐 pipeline VLM reward (calculate_reward_model_with_param) 的 rule-based 替代。
 
 设计哲学：
   - 不依赖与 GT 的参数距离（简并性：多组参数都能给好拟合）
-  - 评估"这步操作的结果好不好"：参数边界 + chi2 改善 + 残差噪声质量
-  - 硬门控（边界违规 → 0）+ 加权求和（chi2 + 噪声）
+  - 评估"这步操作的结果好不好"：参数边界 + chi2 改善 + BIC 改善 + 残差噪声质量
+
+对齐 calculate_reward_model_with_param 的判断维度：
+  1. 参数边界 → param_plausible
+  2. chi2 gain → chisq/chisq_nu trend
+  3. BIC gain  → metric_consistent (BIC 部分)
+  4. 噪声质量 → residual_improved
+
+组合方式：
+  - 边界违规 → R=0
+  - chi2/nu 明显恶化 → R=0（即使 BIC 改善）
+  - 正常 → R = w_chi2 * r_chi2 + w_bic * r_bic + w_noise * r_noise
 
 噪声质量评估借鉴同事 batch_eval_residual_quality_hierarchical.py：
   - robust_std_mad(residual/sigma) → 理想值 ~1
   - PSD 频段功率比 → 理想值 ~1（白噪声平坦谱）
 
-需要 GALFIT 执行结果（残差图 + metrics），实际调用在 RL/SOP 阶段。
+权重通过 validate_reward_alignment.py 在 GT 轨迹 val 集上校准。
 """
 
 import math
@@ -290,9 +300,14 @@ def load_noise_inputs(residual_fits_path: str, sigma_fits_path: str, mask_fits_p
 # 综合 RL Reward
 # ============================================================
 
-# 权重：先用 pipeline 的比例起步，跑一批数据看分布后再调
+# 权重：跑 validate_reward_alignment.py 在 val 集上校准
 W_CHI2 = 10.0
+W_BIC = 5.0
 W_NOISE = 5.0
+
+# chi2/nu 明显恶化阈值：对齐 calculate_reward_model_with_param 中
+# "If chisq/nu clearly worsens, be conservative" 的逻辑
+CHI2_VETO_THRESHOLD = -0.1  # log10(old/new) < -0.1 即 chi2_nu 恶化 >26%
 
 
 def compute_rl_reward(
@@ -305,7 +320,18 @@ def compute_rl_reward(
     noise_thresholds: dict = None,
 ) -> Dict[str, Any]:
     """
-    RL reward：硬门控(边界检查) + 加权求和(chi2改善 + 噪声质量)。
+    RL reward，对齐 calculate_reward_model_with_param 的判断逻辑。
+
+    判断维度（与 VLM reward 一一对应）：
+      1. 参数边界检查 → 对应 VLM 的 param_plausible
+      2. chi2 gain     → 对应 VLM 的 chisq/chisq_nu trend
+      3. BIC gain      → 对应 VLM 的 metric_consistent (BIC 部分)
+      4. 噪声质量      → 对应 VLM 的 residual_improved
+
+    组合方式（对齐 calculate_reward_model_with_param）：
+      - 边界违规 → R=0
+      - chi2/nu 明显恶化 → R=0（即使 BIC 改善，对应 VLM Part 4 Rule 3）
+      - 正常情况 → R = w_chi2 * r_chi2 + w_bic * r_bic + w_noise * r_noise
 
     Args:
         old_metrics: 父节点 metrics (chi2_nu, bic, ...)
@@ -314,17 +340,6 @@ def compute_rl_reward(
         residual: 2D 残差图（可选，有则计算噪声质量）
         sigma: 2D sigma 图（可选）
         mask: 2D 掩膜（可选）
-
-    Returns:
-        {
-            "reward": float,  # 总 reward
-            "bounds_ok": bool,
-            "bounds_violations": list,
-            "r_chi2": float,
-            "r_bic": float,
-            "noise_detail": dict or None,
-            "r_noise": float,
-        }
     """
     bounds_ok, violations = check_param_bounds(action_spec)
 
@@ -334,6 +349,7 @@ def compute_rl_reward(
         "bounds_violations": violations,
         "r_chi2": 0.0,
         "r_bic": 0.0,
+        "chi2_vetoed": False,
         "noise_detail": None,
         "r_noise": 0.0,
     }
@@ -346,6 +362,12 @@ def compute_rl_reward(
     result["r_chi2"] = r_chi2
     result["r_bic"] = r_bic
 
+    # chi2/nu 明显恶化 → 一票否决（对齐 VLM Part 4 Rule 3:
+    # "If chisq/nu clearly worsens, even if BIC decreases, do not accept"）
+    if r_chi2 < CHI2_VETO_THRESHOLD:
+        result["chi2_vetoed"] = True
+        return result
+
     r_noise = 0.0
     if residual is not None and sigma is not None and mask is not None:
         noise_detail = compute_noise_score(residual, sigma, mask, noise_thresholds)
@@ -353,7 +375,7 @@ def compute_rl_reward(
         r_noise = noise_detail["noise_score"]
     result["r_noise"] = r_noise
 
-    reward = W_CHI2 * r_chi2 + W_NOISE * r_noise
+    reward = W_CHI2 * r_chi2 + W_BIC * r_bic + W_NOISE * r_noise
     result["reward"] = reward
 
     return result

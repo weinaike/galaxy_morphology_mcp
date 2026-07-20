@@ -34,7 +34,7 @@ from typing import Optional, Dict, Any, Tuple
 
 PARAM_BOUNDS = {
     "n": (0.1, 8.0),
-    "re": (0.2, None),
+    "re": (0.2, 300.0),   # 加上限：Re > 300px 几乎必是参数跑飞
     "q": (0.05, 1.0),
     "mag": (0.0, None),
 }
@@ -310,7 +310,7 @@ def load_noise_inputs(residual_fits_path: str, sigma_fits_path: str, mask_fits_p
 
 # 权重：跑 validate_reward_alignment.py 在 val 集上校准
 W_CHI2 = 10.0
-W_BIC = 5.0
+W_BIC = 2.0   # 降低：BIC 改善不可靠（参数跑飞也能降 BIC），给低权重
 W_NOISE = 5.0
 
 # chi2/nu 明显恶化阈值：对齐 calculate_reward_model_with_param 中
@@ -376,6 +376,12 @@ def compute_rl_reward(
         result["chi2_vetoed"] = True
         return result
 
+    # BIC-chi2 联动门控：chi2 恶化时不奖励 BIC 改善
+    # 对齐 VLM 逻辑：metric-driven improvement 至少需要 chi2 不恶化
+    # 避免"参数跑飞但 BIC 恰好变好"的情况被误奖励
+    effective_r_bic = r_bic if r_chi2 >= 0 else min(r_bic, 0.0)
+    result["effective_r_bic"] = effective_r_bic
+
     r_noise = 0.0
     if residual is not None and sigma is not None and mask is not None:
         noise_detail = compute_noise_score(residual, sigma, mask, noise_thresholds)
@@ -383,7 +389,7 @@ def compute_rl_reward(
         r_noise = noise_detail["noise_score"]
     result["r_noise"] = r_noise
 
-    reward = W_CHI2 * r_chi2 + W_BIC * r_bic + W_NOISE * r_noise
+    reward = W_CHI2 * r_chi2 + W_BIC * effective_r_bic + W_NOISE * r_noise
     result["reward"] = reward
 
     return result

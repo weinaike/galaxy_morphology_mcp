@@ -268,31 +268,81 @@ def compute_alignment_metrics(pairs, threshold=0.0):
     }
 
 
-def find_optimal_threshold(pairs, n_candidates=200):
-    """用 ROC 曲线找最优 threshold（最大化 accuracy）。"""
-    rewards = sorted(set(p["rule_reward"] for p in pairs))
+def find_optimal_threshold(pairs, n_candidates=200, strategy="precision_first_f1",
+                            precision_floor=0.90):
+    """在 val 集上找最优 threshold。
 
+    Args:
+        strategy:
+          - "accuracy"           : 传统 ROC 最优 accuracy
+          - "precision_first_f1" : 满足 precision >= precision_floor 的候选中最大化 F1
+          - "f1"                 : 纯 F1 最优（忽略 precision 约束）
+        precision_floor: precision_first_f1 策略下的 precision 下限（默认 0.90）
+
+    RL 场景下推荐 precision_first_f1：FP 会教坏模型（比 FN 危险），必须保 precision。
+    """
+    rewards = sorted(set(p["rule_reward"] for p in pairs))
     if len(rewards) <= 1:
-        return 0.0, []
+        return 0.0, [], 0.0
 
     lo, hi = min(rewards), max(rewards)
     candidates = np.linspace(lo - 0.1, hi + 0.1, n_candidates)
 
     roc_points = []
-    best_acc = -1
-    best_thr = 0.0
-
     for thr in candidates:
         m = compute_alignment_metrics(pairs, threshold=thr)
         fpr = m["fp"] / (m["fp"] + m["tn"]) if (m["fp"] + m["tn"]) > 0 else 0
         tpr = m["tp"] / (m["tp"] + m["fn"]) if (m["tp"] + m["fn"]) > 0 else 0
-        roc_points.append({"threshold": round(float(thr), 4), "fpr": round(fpr, 4),
-                           "tpr": round(tpr, 4), "accuracy": m["accuracy"], "f1": m["f1"]})
-        if m["accuracy"] > best_acc:
-            best_acc = m["accuracy"]
-            best_thr = float(thr)
+        roc_points.append({
+            "threshold": round(float(thr), 4),
+            "fpr": round(fpr, 4),
+            "tpr": round(tpr, 4),
+            "accuracy": m["accuracy"],
+            "precision": m["precision"],
+            "recall": m["recall"],
+            "f1": m["f1"],
+        })
 
-    # AUC（梯形法）
+    # 按策略选 threshold
+    best_thr = 0.0
+    if strategy == "accuracy":
+        best_score = -1
+        for pt, thr in zip(roc_points, candidates):
+            if pt["accuracy"] > best_score:
+                best_score = pt["accuracy"]
+                best_thr = float(thr)
+        print(f"[threshold] strategy=accuracy  best_acc={best_score:.4f}  thr={best_thr:.4f}")
+
+    elif strategy == "f1":
+        best_score = -1
+        for pt, thr in zip(roc_points, candidates):
+            if pt["f1"] > best_score:
+                best_score = pt["f1"]
+                best_thr = float(thr)
+        print(f"[threshold] strategy=f1  best_f1={best_score:.4f}  thr={best_thr:.4f}")
+
+    elif strategy == "precision_first_f1":
+        # 先筛 precision >= floor 的，再选 F1 最大的
+        eligible = [(pt, thr) for pt, thr in zip(roc_points, candidates)
+                    if pt["precision"] >= precision_floor]
+        if eligible:
+            best_pt, best_thr = max(eligible, key=lambda x: x[0]["f1"])
+            best_thr = float(best_thr)
+            print(f"[threshold] strategy=precision_first_f1 (precision>={precision_floor})  "
+                  f"chosen: precision={best_pt['precision']:.4f} recall={best_pt['recall']:.4f} "
+                  f"f1={best_pt['f1']:.4f} thr={best_thr:.4f}")
+        else:
+            # 回退：precision floor 达不到，退到 accuracy 最优 + 告警
+            print(f"[threshold] ⚠️ 没有 threshold 满足 precision>={precision_floor}，回退 accuracy 最优")
+            best_score = -1
+            for pt, thr in zip(roc_points, candidates):
+                if pt["accuracy"] > best_score:
+                    best_score = pt["accuracy"]
+                    best_thr = float(thr)
+    else:
+        raise ValueError(f"Unknown strategy: {strategy}")
+
+    # AUC（梯形法，独立于 threshold 策略）
     roc_sorted = sorted(roc_points, key=lambda x: x["fpr"])
     auc = 0.0
     for i in range(1, len(roc_sorted)):
@@ -513,7 +563,8 @@ def plot_reward_distribution(pairs, threshold, out_path):
 # 主流程
 # ============================================================
 
-def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip_test=False):
+def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip_test=False,
+                              threshold_strategy="precision_first_f1", precision_floor=0.90):
     """完整的对齐验证流程。"""
     os.makedirs(out_dir, exist_ok=True)
 
@@ -554,7 +605,9 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
 
     # ROC + 最优 threshold
     if threshold is None:
-        best_thr, roc_points, auc = find_optimal_threshold(val_pairs)
+        best_thr, roc_points, auc = find_optimal_threshold(
+            val_pairs, strategy=threshold_strategy, precision_floor=precision_floor,
+        )
         print(f"  ROC AUC: {auc}")
         print(f"  最优 threshold: {best_thr:.4f}")
         plot_roc_curve(roc_points, best_thr, auc, os.path.join(out_dir, "val_roc_curve.png"))
@@ -726,9 +779,14 @@ def main():
     ap.add_argument("--out-dir", default="eval/reward_alignment")
     ap.add_argument("--val-ratio", type=float, default=0.7)
     ap.add_argument("--threshold", default=None,
-                    help="二值化 threshold（默认 auto: ROC 最优），可指定数值")
+                    help="二值化 threshold（默认 auto: 用 --threshold-strategy 选），可指定数值")
+    ap.add_argument("--threshold-strategy", default="precision_first_f1",
+                    choices=["precision_first_f1", "accuracy", "f1"],
+                    help="threshold 选择策略（默认 precision_first_f1，RL 场景推荐）")
+    ap.add_argument("--precision-floor", type=float, default=0.90,
+                    help="precision_first_f1 策略下的 precision 下限（默认 0.90）")
     ap.add_argument("--skip-test", action="store_true",
-                    help="只跑 val 集，不跑 test（调参阶段用）")
+                    help="只跑 val 集，不跑 test（调参阶段用；锁参跑 test 时不加此 flag）")
     args = ap.parse_args()
 
     threshold = None
@@ -776,7 +834,9 @@ def main():
     print(f"VLM improvement=0: {len(pairs) - vlm_pos} ({(len(pairs) - vlm_pos) / len(pairs):.1%})", flush=True)
 
     run_alignment_validation(pairs, args.out_dir, args.val_ratio, threshold,
-                             skip_test=args.skip_test)
+                             skip_test=args.skip_test,
+                             threshold_strategy=args.threshold_strategy,
+                             precision_floor=args.precision_floor)
 
 
 if __name__ == "__main__":

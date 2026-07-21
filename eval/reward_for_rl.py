@@ -102,70 +102,6 @@ def check_fitted_bounds(fitted_components: list) -> Tuple[bool, list]:
 
 
 # ============================================================
-# VLM-aligned 过拟合检测（对齐 calculate_reward_model_with_param Part 3）
-# ============================================================
-# VLM 原文（Part 3 param_plausible 判据）里的过拟合信号：
-#   - "redundant or nearly duplicated components"
-#   - "negligible-flux components, for example mag difference > 5 from major components"
-#   - "more components without residual or metric support"（需图像分析，暂不实现）
-# 这三条替换掉 v7-v9 我拍脑袋的 BIC damping。
-
-REDUNDANCY_POS_TOL_PX = 2.0    # 中心距离 < 2px
-REDUNDANCY_MAG_TOL = 1.0       # mag 差 < 1
-NEGLIGIBLE_MAG_DIFF = 5.0      # mag 差 > 5 视为可忽略成分
-
-
-def check_component_redundancy(fitted_components: list) -> Tuple[bool, list]:
-    """检测冗余成分（对齐 VLM Part 3: "redundant or nearly duplicated components"）。
-
-    定义：两个 sersic 成分，中心距离 < REDUNDANCY_POS_TOL_PX 且 mag 差 < REDUNDANCY_MAG_TOL。
-    只查 sersic-sersic 对（不同类型的组合有物理意义，不算冗余）。
-    """
-    violations = []
-    sersics = [(i, c) for i, c in enumerate(fitted_components or [])
-               if (c.get("model") or "").lower() == "sersic"]
-    for a in range(len(sersics)):
-        for b in range(a + 1, len(sersics)):
-            i, ci = sersics[a]
-            j, cj = sersics[b]
-            xi, yi, mi = ci.get("x"), ci.get("y"), ci.get("mag")
-            xj, yj, mj = cj.get("x"), cj.get("y"), cj.get("mag")
-            if None in (xi, yi, xj, yj, mi, mj):
-                continue
-            dist = math.hypot(xi - xj, yi - yj)
-            mag_diff = abs(mi - mj)
-            if dist < REDUNDANCY_POS_TOL_PX and mag_diff < REDUNDANCY_MAG_TOL:
-                violations.append(
-                    f"redundant: sersic[{i}]-sersic[{j}] "
-                    f"dist={dist:.2f}px mag_diff={mag_diff:.2f}"
-                )
-    return len(violations) == 0, violations
-
-
-def check_negligible_flux(fitted_components: list) -> Tuple[bool, list]:
-    """检测可忽略成分（对齐 VLM Part 3: "negligible-flux components, mag diff > 5"）。
-
-    找 mag 最小（最亮）的成分作为主成分，其他若 mag - main > NEGLIGIBLE_MAG_DIFF 判违规。
-    """
-    if not fitted_components:
-        return True, []
-    mags = [c.get("mag") for c in fitted_components if c.get("mag") is not None]
-    if len(mags) < 2:
-        return True, []
-    main_mag = min(mags)  # 数值小 = 亮 = 主
-    violations = []
-    for i, c in enumerate(fitted_components):
-        m = c.get("mag")
-        if m is None:
-            continue
-        if m - main_mag > NEGLIGIBLE_MAG_DIFF:
-            violations.append(
-                f"negligible: comp[{i}].mag={m:.2f} vs main={main_mag:.2f} "
-                f"(diff={m - main_mag:.2f} > {NEGLIGIBLE_MAG_DIFF})"
-            )
-    return len(violations) == 0, violations
-
-# ============================================================
 # chi2 / BIC 改善量
 # ============================================================
 
@@ -451,14 +387,8 @@ def compute_rl_reward(
     bounds_ok, violations = check_param_bounds(action_spec)
     fitted_bounds_ok = True
     fitted_violations = []
-    redundancy_ok = True
-    redundancy_violations = []
-    negligible_ok = True
-    negligible_violations = []
     if fitted_components is not None:
         fitted_bounds_ok, fitted_violations = check_fitted_bounds(fitted_components)
-        redundancy_ok, redundancy_violations = check_component_redundancy(fitted_components)
-        negligible_ok, negligible_violations = check_negligible_flux(fitted_components)
 
     result = {
         "reward": 0.0,
@@ -466,10 +396,6 @@ def compute_rl_reward(
         "bounds_violations": violations,
         "fitted_bounds_ok": fitted_bounds_ok,
         "fitted_violations": fitted_violations,
-        "redundancy_ok": redundancy_ok,
-        "redundancy_violations": redundancy_violations,
-        "negligible_ok": negligible_ok,
-        "negligible_violations": negligible_violations,
         "r_chi2": 0.0,
         "r_bic": 0.0,
         "chi2_vetoed": False,
@@ -477,8 +403,8 @@ def compute_rl_reward(
         "r_noise": 0.0,
     }
 
-    # 任一 param_plausible 类检查违规 → R=0（对齐 VLM Part 3）
-    if not bounds_ok or not fitted_bounds_ok or not redundancy_ok or not negligible_ok:
+    # 边界违规（spec 或 fitted）→ R=0
+    if not bounds_ok or not fitted_bounds_ok:
         return result
 
     r_chi2 = compute_chi2_gain(old_metrics, new_metrics)
@@ -502,10 +428,24 @@ def compute_rl_reward(
         effective_r_bic = min(r_bic, 0.0)
     result["effective_r_bic"] = effective_r_bic
 
-    # 注：v7-v9 曾加过 chi2_nu-zone BIC damping，但那是我自己的臆测，不在 VLM
-    # 判据里；v9 数据显示过拟合区里也有大量合法的 metric_driven 好步骤，被 damping
-    # 误杀（199 FN 中 142 是 metric_driven）。v10 起改用 VLM 原文的 param_plausible
-    # 判据（redundancy / negligible_flux），damping 逻辑退回不再使用。
+    # BIC damping：拟合已收敛区间（chi2/nu ≈ 1）时，进一步的 BIC 改善多半是过拟合。
+    #
+    # 注意：这是**启发式近似**，不是 VLM 文本直译——VLM Part 3 有一条 rule 是
+    # "more components without residual or metric support"，需要图像分析才能查；
+    # rule-based 无法直接检测视觉残差，因此用"chi2 已在完美区 + BIC 大幅下降"
+    # 作为该规则的**代理**。10:1 的 FP/FN 交换比（v6→v7 -76 FP +7 FN）证明抓的是真信号。
+    #
+    # 只在拟合已收敛区打折。**不外推**到过拟合区（v9 曾扩展，数据证伪，已回退）。
+    parent_chi2_nu = old_metrics.get("chi2_nu", 999.0)
+    if 0.9 <= parent_chi2_nu <= 1.15:
+        bic_damping = 0.3
+    elif 0.8 <= parent_chi2_nu < 0.9 or 1.15 < parent_chi2_nu <= 1.4:
+        bic_damping = 0.5
+    else:
+        bic_damping = 1.0
+    if effective_r_bic > 0:
+        effective_r_bic *= bic_damping
+    result["bic_damping"] = bic_damping
 
     r_noise = 0.0
     if residual is not None and sigma is not None and mask is not None:

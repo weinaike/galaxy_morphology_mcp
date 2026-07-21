@@ -425,15 +425,28 @@ def compute_rl_reward(
         effective_r_bic = min(r_bic, 0.0)
     result["effective_r_bic"] = effective_r_bic
 
-    # Already-good-fit 阻尼：parent_chi2_nu 已接近 1 时（拟合已收敛），
-    # 进一步的 BIC 改善多半是过拟合 / BIC 刷分。诊断显示 96% 的 FP
-    # child_chi2_nu <= 1.05。damping factor 随 |1-parent_chi2_nu| 线性回升。
-    parent_chi2_nu = old_metrics.get("chi2_nu", 999.0)
-    if 0.9 <= parent_chi2_nu <= 1.15:
-        # 完美拟合区：BIC 贡献只保留 30%
+    # BIC 阻尼：chi2_nu 已进入"高质量拟合"区间时，进一步的 BIC 改善多半是
+    # 过拟合 / BIC 刷分。**关键**：过拟合区（chi2_nu < 0.9）也是危险区！
+    #
+    # v8 诊断显示：剩余 121 FP 中 75% 的 child_chi2_nu < 0.8（过拟合区），
+    # 而之前 damping 只在 [0.9, 1.15] 触发 → 过拟合区完全放行 BIC 正贡献。
+    #
+    # 用 child_chi2_nu 而非 parent（关注"步完成后是否落入危险区"）。
+    #
+    # 分区表：
+    #   child_chi2_nu <= 0.6  : 严重过拟合，BIC 贡献 × 0.1（几乎作废）
+    #   [0.6, 0.9)            : 过拟合，× 0.3
+    #   [0.9, 1.15]           : 完美拟合（chi2 已达理论最优），× 0.3
+    #   (1.15, 1.4]           : 接近完美，× 0.5
+    #   > 1.4                 : 还有明显改善空间，× 1.0（BIC 正常贡献）
+    child_chi2_nu = new_metrics.get("chi2_nu", 999.0)
+    if child_chi2_nu <= 0.6:
+        bic_damping = 0.1
+    elif child_chi2_nu < 0.9:
         bic_damping = 0.3
-    elif 0.8 <= parent_chi2_nu < 0.9 or 1.15 < parent_chi2_nu <= 1.4:
-        # 接近完美：50%
+    elif child_chi2_nu <= 1.15:
+        bic_damping = 0.3
+    elif child_chi2_nu <= 1.4:
         bic_damping = 0.5
     else:
         bic_damping = 1.0

@@ -131,10 +131,11 @@ def _parse_fitted_components(summary_path):
     拟合边界的组件（Rs=0, q=0.02 等）。这里自己读 "## Fit log Content"
     段落并按组件类型逐行解析。
 
-    GALFIT fit log 格式（来自 src/tools/extract_summary_galfit.py 参考）：
-      sersic   : (x, y)   mag   Re   n   b/a   PA
-      expdisk  : (x, y)   mag   Rs   ---   b/a   PA
-      psf      : (x, y)   mag
+    GALFIT fit log 实际格式（诊断脚本 debug_summary_format 确认）：
+      sersic   : (x, y)   mag   Re   [n]   q   PA        # 5 值 (n 可能被 [] 或 直接输出)
+      expdisk  : (x, y)   mag   Rs   q   PA              # 4 值（没有 n 占位）
+      psf      : (x, y)   mag                            # 1 值（仅 mag）
+    修饰符：[value]=fixed 参数，{value}=fixed 位置，*value*=撞边界/软约束
     """
     if not summary_path or not os.path.exists(summary_path):
         return None
@@ -148,7 +149,9 @@ def _parse_fitted_components(summary_path):
     fit_log = m.group(1) if m else content
 
     def _clean(v):
+        # 去除 [ ] { } * 等修饰符（fixed / boundary marker）
         s = v.strip().replace("[", "").replace("]", "").replace("*", "")
+        s = s.replace("{", "").replace("}", "")
         if "+/-" in s:
             s = s.split("+/-")[0].strip()
         if s in ("---", ""):
@@ -166,18 +169,19 @@ def _parse_fitted_components(summary_path):
         model = match.group(1).lower()
         rest = match.group(3)
         vals = val_re.findall(rest)
-        # 剔除 fix flag（不常见于 fit.log，但兜底）
         parsed = [_clean(v) for v in vals]
 
         comp = {"model": model}
         if model == "sersic" and len(parsed) >= 5:
+            # mag, Re, n, q, pa
             comp.update({"mag": parsed[0], "re": parsed[1], "n": parsed[2],
                          "q": parsed[3], "pa": parsed[4]})
-        elif model == "expdisk" and len(parsed) >= 5:
-            # mag, Rs, ---(n占位), q, pa
-            comp.update({"mag": parsed[0], "re": parsed[1],  # Rs 用 re 键存
-                         "q": parsed[3], "pa": parsed[4]})
+        elif model == "expdisk" and len(parsed) >= 4:
+            # mag, Rs, q, pa  — 没有 n！Rs 存到 "re" 键复用同一边界
+            comp.update({"mag": parsed[0], "re": parsed[1],
+                         "q": parsed[2], "pa": parsed[3]})
         elif model == "psf" and len(parsed) >= 1:
+            # 仅 mag，无形状参数（bounds check 会跳过）
             comp["mag"] = parsed[0]
         else:
             continue

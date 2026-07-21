@@ -167,11 +167,17 @@ def _parse_fitted_components(summary_path):
 
     for match in line_re.finditer(fit_log):
         model = match.group(1).lower()
+        xy_str = match.group(2)
         rest = match.group(3)
+        # 解析 x, y（可能带 { } 表示 fixed）
+        xy_vals = [_clean(v) for v in val_re.findall(xy_str)]
         vals = val_re.findall(rest)
         parsed = [_clean(v) for v in vals]
 
         comp = {"model": model}
+        if len(xy_vals) >= 2:
+            comp["x"], comp["y"] = xy_vals[0], xy_vals[1]
+
         if model == "sersic" and len(parsed) >= 5:
             # mag, Re, n, q, pa
             comp.update({"mag": parsed[0], "re": parsed[1], "n": parsed[2],

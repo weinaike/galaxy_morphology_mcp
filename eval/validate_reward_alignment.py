@@ -37,10 +37,12 @@ import numpy as np
 
 from eval.reward_for_rl import (
     check_param_bounds,
+    check_fitted_bounds,
     compute_chi2_gain,
     compute_bic_gain,
     compute_rl_reward,
 )
+from simulator_env.galfit_actions import parse_summary
 
 
 # ============================================================
@@ -85,6 +87,7 @@ def extract_step_pairs(trajectories):
                 "action_spec": (node.get("action_from_parent") or {}).get("spec", {}),
                 "parent_metrics": parent.get("metrics", {}),
                 "child_metrics": node.get("metrics", {}),
+                "summary_path": node.get("summary_path"),
                 "vlm_detail": vlm_detail,
                 "vlm_improvement": int(vlm_detail.get("improvement", 0)),
                 "is_accepted": node.get("is_accepted", False),
@@ -121,12 +124,41 @@ def split_val_test(pairs, val_ratio=0.7, seed=42):
 # Rule-based reward 回溯计算
 # ============================================================
 
+def _parse_fitted_components(summary_path):
+    """从 summary_path 提取拟合后的 sersic 成分列表。
+
+    parse_summary 返回形如 {"sersic_0": {..params..}, "sky": {..}}。
+    这里转成 [{model:"sersic", n:.., re:.., q:.., mag:..}, ...]，
+    sky 不参与边界检查。
+    """
+    if not summary_path:
+        return None
+    try:
+        true_params = parse_summary(summary_path)
+    except Exception:
+        return None
+    if not true_params:
+        return None
+    comps = []
+    for key, vals in true_params.items():
+        if not key.startswith("sersic"):
+            continue
+        c = {"model": "sersic"}
+        for k in ("n", "re", "q", "mag", "pa", "x", "y"):
+            if k in vals:
+                c[k] = vals[k]
+        comps.append(c)
+    return comps if comps else None
+
+
 def compute_rule_reward_for_pair(pair):
     """对一步回溯计算 rule-based reward。"""
+    fitted_components = _parse_fitted_components(pair.get("summary_path"))
     rl_result = compute_rl_reward(
         old_metrics=pair["parent_metrics"],
         new_metrics=pair["child_metrics"],
         action_spec=pair["action_spec"],
+        fitted_components=fitted_components,
     )
 
     bounds_ok, violations = check_param_bounds(pair["action_spec"])
@@ -139,6 +171,7 @@ def compute_rule_reward_for_pair(pair):
     return {
         "reward": rl_result["reward"],
         "bounds_ok": rl_result["bounds_ok"],
+        "fitted_bounds_ok": rl_result.get("fitted_bounds_ok", True),
         "chi2_vetoed": rl_result.get("chi2_vetoed", False),
         "r_chi2": rl_result["r_chi2"],
         "r_bic": rl_result["r_bic"],
@@ -322,6 +355,7 @@ def collect_disagreements(pairs, threshold):
             "r_chi2": round(p["rule_r_chi2"], 4),
             "r_bic": round(p["rule_r_bic"], 4),
             "bounds_ok": p["rule_bounds_ok"],
+            "fitted_bounds_ok": p.get("rule_fitted_bounds_ok", True),
             "chi2_vetoed": p["rule_chi2_vetoed"],
             "parent_chi2_nu": p["parent_metrics"].get("chi2_nu"),
             "child_chi2_nu": p["child_metrics"].get("chi2_nu"),
@@ -444,6 +478,7 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
         rule = compute_rule_reward_for_pair(p)
         p["rule_reward"] = rule["reward"]
         p["rule_bounds_ok"] = rule["bounds_ok"]
+        p["rule_fitted_bounds_ok"] = rule.get("fitted_bounds_ok", True)
         p["rule_chi2_vetoed"] = rule["chi2_vetoed"]
         p["rule_r_chi2"] = rule["r_chi2"]
         p["rule_r_bic"] = rule["r_bic"]
@@ -533,10 +568,12 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
 
     # 边界/否决统计
     n_bounds_fail = sum(1 for p in val_pairs if not p["rule_bounds_ok"])
+    n_fitted_fail = sum(1 for p in val_pairs if not p.get("rule_fitted_bounds_ok", True))
     n_chi2_veto = sum(1 for p in val_pairs if p["rule_chi2_vetoed"])
     n_zero_reward = sum(1 for p in val_pairs if p["rule_reward"] == 0.0)
     print(f"\n  门控统计:")
-    print(f"    边界违规 (R=0): {n_bounds_fail} ({n_bounds_fail/len(val_pairs):.1%})")
+    print(f"    spec 边界违规 (R=0): {n_bounds_fail} ({n_bounds_fail/len(val_pairs):.1%})")
+    print(f"    拟合边界违规 (R=0): {n_fitted_fail} ({n_fitted_fail/len(val_pairs):.1%})")
     print(f"    chi2 否决 (R=0): {n_chi2_veto} ({n_chi2_veto/len(val_pairs):.1%})")
     print(f"    总 reward=0: {n_zero_reward} ({n_zero_reward/len(val_pairs):.1%})")
 

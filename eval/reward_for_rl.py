@@ -69,6 +69,38 @@ def check_param_bounds(spec: dict) -> Tuple[bool, list]:
     return len(violations) == 0, violations
 
 
+def check_fitted_bounds(fitted_components: list) -> Tuple[bool, list]:
+    """
+    检查 GALFIT 拟合后的参数是否在物理合法范围内。
+
+    parse_summary 返回的字典形如：
+      {"sersic_0": {"x":.., "y":.., "mag":.., "re":.., "n":.., "q":.., "pa":..}, ...}
+
+    这里期望调用方把它转成 list of dicts（每个 comp 至少包含 model + 参数）。
+    对齐 VLM 的 param_plausible 判断：VLM 看的是拟合后 n/Re/q。
+    """
+    violations = []
+    for i, comp in enumerate(fitted_components or []):
+        model = (comp.get("model") or "sersic").lower()
+        for param, (lo, hi) in PARAM_BOUNDS.items():
+            val = comp.get(param)
+            if val is None:
+                continue
+            if model == "psf" and param in ("re", "n", "q"):
+                continue
+            try:
+                val = float(val)
+            except (ValueError, TypeError):
+                violations.append(f"fitted[{i}].{param}: non-numeric '{val}'")
+                continue
+            if lo is not None and val < lo:
+                violations.append(f"fitted[{i}].{param}={val:.4f} < {lo}")
+            if hi is not None and val > hi:
+                violations.append(f"fitted[{i}].{param}={val:.4f} > {hi}")
+
+    return len(violations) == 0, violations
+
+
 # ============================================================
 # chi2 改善
 # ============================================================
@@ -322,6 +354,7 @@ def compute_rl_reward(
     old_metrics: dict,
     new_metrics: dict,
     action_spec: dict,
+    fitted_components: list = None,
     residual: Optional[np.ndarray] = None,
     sigma: Optional[np.ndarray] = None,
     mask: Optional[np.ndarray] = None,
@@ -331,13 +364,13 @@ def compute_rl_reward(
     RL reward，对齐 calculate_reward_model_with_param 的判断逻辑。
 
     判断维度（与 VLM reward 一一对应）：
-      1. 参数边界检查 → 对应 VLM 的 param_plausible
+      1. 参数边界检查（含 spec 初值 + 拟合后值）→ 对应 VLM 的 param_plausible
       2. chi2 gain     → 对应 VLM 的 chisq/chisq_nu trend
       3. BIC gain      → 对应 VLM 的 metric_consistent (BIC 部分)
       4. 噪声质量      → 对应 VLM 的 residual_improved
 
     组合方式（对齐 calculate_reward_model_with_param）：
-      - 边界违规 → R=0
+      - 边界违规（spec 或 fitted）→ R=0
       - chi2/nu 明显恶化 → R=0（即使 BIC 改善，对应 VLM Part 4 Rule 3）
       - 正常情况 → R = w_chi2 * r_chi2 + w_bic * r_bic + w_noise * r_noise
 
@@ -345,16 +378,23 @@ def compute_rl_reward(
         old_metrics: 父节点 metrics (chi2_nu, bic, ...)
         new_metrics: 当前节点 metrics
         action_spec: 模型输出的 action spec dict（含 components）
+        fitted_components: 从 summary_path 解析的拟合后成分列表（可选，有则做拟合后边界检查）
         residual: 2D 残差图（可选，有则计算噪声质量）
         sigma: 2D sigma 图（可选）
         mask: 2D 掩膜（可选）
     """
     bounds_ok, violations = check_param_bounds(action_spec)
+    fitted_bounds_ok = True
+    fitted_violations = []
+    if fitted_components is not None:
+        fitted_bounds_ok, fitted_violations = check_fitted_bounds(fitted_components)
 
     result = {
         "reward": 0.0,
         "bounds_ok": bounds_ok,
         "bounds_violations": violations,
+        "fitted_bounds_ok": fitted_bounds_ok,
+        "fitted_violations": fitted_violations,
         "r_chi2": 0.0,
         "r_bic": 0.0,
         "chi2_vetoed": False,
@@ -362,7 +402,8 @@ def compute_rl_reward(
         "r_noise": 0.0,
     }
 
-    if not bounds_ok:
+    # spec 或 fitted 边界违规 → R=0
+    if not bounds_ok or not fitted_bounds_ok:
         return result
 
     r_chi2 = compute_chi2_gain(old_metrics, new_metrics)

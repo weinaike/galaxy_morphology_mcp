@@ -269,7 +269,7 @@ def compute_alignment_metrics(pairs, threshold=0.0):
 
 
 def find_optimal_threshold(pairs, n_candidates=200, strategy="precision_first_f1",
-                            precision_floor=0.90):
+                            precision_floor=0.85):
     """在 val 集上找最优 threshold。
 
     Args:
@@ -564,7 +564,7 @@ def plot_reward_distribution(pairs, threshold, out_path):
 # ============================================================
 
 def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip_test=False,
-                              threshold_strategy="precision_first_f1", precision_floor=0.90):
+                              threshold_strategy="precision_first_f1", precision_floor=0.85):
     """完整的对齐验证流程。"""
     os.makedirs(out_dir, exist_ok=True)
 
@@ -783,8 +783,8 @@ def main():
     ap.add_argument("--threshold-strategy", default="precision_first_f1",
                     choices=["precision_first_f1", "accuracy", "f1"],
                     help="threshold 选择策略（默认 precision_first_f1，RL 场景推荐）")
-    ap.add_argument("--precision-floor", type=float, default=0.90,
-                    help="precision_first_f1 策略下的 precision 下限（默认 0.90）")
+    ap.add_argument("--precision-floor", type=float, default=0.85,
+                    help="precision_first_f1 策略下的 precision 下限（默认 0.85）")
     ap.add_argument("--skip-test", action="store_true",
                     help="只跑 val 集，不跑 test（调参阶段用；锁参跑 test 时不加此 flag）")
     args = ap.parse_args()

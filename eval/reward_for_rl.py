@@ -425,6 +425,22 @@ def compute_rl_reward(
         effective_r_bic = min(r_bic, 0.0)
     result["effective_r_bic"] = effective_r_bic
 
+    # Already-good-fit 阻尼：parent_chi2_nu 已接近 1 时（拟合已收敛），
+    # 进一步的 BIC 改善多半是过拟合 / BIC 刷分。诊断显示 96% 的 FP
+    # child_chi2_nu <= 1.05。damping factor 随 |1-parent_chi2_nu| 线性回升。
+    parent_chi2_nu = old_metrics.get("chi2_nu", 999.0)
+    if 0.9 <= parent_chi2_nu <= 1.15:
+        # 完美拟合区：BIC 贡献只保留 30%
+        bic_damping = 0.3
+    elif 0.8 <= parent_chi2_nu < 0.9 or 1.15 < parent_chi2_nu <= 1.4:
+        # 接近完美：50%
+        bic_damping = 0.5
+    else:
+        bic_damping = 1.0
+    if effective_r_bic > 0:
+        effective_r_bic *= bic_damping
+    result["bic_damping"] = bic_damping
+
     r_noise = 0.0
     if residual is not None and sigma is not None and mask is not None:
         noise_detail = compute_noise_score(residual, sigma, mask, noise_thresholds)

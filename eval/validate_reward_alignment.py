@@ -31,6 +31,7 @@ import json
 import math
 import os
 import random
+import re
 from collections import defaultdict
 
 import numpy as np
@@ -42,7 +43,6 @@ from eval.reward_for_rl import (
     compute_bic_gain,
     compute_rl_reward,
 )
-from simulator_env.galfit_actions import parse_summary
 
 
 # ============================================================
@@ -125,29 +125,64 @@ def split_val_test(pairs, val_ratio=0.7, seed=42):
 # ============================================================
 
 def _parse_fitted_components(summary_path):
-    """从 summary_path 提取拟合后的 sersic 成分列表。
+    """从 summary_path 提取拟合后的全部成分（sersic/expdisk/psf）。
 
-    parse_summary 返回形如 {"sersic_0": {..params..}, "sky": {..}}。
-    这里转成 [{model:"sersic", n:.., re:.., q:.., mag:..}, ...]，
-    sky 不参与边界检查。
+    parse_summary 只解析 sersic，会漏掉 expdisk/psf——那些恰好是最容易撞
+    拟合边界的组件（Rs=0, q=0.02 等）。这里自己读 "## Fit log Content"
+    段落并按组件类型逐行解析。
+
+    GALFIT fit log 格式（来自 src/tools/extract_summary_galfit.py 参考）：
+      sersic   : (x, y)   mag   Re   n   b/a   PA
+      expdisk  : (x, y)   mag   Rs   ---   b/a   PA
+      psf      : (x, y)   mag
     """
-    if not summary_path:
+    if not summary_path or not os.path.exists(summary_path):
         return None
     try:
-        true_params = parse_summary(summary_path)
+        with open(summary_path, "r", encoding="utf-8") as f:
+            content = f.read()
     except Exception:
         return None
-    if not true_params:
-        return None
+
+    m = re.search(r"## Fit log Content\n(.*?)(?=\n---|\Z)", content, re.DOTALL)
+    fit_log = m.group(1) if m else content
+
+    def _clean(v):
+        s = v.strip().replace("[", "").replace("]", "").replace("*", "")
+        if "+/-" in s:
+            s = s.split("+/-")[0].strip()
+        if s in ("---", ""):
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
+
     comps = []
-    for key, vals in true_params.items():
-        if not key.startswith("sersic"):
+    line_re = re.compile(r"^\s*(sersic|expdisk|psf)\s*:\s*\(([^)]+)\)\s*(.*)$", re.MULTILINE)
+    val_re = re.compile(r"[-+]?\d*\.?\d+(?:[eE][+-]?\d+)?|---")
+
+    for match in line_re.finditer(fit_log):
+        model = match.group(1).lower()
+        rest = match.group(3)
+        vals = val_re.findall(rest)
+        # 剔除 fix flag（不常见于 fit.log，但兜底）
+        parsed = [_clean(v) for v in vals]
+
+        comp = {"model": model}
+        if model == "sersic" and len(parsed) >= 5:
+            comp.update({"mag": parsed[0], "re": parsed[1], "n": parsed[2],
+                         "q": parsed[3], "pa": parsed[4]})
+        elif model == "expdisk" and len(parsed) >= 5:
+            # mag, Rs, ---(n占位), q, pa
+            comp.update({"mag": parsed[0], "re": parsed[1],  # Rs 用 re 键存
+                         "q": parsed[3], "pa": parsed[4]})
+        elif model == "psf" and len(parsed) >= 1:
+            comp["mag"] = parsed[0]
+        else:
             continue
-        c = {"model": "sersic"}
-        for k in ("n", "re", "q", "mag", "pa", "x", "y"):
-            if k in vals:
-                c[k] = vals[k]
-        comps.append(c)
+        comps.append(comp)
+
     return comps if comps else None
 
 

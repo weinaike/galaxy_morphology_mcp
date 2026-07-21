@@ -20,8 +20,17 @@ import sys
 
 def find_trajectories_with_component(input_dir, pattern, max_samples=5):
     """在轨迹里找含指定 component 类型的 summary_path。"""
-    trajectory_files = sorted(glob.glob(os.path.join(input_dir, "**/trajectory.json"), recursive=True))
-    print(f"找到 {len(trajectory_files)} 个 trajectory.json", flush=True)
+    # 匹配 pipeline 的实际命名规则：*_trajectory.json
+    trajectory_files = sorted(
+        glob.glob(os.path.join(input_dir, "**", "*_trajectory.json"), recursive=True)
+    )
+    print(f"找到 {len(trajectory_files)} 个 *_trajectory.json", flush=True)
+    if not trajectory_files:
+        # 兜底：试试老命名
+        trajectory_files = sorted(
+            glob.glob(os.path.join(input_dir, "**", "trajectory.json"), recursive=True)
+        )
+        print(f"兜底找 trajectory.json：{len(trajectory_files)} 个", flush=True)
 
     matched = []
     for i, tf in enumerate(trajectory_files):

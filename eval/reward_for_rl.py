@@ -310,7 +310,7 @@ def load_noise_inputs(residual_fits_path: str, sigma_fits_path: str, mask_fits_p
 
 # 权重：跑 validate_reward_alignment.py 在 val 集上校准
 W_CHI2 = 10.0
-W_BIC = 2.0   # 降低：BIC 改善不可靠（参数跑飞也能降 BIC），给低权重
+W_BIC = 0.5   # 均衡贡献：r_bic_std≈1.57, W_BIC*std≈0.78 ≈ W_CHI2*r_chi2_std≈0.74
 W_NOISE = 5.0
 
 # chi2/nu 明显恶化阈值：对齐 calculate_reward_model_with_param 中
@@ -376,15 +376,12 @@ def compute_rl_reward(
         result["chi2_vetoed"] = True
         return result
 
-    # BIC-chi2 联动门控：chi2 改善不显著时不奖励 BIC 改善
-    # 对齐 VLM 逻辑：metric-driven improvement 需要 chi2 有可感知的改善
-    # r_chi2 > 0.003 ≈ chi2_nu 改善 > 0.7%，防止噪声级改善触发 BIC 奖励
-    BIC_CHI2_GATE = 0.003
-    BIC_CAP = 2.0  # r_bic 上限，防止极端 BIC 改善独占 reward
-    if r_chi2 >= BIC_CHI2_GATE:
+    # BIC-chi2 联动门控：chi2 没改善时不奖励 BIC 改善
+    BIC_CAP = 2.0
+    if r_chi2 >= 0:
         effective_r_bic = min(r_bic, BIC_CAP)
     else:
-        effective_r_bic = min(r_bic, 0.0)  # chi2 没显著改善时只允许 BIC 负贡献
+        effective_r_bic = min(r_bic, 0.0)
     result["effective_r_bic"] = effective_r_bic
 
     r_noise = 0.0

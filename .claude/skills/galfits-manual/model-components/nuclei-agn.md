@@ -165,15 +165,19 @@ Na17) 0                                         # FeII often weak
 
 6. **Torus**: Important for infrared data; can be omitted for optical-only fitting
 
-## When to Use AGN Component vs Point Source
+## When to Use AGN Component (N block)
+
+In GalfitS, the central AGN/Nucleus is **always** configured as an N block (Na1-Na27). Do not use a P-block profile (e.g. `Pa2) psf`, `Pa2) Gaussian`) for the central AGN — GalfitS P blocks do not have a `psf` profile type.
 
 | Situation | Recommended Approach |
 |-----------|---------------------|
-| Clear AGN with broad lines | Use full AGN component |
-| Only point source in images | Consider Gaussian or point source profile |
-| Optical data only | Simplified AGN (no torus) |
-| Infrared data included | Full AGN with torus |
+| Clear AGN with broad lines | Use full AGN component (N block) |
+| Only point source in images | Use N block with simplified parameters (fix Na6-Na9, free Na10/Na26) |
+| Optical data only | Simplified AGN (no torus, Na20=0) |
+| Infrared data included | Full AGN with torus (Na20=1) |
 | Spectrum fitting available | Full AGN to constrain with lines |
+| Bulge Re collapsed (< 0.2 px all bands) | Replace Bulge P-block Sersic with N-block AGN |
+| Bulge Re in boundary zone (0.2–0.5 px) | Try N-block AGN as competing model, compare residuals |
 
 ## See Also
 

@@ -62,7 +62,7 @@ The only allowed exception is the all-zero unused-slot convention `[0, 0, 0, 0, 
 | Ferrer Bar | `ferrer` | Bar with flat inner core |
 | Edge-on Disk | `edgeondisk` | Galaxy viewed edge-on |
 | Gaussian Ring | `GauRing` | Ring or lens structure |
-| Gaussian | `Gaussian` | Unresolved point source |
+| Gaussian | `Gaussian` | Non-central compact source (central AGN uses N block, not P block) |
 
 ### Physical Component → Model Mapping
 
@@ -72,7 +72,7 @@ The only allowed exception is the all-zero unused-slot convention `[0, 0, 0, 0, 
 | Bulge | Sersic, n=4 (range 0.1-8) | Re = small, q = round |
 | Bar | Sersic, **n=0.5 fixed** | q = 0.2-0.4, PA from image |
 | Edge-on Disk | edgeondisk | Pa5 = R_s (scale-length), Pa6 = h_s (scale-height), Pa7 = PA, Pa8 unused/fixed |
-| AGN/Nucleus | PSF (only when Re < 0.2 px in ALL bands) or Sersic | x, y, mag only |
+| AGN/Nucleus | **N block** (Na1-Na27, NOT a P-block profile). Use when Bulge Re collapses below threshold — see AGN/PSF replacement rule below | Na4, Na5 = x, y center; Na10/Na26 = luminosity |
 
 ### Edge-on Disk Selection Rule
 
@@ -80,7 +80,13 @@ Use `edgeondisk` only for genuinely edge-on disks: first fit a Sersic disk with 
 
 Note: In the fitting input and output configurations, the Effective Radius ($R_e$) is strictly defined in units of arcseconds (arcsec). Before evaluating the fitting results, $R_e$ must be dynamically converted into pixel units using the WCS (World Coordinate System) metadata extracted from the corresponding FITS headers. This step is essential to accurately map the analytical model profiles onto the actual observational image grid, especially since the physical pixel scale ($arcsec/\text{pixel}$) varies across different wavebands.
 
-**AGN/PSF replacement rule**: A Bulge may be replaced by a PSF/AGN component **only when its fitted $R_e$ is < 0.2 px in EVERY band** (convert $R_e$ to pixels in each band separately via the FITS WCS). If $R_e$ ≥ 0.2 px in any single band, the component is resolved and must remain a Sersic profile — do not switch to PSF/AGN even if $R_e$ hits the lower bound in the lyric; instead, widen the lower bound and refit.
+**AGN/PSF replacement rule** (GalfitS multi-band — AGN is always an **N block**, never a P-block `psf`): Convert $R_e$ to pixels in each band separately via the FITS WCS, then apply two-tier logic:
+
+- **Re < 0.2 px in EVERY band** (mandatory replacement): the Bulge has collapsed to an unresolved point source. Replace the Bulge's P-block Sersic profile with an **N-block AGN component** (Na1-Na27) — this is physically required, not optional.
+- **Re 0.2–0.5 px in EVERY band** (boundary zone — optional competing model): the Bulge is marginally resolved. You **may** create a competing N-block AGN variant and compare. Accept the AGN variant only if the 2D residual is visibly better (especially in the central region); otherwise keep the Sersic. Do not rely solely on BIC — AGN (N block) has different free parameters than Sersic and BIC comparison can mislead. If in doubt, keep Sersic.
+- **Re ≥ 0.5 px in ANY band** (clearly resolved): the component must remain a Sersic profile — do not switch to AGN. If $R_e$ hits the lower bound in the lyric, widen the lower bound and refit.
+
+> **Block-prefix reminder**: AGN/Nucleus always uses the **N prefix** (Na1, Na2, Na3, …). Never write AGN as a P-block profile (e.g. `Pa2) psf` or `Pa2) Gaussian`) — GalfitS P blocks do not have a `psf` profile type.
 
 ---
 

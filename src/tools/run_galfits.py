@@ -361,7 +361,7 @@ def create_perband_comparison_png(
         fits_dir = os.path.dirname(bdata['result_fits_file'])
         base_name = os.path.splitext(os.path.basename(bdata['result_fits_file']))[0]
         png_filename = os.path.join(fits_dir, f"{base_name}_comparison.png")
-        target_dpi = 1024 / 15
+        target_dpi = 102.4
         plt.savefig(png_filename, dpi=target_dpi)
         plt.close(fig)
 
@@ -629,7 +629,7 @@ def create_multiband_comparison_png(
     # --- Save ---
     output_dir = os.path.dirname(band_data[0]['result_fits_file'])
     png_filename = os.path.join(output_dir, "all_bands_comparison.png")
-    target_dpi = 1024 / 15
+    target_dpi = 102.4
     plt.savefig(png_filename, dpi=target_dpi)
     plt.close(fig)
 
@@ -936,11 +936,11 @@ def TEST_sed_fitting():
     # res = asyncio.run(run_galfits_image_fitting(config_file, extra_args=extra_args))
     # print(res)
 
-    config_file = "/home/jiangbo/GALFITS_examples_2/2114/obj2114_iter2.lyric"
+    config_file = "/home/jiangbo/jwst/1071/obj_1071.lyric"
     extra_args = ["--fit_method","ES"]
     res = asyncio.run(run_galfits_image_fitting(config_file, extra_args=extra_args))
     print(res)
     
 if __name__ == "__main__":
-    # TEST_sed_fitting()
-    TEST_create_multiband_comparison_png()
+    TEST_sed_fitting()
+    # TEST_create_multiband_comparison_png()

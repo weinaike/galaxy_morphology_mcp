@@ -8,7 +8,10 @@
 - **Bulge（核球）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 4（范围 0.1–8，不用固定）。
 - **Edge-on Disk（侧视盘）**：Profile type 选用 `edgeondisk`。
 - **Bar（棒）**：Profile type 选用 `sersic`，Sérsic 指数 n = 0.5。
-- **AGN / 致密核**：Profile type 选用 N 块。**每个波段各自用 WCS 把 Re 转成 px 后必须全部 < 0.2 px** 才能替换为 PSF/AGN；任意一个波段 Re ≥ 0.2 px 则保持 Sersic（不要因 Re 触到 lyric 下界就切换，应放宽下界重新拟合）。
+- **AGN / 致密核**：使用 **N 块**（Na1-Na27）配置，**不要**用 P 块的 `psf` 或 `Gaussian` 类型——GalfitS 的 P 块没有 `psf` profile type。每个波段各自用 WCS 把 Re 转成 px 后，按以下分级处理：
+    - **所有波段 Re < 0.2 px**（强制替换）：Bulge 已坍缩为不可分辨的点源，必须将 Bulge 的 P 块 Sersic 替换为 N 块 AGN 组件。
+    - **所有波段 Re 在 0.2–0.5 px 之间**（边界区域，可选竞争模型）：Bulge 处于勉强可分辨状态。**可以**创建一个 N 块 AGN 替代方案进行竞争对比——只有当 AGN 方案的 2D 残差（尤其是中心区域）明显更优时才采纳；否则保留 Sersic。不要仅凭 BIC 判断。存疑时保留 Sersic。
+    - **任意一个波段 Re ≥ 0.5 px**（明确可分辨）：保持 Sersic（不要因 Re 触到 lyric 下界就切换，应放宽下界重新拟合）。
 - **偏心 / Lopsidedness**：将 Disk 的 profile 从 `sersic` 改为 `sersic_f`，启用 m=1 模式（详见下文）。
 - 如果星系已有一个 Disk 成分，而外围（outskirt）残差仍有系统性正残差，可添加第二个 Disk（sersic, n < 1, Re 较大），以捕捉延展结构。
 - **仅关注盘、核球、侧视盘、棒、AGN 核、偏心（Disk 上的 m=1 Fourier 模式）这六种物理成分**，其他残差特征可以选择保留不拟合。

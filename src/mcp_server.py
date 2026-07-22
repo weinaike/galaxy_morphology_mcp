@@ -20,6 +20,7 @@ from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
+from tools.beam_actions import generate_beam_actions
 from tools.fourier_mode_analysis import fourier_mode_analysis
 from tools.bar_lopsidedness_detection import (
     detect_bar_lopsidedness,
@@ -61,6 +62,7 @@ def _register_tools_and_prompts():
         app.add_tool(run_galfits_image_sed_fitting)
         app.add_tool(detect_galfits_bar_lopsidedness)
         app.add_tool(analyze_multiband_components)
+        app.add_tool(generate_beam_actions)
         app.add_tool(check_lyric_file)
         app.add_tool(pix2radec)
         app.add_tool(re_arcsec2pix)        
@@ -231,6 +233,7 @@ def run_http_mode(host='0.0.0.0', port=38507, path='/mcp'):
     app.settings.host = host
     app.settings.port = port
     app.settings.streamable_http_path = path
+    app.settings.stateless_http = True
 
     # Configure transport security to allow all hosts for remote access
     # Get allowed hosts from environment variable or allow all

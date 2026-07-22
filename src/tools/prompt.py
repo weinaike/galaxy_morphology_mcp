@@ -27,6 +27,10 @@ get_phase_expert_reasoning = prompts.get_phase_expert_reasoning
 get_phase_decision_output = prompts.get_phase_decision_output
 get_round_comparison_prompt = prompts.get_round_comparison_prompt
 
+# Beam Search candidate-generation phases
+get_beam_visual_extraction = prompts.get_beam_visual_extraction
+get_beam_candidate_generation = prompts.get_beam_candidate_generation
+
 
 
 # ── MCP Prompt definitions (exposed for mcp_server.add_prompt) ─────

@@ -97,7 +97,7 @@ Model Components
 | **Ferrer Bar** | `ferrer` | Bar with flat inner core | [profile-other.md](model-components/profile-other.md) |
 | **Edge-on Disk** | `edgeondisk` | Galaxy viewed edge-on | [profile-other.md](model-components/profile-other.md) |
 | **Gaussian Ring** | `GauRing` | Ring or lens structure | [profile-other.md](model-components/profile-other.md) |
-| **Gaussian** | `Gaussian` | Unresolved point source | [profile-other.md](model-components/profile-other.md) |
+| **Gaussian** | `Gaussian` | Non-central compact source (central AGN uses N block) | [profile-other.md](model-components/profile-other.md) |
 | **Constant** | `const` | Flat background | [profile-other.md](model-components/profile-other.md) |
 
 ---
@@ -179,7 +179,7 @@ For detailed command-line arguments, fitting methods, and usage examples, see **
 | Parameter hits limit | Expand min/max bounds |
 | Band misalignment | Set `Ia13) 1` and adjust `Ia14)` shift ranges |
 | Off-center residual | Add new component at that position |
-| Circular center residual | Add bulge/AGN component |
+| Circular center residual | Add bulge (P block) or AGN (N block) component |
 | Bar-like residual | Add bar component (set `Pa2) sersic`) |
 | Fitting fails to converge | See [running-galfits.md](running-galfits.md) for troubleshooting |
 

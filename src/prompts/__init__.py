@@ -107,6 +107,27 @@ class Prompts(metaclass=SingletonMeta):
     def get_phase_decision_output(self):
         return self._ca_phases()["decision_output"]
 
+    # --- Beam Search candidate generation phases ---
+    # Stored in beam_action_generation_prompt.md with markers:
+    # _first = visual extraction, candidate_generation = candidate output spec
+
+    def _bag_phases(self):
+        return self._read_phases("beam_action_generation_prompt.md")
+
+    def get_beam_visual_extraction(self):
+        return self._bag_phases()["_first"]
+
+    def get_beam_candidate_generation(self, summary_content, custom_instructions="",
+                                      branch_id="", parent_label="", depth=1):
+        template = self._bag_phases()["candidate_generation"]
+        for key, value in [("summary_content", summary_content),
+                            ("custom_instructions", custom_instructions),
+                            ("branch_id", branch_id),
+                            ("parent_label", parent_label),
+                            ("depth", depth)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
+
     # --- Best-round comparison prompt (visual-residual primary, metrics reference) ---
 
     def get_round_comparison_prompt(self, best_round_label, current_round_label,

@@ -10,7 +10,7 @@ This section describes additional profile types available in GalfitS beyond the 
 | Edge-on Disk | `edgeondisk` | Edge-on disk galaxies | Specialized |
 | Gaussian Ring | `GauRing` | Ring-like structures | Specialized |
 | Constant | `const` | Constant/flat surface brightness | Simple |
-| Gaussian | `Gaussian` | Simple symmetric components | Simple |
+| Gaussian | `Gaussian` | Non-central compact sources (central AGN uses N block) | Simple |
 
 ---
 
@@ -140,7 +140,7 @@ Gaussian profiles for simple symmetric components.
 ### Overview
 
 - **Profile Type**: `Gaussian`
-- **Use Case**: Unresolved sources, simple compact components
+- **Use Case**: Non-central compact sources (background galaxies, star clusters). Central AGN uses the N block.
 - **Features**: Gaussian surface brightness profile
 
 ### Example
@@ -158,9 +158,10 @@ Pa5) [0.5,0.1,2,0.01,1]                         # sigma [arcsec]
 
 ### When to Use
 
-- Compact nucleus (when not using full AGN model)
-- Unresolved background sources
+- Unresolved background sources (not the central AGN — see note below)
 - Simple symmetric components
+
+> **Note**: For the central AGN/Nucleus of the target galaxy, always use the **N block** (Na1-Na27), not a P-block Gaussian. The Gaussian profile here is for non-AGN compact sources only.
 
 ---
 
@@ -174,7 +175,7 @@ Pa5) [0.5,0.1,2,0.01,1]                         # sigma [arcsec]
 | Spiral arms | `sersic_f` (m=2) | - |
 | Ring structure | `GauRing` | - |
 | Edge-on disk | `edgeondisk` | `sersic` with high flattening |
-| Unresolved source | `Gaussian` | AGN component |
+| Unresolved source (non-central) | `Gaussian` | N block (Na prefix) if it's the central AGN |
 | Flat background | `const` | Use Ia11/Ia12 instead |
 
 ## Parameter Notes

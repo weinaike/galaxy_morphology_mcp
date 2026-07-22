@@ -4,7 +4,7 @@
 ## Galfit 添加成分类型的规范 （必须严格遵守）
 - 要增加Disk, Component type选用 expdisk.
 - 要增加成分BULGE： Component type选用 sersic.
-- 当添加的 Bulge的 Re 小于 0.2 pixel(大于0.2px 保持sersic类型), 需要更换类型， 采用Component type为psf
+- 当添加的 Bulge的 Re 小于 0.2 pixel, 必须更换类型为 psf（已坍缩为点源）；当 Re 在 0.2–0.5 pixel 之间时（边界区域），可以创建一个 psf 替代方案进行竞争对比，只有残差明显更优时才采纳 psf，否则保持 sersic；Re 大于 0.5px 保持 sersic 类型
 - 要增加棒 Bar：Component type选用  n=0.5[fix] 的 Sersic 模型.
 - 但增加Lens时，Component type选用 n<0.5 的 Sersic 模型. q>0.5, 初值设置，遵循 Re_disk > Re_lens > Re_bar
 - 如果星系已经有一个 Disk 成分了，针对星系外围（Outskirt）未拟合上的情况，可以添加第二个 Disk 成分或 Sérsic 成分（这时通常Re较大，n较小<1），以捕捉更延展的结构，

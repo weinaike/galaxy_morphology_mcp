@@ -97,7 +97,7 @@ tools: Read, Grep, Glob, Bash
 
 | 子项 | 量化物理判定标准 | 判定 |
 |---|---|---|
-| **4a Bulge 尺寸下限（防点源）** | 从 summary 取 `bulge_Re`。若折合后在对应图像中尺寸 `< 0.2` 像素（px） → Bulge 实际上坍缩为点源，物理上已属致密星团/NSC/AGN，应换为 PSF model 去拟合（多波段转换法则参见补充条款） | 违反 → **FAIL** |
+| **4a Bulge 尺寸下限（防点源）** | 从 summary 取 `bulge_Re`，逐波段通过 WCS 换算为像素后判定：<br>1. **所有波段 Re < 0.2 px** → Bulge 已坍缩为点源，必须换为 PSF model，仍为 Sersic → **FAIL**<br>2. **所有波段 Re 在 0.2–0.5 px**（边界区域）→ Bulge 勉强可分辨。若当前轮为 Sersic，检查是否曾在 beam search 中探索过 PSF/AGN 竞争路径；若从未尝试过 PSF/AGN 路径 → **WARN**（建议补做竞争对比）；若已尝试且 Sersic 残差不劣于 PSF 路径 → **PASS**<br>3. **任一波段 Re ≥ 0.5 px** → Bulge 明确可分辨，保持 Sersic 即可 → **PASS** | 违反 → **FAIL / WARN** |
 | **4b 成分尺寸物理排序（最核心）** | 盘星系（Disk galaxy）的多成分同心分解必须严格遵循如下物理尺寸层级关系：**`re_disk > re_bar > re_bulge`**。若发生尺寸反置（如 `bulge_Re > disk_Re` 或 `bar_Re > disk_Re` 等） → 说明拟合物理成分分配混乱，或物理标签发生颠倒反置。 | 违反 → **FAIL** |
 | **4c F1 物理作用域** | 1 阶 Fourier 模式（F1，即偏心项）在物理上仅能作用于 `Disk` 成分（或在没有 Disk 成分时的单 `Sersic` 主星系成分）。严禁应用于 Bulge、Bar 或 Nucleus/AGN 等其他成分。 | 违反 → **FAIL** |
 

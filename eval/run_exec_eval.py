@@ -577,8 +577,6 @@ async def run_exec_evaluation(
 
     # ---- 推理阶段 ----
     if not skip_inference:
-        from eval.run_eval import run_inference_single
-
         predictions = []
         n_reused = 0
         for i, (tree, parent, child) in enumerate(all_steps):
@@ -621,6 +619,7 @@ async def run_exec_evaluation(
 
             t0 = time.time()
             try:
+                from eval.run_eval import run_inference_single
                 pred_text = run_inference_single(
                     model, processor, system_prompt, user_text,
                     image_path, max_new_tokens)

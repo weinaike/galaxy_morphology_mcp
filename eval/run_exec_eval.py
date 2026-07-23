@@ -183,7 +183,13 @@ async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node
     result = await run_galfit(os.path.abspath(new_feedme_path), ["-imax", "100"])
 
     if result.get("status") != "success":
-        return {"status": "galfit_failed", "error": result.get("error", "GALFIT crashed")}
+        err = result.get("error", "GALFIT crashed")
+        log = result.get("log", "")
+        if log:
+            log_lines = log.strip().split("\n")
+            log_tail = "\n".join(log_lines[-15:])
+            print(f"  [GALFIT LOG tail]\n{log_tail}")
+        return {"status": "galfit_failed", "error": err}
 
     return {
         "status": "success",

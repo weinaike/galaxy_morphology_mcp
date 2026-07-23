@@ -88,6 +88,47 @@ Note: In the fitting input and output configurations, the Effective Radius ($R_e
 
 > **Block-prefix reminder**: AGN/Nucleus always uses the **N prefix** (Na1, Na2, Na3, …). Never write AGN as a P-block profile (e.g. `Pa2) psf` or `Pa2) Gaussian`) — GalfitS P blocks do not have a `psf` profile type.
 
+### N-block AGN configuration pitfalls
+
+When an N-block AGN is introduced, the AGN/PSF replacement rule above decides *when* to replace; the pitfalls below describe *how* to configure the block correctly — otherwise, even if `check_lyric_file` passes, the fit can diverge catastrophically (χ² blowing up by 10²-10³ ×).
+
+#### Lyric format pitfalls (check whenever an N block is added)
+
+- **Aa1 must be a valid Python identifier**: the N block uses Aa1 to build parameter names `Ni_<Na1>_<Aa1>`. A value with spaces like `'img list'` runs fine for pure-P configs but is rejected by lmfit once an N block exists. Replace spaces with underscores: `'img_list'`.
+- **Ga2 does not include N-block labels**: the N block is an independent member of `model_list = Nucleus + FGstars + Galaxies` (see `gsfit.py`), not registered via Ga2. Ga2 lists P-block labels only. Adding an N-block label like `'d'` to Ga2 raises `'d' is not in list` during `read_config_file`.
+- **Na27 format**: either omit entirely, or write as two 5-tuples `[[L_init,L_min,L_max,L_step,L_flag],[T_init,T_min,T_max,T_step,T_flag]]` (Lhotdust, Thotdust). `Na27) 0` or a single value is rejected by `check_lyric_file`.
+
+#### Anti-degeneracy configuration for image-only fitting (Ia15 = 0)
+
+The AGN flux rendered into each band's image is co-determined by three parameters:
+- **Na10 (log L5100)** — absolute luminosity scale anchor of the SED
+- **Na11 (power-law index)** — wavelength-space shape of the SED
+- **Na26 (Ni_agn_<atlas>)** — per-atlas image-normalization multiplier (linearly multiplies the AGN model image: `imm += Ni_agn * model.generate_image(...)`)
+
+In image-only fitting (`Ia15 = 0`), these are degenerate:
+- Na10 and Na26 are both absolute-scale parameters — raising the SED overall (Na10) vs scaling the image multiplier (Na26) has the same effect on rendered pixels.
+- Na11 has no information when wavelength coverage is sparse (a power-law slope needs multiple wavelength points to determine).
+
+**Mandatory fixed combination** for image-only fitting:
+- **Na10**: fixed to a physical prior (log L5100 = 42 weak AGN / 43 Seyfert)
+- **Na26**: the sole free flux degree of freedom
+
+**Na11 depends on wavelength coverage**:
+- Sparse wavelength coverage: Na11 **must be fixed** (typical QSO prior α≈1, written `[1, 0, 4, 0.1, 0]`)
+- Broad wavelength coverage (e.g., optical g/r/i/z + NIR): Na11 can be free, with SED shape constrained by flux ratios across bands
+- Set Na18 = 4 (Arbitrary continuum) to pair with fixed Na11
+
+Once phase 2/3 (`Ia15 = 1`, SED joint fitting) is entered, SED photometry independently constrains the luminosity scale, the degeneracy is broken, and Na10/Na11 can be released with physical meaning.
+
+#### Anti-pattern: free Na11 in image-only mode diverges
+
+Configuring `Na11) [[1,0,4,0.1,1],[0.6,0,5,0.1,1]]` (both power-law exponents free) in image-only mode → guaranteed divergence:
+- `agnplC` hits the Na11 upper bound (=4)
+- AGN swallows all the flux; host components' `logNorm` collapse below -9 (equivalent Mag > 24)
+- reduced χ² jumps from a normal ~0.4-0.5 to the 10³-10⁴ range; BIC explodes in step
+
+**Tightening Na26's range alone does not fix this** — the optimizer escapes through Na11 by twisting the SED shape. The correct fix is to fix Na11 (`[1, 0, 4, 0.1, 0]`) and set Na18 = 4; the divergence disappears immediately.
+
 ---
 
 ## Config File Management

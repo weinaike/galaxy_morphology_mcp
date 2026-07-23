@@ -30,14 +30,23 @@
     # 完整跑：推理 + GALFIT + 两套 reward
     python -m eval.run_exec_eval \\
         --input-dir output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist \\
-        --test-galaxies reward_alignment_v11_p85/val_test_split.json \\
+        --test-galaxies output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist/test_galaxies.json \\
         --model-path /media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct \\
         --adapter-path /media/zhongling/wyh/LLaMA-Factory/saves/qwen2_5vl-7b-galaxy-qlora \\
         --out-dir eval/exec_eval_results \\
         --threshold 0.0514 \\
         --use-vlm --vlm-model gemini-3.1-pro-preview
 
-    # 跳过推理和 GALFIT，只重算 reward 和汇总（需要 predictions.jsonl 存在）
+    # 复用离线评测的推理结果（只跑 GALFIT + reward，不重新推理）
+    python -m eval.run_exec_eval \\
+        --input-dir output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist \\
+        --test-galaxies output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist/test_galaxies.json \\
+        --model-path dummy --adapter-path dummy \\
+        --out-dir eval/exec_eval_results \\
+        --threshold 0.0514 \\
+        --reuse-predictions eval_results_full/predictions.jsonl
+
+    # 跳过推理和 GALFIT，只重算 reward 和汇总（需要 exec predictions.jsonl 存在）
     python -m eval.run_exec_eval \\
         --input-dir ... --test-galaxies ... \\
         --model-path dummy --adapter-path dummy \\
@@ -537,6 +546,7 @@ async def run_exec_evaluation(
     threshold=0.0514,
     use_vlm=False, vlm_model=None, api_key=None,
     skip_inference=False,
+    reuse_predictions_path=None,
 ):
     """对所有测试轨迹执行评测。"""
     os.makedirs(out_dir, exist_ok=True)
@@ -552,19 +562,45 @@ async def run_exec_evaluation(
 
     print(f"测试步骤: {len(all_steps)} 步 (来自 {len(test_trajectories)} 条轨迹)")
 
+    # ---- 加载可复用的推理结果 ----
+    reuse_map = {}
+    if reuse_predictions_path and os.path.exists(reuse_predictions_path):
+        with open(reuse_predictions_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                key = (rec.get("galaxy_id", ""), rec.get("node_id", ""))
+                if key != ("", "") and rec.get("prediction"):
+                    reuse_map[key] = rec["prediction"]
+        print(f"从 {reuse_predictions_path} 加载 {len(reuse_map)} 条可复用预测")
+
     # ---- 推理阶段 ----
     if not skip_inference:
         from eval.run_eval import run_inference_single
 
         predictions = []
+        n_reused = 0
         for i, (tree, parent, child) in enumerate(all_steps):
             gid = tree.get("galaxy_id", "unknown")
             nid = child.get("node_id", "unknown")
 
+            print(f"\n[{i + 1}/{len(all_steps)}] {gid}/{nid} (depth={child.get('depth')})")
+
+            # 尝试复用已有预测
+            reuse_key = (gid, nid)
+            if reuse_key in reuse_map:
+                pred_text = reuse_map[reuse_key]
+                print(f"  [REUSE] {len(pred_text)} chars from previous predictions")
+                predictions.append({
+                    "index": i, "galaxy_id": gid, "node_id": nid,
+                    "prediction": pred_text, "reused": True,
+                })
+                n_reused += 1
+                continue
+
             system_prompt, user_text, image_path = build_step_prompt(
                 parent, child, tree, max_steps)
-
-            print(f"\n[{i + 1}/{len(all_steps)}] {gid}/{nid} (depth={child.get('depth')})")
 
             if not image_path or not os.path.exists(image_path):
                 print(f"  [SKIP] image not found: {image_path}")
@@ -593,10 +629,14 @@ async def run_exec_evaluation(
                     "prediction": "", "error": str(e),
                 })
 
+        if n_reused > 0:
+            print(f"\n复用了 {n_reused}/{len(all_steps)} 条预测，"
+                  f"新推理 {len(all_steps) - n_reused} 条")
+
         with open(pred_path, "w", encoding="utf-8") as f:
             for p in predictions:
                 f.write(json.dumps(p, ensure_ascii=False) + "\n")
-        print(f"\npredictions saved: {pred_path}")
+        print(f"predictions saved: {pred_path}")
     else:
         print(f"skip inference, loading: {pred_path}")
         with open(pred_path, "r", encoding="utf-8") as f:
@@ -708,6 +748,9 @@ def main():
     ap.add_argument("--no-4bit", action="store_true")
     ap.add_argument("--skip-inference", action="store_true",
                     help="跳过推理，从 predictions.jsonl 读取已有预测")
+    ap.add_argument("--reuse-predictions", default=None,
+                    help="复用已有 predictions.jsonl 的推理结果（按 galaxy_id+node_id 匹配），"
+                         "未命中的步骤仍正常推理")
     ap.add_argument("--use-vlm", action="store_true",
                     help="启用 VLM reward (Option A: parent → model_new)，需要 API key")
     ap.add_argument("--vlm-model", default="gemini-3.1-pro-preview")
@@ -732,12 +775,40 @@ def main():
                   if _to_physical_id(t.get("galaxy_id", "")) in test_pids]
     print(f"测试轨迹: {len(test_trajs)} 条 (共 {len(all_trajs)} 条)")
 
-    # 加载模型
+    # 加载模型（有 reuse-predictions 时，如果所有步骤都命中则不需要模型）
     model, processor = None, None
     if not args.skip_inference:
-        from eval.run_eval import load_model_and_processor
-        model, processor = load_model_and_processor(
-            args.model_path, args.adapter_path, use_4bit=not args.no_4bit)
+        # 先检查能否跳过模型加载
+        need_model = True
+        if args.reuse_predictions and os.path.exists(args.reuse_predictions):
+            # 快速统计：reuse 能覆盖多少步骤？
+            reuse_keys = set()
+            with open(args.reuse_predictions, "r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    rec = json.loads(line)
+                    k = (rec.get("galaxy_id", ""), rec.get("node_id", ""))
+                    if rec.get("prediction"):
+                        reuse_keys.add(k)
+            # 计算需要推理的步骤数
+            n_miss = 0
+            for tree in test_trajs:
+                for parent, child in extract_eval_steps(tree):
+                    gid = tree.get("galaxy_id", "unknown")
+                    nid = child.get("node_id", "unknown")
+                    if (gid, nid) not in reuse_keys:
+                        n_miss += 1
+            if n_miss == 0:
+                print(f"所有步骤均可复用，跳过模型加载")
+                need_model = False
+            else:
+                print(f"有 {n_miss} 步需要新推理，加载模型...")
+
+        if need_model:
+            from eval.run_eval import load_model_and_processor
+            model, processor = load_model_and_processor(
+                args.model_path, args.adapter_path, use_4bit=not args.no_4bit)
 
     asyncio.run(run_exec_evaluation(
         test_trajs, model, processor, args.out_dir,
@@ -748,6 +819,7 @@ def main():
         vlm_model=args.vlm_model,
         api_key=args.api_key,
         skip_inference=args.skip_inference,
+        reuse_predictions_path=args.reuse_predictions,
     ))
 
 

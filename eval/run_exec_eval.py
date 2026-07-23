@@ -164,9 +164,14 @@ async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node
     """
     用模型预测的 spec 生成新 feedme，执行 GALFIT，返回结果。
     复用 pipeline 的 write_feedme_from_spec + run_galfit。
+    若 GALFIT 进程崩溃（buffer overflow 等）但输出文件已写出，仍视为成功。
     """
     from simulator_env.galfit_actions import write_feedme_from_spec
-    from src.tools.run_galfit import run_galfit
+    from src.tools.run_galfit import run_galfit, create_comparison_png, _generate_subcomps
+    from src.tools.extract_summary_galfit import extract_summary_from_galfit
+    from src.tools.parse_feedme import parse_feedme
+    import glob as glob_mod
+    import shutil
 
     os.makedirs(work_dir, exist_ok=True)
     new_feedme_path = os.path.join(work_dir, f"{node_id}_pred.feedme")
@@ -182,7 +187,18 @@ async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node
 
     result = await run_galfit(os.path.abspath(new_feedme_path), ["-imax", "100"])
 
-    if result.get("status") != "success":
+    if result.get("status") == "success":
+        return {
+            "status": "success",
+            "image_file": result.get("image_file"),
+            "summary_file": result.get("summary_file"),
+            "feedme_path": new_feedme_path,
+        }
+
+    # --- run_galfit 报 failure，检查输出文件是否已写出 ---
+    config_paths = parse_feedme(os.path.abspath(new_feedme_path))
+    output_file = config_paths.get("output", "")
+    if not output_file or not os.path.exists(output_file):
         err = result.get("error", "GALFIT crashed")
         log = result.get("log", "")
         if log:
@@ -191,10 +207,53 @@ async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node
             print(f"  [GALFIT LOG tail]\n{log_tail}")
         return {"status": "galfit_failed", "error": err}
 
+    print(f"  [GALFIT] returncode!=0 but output exists, recovering...")
+
+    working_dir_galfit = os.path.dirname(os.path.abspath(new_feedme_path))
+
+    matched_galfit_files = glob_mod.glob(os.path.join(working_dir_galfit, "galfit.[0-9]*"))
+    param_file_for_plot = os.path.abspath(new_feedme_path)
+    if matched_galfit_files:
+        latest_galfit = max(matched_galfit_files, key=lambda f: int(f.rsplit(".", 1)[-1]))
+        param_file_for_plot = latest_galfit
+
+    sigma_file = config_paths.get("sigma") or None
+    mask_file = config_paths.get("mask") or None
+    fit_region = config_paths.get("fit_region")
+
+    comp_data = _generate_subcomps(param_file_for_plot, working_dir_galfit) if matched_galfit_files else None
+    comp_images = comp_data[0] if comp_data else None
+    comp_types = comp_data[1] if comp_data else None
+
+    comparison_png_path, statistics_1d = create_comparison_png(
+        output_file, sigma_file, mask_file, fit_region,
+        param_file=param_file_for_plot,
+        comp_images=comp_images, comp_types=comp_types)
+
+    summary_path, _ = extract_summary_from_galfit(output_file, os.path.abspath(new_feedme_path),
+                                                   statistics_1d=statistics_1d,
+                                                   constraint_file=config_paths.get("constraint") or None)
+
+    ar_dir = os.path.join(working_dir_galfit, "archives",
+                          f"{__import__('datetime').datetime.now().strftime('%Y%m%dT%H%M%S')}")
+    os.makedirs(ar_dir, exist_ok=True)
+    if os.path.exists(output_file):
+        shutil.move(output_file, ar_dir)
+        output_file = os.path.join(ar_dir, os.path.basename(output_file))
+    if comparison_png_path and os.path.exists(comparison_png_path):
+        shutil.move(comparison_png_path, ar_dir)
+        comparison_png_path = os.path.join(ar_dir, os.path.basename(comparison_png_path))
+    if summary_path and os.path.exists(summary_path):
+        shutil.move(summary_path, ar_dir)
+        summary_path = os.path.join(ar_dir, os.path.basename(summary_path))
+    if matched_galfit_files:
+        shutil.copy(max(matched_galfit_files, key=lambda f: int(f.rsplit(".", 1)[-1])), ar_dir)
+    shutil.copy(os.path.abspath(new_feedme_path), ar_dir)
+
     return {
         "status": "success",
-        "image_file": result.get("image_file"),
-        "summary_file": result.get("summary_file"),
+        "image_file": comparison_png_path,
+        "summary_file": summary_path,
         "feedme_path": new_feedme_path,
     }
 

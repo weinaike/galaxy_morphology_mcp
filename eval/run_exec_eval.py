@@ -41,10 +41,9 @@
     python -m eval.run_exec_eval \\
         --input-dir output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist \\
         --test-galaxies output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist/test_galaxies.json \\
-        --model-path dummy --adapter-path dummy \\
         --out-dir eval/exec_eval_results \\
         --threshold 0.0514 \\
-        --reuse-predictions eval_results_full/predictions.jsonl
+        --reuse-predictions eval/eval_results_full/predictions.jsonl
 
     # 跳过推理和 GALFIT，只重算 reward 和汇总（需要 exec predictions.jsonl 存在）
     python -m eval.run_exec_eval \\
@@ -83,37 +82,32 @@ from eval.validate_reward_alignment import _parse_fitted_components
 
 def extract_eval_steps(tree):
     """
-    从 trajectory 树中提取 accepted 主链路的每一步，
-    返回 (parent_node, child_node) 对列表。
+    从 trajectory 树中提取可评测步骤，返回 (parent_node, child_node) 对列表。
+    选择规则与 SFT 数据提取（_selected_nodes）完全一致：
+      - 跳过 root (depth=0)
+      - is_accepted=True
+      - status = success / None
+      - 非 MH 退火接受（delta_R >= 0）
     """
+    from data_gen.extract_training_data import _is_mh_accepted
+
     node_map = {n["node_id"]: n for n in tree.get("nodes", [])}
 
-    root = None
-    for n in tree["nodes"]:
-        if n.get("depth", -1) == 0 or n.get("parent_id") is None:
-            root = n
-            break
-    if root is None:
-        return []
-
-    children_map = defaultdict(list)
-    for n in tree["nodes"]:
-        pid = n.get("parent_id")
-        if pid:
-            children_map[pid].append(n)
-
     pairs = []
-    current = root
-    while True:
-        accepted_children = [
-            c for c in children_map.get(current["node_id"], [])
-            if c.get("is_accepted") and c.get("status") in (None, "success")
-        ]
-        if not accepted_children:
-            break
-        best = min(accepted_children, key=lambda c: c.get("metrics", {}).get("chi2_nu", 9999))
-        pairs.append((current, best))
-        current = best
+    for node in tree.get("nodes", []):
+        if node.get("parent_id") is None or node.get("depth", 0) == 0:
+            continue
+        if not node.get("is_accepted"):
+            continue
+        if node.get("status") is not None and node["status"] != "success":
+            continue
+        if _is_mh_accepted(node):
+            continue
+
+        parent = node_map.get(node.get("parent_id"))
+        if parent is None:
+            continue
+        pairs.append((parent, node))
 
     return pairs
 

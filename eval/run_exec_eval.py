@@ -30,7 +30,7 @@
     # 完整跑：推理 + GALFIT + 两套 reward
     python -m eval.run_exec_eval \\
         --input-dir output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist \\
-        --test-galaxies output/.../test_galaxies.json \\
+        --test-galaxies reward_alignment_v11_p85/val_test_split.json \\
         --model-path /media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct \\
         --adapter-path /media/zhongling/wyh/LLaMA-Factory/saves/qwen2_5vl-7b-galaxy-qlora \\
         --out-dir eval/exec_eval_results \\
@@ -722,7 +722,10 @@ def main():
 
     with open(args.test_galaxies, "r", encoding="utf-8") as f:
         obj = json.load(f)
-    test_pids = set(obj["test_physical_ids"] if isinstance(obj, dict) else obj)
+    if isinstance(obj, dict):
+        test_pids = set(obj.get("test_physical_ids") or obj.get("test_pids") or [])
+    else:
+        test_pids = set(obj)
 
     all_trajs = load_trajectories(args.input_dir)
     test_trajs = [t for t in all_trajs

@@ -1,39 +1,49 @@
 """
 执行评测（步骤级 teacher-forcing + GALFIT 执行）。
 
-在离线评测基础上增加 GALFIT 执行，用残差质量 + 参数距离双维度评价。
+**Option A 语义**（"动作前 vs 动作后"，见 eval/评测体系设计.md 2.1）：
+从 GT 第 k 步状态（parent）出发，模型预测 action → GALFIT 执行 → 得到 model_new 状态。
+判断 parent → model_new 是不是有效改进。**不跟 GT 第 k+1 步比**（那是 Option B，语义错）。
 
 流程（对每条测试样本）：
-  1. 从 GT 轨迹的第 k 步状态出发（parent feedme + residual）
+  1. 从 GT 轨迹第 k 步的 parent 状态出发（feedme + residual + summary）
   2. 构造 prompt → 模型推理 → 得到 pred_text → 解析出 action spec
-  3. 用 write_feedme_from_spec 生成新 feedme → 执行 GALFIT
-  4. 评价：
-     a. 参数距离（pred spec vs GT spec，复用 evaluate_galfit_action）
-     b. 指标对比（model chi2/BIC vs GT chi2/BIC）
-     c. 残差噪声质量（model vs GT）
-     d. VLM 残差比较（可选，compare_model_vs_gt）
+  3. 用 write_feedme_from_spec 生成新 feedme → 执行 GALFIT → model_new
+  4. 三路评价：
+     (a) **VLM reward** (Option A)：`vlm_reward_for_step(parent, model_new)` → improvement ∈ {0,1}
+     (b) **Rule-based reward** (v11)：`compute_rl_reward(parent_metrics, model_new_metrics, ...)` → SSR
+     (c) **参数距离**（诊断用，不打分）：evaluate_galfit_action(pred, gt)
+     另外报告：chi2_ratio, bic_diff 作为**执行成功情况的诊断**，不参与 SSR
+
+汇总指标：
+  - Format rate + type accuracy + parameter score（沿用 offline eval，诊断）
+  - GALFIT success rate（模型能不能生成合法 spec）
+  - SSR = P(rule_reward > threshold)  # 主指标
+  - VLM improvement rate = P(vlm.improvement == 1)  # 主指标
+  - VLM-Rule 一致率 = P(rule_binary == vlm.improvement)  # 交叉验证
+  - Mean chi2_ratio, Mean bic_diff, Mean rl_reward（诊断）
 
 用法（在 A6000 上）：
     source /media/data/anaconda3/etc/profile.d/conda.sh && conda activate llama-factory
     cd /media/zhongling/wyh/GalDecomp_Gen
 
+    # 完整跑：推理 + GALFIT + 两套 reward
     python -m eval.run_exec_eval \\
         --input-dir output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist \\
         --test-galaxies output/.../test_galaxies.json \\
         --model-path /media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct \\
         --adapter-path /media/zhongling/wyh/LLaMA-Factory/saves/qwen2_5vl-7b-galaxy-qlora \\
-        --out-dir eval/exec_eval_results
+        --out-dir eval/exec_eval_results \\
+        --threshold 0.0514 \\
+        --use-vlm --vlm-model gemini-3.1-pro-preview
 
-    # 跳过推理，只重新评测已有预测
+    # 跳过推理和 GALFIT，只重算 reward 和汇总（需要 predictions.jsonl 存在）
     python -m eval.run_exec_eval \\
         --input-dir ... --test-galaxies ... \\
         --model-path dummy --adapter-path dummy \\
         --out-dir eval/exec_eval_results \\
+        --threshold 0.0514 \\
         --skip-inference
-
-    # 加 VLM 比较（慢，需要 API key）
-    python -m eval.run_exec_eval \\
-        ... --use-vlm --vlm-model gemini-3.1-pro-preview
 """
 
 import argparse
@@ -54,6 +64,8 @@ from eval.reward_for_rl import (
     compute_noise_score,
     load_noise_inputs,
 )
+from eval.vlm_reward import vlm_reward_for_step
+from eval.validate_reward_alignment import _parse_fitted_components
 
 
 # ============================================================
@@ -249,10 +261,21 @@ def compute_residual_noise_comparison(model_summary_path, gt_summary_path,
 
 async def eval_single_step(
     parent_node, child_node, tree, pred_text,
-    work_dir, use_vlm=False, vlm_model=None, api_key=None,
+    work_dir, threshold=0.0514,
+    use_vlm=False, vlm_model=None, api_key=None,
 ):
     """
-    对单步执行完整评测：参数距离 + GALFIT 执行 + 指标对比 + VLM（可选）。
+    对单步执行完整评测（Option A 语义："动作前 vs 动作后"）：
+
+    1. 参数距离（诊断用，vs GT spec）
+    2. GALFIT 执行
+    3. Rule-based reward: compute_rl_reward(parent_metrics, model_new_metrics, ...)
+       → 二值化: rule_binary = 1 if reward > threshold else 0  ← SSR 用
+    4. VLM reward (Option A): vlm_reward_for_step(parent, model_new)
+       → improvement ∈ {0, 1}  ← VLM improvement rate 用
+    5. 一致率 = agreement(rule_binary, vlm_improvement)
+
+    chi2_ratio / bic_diff 保留但**降级为诊断字段**（不参与主指标）。
     """
     galaxy_id = tree.get("galaxy_id", "unknown")
     node_id = child_node.get("node_id", "unknown")
@@ -268,7 +291,7 @@ async def eval_single_step(
         }
     gt_label = gt_action.get("coarse_label", "unknown")
 
-    # --- (a) 离线评测：参数距离 ---
+    # --- (a) 离线评测：参数距离（诊断用） ---
     offline_result = evaluate_galfit_action(pred_text, gt_spec, gt_label)
 
     result = {
@@ -277,11 +300,17 @@ async def eval_single_step(
         "depth": depth,
         **offline_result,
         "galfit_status": "not_run",
+        # 主指标（Option A）
+        "rule_reward": None,
+        "rule_binary": None,           # rule_reward > threshold ? 1 : 0
+        "vlm_improvement": None,       # Option A VLM improvement ∈ {0, 1}
+        "agreement": None,             # rule_binary == vlm_improvement
+        # 诊断字段（不参与主指标）
         "model_metrics": None,
         "gt_metrics": child_node.get("metrics", {}),
-        "chi2_ratio": None,
-        "bic_diff": None,
-        "vlm_result": None,
+        "chi2_ratio_diagnostic": None,     # model_chi2 / gt_chi2, 仅诊断"跟 GT 的差距"
+        "bic_diff_diagnostic": None,       # model_bic - gt_bic, 同上
+        "vlm_detail": None,
     }
 
     # --- (b) GALFIT 执行 ---
@@ -306,73 +335,81 @@ async def eval_single_step(
         result["galfit_error"] = galfit_result.get("error")
         return result
 
-    # --- (c) 指标对比 ---
-    model_metrics = extract_metrics_from_summary(galfit_result.get("summary_file"))
+    # --- (c) 提取 metrics + 拟合参数 ---
+    model_summary = galfit_result.get("summary_file")
+    model_metrics = extract_metrics_from_summary(model_summary)
     gt_metrics = child_node.get("metrics", {})
     result["model_metrics"] = model_metrics
     result["gt_metrics"] = gt_metrics
 
+    # 诊断字段：跟 GT 的差距（不参与打分）
     gt_chi2 = gt_metrics.get("chi2_nu", 9999.0)
     model_chi2 = model_metrics.get("chi2_nu", 9999.0)
     if gt_chi2 > 0 and gt_chi2 < 9999:
-        result["chi2_ratio"] = round(model_chi2 / gt_chi2, 4)
-
+        result["chi2_ratio_diagnostic"] = round(model_chi2 / gt_chi2, 4)
     gt_bic = gt_metrics.get("bic")
     model_bic = model_metrics.get("bic")
     if gt_bic is not None and model_bic is not None:
-        result["bic_diff"] = round(model_bic - gt_bic, 2)
+        result["bic_diff_diagnostic"] = round(model_bic - gt_bic, 2)
 
-    # --- (d) RL Reward（model vs parent，增量改善） ---
+    # --- (d) Rule-based reward (Option A: parent → model_new) ---
     parent_metrics = parent_node.get("metrics", {})
+    fitted_components = _parse_fitted_components(model_summary)
+
     rl_reward_result = compute_rl_reward(
         old_metrics=parent_metrics,
         new_metrics=model_metrics,
         action_spec=pred_spec,
+        fitted_components=fitted_components,
     )
-    result["rl_reward"] = rl_reward_result["reward"]
-    result["rl_reward_detail"] = {
+    rule_reward = rl_reward_result["reward"]
+    result["rule_reward"] = round(rule_reward, 4)
+    result["rule_binary"] = 1 if rule_reward > threshold else 0
+    result["rule_reward_detail"] = {
         "bounds_ok": rl_reward_result["bounds_ok"],
+        "fitted_bounds_ok": rl_reward_result.get("fitted_bounds_ok", True),
+        "chi2_vetoed": rl_reward_result.get("chi2_vetoed", False),
         "r_chi2": rl_reward_result["r_chi2"],
+        "r_bic": rl_reward_result["r_bic"],
         "r_noise": rl_reward_result["r_noise"],
     }
 
-    # GT 的 RL reward 作为参考基线
-    gt_rl_reward = compute_rl_reward(
-        old_metrics=parent_metrics,
-        new_metrics=gt_metrics,
-        action_spec=gt_spec,
-    )
-    result["gt_rl_reward"] = gt_rl_reward["reward"]
-
-    # --- (e) VLM 比较（可选） ---
+    # --- (e) VLM reward (Option A: parent → model_new)，可选 ---
     if use_vlm and vlm_model:
+        parent_image = parent_node.get("residual_path")
+        parent_summary = parent_node.get("summary_path")
         model_image = galfit_result.get("image_file")
-        gt_image = child_node.get("residual_path")
-        model_summary = galfit_result.get("summary_file")
-        gt_summary = child_node.get("summary_path")
 
-        if (model_image and os.path.exists(model_image) and
-                gt_image and os.path.exists(gt_image)):
+        if not (parent_image and os.path.exists(parent_image)):
+            result["vlm_detail"] = {"error": f"parent residual image not found: {parent_image}"}
+        elif not (model_image and os.path.exists(model_image)):
+            result["vlm_detail"] = {"error": f"model residual image not found: {model_image}"}
+        else:
             try:
-                from eval.vlm_compare import compare_model_vs_gt
-                vlm_result = compare_model_vs_gt(
-                    model_residual_image_path=model_image,
-                    gt_residual_image_path=gt_image,
-                    model_summary_path=model_summary,
-                    gt_summary_path=gt_summary,
+                vlm_result = vlm_reward_for_step(
+                    parent_residual_image_path=parent_image,
+                    parent_summary_path=parent_summary,
+                    model_new_residual_image_path=model_image,
+                    model_new_summary_path=model_summary,
                     model_name=vlm_model,
                     api_key=api_key,
                 )
-                result["vlm_result"] = {
-                    "quality_match": vlm_result.get("quality_match"),
-                    "similarity_level": vlm_result.get("similarity_level"),
-                    "confidence": vlm_result.get("confidence"),
+                vlm_imp = int(vlm_result.get("improvement", 0))
+                result["vlm_improvement"] = vlm_imp
+                result["vlm_detail"] = {
+                    "improvement": vlm_imp,
+                    "improvement_source": vlm_result.get("improvement_source"),
+                    "residual_improved": vlm_result.get("residual_improved"),
+                    "param_plausible": vlm_result.get("param_plausible"),
+                    "metric_consistent": vlm_result.get("metric_consistent"),
+                    "residual_improvement_level": vlm_result.get("residual_improvement_level"),
+                    "hard_warnings": vlm_result.get("hard_warnings", []),
                     "reason": vlm_result.get("reason"),
                 }
+                # 一致率：rule_binary vs vlm_improvement
+                result["agreement"] = 1 if result["rule_binary"] == vlm_imp else 0
             except Exception as e:
-                result["vlm_result"] = {"error": str(e)}
-        else:
-            result["vlm_result"] = {"error": "image not found"}
+                result["vlm_detail"] = {"error": str(e)}
 
     return result
 
@@ -382,51 +419,63 @@ async def eval_single_step(
 # ============================================================
 
 def aggregate_exec_results(results):
-    """汇总执行评测结果。"""
+    """汇总执行评测结果（Option A 语义）。
+
+    主指标（决策用）：
+      - SSR (Step Success Rate) = mean(rule_binary)
+      - VLM improvement rate = mean(vlm_improvement)
+      - VLM-Rule agreement = mean(agreement)
+
+    诊断指标（不参与主指标，只帮助排查）：
+      - format_rate / type_accuracy / mean_acc_score (离线评测复用)
+      - galfit_success_rate (基础能力)
+      - mean_chi2_ratio_diagnostic, mean_bic_diff_diagnostic (跟 GT 差距)
+      - mean_rule_reward (连续值，看 reward gaming)
+    """
     n = len(results)
     if n == 0:
         return {}
 
-    # 离线评测指标（同 run_eval.py）
+    # === 离线评测复用（诊断用） ===
     format_ok = sum(r["format_ok"] for r in results)
     type_match = sum(r["type_match"] for r in results)
-
     param_all_scores = defaultdict(list)
     for r in results:
         for k, v in r.get("param_scores", {}).items():
             param_all_scores[k].append(v)
     param_scores_avg = {k: round(sum(vs) / len(vs), 4) for k, vs in param_all_scores.items() if vs}
-
     acc_scores = [r["acc_score"] for r in results if r["format_ok"]]
     mean_acc_score = round(sum(acc_scores) / len(acc_scores), 4) if acc_scores else 0
 
-    # 执行评测指标
+    # === 基础能力：GALFIT 能不能跑通 ===
     galfit_success = sum(1 for r in results if r["galfit_status"] == "success")
     galfit_rate = galfit_success / n if n > 0 else 0
 
-    chi2_ratios = [r["chi2_ratio"] for r in results if r.get("chi2_ratio") is not None]
+    # === 主指标 1: SSR (rule-based binary) ===
+    rule_binaries = [r["rule_binary"] for r in results if r.get("rule_binary") is not None]
+    ssr = round(sum(rule_binaries) / len(rule_binaries), 4) if rule_binaries else None
+
+    # === 主指标 2: VLM improvement rate (Option A) ===
+    vlm_imps = [r["vlm_improvement"] for r in results if r.get("vlm_improvement") is not None]
+    vlm_imp_rate = round(sum(vlm_imps) / len(vlm_imps), 4) if vlm_imps else None
+
+    # === 主指标 3: VLM-Rule 一致率（交叉验证） ===
+    agreements = [r["agreement"] for r in results if r.get("agreement") is not None]
+    agreement_rate = round(sum(agreements) / len(agreements), 4) if agreements else None
+
+    # === 诊断: chi2_ratio / bic_diff / mean_rule_reward ===
+    chi2_ratios = [r["chi2_ratio_diagnostic"] for r in results if r.get("chi2_ratio_diagnostic") is not None]
     mean_chi2_ratio = round(sum(chi2_ratios) / len(chi2_ratios), 4) if chi2_ratios else None
-
-    bic_diffs = [r["bic_diff"] for r in results if r.get("bic_diff") is not None]
+    bic_diffs = [r["bic_diff_diagnostic"] for r in results if r.get("bic_diff_diagnostic") is not None]
     mean_bic_diff = round(sum(bic_diffs) / len(bic_diffs), 2) if bic_diffs else None
+    rule_rewards = [r["rule_reward"] for r in results if r.get("rule_reward") is not None]
+    mean_rule_reward = round(sum(rule_rewards) / len(rule_rewards), 4) if rule_rewards else None
 
-    rl_rewards = [r["rl_reward"] for r in results if r.get("rl_reward") is not None]
-    gt_rl_rewards = [r["gt_rl_reward"] for r in results if r.get("gt_rl_reward") is not None]
-    mean_rl_reward = round(sum(rl_rewards) / len(rl_rewards), 4) if rl_rewards else None
-    mean_gt_rl_reward = round(sum(gt_rl_rewards) / len(gt_rl_rewards), 4) if gt_rl_rewards else None
-
-    # VLM 指标
-    vlm_results = [r["vlm_result"] for r in results
-                   if r.get("vlm_result") and "quality_match" in r.get("vlm_result", {})]
-    vlm_match_rate = None
-    if vlm_results:
-        vlm_match_rate = round(
-            sum(v["quality_match"] for v in vlm_results) / len(vlm_results), 4)
-
-    # 按类型分组
+    # === 按动作类型分组 ===
     per_type = defaultdict(lambda: {
         "n": 0, "galfit_ok": 0, "type_match": 0,
-        "chi2_ratios": [], "rl_rewards": [], "gt_rl_rewards": []})
+        "rule_binaries": [], "vlm_imps": [], "agreements": [],
+        "chi2_ratios": []})
     for r in results:
         gt = r["gt_label"]
         pt = per_type[gt]
@@ -435,12 +484,14 @@ def aggregate_exec_results(results):
             pt["type_match"] += 1
         if r["galfit_status"] == "success":
             pt["galfit_ok"] += 1
-            if r.get("chi2_ratio") is not None:
-                pt["chi2_ratios"].append(r["chi2_ratio"])
-            if r.get("rl_reward") is not None:
-                pt["rl_rewards"].append(r["rl_reward"])
-            if r.get("gt_rl_reward") is not None:
-                pt["gt_rl_rewards"].append(r["gt_rl_reward"])
+            if r.get("rule_binary") is not None:
+                pt["rule_binaries"].append(r["rule_binary"])
+            if r.get("vlm_improvement") is not None:
+                pt["vlm_imps"].append(r["vlm_improvement"])
+            if r.get("agreement") is not None:
+                pt["agreements"].append(r["agreement"])
+            if r.get("chi2_ratio_diagnostic") is not None:
+                pt["chi2_ratios"].append(r["chi2_ratio_diagnostic"])
 
     per_type_report = {}
     for label, pt in per_type.items():
@@ -448,29 +499,30 @@ def aggregate_exec_results(results):
             "n": pt["n"],
             "galfit_success_rate": round(pt["galfit_ok"] / pt["n"], 4) if pt["n"] > 0 else 0,
             "type_accuracy": round(pt["type_match"] / pt["n"], 4) if pt["n"] > 0 else 0,
-            "mean_chi2_ratio": round(sum(pt["chi2_ratios"]) / len(pt["chi2_ratios"]), 4) if pt["chi2_ratios"] else None,
-            "mean_rl_reward": round(sum(pt["rl_rewards"]) / len(pt["rl_rewards"]), 4) if pt["rl_rewards"] else None,
-            "mean_gt_rl_reward": round(sum(pt["gt_rl_rewards"]) / len(pt["gt_rl_rewards"]), 4) if pt["gt_rl_rewards"] else None,
+            "ssr": round(sum(pt["rule_binaries"]) / len(pt["rule_binaries"]), 4) if pt["rule_binaries"] else None,
+            "vlm_imp_rate": round(sum(pt["vlm_imps"]) / len(pt["vlm_imps"]), 4) if pt["vlm_imps"] else None,
+            "agreement_rate": round(sum(pt["agreements"]) / len(pt["agreements"]), 4) if pt["agreements"] else None,
+            "mean_chi2_ratio_diagnostic": round(sum(pt["chi2_ratios"]) / len(pt["chi2_ratios"]), 4) if pt["chi2_ratios"] else None,
         }
 
     return {
         "n_samples": n,
-        # 离线评测
+        "n_galfit_success": galfit_success,
+        # === 主指标 ===
+        "ssr": ssr,                          # 单步成功率（rule-based，binary）
+        "vlm_improvement_rate": vlm_imp_rate,  # VLM 判 improvement 的比例
+        "agreement_rate": agreement_rate,     # rule vs VLM 一致率
+        # === 基础能力 ===
         "format_rate": round(format_ok / n, 4),
         "type_accuracy": round(type_match / format_ok, 4) if format_ok > 0 else 0,
-        "mean_acc_score": mean_acc_score,
-        "param_scores": param_scores_avg,
-        # 执行评测
         "galfit_success_rate": round(galfit_rate, 4),
-        "n_galfit_success": galfit_success,
-        "mean_chi2_ratio": mean_chi2_ratio,
-        "mean_bic_diff": mean_bic_diff,
-        "mean_rl_reward": mean_rl_reward,
-        "mean_gt_rl_reward": mean_gt_rl_reward,
-        # VLM
-        "vlm_match_rate": vlm_match_rate,
-        "n_vlm_evaluated": len(vlm_results),
-        # 按类型
+        # === 诊断字段 ===
+        "mean_acc_score_diagnostic": mean_acc_score,
+        "param_scores_diagnostic": param_scores_avg,
+        "mean_chi2_ratio_diagnostic": mean_chi2_ratio,
+        "mean_bic_diff_diagnostic": mean_bic_diff,
+        "mean_rule_reward_diagnostic": mean_rule_reward,
+        # === 按类型分组 ===
         "per_type": per_type_report,
     }
 
@@ -482,6 +534,7 @@ def aggregate_exec_results(results):
 async def run_exec_evaluation(
     test_trajectories, model, processor, out_dir,
     max_steps=15, max_new_tokens=4096,
+    threshold=0.0514,
     use_vlm=False, vlm_model=None, api_key=None,
     skip_inference=False,
 ):
@@ -565,17 +618,21 @@ async def run_exec_evaluation(
         t0 = time.time()
         result = await eval_single_step(
             parent, child, tree, pred_text,
-            work_dir, use_vlm, vlm_model, api_key)
+            work_dir, threshold=threshold,
+            use_vlm=use_vlm, vlm_model=vlm_model, api_key=api_key)
         elapsed = time.time() - t0
 
         result["elapsed"] = round(elapsed, 2)
         results.append(result)
 
         status = result["galfit_status"]
-        chi2_r = result.get("chi2_ratio", "N/A")
-        rl_r = result.get("rl_reward")
-        rl_str = f"{rl_r:.3f}" if rl_r is not None else "N/A"
-        print(f"  galfit={status}, chi2_ratio={chi2_r}, rl_reward={rl_str} ({elapsed:.1f}s)")
+        rr = result.get("rule_reward")
+        rb = result.get("rule_binary")
+        vi = result.get("vlm_improvement")
+        rr_str = f"{rr:.3f}" if rr is not None else "N/A"
+        rb_str = str(rb) if rb is not None else "N/A"
+        vi_str = str(vi) if vi is not None else "N/A"
+        print(f"  galfit={status}  rule_reward={rr_str}  rule_binary={rb_str}  vlm_imp={vi_str}  ({elapsed:.1f}s)")
 
     # ---- 汇总 ----
     agg = aggregate_exec_results(results)
@@ -591,35 +648,49 @@ async def run_exec_evaluation(
 
     # ---- 打印报告 ----
     print("\n" + "=" * 60)
-    print("  执行评测报告")
+    print("  执行评测报告 (Option A: 动作前后对比)")
     print("=" * 60)
-    print(f"  样本数:             {agg.get('n_samples', 0)}")
-    print(f"  --- 离线评测 ---")
-    print(f"  格式正确率:         {agg.get('format_rate', 0):.1%}")
-    print(f"  动作类型准确率:     {agg.get('type_accuracy', 0):.1%}")
-    print(f"  综合参数精度:       {agg.get('mean_acc_score', 0):.3f}")
-    ps = agg.get("param_scores", {})
+    print(f"  样本数:                 {agg.get('n_samples', 0)}")
+    print(f"  Threshold:              {threshold}")
+    print()
+    print("  === 主指标 ===")
+    ssr = agg.get("ssr")
+    print(f"  SSR (rule-based):       {ssr:.1%}" if ssr is not None else "  SSR:                    N/A")
+    vir = agg.get("vlm_improvement_rate")
+    if vir is not None:
+        print(f"  VLM improvement rate:   {vir:.1%}")
+        ar = agg.get("agreement_rate")
+        print(f"  VLM-Rule 一致率:        {ar:.1%}" if ar is not None else "")
+    print()
+    print("  === 基础能力 ===")
+    print(f"  Format rate:            {agg.get('format_rate', 0):.1%}")
+    print(f"  Type accuracy:          {agg.get('type_accuracy', 0):.1%}")
+    print(f"  GALFIT success rate:    {agg.get('galfit_success_rate', 0):.1%} ({agg.get('n_galfit_success', 0)}/{agg.get('n_samples', 0)})")
+    print()
+    print("  === 诊断字段 (辅助排查) ===")
+    print(f"  Mean acc_score:         {agg.get('mean_acc_score_diagnostic', 0):.3f}")
+    ps = agg.get("param_scores_diagnostic", {})
     for k, v in ps.items():
         print(f"    {k:>5}: {v:.3f}")
-    print(f"  --- 执行评测 ---")
-    print(f"  GALFIT 成功率:      {agg.get('galfit_success_rate', 0):.1%} ({agg.get('n_galfit_success', 0)}/{agg.get('n_samples', 0)})")
-    cr = agg.get('mean_chi2_ratio')
-    print(f"  平均 chi2 ratio:    {cr:.3f}" if cr else "  平均 chi2 ratio:    N/A")
-    bd = agg.get('mean_bic_diff')
-    print(f"  平均 BIC diff:      {bd:.1f}" if bd else "  平均 BIC diff:      N/A")
-    mr = agg.get('mean_rl_reward')
-    gr = agg.get('mean_gt_rl_reward')
-    print(f"  平均 RL reward:     {mr:.3f} (model) / {gr:.3f} (GT)" if mr and gr else "  平均 RL reward:     N/A")
-    vr = agg.get('vlm_match_rate')
-    if vr is not None:
-        print(f"  VLM 质量匹配率:    {vr:.1%} ({agg.get('n_vlm_evaluated', 0)} evaluated)")
-    print(f"\n  按类型分组:")
+    cr = agg.get('mean_chi2_ratio_diagnostic')
+    print(f"  Mean chi2_ratio vs GT:  {cr:.3f}" if cr is not None else "  Mean chi2_ratio vs GT:  N/A")
+    bd = agg.get('mean_bic_diff_diagnostic')
+    print(f"  Mean BIC diff vs GT:    {bd:.1f}" if bd is not None else "  Mean BIC diff vs GT:    N/A")
+    mrr = agg.get('mean_rule_reward_diagnostic')
+    print(f"  Mean rule_reward:       {mrr:.3f}" if mrr is not None else "  Mean rule_reward:       N/A")
+    print()
+    print("  === 按 action 类型分组 ===")
     for label, metrics in agg.get("per_type", {}).items():
-        cr = metrics.get('mean_chi2_ratio')
-        cr_str = f"{cr:.2f}" if cr else "N/A"
-        print(f"    {label}: n={metrics['n']}, galfit={metrics['galfit_success_rate']:.0%}, "
-              f"type_acc={metrics['type_accuracy']:.0%}, chi2_ratio={cr_str}")
-    print(f"\n  详细结果: {detail_path}")
+        ssr_t = metrics.get('ssr')
+        vlm_t = metrics.get('vlm_imp_rate')
+        agr_t = metrics.get('agreement_rate')
+        ssr_s = f"{ssr_t:.0%}" if ssr_t is not None else "N/A"
+        vlm_s = f"{vlm_t:.0%}" if vlm_t is not None else "N/A"
+        agr_s = f"{agr_t:.0%}" if agr_t is not None else "N/A"
+        print(f"    {label}: n={metrics['n']}  galfit={metrics['galfit_success_rate']:.0%}  "
+              f"type_acc={metrics['type_accuracy']:.0%}  ssr={ssr_s}  vlm_imp={vlm_s}  agree={agr_s}")
+    print()
+    print(f"  详细结果: {detail_path}")
     print(f"  汇总报告: {report_path}")
 
     return agg
@@ -638,9 +709,11 @@ def main():
     ap.add_argument("--skip-inference", action="store_true",
                     help="跳过推理，从 predictions.jsonl 读取已有预测")
     ap.add_argument("--use-vlm", action="store_true",
-                    help="启用 VLM 残差比较（需要 API key）")
+                    help="启用 VLM reward (Option A: parent → model_new)，需要 API key")
     ap.add_argument("--vlm-model", default="gemini-3.1-pro-preview")
     ap.add_argument("--api-key", default=None)
+    ap.add_argument("--threshold", type=float, default=0.0514,
+                    help="rule_reward > threshold 判为 accepted（SSR 用）。默认 0.0514 来自 v11 val 集校准。")
     args = ap.parse_args()
 
     # 加载测试轨迹
@@ -667,6 +740,7 @@ def main():
         test_trajs, model, processor, args.out_dir,
         max_steps=args.max_steps,
         max_new_tokens=args.max_new_tokens,
+        threshold=args.threshold,
         use_vlm=args.use_vlm,
         vlm_model=args.vlm_model,
         api_key=args.api_key,

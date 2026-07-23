@@ -1,12 +1,15 @@
 """
-VLM-based comparison: model prediction vs expert ground truth.
+⚠️ DEPRECATED ⚠️  请改用 eval/vlm_reward.py（Option A 语义）。
 
-Adapted from data_gen/reward.py:calculate_reward_model_with_param.
-The original compares "previous step vs next step" (improvement check).
-This version compares "model's result vs expert's result" (quality match).
+原设计：Option B 语义（"model 跟 expert 一样好吗"）——把原 prompt 的 "improvement over"
+改成 "comparable quality to"。
 
-Domain knowledge is preserved exactly from the original prompt.
-Only the comparison framing is changed.
+废弃原因（见 eval/评测体系设计.md 2.1 和 3.10）：
+1. **改了 prompt 核心问句 = 改了知识**，违反"不改任何知识"约束
+2. **多路径分解下有系统性偏见**——模型选了不同但合法的动作会被误判为"不如专家"
+3. **复用原 prompt 会得到错语义**——语义变成"模型是不是超过专家"，跟"跟专家一样好"反了
+
+保留此文件仅为兼容旧调用点。新代码请调用 eval/vlm_reward.py 的 vlm_reward_for_step()。
 """
 
 import os

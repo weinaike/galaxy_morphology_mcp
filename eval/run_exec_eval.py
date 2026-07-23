@@ -599,6 +599,15 @@ async def run_exec_evaluation(
                 n_reused += 1
                 continue
 
+            # 没有模型则跳过
+            if model is None:
+                print(f"  [SKIP] 无模型且 reuse 未命中")
+                predictions.append({
+                    "index": i, "galaxy_id": gid, "node_id": nid,
+                    "prediction": "", "error": "no_model_no_reuse",
+                })
+                continue
+
             system_prompt, user_text, image_path = build_step_prompt(
                 parent, child, tree, max_steps)
 
@@ -740,8 +749,8 @@ def main():
     ap = argparse.ArgumentParser(description="执行评测 (teacher-forcing + GALFIT)")
     ap.add_argument("--input-dir", required=True, help="trajectory 输出目录")
     ap.add_argument("--test-galaxies", required=True, help="test_galaxies.json")
-    ap.add_argument("--model-path", required=True)
-    ap.add_argument("--adapter-path", required=True)
+    ap.add_argument("--model-path", default=None, help="QLoRA base model 路径（reuse 模式可省略）")
+    ap.add_argument("--adapter-path", default=None, help="LoRA adapter 路径（reuse 模式可省略）")
     ap.add_argument("--out-dir", default="eval/exec_eval_results")
     ap.add_argument("--max-steps", type=int, default=15)
     ap.add_argument("--max-new-tokens", type=int, default=4096)
@@ -775,40 +784,12 @@ def main():
                   if _to_physical_id(t.get("galaxy_id", "")) in test_pids]
     print(f"测试轨迹: {len(test_trajs)} 条 (共 {len(all_trajs)} 条)")
 
-    # 加载模型（有 reuse-predictions 时，如果所有步骤都命中则不需要模型）
+    # 加载模型（有 reuse-predictions 时，未命中的步骤跳过而非推理）
     model, processor = None, None
-    if not args.skip_inference:
-        # 先检查能否跳过模型加载
-        need_model = True
-        if args.reuse_predictions and os.path.exists(args.reuse_predictions):
-            # 快速统计：reuse 能覆盖多少步骤？
-            reuse_keys = set()
-            with open(args.reuse_predictions, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    rec = json.loads(line)
-                    k = (rec.get("galaxy_id", ""), rec.get("node_id", ""))
-                    if rec.get("prediction"):
-                        reuse_keys.add(k)
-            # 计算需要推理的步骤数
-            n_miss = 0
-            for tree in test_trajs:
-                for parent, child in extract_eval_steps(tree):
-                    gid = tree.get("galaxy_id", "unknown")
-                    nid = child.get("node_id", "unknown")
-                    if (gid, nid) not in reuse_keys:
-                        n_miss += 1
-            if n_miss == 0:
-                print(f"所有步骤均可复用，跳过模型加载")
-                need_model = False
-            else:
-                print(f"有 {n_miss} 步需要新推理，加载模型...")
-
-        if need_model:
-            from eval.run_eval import load_model_and_processor
-            model, processor = load_model_and_processor(
-                args.model_path, args.adapter_path, use_4bit=not args.no_4bit)
+    if not args.skip_inference and not args.reuse_predictions:
+        from eval.run_eval import load_model_and_processor
+        model, processor = load_model_and_processor(
+            args.model_path, args.adapter_path, use_4bit=not args.no_4bit)
 
     asyncio.run(run_exec_evaluation(
         test_trajs, model, processor, args.out_dir,

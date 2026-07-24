@@ -160,6 +160,47 @@ def build_step_prompt(parent_node, child_node, tree, max_steps=15):
 # GALFIT 执行
 # ============================================================
 
+def _shorten_feedme_paths(feedme_path):
+    """
+    将 feedme 中 A/C/D/F 行的长相对路径（../../../...）替换为本地 symlink。
+    避免 GALFIT 在写 fit.log/galfit.01 时因路径过长触发 buffer overflow。
+    """
+    feedme_dir = os.path.dirname(os.path.abspath(feedme_path))
+
+    with open(feedme_path, "r") as f:
+        content = f.read()
+
+    lines = content.splitlines()
+    new_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(("A)", "C)", "D)", "F)")):
+            parts = stripped.split(None, 1)
+            if len(parts) > 1:
+                rest = parts[1]
+                path_str = rest.split("#")[0].strip()
+                comment = "  #" + rest.split("#", 1)[1] if "#" in rest else ""
+
+                if path_str.lower() not in ("none", "") and ".." in path_str:
+                    abs_path = os.path.normpath(
+                        os.path.join(feedme_dir, path_str)
+                    )
+                    if os.path.exists(abs_path):
+                        tag = stripped[0].lower()
+                        link_name = f"_d{tag}_{os.path.basename(abs_path)}"
+                        link_path = os.path.join(feedme_dir, link_name)
+                        if os.path.islink(link_path) or os.path.exists(link_path):
+                            os.remove(link_path)
+                        os.symlink(abs_path, link_path)
+                        line = f"{parts[0]} {link_name}{comment}"
+
+        new_lines.append(line)
+
+    with open(feedme_path, "w") as f:
+        f.write("\n".join(new_lines) + "\n")
+
+
 async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node_id):
     """
     用模型预测的 spec 生成新 feedme，执行 GALFIT，返回结果。
@@ -184,6 +225,8 @@ async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node
 
     if not success:
         return {"status": "feedme_failed", "error": "write_feedme_from_spec failed"}
+
+    _shorten_feedme_paths(new_feedme_path)
 
     result = await run_galfit(os.path.abspath(new_feedme_path), ["-imax", "100"])
 

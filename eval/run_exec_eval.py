@@ -162,7 +162,7 @@ def build_step_prompt(parent_node, child_node, tree, max_steps=15):
 
 def _shorten_feedme_paths(feedme_path):
     """
-    将 feedme 中 A/C/D/F 行的长相对路径（../../../...）替换为本地 symlink。
+    将 feedme 中 A/C/D/F 行的长相对路径（../../../...）替换为绝对路径。
     避免 GALFIT 在写 fit.log/galfit.01 时因路径过长触发 buffer overflow。
     """
     feedme_dir = os.path.dirname(os.path.abspath(feedme_path))
@@ -187,13 +187,7 @@ def _shorten_feedme_paths(feedme_path):
                         os.path.join(feedme_dir, path_str)
                     )
                     if os.path.exists(abs_path):
-                        tag = stripped[0].lower()
-                        link_name = f"_d{tag}_{os.path.basename(abs_path)}"
-                        link_path = os.path.join(feedme_dir, link_name)
-                        if os.path.islink(link_path) or os.path.exists(link_path):
-                            os.remove(link_path)
-                        os.symlink(abs_path, link_path)
-                        line = f"{parts[0]} {link_name}{comment}"
+                        line = f"{parts[0]} {abs_path}{comment}"
 
         new_lines.append(line)
 

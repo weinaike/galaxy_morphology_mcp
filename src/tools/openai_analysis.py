@@ -7,6 +7,7 @@ conversation history across turns.
 """
 
 import os
+import time
 import base64
 import asyncio
 import uuid
@@ -140,7 +141,7 @@ async def _query(
     deferred_system: bool = False,
     reference_blocks: list[dict] | None = None,
     reference_intro: str | None = None,
-) -> str:
+) -> tuple[str, list[dict]]:
     """Run analysis via OpenAI SDK — single or multi-turn depending on prompt count.
 
     Args:
@@ -165,6 +166,7 @@ async def _query(
 
     text_parts: list[str] = []
     usage = _UsageAccumulator()
+    turn_records: list[dict] = []
     messages: list[dict] = []
     for i, prompt_text in enumerate(analysis_prompts):
         if not deferred_system:
@@ -192,17 +194,35 @@ async def _query(
                     messages.append({"role": "assistant", "content": prev})
                 messages.append({"role": "user", "content": prompt_text})
 
+        pre_p, pre_c = usage.prompt_tokens, usage.completion_tokens
+        turn_start = time.perf_counter()
         assistant_text = await _call_with_retry(client, model, messages, usage)
+        turn_dur = time.perf_counter() - turn_start
+
+        inc_p = usage.prompt_tokens - pre_p
+        inc_c = usage.completion_tokens - pre_c
+        tok_per_s = (inc_c / turn_dur) if (turn_dur > 0 and inc_c > 0) else 0.0
+        turn_records.append({
+            "turn": i + 1,
+            "duration_s": round(turn_dur, 1),
+            "prompt_tokens": inc_p,
+            "completion_tokens": inc_c,
+            "tok_per_s": round(tok_per_s, 0),
+        })
 
         if not assistant_text:
-            return "\n\n".join(text_parts) if text_parts else ""
+            return ("\n\n".join(text_parts) if text_parts else ""), turn_records
         text_parts.append(assistant_text)
 
         if not deferred_system:
             messages.append({"role": "assistant", "content": assistant_text})
-        print(f"Turn {i+1} completed. {usage.summary()}")
+        print(
+            f"Turn {i+1} completed in {turn_dur:.1f}s "
+            f"(prompt+{inc_p}, completion+{inc_c}, "
+            f"{tok_per_s:.0f} tok/s). {usage.summary()}"
+        )
     print(f"Analysis completed. Total {usage.summary()}")
-    return "\n\n".join(text_parts)
+    return "\n\n".join(text_parts), turn_records
 
 
 def run_openai_analysis(
@@ -212,7 +232,7 @@ def run_openai_analysis(
     deferred_system: bool = False,
     reference_blocks: Optional[list[dict]] = None,
     reference_intro: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[dict]]:
     """
     Run component analysis using the OpenAI SDK.
 
@@ -237,14 +257,14 @@ def run_openai_analysis(
     try:
         from openai import OpenAI  # noqa: F401
     except ImportError:
-        return None, None, "openai is not installed. Install with: pip install openai"
+        return None, None, "openai is not installed. Install with: pip install openai", None
 
     api_key, _, _ = _get_config()
     if not api_key:
         return None, None, (
             "OPENAI_API_KEY is not set. "
             "Set it in your .env file or environment."
-        )
+        ), None
 
     session_id = str(uuid.uuid4())
 
@@ -254,13 +274,17 @@ def run_openai_analysis(
                       reference_blocks=reference_blocks,
                       reference_intro=reference_intro)
         wrapped = asyncio.wait_for(coro, timeout=API_TIMEOUT)
-        analysis = _run_async(wrapped)
+        wall_start = time.perf_counter()
+        analysis, turn_records = _run_async(wrapped)
+        wall_time = round(time.perf_counter() - wall_start, 1)
+        print(f"[Timing] analyze wall time {wall_time}s")
+        timing = {"wall_time_s": wall_time, "turns": turn_records}
 
         if not analysis or not analysis.strip():
-            return None, session_id, "OpenAI API returned empty analysis"
-        return analysis, session_id, None
+            return None, session_id, "OpenAI API returned empty analysis", timing
+        return analysis, session_id, None, timing
 
     except asyncio.TimeoutError:
-        return None, session_id, f"OpenAI API query timed out after {API_TIMEOUT}s"
+        return None, session_id, f"OpenAI API query timed out after {API_TIMEOUT}s", None
     except Exception as e:
-        return None, session_id, f"OpenAI API error: {str(e)}"
+        return None, session_id, f"OpenAI API error: {str(e)}", None

@@ -34,6 +34,45 @@ def _maybe_fetch_reference_blocks(image_file: str):
         print(f"[visualRAG] reference fetch failed, degrading to no-reference: {e}")
     return None, None
 
+
+def _galaxy_dir_of(path: str) -> str:
+    """从某个输出文件路径向上定位星系主目录（首个含 output/ 子目录的祖先）。"""
+    p = os.path.dirname(os.path.abspath(path))
+    for _ in range(6):
+        if os.path.isdir(os.path.join(p, "output")):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    return os.path.dirname(os.path.abspath(path))
+
+
+def _persist_timing(ref_path: str, timing: dict) -> None:
+    """把单次 VLM 分析的 timing 追加写到星系目录下的 timing_log.md，便于跨轮汇总。
+
+    默认不写文件（避免污染星系目录）；在 .env 中设置 VLM_TIMING_LOG=1 开启。
+    计时数据始终可通过 stdout 与 result["timing"] 获取，不受此开关影响。
+    """
+    if os.environ.get("VLM_TIMING_LOG", "0") != "1":
+        return
+    try:
+        round_label = os.path.basename(os.path.dirname(os.path.abspath(ref_path)))
+        gdir = _galaxy_dir_of(ref_path)
+        tlog = os.path.join(gdir, "timing_log.md")
+        lines = [f"## {round_label} | wall={timing.get('wall_time_s')}s"]
+        for t in timing.get("turns", []):
+            lines.append(
+                f"- turn{t['turn']}: {t['duration_s']}s "
+                f"(prompt={t['prompt_tokens']}, completion={t['completion_tokens']}, "
+                f"{t['tok_per_s']} tok/s)"
+            )
+        with open(tlog, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n\n")
+    except Exception as e:  # noqa: BLE001
+        print(f"Warning: failed to write timing log: {e}")
+
+
 def analyze_multiband_components(
     lyric_file: Annotated[str, "Path to the lyric file containing the input information for multi-band fitting"],
     summary_file: Annotated[str, "Path to the optimization summary file containing detailed fitting information"],
@@ -117,6 +156,7 @@ def analyze_multiband_components(
 
     elif analysis_mode == "acp":
         # ACP mode: single mega-prompt, agent can read files itself
+        timing = None
         from .acp_analysis import run_component_analysis_acp
         if working_note_file:
             custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要记录在 {working_note_file}"
@@ -155,6 +195,8 @@ def analyze_multiband_components(
                 result["session_id"] = session_id
             if analysis:
                 result["partial_analysis"] = analysis
+            if timing:
+                result["timing"] = timing
             return result
 
     else:
@@ -178,7 +220,7 @@ def analyze_multiband_components(
         deferred_system = os.environ.get("VLM_DEFERRED_SYSTEM", "0") == "1"
         ref_blocks, ref_intro = _maybe_fetch_reference_blocks(comparison_file)
         try:
-            analysis, session_id, error = run_openai_analysis(
+            analysis, session_id, error, timing = run_openai_analysis(
                 system_prompt=system_message,
                 analysis_prompts=prompts_list,
                 image_path=os.path.abspath(comparison_file),
@@ -195,6 +237,8 @@ def analyze_multiband_components(
                 result["session_id"] = session_id
             if analysis:
                 result["partial_analysis"] = analysis
+            if timing:
+                result["timing"] = timing
             return result
 
     # analysis is guaranteed to be str when error is None
@@ -228,6 +272,9 @@ def analyze_multiband_components(
         "analysis": analysis + require,
         "analysis_file": output_file,
     }
+    if timing:
+        result["timing"] = timing
+        _persist_timing(comparison_file, timing)
     if _best_info is not None:
         result["best_round_status"] = _best_info.get("status")
         result["best_round"] = _best_info.get("best_round")
@@ -334,6 +381,7 @@ def component_analysis(
 
     elif analysis_mode == "acp":
         # ACP mode: single mega-prompt, agent can read files itself
+        timing = None
         from .acp_analysis import run_component_analysis_acp
         if working_note_file:
             custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要记录在 {working_note_file}"
@@ -372,6 +420,8 @@ def component_analysis(
                 result["session_id"] = session_id
             if analysis:
                 result["partial_analysis"] = analysis
+            if timing:
+                result["timing"] = timing
             return result
 
     else:
@@ -395,7 +445,7 @@ def component_analysis(
         deferred_system = os.environ.get("VLM_DEFERRED_SYSTEM", "0") == "1"
         ref_blocks, ref_intro = _maybe_fetch_reference_blocks(image_file)
         try:
-            analysis, session_id, error = run_openai_analysis(
+            analysis, session_id, error, timing = run_openai_analysis(
                 system_prompt=system_message,
                 analysis_prompts=prompts_list,
                 image_path=os.path.abspath(image_file),
@@ -412,6 +462,8 @@ def component_analysis(
                 result["session_id"] = session_id
             if analysis:
                 result["partial_analysis"] = analysis
+            if timing:
+                result["timing"] = timing
             return result
 
     # analysis is guaranteed to be str when error is None
@@ -453,6 +505,9 @@ def component_analysis(
         "analysis": analysis + require,
         "analysis_file": output_file,
     }
+    if timing:
+        result["timing"] = timing
+        _persist_timing(image_file, timing)
     if _best_info is not None:
         _br = _best_info.get("best_round")
         _br_label = _best_info.get("best_round_label") or "未知轮次"

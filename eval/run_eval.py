@@ -18,12 +18,19 @@
         --test-galaxies output/E7_full__vlm_proposal_gemini-3.1-pro-preview_vlm_reward_gemini-3.1-pro-preview_hist/test_galaxies.json \\
         --out-dir eval/eval_data
 
-    # 第二步：推理 + 评测
+    # 第二步：推理 + 离线评测
     python -m eval.run_eval \\
         --eval-data eval/eval_data/galaxy_eval_test.jsonl \\
         --model-path /media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct \\
         --adapter-path /media/zhongling/wyh/LLaMA-Factory/saves/qwen2_5vl-7b-galaxy-qlora \\
-        --out-dir eval/eval_results
+        --out-dir eval/eval_results_full
+    
+    # Base model推理 + 离线测评
+    python -m eval.run_eval \
+        --eval-data eval/eval_data/galaxy_eval_test.jsonl \
+        --model-path /media/zhongling/huggingface/Qwen2.5-VL-7B-Instruct \
+        --adapter-path none \
+        --out-dir eval/eval_results_qw2.5-vl-7b
 
     # 跳过推理，只重新评测 + 可视化
     python -m eval.run_eval \\
@@ -54,12 +61,12 @@ from eval.evaluate_action import (
 # 模型加载与推理（保留原逻辑）
 # ============================================================
 
-def load_model_and_processor(model_path, adapter_path, use_4bit=True):
-    """加载 Qwen2.5-VL base + LoRA adapter。"""
+def load_model_and_processor(model_path, adapter_path=None, use_4bit=True):
+    """加载 Qwen2.5-VL base 模型，可选加载 LoRA adapter。"""
     from transformers import AutoProcessor, AutoModelForVision2Seq
     from peft import PeftModel
 
-    print(f"加载模型: {model_path}")
+    print(f"加载 base 模型: {model_path}")
     kwargs = {"dtype": torch.bfloat16, "device_map": "auto", "trust_remote_code": True}
     if use_4bit:
         from transformers import BitsAndBytesConfig
@@ -70,9 +77,13 @@ def load_model_and_processor(model_path, adapter_path, use_4bit=True):
         )
     model = AutoModelForVision2Seq.from_pretrained(model_path, **kwargs)
 
-    print(f"加载 LoRA adapter: {adapter_path}")
-    model = PeftModel.from_pretrained(model, adapter_path)
-    model.eval()
+    # 如果有 adapter 且非空且不是 "none"，则加载
+    if adapter_path and adapter_path.lower() != "none":
+        print(f"加载 LoRA adapter: {adapter_path}")
+        model = PeftModel.from_pretrained(model, adapter_path)
+        model.eval()
+    else:
+        print("未加载 LoRA adapter，使用 base 模型")
 
     processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     return model, processor

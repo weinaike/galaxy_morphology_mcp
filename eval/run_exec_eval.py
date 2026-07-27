@@ -220,7 +220,7 @@ async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node
     if not success:
         return {"status": "feedme_failed", "error": "write_feedme_from_spec failed"}
 
-    _shorten_feedme_paths(new_feedme_path)
+    # _shorten_feedme_paths(new_feedme_path)
 
     result = await run_galfit(os.path.abspath(new_feedme_path), ["-imax", "100"])
 
@@ -646,7 +646,9 @@ async def run_exec_evaluation(
 ):
     """对所有测试轨迹执行评测。"""
     os.makedirs(out_dir, exist_ok=True)
-    work_dir = os.path.join(out_dir, "galfit_work")
+    # work_dir = os.path.join(out_dir, "galfit_work")
+    work_dir = os.path.join(os.getcwd(), "galfit_work")   # 当前工作目录（项目根目录）
+    print(f"galfit 工作目录: {work_dir}")
     pred_path = os.path.join(out_dir, "predictions.jsonl")
 
     # 展开所有 (parent, child) 步骤对

@@ -647,7 +647,8 @@ async def run_exec_evaluation(
     """对所有测试轨迹执行评测。"""
     os.makedirs(out_dir, exist_ok=True)
     # work_dir = os.path.join(out_dir, "galfit_work")
-    work_dir = os.path.join(os.getcwd(), "galfit_work")   # 当前工作目录（项目根目录）
+    # work_dir = os.path.join(os.getcwd(), "galfit_work")   # 当前工作目录（项目根目录）
+    work_dir = os.path.join(os.getcwd(), f"{os.path.basename(out_dir)}_galfit_work")
     print(f"galfit 工作目录: {work_dir}")
     pred_path = os.path.join(out_dir, "predictions.jsonl")
 

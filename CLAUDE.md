@@ -71,7 +71,7 @@ The only allowed exception is the all-zero unused-slot convention `[0, 0, 0, 0, 
 | Disk | Sersic, n~1 (can be <1 for smooth disk) | Re = large, q = moderate |
 | Bulge | Sersic, n=4 (range 0.1-8) | Re = small, q = round |
 | Bar | Sersic, **n=0.5 fixed** | q = 0.2-0.4, PA from image |
-| Lens | Sersic, **n<0.5 (free, vary=1)** | Re between bulge/bar and disk (`Re_disk > Re_lens > max(Re_bulge, Re_bar)`), q>0.5; triggered when Bar's Re≈Re_disk or q>0.5 (see residual_analysis_message.md) |
+| Lens | Sersic, **n<0.5 (free, vary=1)** | Re between bulge/bar and disk (`Re_disk > Re_lens > Re_bar > Re_bulge` 全序基准；仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减), q>0.5; triggered when Bar's Re≈Re_disk or q>0.5 (see residual_analysis_message.md) |
 | Edge-on Disk | edgeondisk | Pa5 = R_s (scale-length), Pa6 = h_s (scale-height), Pa7 = PA, Pa8 unused/fixed |
 | AGN/Nucleus | **N block** (Na1-Na27, NOT a P-block profile). Use when Bulge Re collapses below threshold — see AGN/PSF replacement rule below | Na4, Na5 = x, y center; Na10/Na26 = luminosity |
 

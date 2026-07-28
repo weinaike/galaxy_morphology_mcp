@@ -72,7 +72,7 @@
 - **严禁凑数**：若无法生成足够多 `expected_behavior_tag` **两两不同**的候选，允许实际数量少于上述下限。宁可只给 1 个高质量候选，也不要给 2 个实质相同的凑数候选。
 - **物理动机必须基于阶段一**：每个候选的 physical_motivation 必须引用阶段一描述过的具体残差特征（位置、强度、对称性等），严禁凭空推测。
 - **遵循成分添加次序**：优先 Disk → (F1/Companion 若检出) → Bulge → Bar → Lens → Other。Bar/Lens/Nucleus 的认定条件须符合 `<星系成分分析的总体流程>` 章节。
-    - **Lens 候选生成时机**：当父状态的 Bar 出现物理异常（`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`，即 Bar 被强行拉去拟合 Lens 结构）时，应生成拆分候选：`tune(Bar, split→Bar+Lens)` 或 `add(Lens, n<0.5 free, q>0.5, Re between bulge/bar and disk)`。Lens 用 `sersic`，n 自由（vary=1）但物理先验 n<0.5，Re 满足 `Re_disk > Re_lens > max(Re_bulge, Re_bar)`，q>0.5，与 bulge/bar/disk 同心。
+    - **Lens 候选生成时机**：当父状态的 Bar 出现物理异常（`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`，即 Bar 被强行拉去拟合 Lens 结构）时，应生成拆分候选：`tune(Bar, split→Bar+Lens)` 或 `add(Lens, n<0.5 free, q>0.5, Re between bulge/bar and disk)`。Lens 用 `sersic`，n 自由（vary=1）但物理先验 n<0.5，Re 满足全序基准 `Re_disk > Re_lens > Re_bar > Re_bulge`（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减），q>0.5，与 bulge/bar/disk 同心。
 - **尊重历史**：补充信息中"已尝试动作"列表里的动作不得重复提出（除非换个明显不同的参数化方向）。
 - **方向多样性**（多候选时）：候选之间必须覆盖**显著不同**的探索方向。典型对比组合：
     - "加成分" vs "调参"（如 +Nucleus(致密) vs release bulge_n）

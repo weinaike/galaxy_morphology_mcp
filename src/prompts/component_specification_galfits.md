@@ -8,7 +8,7 @@
 - **Bulge（核球）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 4（范围 0.1–8，不用固定）。
 - **Edge-on Disk（侧视盘）**：Profile type 选用 `edgeondisk`。
 - **Bar（棒）**：Profile type 选用 `sersic`，Sérsic 指数 n = 0.5。
-- **Lens（透镜结构）**：Profile type 选用 `sersic`，Sérsic 指数 n 自由（vary=1）但物理先验 **n < 0.5**（推荐五元组 `[0.3, 0.1, 0.5, 0.05, 1]`）；轴比 q (b/a) > 0.5；Re 满足 `Re_disk > Re_lens > max(Re_bulge, Re_bar)`（Re 单位 arcsec，每波段用 WCS 转 px 校验）。**认定触发**：当 Bar 拟合后出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`（Bar 被强行拉去拟合 Lens，物理意义异常）时，需将 Bar 拆分为 Lens + Bar 进行拟合。Lens 与 bulge/bar/disk 同心，中心约束走 `.constrain` 绑定（规则同 bulge/bar）。
+- **Lens（透镜结构）**：Profile type 选用 `sersic`，Sérsic 指数 n 自由（vary=1）但物理先验 **n < 0.5**（推荐五元组 `[0.3, 0.1, 0.5, 0.05, 1]`）；轴比 q (b/a) > 0.5；Re 满足全序基准 `Re_disk > Re_lens > Re_bar > Re_bulge`（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减；Re 单位 arcsec，每波段用 WCS 转 px 校验）。**认定触发**：当 Bar 拟合后出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`（Bar 被强行拉去拟合 Lens，物理意义异常）时，需将 Bar 拆分为 Lens + Bar 进行拟合。Lens 与 bulge/bar/disk 同心，中心约束走 `.constrain` 绑定（规则同 bulge/bar）。
 - **AGN / 致密核**：使用 **N 块**（Na1-Na27）配置，**不要**用 P 块的 `psf` 或 `Gaussian` 类型——GalfitS 的 P 块没有 `psf` profile type。每个波段各自用 WCS 把 Re 转成 px 后，按以下分级处理：
     - **所有波段 Re < 0.2 px**（强制替换）：Bulge 已坍缩为不可分辨的点源，必须将 Bulge 的 P 块 Sersic 替换为 N 块 AGN 组件。
     - **所有波段 Re 在 0.2–0.5 px 之间**（边界区域，可选竞争模型）：Bulge 处于勉强可分辨状态。**可以**创建一个 N 块 AGN 替代方案进行竞争对比——只有当 AGN 方案的 2D 残差（尤其是中心区域）明显更优时才采纳；否则保留 Sersic。不要仅凭 BIC 判断。存疑时保留 Sersic。

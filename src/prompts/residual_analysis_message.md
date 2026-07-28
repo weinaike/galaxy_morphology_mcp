@@ -150,7 +150,7 @@
                 - **Re < 0.2 px**（所有波段；已坍缩为点源）：必须将 Bulge 的 P 块 Sersic 替换为 **N 块 AGN 组件**（Na1-Na27）。（AGN 替代 Bulge 后物理意义明确，不可因 BIC 或 mag 弱而删除）
                 - **Re 0.2–0.5 px**（所有波段；边界区域）：可以创建一个 N 块 AGN 竞争方案与原 Sersic Bulge 方案对比拟合效果。只有 AGN 方案的 2D 残差（尤其是中心区域）明显更优时才采纳 AGN，否则保留 Sersic。不要仅凭 BIC 判断。
         4. 当 (Disk + Bar)/(Disk + Bulge + Bar) 拟合后， Re_bar > Re_disk(=1.68*Rs_disk), 或者 q_bar > 0.5; 导致物理意义异常，同时中心星系延展区残留正残差，可能存在Lens。
-            - 对策：考虑将 Bar 拆分为Bar + Lens, Lens建议使用使用低 n值的sersic来拟合，通常的结构特征：Re_disk > Re_lens > Re_bar，n_lens<0.5，q_lens > 0.5。
+            - 对策：考虑将 Bar 拆分为Bar + Lens, Lens建议使用使用低 n值的sersic来拟合，通常的结构特征：Re_disk > Re_lens > Re_bar > Re_bulge（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减），n_lens<0.5，q_lens > 0.5。
         5. 如果同星系新增成分，要求成分参数<x><y>与原有成分的<x><y>绑定，即保证她们同心（要求<x>和<y>同时绑定，严禁仅绑定一个变量）
         6. 当遇到某个通量占比过低，同时残差特征又预示着该成分的存在，各成分的 mag 初值需要重新分配。
         7. 对于一般情况，可以直接让 Re、Mag 和 n 都自由拟合; 当前成分拟合收敛合理后，再考增加下一个成分.
@@ -159,7 +159,7 @@
 
 + 如果Bulge拟合出来的结果, re很小（如 < 0.2 px；多波段拟合下要求每个波段 WCS 转换后全部 < 0.2 px），意味着这个成分拟合的是一个点源，必须替换为 **N 块 AGN 组件**（Na1-Na27）去拟合。注意：GalfitS 中 AGN 使用 N 前缀，不要用 P 块的 `psf` 或 `Gaussian` 类型。（这个方法仅当所有策略都已经使用，都无法改善拟合效果时才能使用）
 + 如果Bulge拟合出来的结果, re处于边界区域（0.2–0.5 px；多波段拟合下要求每个波段 WCS 转换后均在 0.2–0.5 px 之间），Bulge处于勉强可分辨状态。可以创建一个 N 块 AGN 替代方案进行竞争对比——只有 AGN 方案的2D残差（尤其是中心区域）明显更优时才采纳 AGN，否则保留 Sersic。不要仅凭 BIC 判断。（这个方法仅当所有策略都已经使用，都无法改善拟合效果时才能使用）
-+ 对于盘星系而言，同一个源的两个成分bulge+disk拟合完，如果bulge的re 大于disk的re，意味着在拟合的过程中，bulge和disk的标签反了，可以交换这两个成分的标签。如果是3个成分拟合同一个源，通常情况存在 re_disk>re_bar>re_bulge，可以以此逻辑更新成分的标签。
++ 对于盘星系而言，同一个源的两个成分bulge+disk拟合完，如果bulge的re 大于disk的re，意味着在拟合的过程中，bulge和disk的标签反了，可以交换这两个成分的标签。多成分拟合同一个源时，中心成分 Re 必须严格遵循全序基准链 `re_disk > re_lens > re_bar > re_bulge`——**仅比较实际存在的中心成分**（把缺失者从链中剔除，剩下按相对顺序严格递减；AGN/N 块与伴星系 G 块不参与）。例：{Disk,Bar,Bulge}→`re_disk>re_bar>re_bulge`；{Disk,Lens,Bulge}（无 Bar）→`re_disk>re_lens>re_bulge`；{Disk,Lens,Bar}（无 Bulge）→`re_disk>re_lens>re_bar`。若基准链子序列相邻对 Re 反置，可按此全序逻辑交换成分标签后重拟。
 + 星系盘  disk  也并不要求 N 比 Bulge 的 N 小. Disk 的 N 值可以小于 1（如 0.3），这通常对应较平缓的星系盘（Smooth disk）他们都存在真实的物理情况。
 + Bugle 的 n 的范围一般在 0.1 < n < 8 之间，并不要求一定要大于 1，Re在 0.2 px以上都具有物理意义。 但对于 最亮星系系星系（BCGs）或 cD 星系，n 可能会超过 8；对于一些极端的伪核球（Pseudobulge），n 也可以小于 1。
 + Disk、Bar、Bulge 他们基本同心，偏离太大的情况需要考虑增加一个成分拟合伴源，同时通过constrain文件限制同一个源不同成分之间中心的距离。

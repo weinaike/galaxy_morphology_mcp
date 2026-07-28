@@ -71,6 +71,13 @@ b. **执行转移 T(s, a)**：
     4) 调用 `run_galfits_image_fitting`，必带 `--fit_method ES`；若 `.constrain` 存在则带 `--parconstrain iter{global_iter_id}.constrain`。`n += 1`。
     5) **失败处置**：若工具异常或未产出 summary/对比图，把该 (s, a) 记入 `working_note.md` 的"分支: 失败归档"小节，把 a 加入 s 的禁忌集，`stagnation += 1`，回到循环开头。
 c. **构造新状态 s'**：从新生成的 `.gssummary` 读 reduced_χ² 与 BIC；`R'` 取新生成的 `all_bands_comparison.png`；`C'`、`P'` 取自新的 `.lyric` 与 `.gssummary`。轮次命名：在所属分支内取 `branch.local_round`（如 A.2、A.3、B.1…，A.1 已被首次拟合占用），与 global_iter_id 解耦。s' 的深度 = `depth + 1`。
+c.1 **Re 全序程序化校验**（Re-ordering gate）：调用 `check_re_ordering(summary_file=<新.gssummary 绝对路径>, lyric_file=<新_iter{n}.lyric 绝对路径>)`。该工具在 arcsec 域按基准链 `Re_disk > Re_lens > Re_bar > Re_bulge` 的子序列规则做严格数值比对，把 AGN(N 块) 与伴星系自动排除。
+   - **status="pass"**：正常进入 d。
+   - **status="fail"**：
+     1. **该轮次直接失去 s\* 候选资格**（Re 反置视为拟合失败，即使 χ²/BIC 更优也不参与 beam 评分）；在 `working_note.md` 该轮小节标注"Re 反置否决"，并粘贴工具返回的 `violations` 清单作为证据。
+     2. 若 `swappable_overall=True`（反置仅涉及 {Disk, Bulge}）：主 agent **直接生成**交换 disk ↔ bulge 标签后的 `_iter{n+1}.lyric`（复用 s' 的其他参数；经 `check_lyric_file` 校验后进入下一轮拟合），**跳过** generate_beam_actions 调用。
+     3. 若 `swappable_overall=False`：把返回的 `custom_instructions_hint` 字段**原样拼接**到下一步 `generate_beam_actions` 的 `custom_instructions` 末尾；正常走候选生成流程。
+   - **status="error"**：记录 `error_message` 到 `working_note.md`，**不阻断**（沿用现状，由落锁前 verifier 兜底）；进入 d。
 d. **更新 s\***：按 §去重与排序 中的 score 函数评分；若 score(s') > score(s\*)，则 s\* ← s'，`stagnation = 0`；否则 `stagnation += 1`。覆写 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节。
 e. **下一层候选生成**：以新对比图为 `comparison_file`、新 `.lyric` 为 `lyric_file`、新 `.gssummary` 为 `summary_file`，调用：
     ```

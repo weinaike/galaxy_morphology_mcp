@@ -1,7 +1,7 @@
 
 要求严格遵循工作流开展多波段(multi-band)星系拟合分析工作。
 
-仅关注拟合盘、核球、侧视盘、棒、AGN核、偏心（Disk 上的 m=1 Fourier 模式）、伴星系这七种物理成分，仅可对这七种成分的残差添加模型成分拟合，其他残差特征可以选择保留不拟合。其中偏心（Fourier m=1）的添加由阶段一 detect_galfits_bar_lopsidedness 的检出结果驱动：lopsidedness 检出时，应作为最高优先级修正项参与阶段二的结构迭代（在增加其他成分之前先加 m=1）；未检出时进入阶段三再由 fourier_mode_analysis 做残差二次确认。
+仅关注拟合盘、核球、侧视盘、棒、Lens、AGN核、偏心（Disk 上的 m=1 Fourier 模式）、伴星系这八种物理成分，仅可对这八种成分的残差添加模型成分拟合，其他残差特征可以选择保留不拟合。其中偏心（Fourier m=1）的添加由阶段一 detect_galfits_bar_lopsidedness 的检出结果驱动：lopsidedness 检出时，应作为最高优先级修正项参与阶段二的结构迭代（在增加其他成分之前先加 m=1）；未检出时进入阶段三再由 fourier_mode_analysis 做残差二次确认。
 图像分析与拟合执行只能使用 galmcp 中的工具，不能直接 shell 执行 GalfitS 命令。所有 GalfitS 拟合必须使用 `--fit_method ES`。严禁使用4_5v_mcp的相关工具。
 必须建立 todos 并独立完成所有阶段，直到 Image-SED 联合拟合成功。
 
@@ -238,7 +238,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
     {"best_turn":"<最佳轮次的目录名>","components":["<最优轮次包含的哪些物理成分>"]    }
     ```
     其中 best_turn 的值为 output/ 下最佳轮次子目录的名称（如 20260414T093323.c1993a48）。
-    物理成分类型：[Disk,Bulge,Bar,AGN,Fourier,Companion]
+    物理成分类型：[Disk,Bulge,Bar,Lens,AGN,Fourier,Companion]
 
 阶段四. SED拟合
 SED拟合通常需要基于最优的Image拟合（在阶段三中已经确认）：

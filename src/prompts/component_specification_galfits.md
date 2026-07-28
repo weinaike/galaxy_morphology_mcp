@@ -8,13 +8,14 @@
 - **Bulge（核球）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 4（范围 0.1–8，不用固定）。
 - **Edge-on Disk（侧视盘）**：Profile type 选用 `edgeondisk`。
 - **Bar（棒）**：Profile type 选用 `sersic`，Sérsic 指数 n = 0.5。
+- **Lens（透镜结构）**：Profile type 选用 `sersic`，Sérsic 指数 n 自由（vary=1）但物理先验 **n < 0.5**（推荐五元组 `[0.3, 0.1, 0.5, 0.05, 1]`）；轴比 q (b/a) > 0.5；Re 满足 `Re_disk > Re_lens > max(Re_bulge, Re_bar)`（Re 单位 arcsec，每波段用 WCS 转 px 校验）。**认定触发**：当 Bar 拟合后出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`（Bar 被强行拉去拟合 Lens，物理意义异常）时，需将 Bar 拆分为 Lens + Bar 进行拟合。Lens 与 bulge/bar/disk 同心，中心约束走 `.constrain` 绑定（规则同 bulge/bar）。
 - **AGN / 致密核**：使用 **N 块**（Na1-Na27）配置，**不要**用 P 块的 `psf` 或 `Gaussian` 类型——GalfitS 的 P 块没有 `psf` profile type。每个波段各自用 WCS 把 Re 转成 px 后，按以下分级处理：
     - **所有波段 Re < 0.2 px**（强制替换）：Bulge 已坍缩为不可分辨的点源，必须将 Bulge 的 P 块 Sersic 替换为 N 块 AGN 组件。
     - **所有波段 Re 在 0.2–0.5 px 之间**（边界区域，可选竞争模型）：Bulge 处于勉强可分辨状态。**可以**创建一个 N 块 AGN 替代方案进行竞争对比——只有当 AGN 方案的 2D 残差（尤其是中心区域）明显更优时才采纳；否则保留 Sersic。不要仅凭 BIC 判断。存疑时保留 Sersic。
     - **任意一个波段 Re ≥ 0.5 px**（明确可分辨）：保持 Sersic（不要因 Re 触到 lyric 下界就切换，应放宽下界重新拟合）。
 - **偏心 / Lopsidedness**：将 Disk 的 profile 从 `sersic` 改为 `sersic_f`，启用 m=1 模式（详见下文）。
 - 如果星系已有一个 Disk 成分，而外围（outskirt）残差仍有系统性正残差，可添加第二个 Disk（sersic, n < 1, Re 较大），以捕捉延展结构。
-- **仅关注盘、核球、侧视盘、棒、AGN 核、偏心（Disk 上的 m=1 Fourier 模式）这六种物理成分**，其他残差特征可以选择保留不拟合。
+- **仅关注盘、核球、侧视盘、棒、Lens、AGN 核、偏心（Disk 上的 m=1 Fourier 模式）这七种物理成分**，其他残差特征可以选择保留不拟合。
 
 ## 多波段融合判据（Bar）
 
@@ -106,6 +107,7 @@ GalfitS 的参数格式为 `[initial_value, min, max, step, vary]`，其中 `var
 | 物理成分 | 锁定的 n 值 | 锁定时机 |
 |---------|------------|---------|
 | Disk | n = 1（设 vary=0） | 成分分析确认为 Disk 后立即锁定 |
+| Lens | 不锁定（n 保持自由，vary=1，物理先验 n < 0.5） | —（Lens 的 n 不进入锁定表；仅在规则 2 的异常情形下才应急固定） |
 
 **注意：如果确认了disk成分，必须要在后续步骤中拆分成disk+bulge拟合一下，一开始不用固定bulge的n值，再根据分析拟合结果决定是否有必要保留bulge。**
 
@@ -115,8 +117,8 @@ GalfitS 的参数格式为 `[initial_value, min, max, step, vary]`，其中 `var
 
 | 异常现象 | 诊断 | 处理方式 |
 |---------|------|---------|
-| n > 8 或 n < 0.2 | 参数发散，模型失去物理意义 | 按成分类型固定 n（Disk→1, Bulge→4, Bar→0.5），重新拟合 |
-| Re 异常大（接近或超过拟合区域 1/2） | 参数逃逸，模型拟合背景而非星系 | 固定 n 到成分对应经验值（Disk→1, Bulge→4, Bar→0.5），同时约束 Re 上限 |
+| n > 8 或 n < 0.2 | 参数发散，模型失去物理意义 | 按成分类型固定 n（Disk→1, Bulge→4, Bar→0.5, Lens→0.3），重新拟合 |
+| Re 异常大（接近或超过拟合区域 1/2） | 参数逃逸，模型拟合背景而非星系 | 固定 n 到成分对应经验值（Disk→1, Bulge→4, Bar→0.5, Lens→0.3），同时约束 Re 上限 |
 | Re 异常小（< 0.1 pixel） | 成分可能不可分辨 | 固定 n 到成分对应经验值；若仍不收敛，考虑替换为 AGN（N 块） |
 | n 和 Re 同时异常 | 模型退化 | 回退到上一轮稳定结果，固定 n 到成分对应经验值后重新拟合 |
 

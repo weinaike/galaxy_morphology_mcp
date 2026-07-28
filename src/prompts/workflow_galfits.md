@@ -52,7 +52,7 @@
         branch_id         = "A",
         parent_label      = "A.1",
         depth             = 1,
-        custom_instructions = "<阶段一 bar/lop 结论 + 头部其他固化信息>",
+        custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一 bar/lop 结论 + s₁ 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
     )
     ```
     工具会按 depth=1 规则返回 1–2 个候选（lop 检出 → 1 个 sersic_f 切换候选；bar 检出 → 1–2 个 Bulge/Bar 候选；都未检出 → 1 个标准 add(Bulge) 候选）。
@@ -87,7 +87,7 @@ e. **下一层候选生成**：以新对比图为 `comparison_file`、新 `.lyri
         parent_label      = <branch>.<local_round>,
         depth             = depth + 1,   # 新候选应用到的父状态深度
         working_note_file = <abs path>,
-        custom_instructions = "<父轮次已尝试动作清单 + 阶段一结论>",
+        custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一结论 + 父轮次已尝试动作清单 + s' 拟合结果的具体问题（触界参数/Re 全序校验 violations/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
     )
     ```
     工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个）。
@@ -127,6 +127,31 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 `score(s)` 用于判定 s\*，与 g 共用同一套维度，区别只在于它评估的是"已完成的拟合状态"而非"待入队的候选"。
 
 **g_min 入队阈值**：任何 `g < 0.3` 的候选直接丢弃，不入队（避免低质量候选堆积导致队列永不空、终止完全靠 n=15 硬截止）。被丢弃的候选记入 `working_note.md` 的"跨分支决策日志"，标注 action_id 与"g < 0.3"。
+
+### §custom_instructions 内容规范（主模型职责，硬约束）
+
+主模型传给 `generate_beam_actions` 的 `custom_instructions` 是 VLM 生成候选时的关键上下文。主模型在其中扮演的是**客观信息提供者**，不是**候选方向建议者**。主模型对候选方向的筛选发生在入队打分阶段（§去重与排序），而不是在 custom_instructions 阶段。
+
+**必须包含**（客观描述性信息）：
+1. 阶段一 bar/lop 跨波段 OR-logic 结论、PA、b/a；
+2. 父状态的成分清单 C、关键参数 P 摘要；
+3. **当前拟合结果存在的具体问题**（如有；这是最重要的部分，必须客观详尽）：
+   - 哪些参数触及上下界（标注 ⚠️ 与具体数值，如 `bar_Re=12" ⚠️触上限`、`bulge_axrat=0.1 ⚠️触下界`）；
+   - Re 全序校验是否通过（若 FAIL，粘贴 `check_re_ordering` 返回的 `violations` 清单）；
+   - 残差图上观察到的未拟合特征（位置 / 对称性 / 强度，引用阶段一视觉特征的客观描述）；
+   - 成分身份是否混淆（如 disk 与 bulge 标签互换、bar 丧失棒形态变圆变胖、bulge 坍缩成致密点源）；
+4. 父轮次已尝试动作清单（避免 VLM 重复提出）。
+
+**严禁包含**（候选方向建议）：
+- ❌ 不得列出"优先修复方向：(1)...(2)...(3)..."这类具体候选方向清单；
+- ❌ 不得暗示或推荐特定的动作类型（如"建议释放 disk n""建议加 Lens""建议回退到 A.2""建议收紧 bar Re 上限"）；
+- ❌ 不得预先做方向收敛或筛选——这是 VLM 的职责。
+
+**为什么**：主模型一旦在 custom_instructions 中给出具体方向，VLM 会倾向于直接跟随这些现成方向，而不再自主回忆 prompt 中的规则（如 Lens 触发条件、方向多样性示例、禁用动作清单）来生成多样化候选。这等于主模型替 VLM 做了一轮方向筛选，压制了 beam search 的并行探索能力（典型反例：父状态 bar 膨胀时主模型给了"收紧约束/释放 disk/回退"三个方向，导致 VLM 未产出本应由 Lens 规则触发的"拆 Bar→Bar+Lens"候选）。
+
+**正确做法**：把问题客观摆出来（如"bar_Re=12" 触上限，q_bar=0.6 触上限，Re_bar > Re_disk 全序反置，bar 丧失棒形态"），让 VLM 自己根据 prompt 规则生成候选。
+
+**check_re_ordering hint 的处理**：当 Re 全序校验 FAIL 时，`check_re_ordering` 返回的 `custom_instructions_hint` 可原样拼入 custom_instructions（它是客观的违规清单），但主模型不得在此基础上追加自己的修复方向建议。
 
 ### §候选动作忠实执行原则（主模型职责，硬约束）
 

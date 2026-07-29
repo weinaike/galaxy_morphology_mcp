@@ -195,7 +195,9 @@ def _shorten_feedme_paths(feedme_path):
         f.write("\n".join(new_lines) + "\n")
 
 
-async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node_id):
+async def execute_galfit_with_spec(
+    pred_spec, parent_feedme_path, work_dir, node_id, max_iter=100
+):
     """
     用模型预测的 spec 生成新 feedme，执行 GALFIT，返回结果。
     复用 pipeline 的 write_feedme_from_spec + run_galfit。
@@ -222,7 +224,9 @@ async def execute_galfit_with_spec(pred_spec, parent_feedme_path, work_dir, node
 
     # _shorten_feedme_paths(new_feedme_path)
 
-    result = await run_galfit(os.path.abspath(new_feedme_path), ["-imax", "100"])
+    result = await run_galfit(
+        os.path.abspath(new_feedme_path), ["-imax", str(max_iter)]
+    )
 
     if result.get("status") == "success":
         return {

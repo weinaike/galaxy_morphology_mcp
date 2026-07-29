@@ -14,10 +14,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 from astropy.io import fits
+from astropy.wcs import WCS
 from typing import Any, Annotated, List, Dict, Tuple
 
 from .pix2radec import suppress_stdout_stderr
-from .render_original import render_asinh_panel
+from .render_original import render_asinh_panel, draw_compass, sky_direction_vectors
 from .sb_profile import render_sb_profile
 from .parse_lyric import (
     parse_image_infos_from_lyric,
@@ -535,6 +536,20 @@ def create_multiband_comparison_png(
             fontsize=9, pad=8)
         ax1b.set_xlabel('X (pixels)', fontsize=10)
         ax1b.tick_params(labelleft=False)
+
+        # Celestial N/E compass on the two original panels (matches the
+        # orientation drawn by GalfitS on *image_fit.png for this band).
+        vEVN = None
+        if region_info.ra is not None and region_info.dec is not None:
+            try:
+                with fits.open(image_info.image[0]) as hdul:
+                    wcs = WCS(hdul[0].header)
+                vEVN = sky_direction_vectors(wcs, region_info.ra, region_info.dec)
+            except Exception:
+                vEVN = None
+        if vEVN is not None:
+            draw_compass(ax1, *vEVN, color='lime')
+            draw_compass(ax1b, *vEVN, color='lime')
 
         # ---- Col 2: Model ----
         ax2 = fig.add_subplot(gs[r0, 2])

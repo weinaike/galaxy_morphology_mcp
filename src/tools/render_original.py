@@ -10,8 +10,10 @@ from astropy.visualization import simple_norm
 from scipy.ndimage import gaussian_filter
 from typing import Any, Annotated
 
+from astropy.wcs import WCS
+
 from .parse_feedme import parse_feedme
-from .parse_lyric import parse_image_infos_from_lyric
+from .parse_lyric import parse_image_infos_from_lyric, parse_region_info_from_lyric
 
 # expdisk param-4 is the exponential SCALE LENGTH h, not the effective radius; for a
 # pure exponential the half-light (effective) radius Re = 1.678·h ≈ 1.68·h. sersic
@@ -60,6 +62,69 @@ def draw_re_ellipses(ax, components, edgecolor: str = "cyan",
             linestyle=linestyle,
             zorder=10,
         ))
+
+
+def sky_direction_vectors(wcs, ra, dec):
+    """Compute (vE, vN) unit vectors in pixel coordinates for celestial East/North.
+
+    Reproduces GalfitS ``images.py:1397-1421``: three ``all_world2pix`` probes
+    at ``(ra,dec)`` and offsets ``+1/60 deg`` in RA / Dec, divided by 60 to get
+    pixel displacement per arcsec, then normalized. Used by ``draw_compass`` so
+    the N/E arrows point the same way as the compass GalfitS draws on
+    ``*image_fit.png``.
+
+    Returns ``(vE, vN)`` as numpy 1-D arrays, or ``None`` on any failure
+    (missing WCS, non-finite projection, zero-length vector).
+    """
+    try:
+        p0 = wcs.all_world2pix(ra, dec, 1)
+        pra = wcs.all_world2pix(ra + 1. / 60., dec, 1)
+        pdec = wcs.all_world2pix(ra, dec + 1. / 60., 1)
+        vE = np.array([pra[0] - p0[0], pra[1] - p0[1]]) / 60.
+        vN = np.array([pdec[0] - p0[0], pdec[1] - p0[1]]) / 60.
+        nE = np.hypot(*vE)
+        nN = np.hypot(*vN)
+        if nE == 0 or nN == 0 or not np.isfinite(nE) or not np.isfinite(nN):
+            return None
+        return vE / nE, vN / nN
+    except Exception:
+        return None
+
+
+def draw_compass(ax, vE, vN, color='k', lw=1.5):
+    """Draw celestial North/East arrows on ``ax`` (data coordinates).
+
+    Matches the GalfitS compass style (``gsutils.py:2454-2481``):
+    anchor at 80%/80% of the visible range, arrow length 12% of the visible
+    diagonal, tail offset 6% away from the tip, labels offset 3% along the
+    orthogonal direction. Fails silently (no-op) if vectors are None so a
+    bad WCS never breaks the render.
+    """
+    if vE is None or vN is None:
+        return
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    nx, ny = xmax - xmin, ymax - ymin
+    size1 = np.sqrt(nx ** 2 + ny ** 2)
+    if size1 == 0 or not np.isfinite(size1):
+        return
+    x0 = xmin + 0.8 * nx
+    y0 = ymin + 0.8 * ny
+    L = 0.12 * size1
+    xN, yN = x0 + L * vN[0], y0 + L * vN[1]
+    xE, yE = x0 + L * vE[0], y0 + L * vE[1]
+    xN_text = xN - 0.03 * size1 * vE[0]
+    yN_text = yN - 0.03 * size1 * vE[1]
+    xE_text = xE + 0.03 * size1 * vN[0]
+    yE_text = yE + 0.03 * size1 * vN[1]
+    for xt, yt in [(xN, yN), (xE, yE)]:
+        ax.annotate(
+            "", xy=(xt, yt),
+            xytext=(x0 + 0.06 * (x0 - xt), y0 + 0.06 * (y0 - yt)),
+            arrowprops=dict(arrowstyle='-|>', lw=lw, color=color),
+        )
+    ax.text(xN_text, yN_text, "N", color=color, ha='center', va='bottom')
+    ax.text(xE_text, yE_text, "E", color=color, ha='center', va='bottom')
 
 
 def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
@@ -160,6 +225,8 @@ def render_original(
     # parse as lyric format
     image_infos = parse_image_infos_from_lyric(config_file)
     if image_infos:
+        region_info = parse_region_info_from_lyric(config_file)
+        ra, dec = region_info.ra, region_info.dec
         rendered_images = {}
         for image_info in image_infos:
             sci_full = fits.getdata(*image_info.image)
@@ -184,6 +251,17 @@ def render_original(
                 f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red]"
                 f"\nShaded: Masked; Focus: Central Galaxy",
                 fontsize=6, pad=3)
+            # Celestial N/E compass — same orientation as GalfitS image_fit.png.
+            if ra is not None and dec is not None:
+                try:
+                    with fits.open(image_info.image[0]) as hdul:
+                        wcs = WCS(hdul[0].header)
+                    vEVN = sky_direction_vectors(wcs, ra, dec)
+                    if vEVN is not None:
+                        draw_compass(ax1, *vEVN, color='lime')
+                        draw_compass(ax2, *vEVN, color='lime')
+                except Exception:
+                    pass
             plt.tight_layout()
 
             lyric_dir = os.path.dirname(config_file)

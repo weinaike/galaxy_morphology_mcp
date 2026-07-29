@@ -75,7 +75,9 @@
     # 1.预期该中心星系的最终的成分组成（必须包含完整的成分类型预测）：
     # 2.本次调整物理目标:xxx
     # 3.完备的初始参数:
-    | 成分 | x | y | n | mag | Re | ba | pa |
+    #    注：pa 列填写 sky-PA（正北 0°，逆时针增加到东；对齐原图右上角 N 箭头，不要对齐图纵轴），
+    #    与 GALFIT 单波段 "+Y 轴为 0°" 的约定不同；detect_galfits_bar_lopsidedness 返回的 bar.pa_deg 可直接填入。
+    | 成分 | x | y | n | mag | Re | ba | pa (sky-PA) |
     | --- | --- | --- | --- | --- |
     | Disk | xxx | xxx | xxx | xxx | xxx | xxx | xxx |
     | Bulge | xxx | xxx | xxx | xxx | xxx | xxx | xxx |

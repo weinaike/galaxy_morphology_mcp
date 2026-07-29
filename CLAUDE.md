@@ -75,6 +75,16 @@ The only allowed exception is the all-zero unused-slot convention `[0, 0, 0, 0, 
 | Edge-on Disk | edgeondisk | Pa5 = R_s (scale-length), Pa6 = h_s (scale-height), Pa7 = PA, Pa8 unused/fixed |
 | AGN/Nucleus | **N block** (Na1-Na27, NOT a P-block profile). Use when Bulge Re collapses below threshold — see AGN/PSF replacement rule below | Na4, Na5 = x, y center; Na10/Na26 = luminosity |
 
+### Position Angle (PA) convention — GalfitS multi-band
+
+All position angles written into a `.lyric` `Pa7` slot (and any other PA-bearing slot, including `Pa23` theta_m for Fourier modes) use the **sky-PA convention**:
+
+- **0° = celestial North**, increasing **counter-clockwise toward East** (0°→90°→180°→270° sweeps N→W→S→E on a North-up plot).
+- This is **different from GALFIT single-band** (GALFIT uses "+Y image axis = 0°, CCW"). Do **not** apply the GALFIT habit when writing GalfitS lyrics.
+- Visual reference: `render_original` / `all_bands_comparison.png` draw a lime compass (N/E arrows) in the upper-right of each original panel — align the component's major axis against the **N arrow** when estimating PA, not against the image's vertical axis.
+- `detect_galfits_bar_lopsidedness` returns `bar.pa_deg` and `lopsidedness.phase_deg` already in this convention — copy directly into `Pa7` / `Pa23`, no rotation needed.
+- Internally the code rotates sky-PA → image-PA for the 2·Re ellipses drawn on residual panels (`extract_component_attributes` in parse_lyric.py applies `((pa + δang + 90 + 180) % 360 - 180)`); **you never do this rotation by hand** — write raw sky-PA into the lyric.
+
 ### Edge-on Disk Selection Rule
 
 Use `edgeondisk` only for genuinely edge-on disks: first fit a Sersic disk with free axis ratio, then convert to `edgeondisk` only when the fitted disk has **b/a < 0.17** (equivalent to inclination >80° under the thin-disk approximation) **and** the residual/original image shows edge-on vertical structure such as a dust lane or disk thickness. If b/a ≥ 0.17, keep a Sersic disk with n≈1 instead of forcing `edgeondisk`; this preserves the inclination information and avoids over-constraining moderately inclined disks. For `edgeondisk`, Pa5 is `rs`, Pa6 is `hs`, Pa7 is PA, and Pa8 is not used and should be fixed.

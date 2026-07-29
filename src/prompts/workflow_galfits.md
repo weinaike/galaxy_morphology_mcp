@@ -13,7 +13,7 @@
 * **detect_galfits_bar_lopsidedness 结果解读与固化：**
     - 工具返回结构为 `{"results": [{band, bar:{detected, pa_deg, b_over_a}, lopsidedness:{detected, mag, phase_deg}}, ...]}`，按波段列表。
     - **跨波段 OR-logic**：任一波段 `bar.detected=True` → 认定 Bar 存在；任一波段 `lopsidedness.detected=True` → 认定偏心存在，作为阶段二高优先级添加 Fourier m=1 的依据。
-    - **PA 取值规则**：Bar 的 PA 优先取蓝端波段（如 F115W）的返回值；红端（F200W/F444W）作参考。
+    - **PA 取值规则**：Bar 的 PA 优先取蓝端波段（如 F115W）的返回值；红端（F200W/F444W）作参考。`detect_galfits_bar_lopsidedness` 返回的 `pa_deg` 已经是 **sky-PA**（正北 0° 逆时针），可直接写入 `.lyric` 的 `Pa7`，无需任何换算。
     - **偏心添加决策**：任一波段 `lopsidedness.detected=True` → 在 `working_note.md` 头部标记 "m=1 Fourier 高优先级"，阶段二每次调用 `generate_beam_actions` 时需把该标签写入 `custom_instructions`，确保 VLM 在 Disk 已建立后第一时间给出"把 Disk 的 `Pa2) sersic` 改为 `sersic_f`"的候选动作。
     - **写入 working_note.md 头部**：将每波段 bar/lop 检测结论、PA、b/a、A1、phi1 固化到 `working_note.md`，供后续所有迭代轮次的 `generate_beam_actions` 读取（工具会自动把 `working_note.md` 内容注入 VLM 上下文）。
 
@@ -113,7 +113,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 **语义去重判据**——两个 (s_i, a_i) 与 (s_j, a_j) **同时满足**以下三条即视为等价，保留 g 较高者：
 1. 施加动作后的预期成分清单 `expected_C'` 在**物理身份**上等价（允许命名互换，如 "bulge n=0.5 q=0.4" 等价于 "bar n=0.5 q=0.4"）。
-2. 预期参数取值在容忍带内一致：Re ±20%、Sersic n ±0.5、q (b/a) ±0.1、PA ±10°、mag ±0.5。
+2. 预期参数取值在容忍带内一致：Re ±20%、Sersic n ±0.5、q (b/a) ±0.1、PA ±10°（**sky-PA**，正北 0° 逆时针；与 `.lyric Pa7` 同帧，禁止按 +Y 轴约定比较）、mag ±0.5。
 3. `expected_behavior_tag` 一致。
 
 **优先级分数 g ∈ [0,1]**——主模型对每个候选按以下六个维度各打 0–1 分，等权平均得到 g：
@@ -133,7 +133,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 主模型传给 `generate_beam_actions` 的 `custom_instructions` 是 VLM 生成候选时的关键上下文。主模型在其中扮演的是**客观信息提供者**，不是**候选方向建议者**。主模型对候选方向的筛选发生在入队打分阶段（§去重与排序），而不是在 custom_instructions 阶段。
 
 **必须包含**（客观描述性信息）：
-1. 阶段一 bar/lop 跨波段 OR-logic 结论、PA、b/a；
+1. 阶段一 bar/lop 跨波段 OR-logic 结论、PA（**sky-PA**，正北 0° 逆时针；与 `Pa7` 同帧，VLM 与主模型禁止套用 GALFIT 的 +Y 轴约定）、b/a；
 2. 父状态的成分清单 C、关键参数 P 摘要；
 3. **当前拟合结果存在的具体问题**（如有；这是最重要的部分，必须客观详尽）：
    - 哪些参数触及上下界（标注 ⚠️ 与具体数值，如 `bar_Re=12" ⚠️触上限`、`bulge_axrat=0.1 ⚠️触下界`）；
@@ -192,7 +192,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 ## 基本信息
 - 星系ID / 坐标 / 拟合区域 / 波段
 - 束宽 W = 5；全局预算 N_max = 15
-- 阶段一结论（VLM 形态分类、bar/lop 跨波段 OR-logic、PA 取值、b/a）
+- 阶段一结论（VLM 形态分类、bar/lop 跨波段 OR-logic、PA 取值（**sky-PA**，正北 0° 逆时针；写入时直接进 `Pa7` 无需换算）、b/a）
 
 ## Beam 状态快照（每次主循环迭代后覆写本节，不要追加）
 ### 当前最优 s*
@@ -248,7 +248,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 3. **覆写优于追加**：Beam 状态快照每次覆写；分支小节与跨分支日志才追加。
 
 ### 步骤 4. 物理意义分析 与 奥卡姆剃刀原则（beam search 终止后执行）
-- 物理意义分析：严格遵循 `<星系成分分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA 与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_beam_actions` 的 `custom_instructions`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 N 块 AGN 两条路径进行竞争对比——只有 AGN 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。
+- 物理意义分析：严格遵循 `<星系成分分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA（**sky-PA**，对齐原图 N 箭头）与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_beam_actions` 的 `custom_instructions`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 N 块 AGN 两条路径进行竞争对比——只有 AGN 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。
 - 奥卡姆剃刀原则：**仅适用于 Nucleus/AGN 成分**。若 s\* 含 Nucleus 且 ΔBIC < 10，把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
 - 上述两类重启 beam search 的累计 n 仍受 N_max = 15 总预算约束；若预算已耗尽，进入阶段三由阶段三判定是否可接受。
 

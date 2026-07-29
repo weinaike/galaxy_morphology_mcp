@@ -2,6 +2,8 @@
 
 > 参数格式的完整定义（Pa1-Pa32 各字段含义、N 块结构、Galaxy/Atlas 组织、Phase 1/2/3 标志等）请通过 `/skill galfits-manual` 查询。本文件只规定**本项目特有的策略**：成分白名单、多波段判据、初值选取规则、迭代锁定规则、约束最佳实践。
 
+> **🔑 PA 约定（写 lyric 前必读）**：所有进入 `.lyric` `Pa7`（以及 Fourier 模式的 `Pa23` theta_m）的位置角都用 **sky-PA**：**正北为 0°，逆时针增加到东**。这与 GALFIT 单波段的 "+Y 轴为 0°" 约定不同 —— 不要套用 GALFIT 习惯。`render_original` / `all_bands_comparison.png` 每张原图右上角的 lime 指南针（N/E 箭头）就是这个约定的视觉参照，估 PA 时**对齐 N 箭头**，不要对齐图的纵轴。`detect_galfits_bar_lopsidedness` 返回的 `bar.pa_deg` 已经是 sky-PA，直接写入 `Pa7` 即可，无需换算。
+
 ## 成分类型的规范（必须严格遵守）
 
 - **Disk（盘）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 1（当确认了disk成分后，后续的拟合过程中n必须固定为1）。
@@ -58,13 +60,13 @@ GalfitS 的参数格式为 `[initial_value, min, max, step, vary]`，其中 `var
 如果在残差图和原图上能识别 Bar 特征：
 - n 固定为 0.5
 - 轴比 b/a 初值设定在 0.2–0.4 之间
-- PA 根据图像中 Bar 的长轴方向测量后初始化
+- PA 根据图像中 Bar 的长轴方向测量后初始化（**sky-PA**，正北 0° 逆时针；对齐原图右上角的 N 箭头，不要对齐图的纵轴）
 - Re 设定在核球和盘之间
 - mag 参考通量分配原则
 - 添加 Bar 的同时，Disk 的 Re 初值也应做相应调整，使总体合理
 
 **优先使用 `detect_galfits_bar_lopsidedness` 的客观测量值作为初值**：
-- 工具返回的 `bar.pa_deg` → Pa7 初值（跨波段 OR-logic，PA 取蓝端波段优先）
+- 工具返回的 `bar.pa_deg` → Pa7 初值（跨波段 OR-logic，PA 取蓝端波段优先）；`bar.pa_deg` 本身就是 sky-PA，与 `Pa7` 同帧，**直接写入无需换算**
 - 工具返回的 `bar.b_over_a` = 1 − e_max → Pa8 初值
 - 仅当工具未检出但视觉明显时才手工估。
 
@@ -87,7 +89,7 @@ GalfitS 的参数格式为 `[initial_value, min, max, step, vary]`，其中 `var
 
 当残差图中检测到明显的伴星系时，将其作为独立的 Galaxy（G 块）添加，并新建对应的 Profile（P 块）：
 
-- **几何参数（Pa3–Pa8）**：x、y、Re、q（b/a）、PA 均依据 LLM 对原图/残差图的识别结果直接赋值，无需手动估算
+- **几何参数（Pa3–Pa8）**：x、y、Re、q（b/a）、PA 均依据 LLM 对原图/残差图的识别结果直接赋值，无需手动估算。其中 PA 用 **sky-PA**（正北 0° 逆时针，对齐 N 箭头）
 - **Sérsic 指数 n**：伴星系形态较简单，n 可直接设为 2
 - **物理参数（红移 z、消光 EB-V、SED 参数等）**：直接照抄主星系的默认值
 - **质量（log_M 或相关参数）**：伴星系 mass 统一设为 9

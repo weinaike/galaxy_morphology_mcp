@@ -51,6 +51,15 @@
 
 **禁止**捆绑无关联的原子操作（如同时增 Bulge 又改 Disk PA 又删伴星系）。
 
+## 🔑 PA 约定（生成含 PA 的候选前必读）
+
+凡候选动作涉及 PA（位置角）—— 如 `add(Bar, ..., PA=...)`、`tune(component, pa=...)`、Fourier 模式的 `theta_m` —— 一律使用 **sky-PA**：
+
+- **0° = 正北**（不是图的纵轴！），**逆时针增加到东**
+- 这与 GALFIT 单波段 "+Y 轴为 0°" 的约定不同；不要套用 GALFIT 习惯
+- 视觉参照：`render_original` / `all_bands_comparison.png` 每张原图右上角的 lime 指南针（N/E 箭头）—— **对齐 N 箭头读角度**
+- `detect_galfits_bar_lopsidedness` 返回的 `bar.pa_deg` 已经是 sky-PA，可直接作为候选 `PA=` 的取值
+
 ## 候选空间字母表（生成前必读）
 
 在生成候选前，显式列出主星系与伴星系的合法成分类型空间。这是"菜单"不是"答案"——实际候选仍须基于阶段一的残差证据与下文各节的认定规则。**目的**：避免低频但合法的候选（特别是 Lens）因 VLM 训练分布稀疏而被系统性遗漏。
@@ -99,7 +108,7 @@ Disk 的 Sérsic 指数 n 在物理上**可以小于 1**（对应低表面亮度
 ### depth = 1（父状态是输入 .lyric 的首次拟合结果）
 依据 `working_note.md` 头部的阶段一 `detect_galfits_bar_lopsidedness` 结论决定候选数：
 - **lopsidedness 检出**（任一波段）→ **1 个候选**：`tune(Disk, sersic→sersic_f)`（偏心优先级最高，先于加任何成分）。
-- **lopsidedness 未检出 + bar 检出**（任一波段）→ **1–2 个候选**：`add(Bulge, n=4 fixed)`（标准 Disk+Bulge 拆分）与 `add(Bar, n=0.5 fixed, PA≈阶段一 PA)`（仅当原图 bar 特征强）。
+- **lopsidedness 未检出 + bar 检出**（任一波段）→ **1–2 个候选**：`add(Bulge, n=4 fixed)`（标准 Disk+Bulge 拆分）与 `add(Bar, n=0.5 fixed, PA≈阶段一 PA)`（仅当原图 bar 特征强）。此处 `PA` 用 **sky-PA**（见 §🔑 PA 约定），阶段一 `detect_galfits_bar_lopsidedness` 返回的 `bar.pa_deg` 可直接拿来用。
 - **两者都未检出** → **1 个候选**：`add(Bulge, n=4 fixed)`。
 - **例外**：若单 sersic 拟合残差清楚地显示侧视盘特征（b/a < 0.17 且残差有 dust lane / 盘厚度），可改为 **1 个候选**：`tune(Disk, sersic→edgeondisk)`。
 

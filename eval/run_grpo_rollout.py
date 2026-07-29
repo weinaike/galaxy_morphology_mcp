@@ -857,11 +857,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    if getattr(args, "num_candidates", 1) < 2:
+    if hasattr(args, "num_candidates") and args.num_candidates < 2:
         raise ValueError("--num-candidates must be >= 2 for a GRPO group")
-    if getattr(args, "sample_batch_size", 1) < 1:
+    if hasattr(args, "sample_batch_size") and args.sample_batch_size < 1:
         raise ValueError("--sample-batch-size must be >= 1")
-    if getattr(args, "galfit_concurrency", 1) < 1:
+    if hasattr(args, "galfit_concurrency") and args.galfit_concurrency < 1:
         raise ValueError("--galfit-concurrency must be >= 1")
     args.func(args)
 

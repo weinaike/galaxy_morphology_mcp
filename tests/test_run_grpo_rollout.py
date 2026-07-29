@@ -4,6 +4,7 @@ import json
 from data_gen.dataset_utils import _to_physical_id
 from eval.run_grpo_rollout import (
     _prediction_summary,
+    build_parser,
     classify_parent_kind,
     collect_parent_records,
     execute_prediction,
@@ -177,3 +178,10 @@ def test_load_physical_ids_supports_report_dict(tmp_path):
         json.dumps({"test_physical_ids": ["p1", "p2"]}), encoding="utf-8"
     )
     assert load_physical_ids(path) == {"p1", "p2"}
+
+def test_prepare_subcommand_has_no_sampling_only_arguments():
+    args = build_parser().parse_args(
+        ["prepare", "--input-dir", "input", "--output", "parents.jsonl"]
+    )
+    assert args.command == "prepare"
+    assert not hasattr(args, "num_candidates")

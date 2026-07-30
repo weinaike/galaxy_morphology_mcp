@@ -1,4 +1,5 @@
 import os
+import asyncio
 import re
 import shutil
 import subprocess
@@ -392,7 +393,11 @@ async def run_galfit(
     working_dir = os.path.dirname(os.path.abspath(config_file))
 
     try:
-        proc = subprocess.run(
+        # subprocess.run is blocking. Offload only the external GALFIT process so
+        # multiple candidates can run concurrently while matplotlib postprocessing
+        # remains serialized on the event-loop thread.
+        proc = await asyncio.to_thread(
+            subprocess.run,
             command,
             cwd=working_dir,
             capture_output=True,

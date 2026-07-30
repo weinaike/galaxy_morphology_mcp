@@ -79,19 +79,29 @@ c.1 **Re 全序程序化校验**（Re-ordering gate）：调用 `check_re_orderi
      3. 若 `swappable_overall=False`：把返回的 `custom_instructions_hint` 字段**原样拼接**到下一步 `generate_beam_actions` 的 `custom_instructions` 末尾；正常走候选生成流程。
    - **status="error"**：记录 `error_message` 到 `working_note.md`，**不阻断**（沿用现状，由落锁前 verifier 兜底）；进入 d。
 d. **更新 s\***：按 §去重与排序 中的 score 函数评分；若 score(s') > score(s\*)，则 s\* ← s'，`stagnation = 0`；否则 `stagnation += 1`。覆写 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节。
-e. **下一层候选生成**：以新对比图为 `comparison_file`、新 `.lyric` 为 `lyric_file`、新 `.gssummary` 为 `summary_file`，调用：
-    ```
-    generate_beam_actions(
-        ...,
-        branch_id         = branch,
-        parent_label      = <branch>.<local_round>,
-        depth             = depth + 1,   # 新候选应用到的父状态深度
-        working_note_file = <abs path>,
-        custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一结论 + 父轮次已尝试动作清单 + s' 拟合结果的具体问题（触界参数/Re 全序校验 violations/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
-    )
-    ```
-    工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个）。
-f. **去重 + 打分 + 入队**：主模型对每个新候选：
+e. **候选生成（两个正交来源，合并后统一进入步骤 f 打分入队）**：每轮主循环的候选由两个触发条件正交的来源并行生成——e.i 由 VLM 基于残差图像的视觉分析驱动，e.ii 由主模型基于 `.gssummary` 的客观阈值驱动。两类候选合并后走完全相同的去重 / 打分 / 截断规则（步骤 f），彼此平等竞争入队。
+    - **e.i VLM 视觉驱动候选**：以新对比图为 `comparison_file`、新 `.lyric` 为 `lyric_file`、新 `.gssummary` 为 `summary_file`，调用：
+        ```
+        generate_beam_actions(
+            ...,
+            branch_id         = branch,
+            parent_label      = <branch>.<local_round>,
+            depth             = depth + 1,   # 新候选应用到的父状态深度
+            working_note_file = <abs path>,
+            custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一结论 + 父轮次已尝试动作清单 + s' 拟合结果的具体问题（触界参数/Re 全序校验 violations/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
+        )
+        ```
+        工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个）。
+    - **e.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查是否需要生成候选。这类候选针对"视觉上可见但数值上不必要的成分"——VLM 从图像上看到该成分存在会倾向于保留，移除类判断必须由主模型基于客观数值承担。当前定义的触发规则：
+        - **伴星系必要性检查**：若 s' 含 Companion，读取 `.gssummary` 中 companion 与 disk 的 `logNorm_<component>_<band>` / `Mag_<component>_<band>`，计算三条客观判据：
+          1. `ΔlogNorm = logNorm_companion − logNorm_disk`（dex）；
+          2. `ΔMag = Mag_companion − Mag_disk`（mag）；
+          3. 通量比 `f_companion/f_disk = 10^(−0.4·ΔMag)`。
+          任一触发条件成立（`ΔlogNorm ≤ −2 dex`、或 `ΔMag ≥ 5 mag`、或 `f_companion/f_disk ≤ 1%`）→ 主模型生成 `remove(Companion)` 候选，action_id 形如 `<branch>-<parent>-auto-companion-occam`，σ 取中性值 0.5。候选声明须写入三条判据的实测数值作为 physical_motivation。
+          若 s' 不含 Companion，或三条均不成立，不生成。
+        - 未来若需扩展其他客观数值触发（如 sky 背景异常、某成分 Mag 异常暗等），按同样模式在此子项追加规则。
+    - **追溯标记**：e.ii 生成的候选在 `working_note.md` 的相应分支小节单独标注"[主模型数值规则]"，便于和 e.i 的 VLM 候选区分。若该候选在步骤 f 因 g < 0.3 被丢弃或被 W=5 截断，记入"跨分支决策日志"。
+f. **去重 + 打分 + 入队**：主模型对每个新候选（e.i VLM 候选与 e.ii 主模型数值规则候选合并后的完整集合）：
     - 与 Q 中已有 (s_j, a_j) 做 §去重与排序 的语义去重；若等价则保留 g 较高者。
     - 对保留者按六维打分得到 g。
     - **g_min 阈值**：若 g < 0.3，直接丢弃，不入队（记入 `working_note.md` 的"跨分支决策日志"，标注 action_id 与丢弃原因）。这避免低质量候选堆积导致队列永不空。
@@ -249,7 +259,13 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 ### 步骤 4. 物理意义分析 与 奥卡姆剃刀原则（beam search 终止后执行）
 - 物理意义分析：严格遵循 `<星系成分分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA（**sky-PA**，对齐原图 N 箭头）与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_beam_actions` 的 `custom_instructions`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 N 块 AGN 两条路径进行竞争对比——只有 AGN 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。
-- 奥卡姆剃刀原则：**仅适用于 Nucleus/AGN 成分**。若 s\* 含 Nucleus 且 ΔBIC < 10，把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
+- 奥卡姆剃刀原则：
+  - **Nucleus/AGN 成分**：若 s\* 含 Nucleus 且 ΔBIC < 10，把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
+  - **伴星系（Companion）**：若 s\* 含 Companion 且满足以下任一客观条件，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证（删除后 BIC 反升则保留 Companion）：
+    - companion 对总通量贡献 ≤ 1%；
+    - companion `Mag` 比 disk `Mag` 暗 ≥ 5 mag（即通量比 ≤ 1%）；
+    - companion `logNorm` 比 disk `logNorm` 低 ≥ 2 dex。
+    判定所需数值取自 s\* 的 `.gssummary`（各成分的 `logNorm_<component>_<band>` 与 `Mag_<component>_<band>`）。三条中任一条满足即触发；若三条均不满足但 companion 位置远离主星系（中心距 > 2·Re_disk）且通量占比 < 5%，仍建议跑一次 `remove(Companion)` 对比拟合作为稳健性验证。
 - 上述两类重启 beam search 的累计 n 仍受 N_max = 15 总预算约束；若预算已耗尽，进入阶段三由阶段三判定是否可接受。
 
 阶段三. 结果分析与报告撰写

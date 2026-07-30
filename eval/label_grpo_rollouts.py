@@ -23,6 +23,29 @@ from eval.reward_for_grpo import (
 from eval.validate_grpo_reward import build_replay_report, load_jsonl
 
 
+def _load_project_env() -> Path:
+    """Load the repository .env without exposing its contents."""
+
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        if env_path.is_file():
+            for line in env_path.read_text(encoding="utf-8-sig").splitlines():
+                line = line.strip()
+                if line.startswith("export "):
+                    line = line[7:].lstrip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, value = line.split("=", 1)
+                if name.strip() == "OPENAI_API_KEY":
+                    os.environ["OPENAI_API_KEY"] = value.strip().strip("'\"")
+                    break
+    else:
+        load_dotenv(dotenv_path=env_path, override=True)
+    return env_path
+
+
 def _key(row: Mapping[str, Any]) -> tuple[str, int]:
     return str(row.get("group_id")), int(row.get("candidate_index") or 0)
 
@@ -445,6 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    env_path = _load_project_env()
     args = build_parser().parse_args()
     if args.vlm_concurrency < 1:
         raise ValueError("--vlm-concurrency must be >= 1")
@@ -454,6 +478,11 @@ def main() -> None:
         raise ValueError("--max-candidates must be >= 0")
     if args.resume and args.overwrite:
         raise ValueError("--resume and --overwrite are mutually exclusive")
+    if not args.api_key and not os.getenv("OPENAI_API_KEY"):
+        raise ValueError(
+            f"OPENAI_API_KEY was not found in {env_path}; "
+            "set it in the project .env or pass --api-key"
+        )
     args.shaped_output = args.shaped_output or _derived_path(
         args.output, "_shaped.jsonl"
     )

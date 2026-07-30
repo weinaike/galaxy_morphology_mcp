@@ -432,9 +432,13 @@ async def execute_prediction(
             max_iter=max_iter,
         )
     except Exception as exc:
+        # Exceptions raised by the executor itself (missing dependencies,
+        # rendering bugs, filesystem faults, etc.) are evaluator failures and
+        # must be masked. A normally returned GALFIT failure below is instead
+        # attributed to the policy action and receives the coarse -1 reward.
         record.update(
-            outcome=OUTCOME_POLICY_EXECUTION_FAILURE,
-            failure_reason=f"galfit_exception: {type(exc).__name__}: {exc}",
+            outcome=OUTCOME_EVALUATOR_FAILURE,
+            failure_reason=f"galfit_evaluator_exception: {type(exc).__name__}: {exc}",
         )
         return record
     record["galfit_status"] = galfit_result.get("status")

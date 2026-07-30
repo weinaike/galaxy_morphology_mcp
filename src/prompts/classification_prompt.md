@@ -20,6 +20,7 @@ Provide a detailed, objective description of what you observe from images of dif
   - Spiral arm patterns (logarithmic curves extending from center or bar ends)
   - A dominant bulge vs. extended envelope
   - Extended low-surface-brightness features (possible tidal tails, shells, or streams)
+  - **Double-peak / offset secondary peak structure (embedded companion sign)**: In the high dynamic range image (99.99th pctl), check whether the galaxy center shows a double-peak structure — i.e., besides the primary bulge/nuclear peak, is there a secondary local brightness maximum offset by a few to a dozen pixels from the exact center (often sitting on or just inside the bar's isophote contour)? If present, report its approximate pixel coordinates and direction relative to the primary peak. This structure likely indicates an embedded companion galaxy or merger remnant that will require a separate component to fit.
 
 ### Stage 2 — Analyze Possible Morphological Components
 

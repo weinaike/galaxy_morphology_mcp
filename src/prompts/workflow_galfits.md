@@ -92,15 +92,13 @@ e. **候选生成（两个正交来源，合并后统一进入步骤 f 打分入
         )
         ```
         工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个）。
-    - **e.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查是否需要生成候选。这类候选针对"视觉上可见但数值上不必要的成分"——VLM 从图像上看到该成分存在会倾向于保留，移除类判断必须由主模型基于客观数值承担。当前定义的触发规则：
-        - **伴星系必要性检查**：若 s' 含 Companion，读取 `.gssummary` 中 companion 与 disk 的 `logNorm_<component>_<band>` / `Mag_<component>_<band>`，计算三条客观判据：
-          1. `ΔlogNorm = logNorm_companion − logNorm_disk`（dex）；
-          2. `ΔMag = Mag_companion − Mag_disk`（mag）；
-          3. 通量比 `f_companion/f_disk = 10^(−0.4·ΔMag)`。
-          任一触发条件成立（`ΔlogNorm ≤ −2 dex`、或 `ΔMag ≥ 5 mag`、或 `f_companion/f_disk ≤ 1%`）→ 主模型生成 `remove(Companion)` 候选，action_id 形如 `<branch>-<parent>-auto-companion-occam`，σ 取中性值 0.5。候选声明须写入三条判据的实测数值作为 physical_motivation。
-          若 s' 不含 Companion，或三条均不成立，不生成。
+    - **e.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查，向 VLM 委托需视觉验证的候选。这类候选针对"视觉上可见但数值上可疑的成分"——VLM 从图像上看到该成分存在会倾向于保留，但数值上若可疑（如通量极低），主模型把客观观数据交给 VLM，由 VLM 结合原图视觉验证决定是否生成移除候选。当前定义的触发规则：
+        - **伴星系必要性检查（数值 + 视觉双轴判据）**：若 s' 含 Companion，读取 `.gssummary` 中 companion 与 disk 的 `logNorm_<component>_<band>` / `Mag_<component>_<band>`，计算通量比 `f_companion/f_disk = 10^(−0.4·ΔMag)`（其中 `ΔMag = Mag_companion − Mag_disk`）。
+          - 若通量比 > 1%：companion 通量显著，不触发移除检查。
+          - 若通量比 ≤ 1%（**条件 A 命中**）：主模型**不直接生成 remove 候选**，而是把三项数值（通量比、ΔMag、`ΔlogNorm = logNorm_companion − logNorm_disk`）写入当轮 `generate_beam_actions` 的 `custom_instructions`，格式为："伴星系条件 A 命中：companion 通量比 = 0.4%, ΔMag = 5.91, ΔlogNorm = -2.37。请 VLM 做条件 B 视觉验证：查看原图面板 companion 位置是否有肉眼可见亮斑，无可见源才生成 remove(Companion)。" 由 VLM 在候选生成阶段执行条件 B 视觉验证（见 `beam_action_generation_prompt.md` §伴星系移除验证）：仅当 A（数值暗）AND B（原图无可见源）同时成立时，VLM 才生成 `remove(Companion)` 候选。若原图有可见亮斑（B 不命中），VLM 不生成 remove 候选，companion 保留。
+          - 若 s' 不含 Companion，不触发。
         - 未来若需扩展其他客观数值触发（如 sky 背景异常、某成分 Mag 异常暗等），按同样模式在此子项追加规则。
-    - **追溯标记**：e.ii 生成的候选在 `working_note.md` 的相应分支小节单独标注"[主模型数值规则]"，便于和 e.i 的 VLM 候选区分。若该候选在步骤 f 因 g < 0.3 被丢弃或被 W=5 截断，记入"跨分支决策日志"。
+    - **追溯标记**：e.ii 触发的数值检查（无论 VLM 最终是否生成 remove 候选）在 `working_note.md` 的相应分支小节标注"[主模型数值规则委托]"，记录三项实测数值与 VLM 的视觉验证结论（原图有无可见源）。便于后续审计伴星系保留/移除决策的依据。
 f. **去重 + 打分 + 入队**：主模型对每个新候选（e.i VLM 候选与 e.ii 主模型数值规则候选合并后的完整集合）：
     - 与 Q 中已有 (s_j, a_j) 做 §去重与排序 的语义去重；若等价则保留 g 较高者。
     - 对保留者按六维打分得到 g。
@@ -261,11 +259,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 - 物理意义分析：严格遵循 `<星系成分分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA（**sky-PA**，对齐原图 N 箭头）与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_beam_actions` 的 `custom_instructions`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 N 块 AGN 两条路径进行竞争对比——只有 AGN 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。
 - 奥卡姆剃刀原则：
   - **Nucleus/AGN 成分**：若 s\* 含 Nucleus 且 ΔBIC < 10，把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
-  - **伴星系（Companion）**：若 s\* 含 Companion 且满足以下任一客观条件，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证（删除后 BIC 反升则保留 Companion）：
-    - companion 对总通量贡献 ≤ 1%；
-    - companion `Mag` 比 disk `Mag` 暗 ≥ 5 mag（即通量比 ≤ 1%）；
-    - companion `logNorm` 比 disk `logNorm` 低 ≥ 2 dex。
-    判定所需数值取自 s\* 的 `.gssummary`（各成分的 `logNorm_<component>_<band>` 与 `Mag_<component>_<band>`）。三条中任一条满足即触发；若三条均不满足但 companion 位置远离主星系（中心距 > 2·Re_disk）且通量占比 < 5%，仍建议跑一次 `remove(Companion)` 对比拟合作为稳健性验证。
+  - **伴星系（Companion）**：若 s\* 含 Companion 且通量比 ≤ 1%（条件 A，计算方式同 e.ii），把该数值结论作为强上下文写入 `generate_beam_actions` 的 `custom_instructions`（格式同 e.ii），由 VLM 执行条件 B 视觉验证（原图面板 companion 位置是否有肉眼可见亮斑）。仅当 A∧B 同时成立（数值暗 AND 原图无可见源）时，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证（删除后 BIC 反升则保留 Companion）。若原图有可见亮斑（条件 B 不命中），不触发移除——该 companion 是真实致密源，通量低是因宿主太大而非源不存在。
 - 上述两类重启 beam search 的累计 n 仍受 N_max = 15 总预算约束；若预算已耗尽，进入阶段三由阶段三判定是否可接受。
 
 阶段三. 结果分析与报告撰写

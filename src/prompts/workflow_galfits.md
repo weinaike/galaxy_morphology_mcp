@@ -12,10 +12,14 @@
 * **查看原始数据与图像：** 使用 render_original, view_original_image, detect_galfits_bar_lopsidedness 工具分析原图，确认星系的基本形态特征（如是否存在明显的核球、盘、棒结构等）。这将为后续的拟合提供初始猜测值。
 * **detect_galfits_bar_lopsidedness 结果解读与固化：**
     - 工具返回结构为 `{"results": [{band, bar:{detected, pa_deg, b_over_a}, lopsidedness:{detected, mag, phase_deg}}, ...]}`，按波段列表。
-    - **跨波段 OR-logic**：任一波段 `bar.detected=True` → 认定 Bar 存在；任一波段 `lopsidedness.detected=True` → 认定偏心存在，作为阶段二高优先级添加 Fourier m=1 的依据。
+    - **检测性质（重要）**：此检测是**自上而下的形态学提示**（top-down hint），不是自下而上的成分级判定（bottom-up verdict）。它只看原图的等照度线/傅里叶特征，不经过"添加成分 → 看残差是否改善"的拟合验证。因此：
+      - **检出（detected=True）= 弱正证据**：存在该成分的先验概率升高，阶段二应积极生成对应候选（但不保证拟合一定接受）。
+      - **未检出（detected=False）= 零证据，不是负证据**：不构成"该成分不存在"的证明。bar/lop 可能在残差驱动的自下而上探索中被发现（典型情形：中心成分建立后，高动态范围图揭示出扁长内部结构；或 bulge 释放 n 后，残差浮现四极矩 bar 签名）。
+      - **金标准**：判定成分存在性的最终依据是残差驱动的拟合验证（add → refit → 残差改善 + 参数物理），不是阶段一检测。
+    - **跨波段 OR-logic**：任一波段 `bar.detected=True` → bar 先验概率升高，作为阶段二积极生成 Bar 候选的提示；任一波段 `lopsidedness.detected=True` → lop 先验概率升高，作为阶段二高优先级添加 Fourier m=1 的提示。
     - **PA 取值规则**：Bar 的 PA 优先取蓝端波段（如 F115W）的返回值；红端（F200W/F444W）作参考。`detect_galfits_bar_lopsidedness` 返回的 `pa_deg` 已经是 **sky-PA**（正北 0° 逆时针），可直接写入 `.lyric` 的 `Pa7`，无需任何换算。
     - **偏心添加决策**：任一波段 `lopsidedness.detected=True` → 在 `working_note.md` 头部标记 "m=1 Fourier 高优先级"，阶段二每次调用 `generate_beam_actions` 时需把该标签写入 `custom_instructions`，确保 VLM 在 Disk 已建立后第一时间给出"把 Disk 的 `Pa2) sersic` 改为 `sersic_f`"的候选动作。
-    - **写入 working_note.md 头部**：将每波段 bar/lop 检测结论、PA、b/a、A1、phi1 固化到 `working_note.md`，供后续所有迭代轮次的 `generate_beam_actions` 读取（工具会自动把 `working_note.md` 内容注入 VLM 上下文）。
+    - **写入 working_note.md 头部**：将每波段 bar/lop 检测结论、PA、b/a、A1、phi1 固化到 `working_note.md`，供后续所有迭代轮次的 `generate_beam_actions` 读取（工具会自动把 `working_note.md` 内容注入 VLM 上下文）。**措辞告诫**：未检出的成分必须写成"未检出（零证据，非判定性）"或类似明确标注其非判定性质，不得写成裸的"NOT detected / 不存在"，避免 VLM 与主模型在打分阶段把提示性零证据误解为判定性负证据。
 
 阶段二. 结构搜索与动态校验 (Beam Search 模式)
 *目标：通过束宽 W=5 的 beam search 在结构空间中并行搜索最优的物理成分组合，避免贪心单路径在退化轮次（如约束失效、参数坍缩）处陷入局部最优。每个束内分支仍遵循"自下而上、完成一个成分拟合后再考虑新增"的渐进式理念；beam search 只是把"单一下一步"扩展为"多条并行候选路径"。*
@@ -126,7 +130,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 **优先级分数 g ∈ [0,1]**——主模型对每个候选按以下六个维度各打 0–1 分，等权平均得到 g：
 1. **残差改善潜力**：结合 VLM 给的 σ 与主模型独立判断的残差可解释比例。
-2. **物理合理性先验**：是否符合"Disk → (F1/Companion 若检出) → Bulge → Bar → Other"的成分添加次序；是否符合 Bar/Bulge/Lens/Nucleus 的认定条件（见 `<星系成分分析的总体流程>`）。
+2. **物理合理性先验**：是否符合"Disk → (F1/Companion 若检出) → Bulge → Bar → Other"的成分添加次序；是否符合 Bar/Bulge/Lens/Nucleus 的认定条件（见 `<星系成分分析的总体流程>`）。**阶段一 detect_galfits_bar_lopsidedness 的检测结果在此维度仅作为弱先验**：检出可适度加分（提示性正证据），但**未检出不得扣分**——未检出是零证据而非负证据（详见阶段一"检测性质"条款）。一个基于残差证据（如中心四极矩、高扁率内部结构、bar 状残差等）的 Bar/Lens/Fourier 候选，即使阶段一未检出，其物理合理性得分应基于**残差证据的强度**评判，不得因阶段一未检出而压低。判定成分存在性的金标准是残差驱动的拟合验证，不是阶段一检测。
 3. **路径多样性 bonus**：与当前 Q 中已有元素的方向差异越大越加分（对抗贪心坍缩）。例如 Q 中已有 3 个"加 Bulge"方向候选时，一个"切 edgeondisk"方向候选应得该维高分。
 4. **退化惩罚**：父状态是否已退化（如 `--parconstrain` 被覆盖、bulge/disk 通量相同）；本动作是否可能继承退化。
 5. **历史一致性**：是否与 `working_note.md` 前序目标连贯，避免反复横跳。

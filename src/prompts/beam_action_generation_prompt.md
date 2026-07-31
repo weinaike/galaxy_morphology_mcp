@@ -118,11 +118,15 @@ Disk 的 Sérsic 指数 n 在物理上**可以小于 1**（对应低表面亮度
 
 搜索树浅层的下一步通常是确定性的（建立 Disk+Bulge 基础结构），没有必要并行探索；真正的分支发生在双成分结构稳定之后。按 depth 分段给出候选数：
 
+### ⚠️ 阶段一检测性质（所有 depth 适用）
+
+阶段一 `detect_galfits_bar_lopsidedness` 是**自上而下的形态学提示**，不是自下而上的成分判定。检出 = 弱正证据（积极生成对应候选）；**未检出 = 零证据，不是负证据**。bar/lop 可能在残差驱动的探索中被发现——典型情形：中心成分建立后高动态范围图揭示扁长内部结构，或 bulge 释放 n 后残差浮现四极矩 bar 签名。因此 depth ≥ 2 时，即使阶段一未检出 bar/lop，只要**残差证据或原图特征支持**，仍应正常生成 Bar / Fourier / Lens 候选，不得因"未检出"而自我审查跳过。
+
 ### depth = 1（父状态是输入 .lyric 的首次拟合结果）
 依据 `working_note.md` 头部的阶段一 `detect_galfits_bar_lopsidedness` 结论决定候选数：
 - **lopsidedness 检出**（任一波段）→ **1 个候选**：`tune(Disk, sersic→sersic_f)`（偏心优先级最高，先于加任何成分）。
 - **lopsidedness 未检出 + bar 检出**（任一波段）→ **1–2 个候选**：`add(Bulge, n=4 fixed)`（标准 Disk+Bulge 拆分）与 `add(Bar, n=0.5 fixed, PA≈阶段一 PA)`（仅当原图 bar 特征强）。此处 `PA` 用 **sky-PA**（见 §🔑 PA 约定），阶段一 `detect_galfits_bar_lopsidedness` 返回的 `bar.pa_deg` 可直接拿来用。
-- **两者都未检出** → **1 个候选**：`add(Bulge, n=4 fixed)`。
+- **两者都未检出** → **1 个候选**：`add(Bulge, n=4 fixed)`。（depth=1 先建 Bulge 骨架；bar 的探索留到 depth≥2 基于残差证据进行，不因阶段一未检出而关闭。）
 - **例外**：若单 sersic 拟合残差清楚地显示侧视盘特征（b/a < 0.17 且残差有 dust lane / 盘厚度），可改为 **1 个候选**：`tune(Disk, sersic→edgeondisk)`。
 
 ### depth = 2（双成分基础结构已建立）

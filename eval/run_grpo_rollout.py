@@ -13,13 +13,87 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import importlib
 import json
 import os
 import random
+import shutil
+import subprocess
+import tempfile
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+
+
+def preflight_grpo_runtime(work_root: str | Path) -> dict[str, Any]:
+    """Fail before rollout when the evaluator runtime is incomplete."""
+
+    required_modules = (
+        "numpy",
+        "matplotlib",
+        "PIL",
+        "scipy",
+        "astropy",
+        "photutils",
+    )
+    missing_modules: list[str] = []
+    for module_name in required_modules:
+        try:
+            importlib.import_module(module_name)
+        except (ImportError, ModuleNotFoundError):
+            missing_modules.append(module_name)
+    if missing_modules:
+        raise RuntimeError(
+            "GRPO evaluator Python dependencies are missing: "
+            + ", ".join(missing_modules)
+        )
+
+    configured_bin = os.getenv("GALFIT_BIN", "galfit")
+    galfit_bin = (
+        configured_bin
+        if os.path.isabs(configured_bin)
+        else shutil.which(configured_bin)
+    )
+    if not galfit_bin or not os.path.isfile(galfit_bin):
+        raise RuntimeError(
+            f"GALFIT executable is unavailable: GALFIT_BIN={configured_bin!r}"
+        )
+    if not os.access(galfit_bin, os.X_OK):
+        raise RuntimeError(f"GALFIT executable is not executable: {galfit_bin}")
+    try:
+        probe = subprocess.run(
+            [galfit_bin, "-help"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            f"GALFIT preflight failed: {type(exc).__name__}: {exc}"
+        ) from exc
+    if probe.returncode != 0:
+        detail = (probe.stderr or probe.stdout or "").strip()[-1000:]
+        raise RuntimeError(
+            f"GALFIT preflight returned {probe.returncode}: {detail}"
+        )
+
+    root = Path(work_root).absolute()
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.NamedTemporaryFile(dir=root, prefix=".preflight_", delete=True):
+            pass
+    except OSError as exc:
+        raise RuntimeError(
+            f"GRPO work directory is not writable: {root}: {exc}"
+        ) from exc
+
+    return {
+        "galfit_bin": str(Path(galfit_bin).absolute()),
+        "work_root": str(root),
+        "python_modules": list(required_modules),
+    }
 
 
 def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -720,6 +794,9 @@ def command_sample(args: argparse.Namespace) -> None:
 async def command_execute_async(args: argparse.Namespace) -> None:
     from eval.validate_grpo_reward import build_replay_report
 
+    preflight = preflight_grpo_runtime(args.work_dir)
+    print("runtime preflight:")
+    print(json.dumps(preflight, ensure_ascii=False, indent=2))
     output = _prepare_output(
         args.output, overwrite=args.overwrite, resume=args.resume
     )

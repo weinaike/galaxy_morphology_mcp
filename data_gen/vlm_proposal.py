@@ -20,6 +20,10 @@ from data_gen.reward import (
     get_openAI_response_multiturn,
     read_summary_md,
 )
+from data_gen.model_input_sanitization import (
+    sanitize_history_for_model,
+    sanitize_summary_for_model,
+)
 
 
 # ============================================================
@@ -77,6 +81,8 @@ def build_proposal_prompt(
     current_components: list = None,
     history_summary: str = None,
 ) -> str:
+    summary_content = sanitize_summary_for_model(summary_content)
+    history_summary = sanitize_history_for_model(history_summary)
     # 渲染当前模型成分清单（方案B：VLM 需在此基础上输出下一轮完整规格）
     cur_lines = []
     if current_components:
@@ -238,6 +244,8 @@ def build_multiturn_prompts(
     history_summary: str = None,
 ) -> Tuple[str, List[str]]:
     """拆分为3轮对话 prompt，返回 (system_prompt, [turn1, turn2, turn3])。"""
+    summary_content = sanitize_summary_for_model(summary_content)
+    history_summary = sanitize_history_for_model(history_summary)
     cur_lines = []
     if current_components:
         for i, c in enumerate(current_components):

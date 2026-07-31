@@ -34,6 +34,7 @@ from data_gen.vlm_proposal import build_proposal_prompt, SYSTEM_PROMPT
 from data_gen.reward import read_summary_md
 from data_gen.dataset_utils import _to_physical_id
 from data_gen.extract_training_data import _is_mh_accepted
+from data_gen.model_input_sanitization import normalize_generation_artifacts
 from simulator_env.galfit_actions import parse_components_from_feedme
 
 
@@ -77,8 +78,14 @@ def _build_history_summary_replica(parent_node: dict, tree: dict, history_max_st
         else:
             label = act.get("coarse_label", "?")
             note = (act.get("target") or act.get("reasoning") or "").strip().replace("\n", " ")[:50]
-            mh_tag = "(退火接受,质量未改善)" if n.get("mh_accepted") else ""
-            lines.append(f"- 第{depth}步 采纳[{label}]{mh_tag} → {metric_str}{('；' + note) if note else ''}")
+            if n.get("mh_accepted"):
+                prefix = (
+                    f"- 第{depth}步 执行[{label}]，该结果作为后续状态；"
+                    "相对上一步质量未改善"
+                )
+            else:
+                prefix = f"- 第{depth}步 采纳[{label}]"
+            lines.append(f"{prefix} → {metric_str}{('；' + note) if note else ''}")
         sibs = children_by_parent.get(n.get("parent_id"), [])
         rej = [s for s in sibs if s.get("node_id") != n.get("node_id") and not s.get("is_accepted")]
         if rej:
@@ -125,7 +132,7 @@ def _assistant_target(action: dict):
     """优先用完整原始回复(full_response, 含 CoT+JSON)；缺失则回退序列化 spec。返回 (text, used_fallback)。"""
     fr = action.get("full_response")
     if fr and isinstance(fr, str) and fr.strip():
-        return fr, False
+        return normalize_generation_artifacts(fr), False
     # 回退：从 action 里拼一个 ```json``` 规格块
     keys = ("components", "sky", "target", "confidence", "reasoning")
     payload = {k: action[k] for k in keys if k in action}

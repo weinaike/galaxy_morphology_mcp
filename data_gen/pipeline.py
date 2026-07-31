@@ -243,8 +243,14 @@ class DataGenPipeline:
                 else:
                     label = act.get("coarse_label", "?")
                     note = (act.get("target") or act.get("reasoning") or "").strip().replace("\n", " ")[:50]
-                    mh_tag = "(退火接受,质量未改善)" if n.get("mh_accepted") else ""
-                    lines.append(f"- 第{depth}步 采纳[{label}]{mh_tag} → {metric_str}{('；' + note) if note else ''}")
+                    if n.get("mh_accepted"):
+                        prefix = (
+                            f"- 第{depth}步 执行[{label}]，该结果作为后续状态；"
+                            "相对上一步质量未改善"
+                        )
+                    else:
+                        prefix = f"- 第{depth}步 采纳[{label}]"
+                    lines.append(f"{prefix} → {metric_str}{('；' + note) if note else ''}")
                 # 同层被拒尝试（n 的兄弟里未被接受的）
                 sibs = children_by_parent.get(n.get("parent_id"), [])
                 rej = [s for s in sibs if s.get("node_id") != n.get("node_id") and not s.get("is_accepted")]

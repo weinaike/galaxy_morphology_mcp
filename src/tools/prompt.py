@@ -109,3 +109,16 @@ workflow_galfits = _make_templated_prompt(
     md_file="workflow_galfits.md",
     params={"argument": ""},
 )
+
+workflow_galfit_s1 = _make_templated_prompt(
+    name="workflow_galfit_s1",
+    title="GALFIT S1 Workflow (Expert-Guided)",
+    description=(
+        "Expert-guided single-band galaxy morphology fitting workflow. "
+        "Receives an expert-specified component composition and incrementally "
+        "builds the model from a single component up to the target set. "
+        "Usage: `workflow_galfit_s1 <feedme_file> [expert_components]`"
+    ),
+    md_file="workflow_galfit_s1.md",
+    params={"argument": ""},
+)

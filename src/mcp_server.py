@@ -29,7 +29,7 @@ from tools.bar_lopsidedness_detection import (
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix
-from tools.prompt import workflow_galfit, workflow_galfits
+from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1
 from starlette.responses import Response, JSONResponse
 from dotenv import load_dotenv
 
@@ -51,6 +51,7 @@ def _register_tools_and_prompts():
         app.add_tool(run_galfit)
         app.add_tool(component_analysis)
         app.add_prompt(workflow_galfit)
+        app.add_prompt(workflow_galfit_s1)
         app.add_tool(detect_bar_lopsidedness)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 

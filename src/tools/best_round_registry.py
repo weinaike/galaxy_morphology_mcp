@@ -482,7 +482,7 @@ def run_round_comparison(
     except ImportError:
         return "UNKNOWN", None, "openai_analysis module unavailable"
 
-    text, _session_id, err = run_openai_analysis(
+    text, _session_id, err, _timing = run_openai_analysis(
         system_prompt=_COMPARISON_SYSTEM,
         analysis_prompts=[user_prompt],
         image_path=os.path.abspath(current_image),

@@ -1,0 +1,92 @@
+
+#  Input menu file: /home/wnk/code/s4g-p4-galfit/filter_mag_lt9/NGC1097/NGC1097.feedme
+
+#  Chi^2/nu = 34.127,  Chi^2 = 47897892.000,  Ndof = 1403536
+
+================================================================================
+# IMAGE and GALFIT CONTROL PARAMETERS
+A) NGC1097.phot.1_nonan.fits      # Input data image (FITS file)
+B) NGC1097_galfit.fits      # Output data image block
+C) NGC1097_sigma2014.fits      # Sigma image name (made from data if blank or "none") 
+D) PSF-1.composite.fits          # Input PSF image and (optional) diffusion kernel
+E) 5                   # PSF fine sampling factor relative to data 
+F) NGC1097.1.finmask_nonan.fits      # Bad pixel mask (FITS image or ASCII coord list)
+G) none                # File with parameter constraints (ASCII file) 
+H) 37   1467 25   1455 # Image region to fit (xmin xmax ymin ymax)
+I) 50     50           # Size of the convolution box (x y)
+J) 21.097              # Magnitude photometric zeropoint 
+K) 0.750  0.750        # Plate scale (dx dy)   [arcsec per pixel]
+O) regular             # Display type (regular, curses, both)
+P) 0                   # Choose: 0=optimize, 1=model, 2=imgblock, 3=subcomps
+
+# INITIAL FITTING PARAMETERS
+#
+#   For component type, the allowed functions are: 
+#       sersic, expdisk, edgedisk, devauc, king, nuker, psf, 
+#       gaussian, moffat, ferrer, and sky. 
+#  
+#   Hidden parameters will only appear when they're specified:
+#       Bn (n=integer, Bending Modes).
+#       C0 (diskyness/boxyness), 
+#       Fn (n=integer, Azimuthal Fourier Modes).
+#       R0-R10 (coordinate rotation, for creating spiral structures).
+#       To, Ti, T0-T10 (truncation function).
+# 
+# ------------------------------------------------------------------------------
+#   par)    par value(s)    fit toggle(s)    # parameter description 
+# ------------------------------------------------------------------------------
+
+# Component number: 1
+ 0) sersic                 #  Component type
+ 1) 752.6981 740.2468 1 1  #  Position x, y
+ 3) 10.3000     1          #  Integrated magnitude 
+ 4) 12.1046     1          #  R_e (effective radius)   [pix]
+ 5) 0.1729      1          #  Sersic index n (de Vaucouleurs n=4) 
+ 6) 0.0000      0          #     ----- 
+ 7) 0.0000      0          #     ----- 
+ 8) 0.0000      0          #     ----- 
+ 9) 0.9085      1          #  Axis ratio (b/a)  
+10) -36.2781    1          #  Position angle (PA) [deg: Up=0, Left=90]
+ Z) 0                      #  Skip this model in output image?  (yes=1, no=0)
+
+# Component number: 2
+ 0) expdisk                #  Component type
+ 1) 763.6800 753.4136 1 1  #  Position x, y
+ 3) 9.4127      1          #  Integrated magnitude 
+ 4) 133.4517    1          #  R_s (disk scale-length)   [pix]
+ 5) 0.0000      0          #     ----- 
+ 6) 0.0000      0          #     ----- 
+ 7) 0.0000      0          #     ----- 
+ 8) 0.0000      0          #     ----- 
+ 9) 0.7192      1          #  Axis ratio (b/a)  
+10) -43.7657    1          #  Position angle (PA) [deg: Up=0, Left=90]
+ Z) 0                      #  Skip this model in output image?  (yes=1, no=0)
+
+# Component number: 3
+ 0) ferrer                 #  Component type
+ 1) 750.6039 737.8003 1 1  #  Position x, y 
+ 3) 18.5616     1          #  Central surface brghtness  [mag/arcsec^2]
+ 4) 403.8141    1          #  Outer truncation radius  [pix]
+ 5) 5.9054      1          #  Alpha (outer truncation sharpness) 
+ 6) 1.0820      1          #  Beta (central slope)
+ 7) 0.0000      0          #     ----- 
+ 8) 0.0000      0          #     ----- 
+ 9) 0.3699      1          #  Axis ratio (b/a)  
+10) -32.8425    1          #  Position angle (PA) [deg: Up=0, Left=90]
+ Z) 0                      #  Skip this model in output image?  (yes=1, no=0)
+
+# Component number: 4
+ 0) psf                    #  Component type
+ 1) 752.7294 740.0987 1 1  #  Position x, y 
+ 3) 13.1620     1          #  Integrated magnitude 
+ 4) 0.0000      0          #     ----- 
+ 5) 0.0000      0          #     ----- 
+ 6) 0.0000      0          #     ----- 
+ 7) 0.0000      0          #     ----- 
+ 8) 0.0000      0          #     ----- 
+ 9) 1.0000      -1         #  Axis ratio (b/a)  
+10) 0.0000      -1         #  Position angle (PA) [deg: Up=0, Left=90]
+ Z) 0                      #  Skip this model in output image?  (yes=1, no=0)
+
+================================================================================
+

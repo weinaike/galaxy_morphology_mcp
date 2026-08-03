@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import shutil
 import subprocess
 import hashlib
@@ -21,6 +22,22 @@ from .extract_summary_galfit import extract_summary_from_galfit
 from .parse_feedme import parse_feedme, parse_components
 from .render_original import render_asinh_panel, draw_re_ellipses, effective_re
 from .sb_profile import render_sb_profile
+from .fit_callback import existing_artifacts, notify_fit_round
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert numpy/path-like values into JSON-serializable Python objects."""
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    return value
 
 # Residual-zoom panel geometry (mirrors v2 layout in rerender_comparisons.py)
 ZOOM_HALF_MIN_PX = 12       # 放大框半宽下限，防止 Re 过小时框退化
@@ -456,7 +473,8 @@ def create_comparison_png(
 
 async def run_galfit(
     config_file: Annotated[str, "absolute path to the GALFIT configuration file"],
-    options: Annotated[List[str], "options that control how galfit runs"] = []
+    options: Annotated[List[str], "options that control how galfit runs"] = [],
+    callback_url: Annotated[str | None, "Optional URL notified after this fitting round succeeds"] = None,
 ) -> dict[str, Any]:
     """Execute GALFIT single-band fitting with the given configuration file.
 
@@ -574,8 +592,10 @@ async def run_galfit(
     with open(console_log_path, "w", encoding="utf-8") as f:
         f.write(full_output)
     fit_log_path = os.path.join(working_dir, "fit.log")
+    archived_fit_log_path = None
     if os.path.exists(fit_log_path):
         shutil.move(fit_log_path, ar_dir)
+        archived_fit_log_path = os.path.join(ar_dir, os.path.basename(fit_log_path))
     if os.path.exists(output_file):        
         shutil.move(output_file, ar_dir)
         output_file = os.path.join(ar_dir, os.path.basename(output_file))
@@ -587,16 +607,50 @@ async def run_galfit(
         summary = os.path.join(ar_dir, os.path.basename(summary))    
 
     # Archive constraint file if referenced in config
+    archived_constraint_file = None
     if constraint_file and os.path.exists(constraint_file):
         shutil.copy(constraint_file, ar_dir)
+        archived_constraint_file = os.path.join(ar_dir, os.path.basename(constraint_file))
 
+    archived_galfit_file = None
     if matched_galfit_files:
         shutil.copy(latest_galfit, ar_dir)
+        archived_galfit_file = os.path.join(ar_dir, os.path.basename(latest_galfit))
     shutil.copy(config_file, ar_dir)
+    archived_config_file = os.path.join(ar_dir, os.path.basename(config_file))
     # Archive subcomps FITS if it was generated
     subcomps_file = os.path.join(working_dir, "subcomps.fits")
     if os.path.exists(subcomps_file):
         shutil.move(subcomps_file, ar_dir)
+
+    round_status_path = os.path.join(ar_dir, "round_status.json")
+    round_status = {
+        "stage": "galfit_finished",
+        "status": "success",
+        "inputs": {"feedme": archived_config_file, "constraint": archived_constraint_file},
+        "outputs": {
+            "model": output_file,
+            "comparison": comparison_png_path,
+            "summary": summary,
+            "output_param": archived_galfit_file,
+            "console_log": console_log_path,
+            "fit_log": archived_fit_log_path,
+            "subcomps": os.path.join(ar_dir, "subcomps.fits") if os.path.exists(os.path.join(ar_dir, "subcomps.fits")) else None,
+        },
+        "fit_statistics": _json_safe(fit_stats),
+    }
+    with open(round_status_path, "w", encoding="utf-8") as f:
+        json.dump(_json_safe(round_status), f, ensure_ascii=False, indent=2)
+    notification = notify_fit_round(callback_url, {
+        "event": "fit_round_finished",
+        "fitter": "galfit",
+        "status": "success",
+        "round_id": os.path.basename(ar_dir),
+        "archive_dir": ar_dir,
+        "round_status_file": round_status_path,
+        "artifacts": existing_artifacts(round_status["outputs"].values()),
+        "fit_statistics": _json_safe(fit_stats),
+    })
 
     stats_lines = ""
 
@@ -627,10 +681,13 @@ async def run_galfit(
     return {
         "status": "success",
         "message": message,
-        "input_param_file": config_file,
-        "output_param_file": latest_galfit,  
+        "input_param_file": archived_config_file,
+        "output_param_file": archived_galfit_file,
         "optimized_fits_file": output_file,      
         "image_file": comparison_png_path,
         "summary_file": summary,
         "console_log_file": console_log_path,
+        "round_status_file": round_status_path,
+        "fit_statistics": _json_safe(fit_stats),
+        "notification": notification,
     }

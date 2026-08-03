@@ -136,7 +136,7 @@ def fit_data_isophotes(image_data, sma_max=None, mask=None, auto_sky=True):
     Step 2: Fixed center, fixed PA (from Step 1), free eps, bounded maxsma
     """
     if not HAS_PHOTUTILS:
-        return None
+        return (None, None) if auto_sky else None
     if np.any(np.isnan(image_data)):
         image_data = np.nan_to_num(image_data, nan=0.0)
 
@@ -190,7 +190,7 @@ def fit_data_isophotes(image_data, sma_max=None, mask=None, auto_sky=True):
             continue
     
     if iso_step1 is None or len(iso_step1.sma) == 0:
-        return None, None if auto_sky else None
+        return (None, None) if auto_sky else None
 
     sky_value = bg_median
     if auto_sky:
@@ -242,7 +242,7 @@ def fit_data_isophotes(image_data, sma_max=None, mask=None, auto_sky=True):
     # print("Best isophote found:", iso_best.sma)
     # print("success")
     if auto_sky:
-        return iso_best, sky_value if iso_best is not None else (iso_step1, sky_value)
+        return (iso_best if iso_best is not None else iso_step1), sky_value
     else:
         return iso_best if iso_best is not None else iso_step1
 
@@ -318,14 +318,14 @@ def render_sb_profile(ax_main, ax_resid, original_data, sigma_data, model_data,
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return None
+        return None, None
 
     if model_data is None:
         ax_main.text(0.5, 0.5, 'SB Profile unavailable (missing data)',
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return None
+        return None, None
 
     if param_file is not None:
         zeropoint, pltscale = parse_photometry_params(param_file)
@@ -346,7 +346,7 @@ def render_sb_profile(ax_main, ax_resid, original_data, sigma_data, model_data,
                      ha='center', va='center', transform=ax_main.transAxes,
                      fontsize=11, color='gray')
         _style_resid_axes(ax_resid)
-        return None
+        return None, None
     
     # sma_data = isolist.sma
     # intens_data = isolist.intens

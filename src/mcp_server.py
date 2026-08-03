@@ -29,6 +29,7 @@ from tools.bar_lopsidedness_detection import (
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix
+from tools.agent_communication import request_agent, wait_for_agent_response
 from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1
 from starlette.responses import Response, JSONResponse
 from dotenv import load_dotenv
@@ -74,6 +75,8 @@ def _register_tools_and_prompts():
     app.add_tool(render_original)  
     app.add_tool(fourier_mode_analysis)
     app.add_tool(detect_bar_lopsidedness_from_isophote_tables)
+    app.add_tool(request_agent)
+    app.add_tool(wait_for_agent_response)
 
     if not has_galfit and not has_galfits:
         logger.warning(

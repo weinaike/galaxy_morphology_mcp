@@ -106,6 +106,37 @@
 
 Lens 在训练数据中频率低、且**无独立视觉签名**——它的存在通常通过 Bar 异常反推：父状态的 Bar 出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5` 时，意味着 Bar 被强行拉去拟合 Lens 结构，应拆分为 Bar + Lens。**父状态含 Bar 时，VLM 必须主动回忆此触发条件**，不得仅凭"Bar 是常见成分"就跳过 Lens 候选。详细触发条款与参数模板见下文 §通用规则 / Lens 候选生成时机。
 
+## 扁 Bulge → Bar 候选触发规则（联合诊断，VLM 必读）
+
+**动机**：当面朝向（face-on）盘星系的 Bulge 出现显著扁平（b/a 偏小），最自然的物理解释不是"扁化的核球"，而是**被误标为 Bulge 的 Bar**——Bar 有独立的三轴结构，不随盘的倾角变圆。此判据用于在 beam search 中**强制探索 bar 假设**，避免因阶段一未检出 bar 就直接跳过 bar 方向。
+
+### 触发条件（四条同时满足，缺一不可）
+
+当父状态已含 Bulge（P 块 sersic）时，读取 `.gssummary` 中 bulge 的拟合参数，按下表联合判定：
+
+| 指标 | 阈值 | 物理依据 |
+|------|------|---------|
+| `bulge_axrat` (b/a) | < 0.5 | Bar 经验上限约 0.4–0.5；圆核球通常 b/a > 0.6 |
+| `bulge_ang` 与 `disk_ang` 的 PA 夹角 | > 20° | Bar 通常与盘主轴显著斜交；若 PA 一致，扁更可能来自投影而非 Bar |
+| `bulge_n`（若 free） | 0.5 < n < 2.5 | Bar 的典型 Sérsic n 范围；n > 3.5 更像经典核球 |
+| `disk_axrat`（倾角代理） | > 0.5 | 星系非 edge-on；edge-on 星系所有成分都扁，此规则禁用 |
+
+**关键**：单看 b/a 不够。face-on 盘（disk b/a > 0.8）的 bulge b/a < 0.5 是强 Bar 信号；但 edge-on 盘的 bulge 扁是投影效应，不触发。
+
+### 触发后的候选生成（两种动作必出其一）
+
+触发条件成立时，**必须**在当轮候选里产出至少一个 Bar 方向候选，且不得因"阶段一未检出 bar"而自我审查跳过。两种候选测试不同物理假设，可择一或并存：
+
+1. **`tune(Bulge→Bar, n=0.5 fixed)`**（转换） — 测试假设："这个扁成分本身就是 Bar，没有独立 Bulge"。成分数不变。判据：ΔBIC < 0 即支持。
+2. **`add(Bar, n=0.5 fixed, PA≈bulge PA) + tune(Bulge, q_min=0.7)`**（新增 + 圆化） — 测试假设："扁 Bulge 之外还有一个独立 Bar"。成分数 +1。判据：需 ΔBIC < −10 才算显著（跨过新增参数惩罚）。圆化 Bulge 是为了打破 Bar/Bulge 简并，避免拟合器把其中一个推到极端参数。
+
+**PA 取值**：候选的 Bar PA 优先取父状态 `bulge_ang`（已对齐到扁成分的长轴方向）；或取阶段一 `detect_galfits_bar_lopsidedness` 的 `bar.pa_deg`（若检出）。两者都是 sky-PA，可直接写入。
+
+### 自检硬约束
+
+- **触发复核**：若父状态含 Bulge 且上述四条联合条件成立，本次输出**必须**包含至少一个 Bar 候选（转换或新增）。若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"虽然 bulge q=0.27 触发，但 1D 残差曲线显示 X 方向更优"），不得静默跳过。
+- **简并预警**：若选择"新增 Bar"方案，physical_motivation 必须提及"通过约束 Bulge q_min≥0.7 打破 Bar/Bulge 简并"——否则拟合器容易把两个都放在中心的扁成分推到极端参数（典型退化：bulge n 坍缩至下界、bulge/bar 亮度和 PA 几乎相同）。
+
 ## Disk 成分 Sérsic 指数 n 的操作规范
 
 Disk 的 Sérsic 指数 n 在物理上**可以小于 1**（对应低表面亮度盘 / 平滑盘 / 截断盘，面亮度中心平坦、外围下降偏陡），n<1 是合法的物理解。但在多成分分解中，释放 disk n 会增加与中心成分（Bulge/Bar/Lens）的简并风险。按 beam search 阶段分级处理：
@@ -209,3 +240,4 @@ Disk 的 Sérsic 指数 n 在物理上**可以小于 1**（对应低表面亮度
 - **Lens 触发复核（硬约束）**：父状态含 Bar 时，必须确认已主动回忆 Lens 触发条件（`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`）。若条件成立但本次未产出任何 Lens 相关候选（`add(Lens)` 或 `tune(Bar, split→Bar+Lens)`），必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"Bar 异常但残差更支持 X 方向"），不得静默跳过
 - **嵌入式伴星系时机复核（硬约束）**：若生成了 `add(Companion)` 候选且阶段一报告该伴星系为嵌入式（落在主星系等照度线 contour 上或以内，距中心 ≲ 2·Re_disk），**必须确认父状态已含 Bulge 或 Bar**。若父状态既无 Bulge 也无 Bar 却出现了嵌入式伴星系残差，**禁止**生成 `add(Companion)` 候选——应改为 `add(Bulge)` 候选，待中心骨架建立后再处理伴星系。违反此约束的典型失败模式：伴星系被拽向中心、三参数（Re/xcen/ycen）全部撞界发散。
 - **伴星系移除验证复核（硬约束）**：若补充信息中含"伴星系条件 A 命中"（通量比 ≤ 1%），必须确认已在**原图面板**上做过条件 B 视觉验证。若原图 companion 位置有可见亮斑却生成了 `remove(Companion)` 候选，视为违反约束。
+- **扁 Bulge → Bar 触发复核（硬约束）**：父状态含 Bulge 时，必须按"扁 Bulge → Bar 候选触发规则"的四条联合条件（bulge b/a < 0.5 AND PA 夹角 > 20° AND bulge n ∈ (0.5, 2.5) AND disk b/a > 0.5）做核对。条件全部成立时，本次输出**必须**包含至少一个 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增）；若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**，不得静默跳过。

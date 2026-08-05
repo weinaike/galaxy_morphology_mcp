@@ -68,8 +68,8 @@ The only allowed exception is the all-zero unused-slot convention `[0, 0, 0, 0, 
 
 | Physical Component | Model Type | Key Parameters |
 |-------------------|------------|----------------|
-| Disk | Sersic, n=1 (can be <1 for smooth/LSB/truncated disk) — fix n=1 during initial structure-building, may free in later deepening phase | Re = large, q = moderate |
-| Bulge | Sersic, n=4 (range 0.1-8) | Re = small, q = round |
+| Disk | Sersic, **n=1 fixed (vary=0, always)** — 多成分分解中的 Disk 组件 n 一律固定为 1，永不释放。注意与"单 Sersic 策略"区分：当整星系仅用单个 sersic 拟合（无 Bulge/Bar/Lens 并列，如椭圆星系终态或 Round 0 起步）时，n 是自由的整体浓度观测量，不适用本规则 | Re = large, q = moderate |
+| Bulge | Sersic, n=4 (range 0.1-8) — 先固定 n=4 拟合，后续优化可释放（按 `fix n=4 → fix n=1 → free n` 三级尝试） | Re = small, q = round |
 | Bar | Sersic, **n=0.5 fixed** | q = 0.2-0.4, PA from image |
 | Lens | Sersic, **n<0.5 (free, vary=1)** | Re between bulge/bar and disk (`Re_disk > Re_lens > Re_bar > Re_bulge` 全序基准；仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减), q>0.5; triggered when Bar's Re≈Re_disk or q>0.5 (see residual_analysis_message.md) |
 | Edge-on Disk | edgeondisk | Pa5 = R_s (scale-length), Pa6 = h_s (scale-height), Pa7 = PA, Pa8 unused/fixed |
@@ -87,7 +87,7 @@ All position angles written into a `.lyric` `Pa7` slot (and any other PA-bearing
 
 ### Edge-on Disk Selection Rule
 
-Use `edgeondisk` only for genuinely edge-on disks: first fit a Sersic disk with free axis ratio, then convert to `edgeondisk` only when the fitted disk has **b/a < 0.17** (equivalent to inclination >80° under the thin-disk approximation) **and** the residual/original image shows edge-on vertical structure such as a dust lane or disk thickness. If b/a ≥ 0.17, keep a Sersic disk with n≈1 instead of forcing `edgeondisk`; this preserves the inclination information and avoids over-constraining moderately inclined disks. For `edgeondisk`, Pa5 is `rs`, Pa6 is `hs`, Pa7 is PA, and Pa8 is not used and should be fixed.
+Use `edgeondisk` only for genuinely edge-on disks: first fit a Sersic disk with free axis ratio, then convert to `edgeondisk` only when the fitted disk has **b/a < 0.17** (equivalent to inclination >80° under the thin-disk approximation) **and** the residual/original image shows edge-on vertical structure such as a dust lane or disk thickness. If b/a ≥ 0.17, keep a Sersic disk with n=1 (fixed, see Disk rule above) instead of forcing `edgeondisk`; this preserves the inclination information and avoids over-constraining moderately inclined disks. For `edgeondisk`, Pa5 is `rs`, Pa6 is `hs`, Pa7 is PA, and Pa8 is not used and should be fixed.
 
 Note: In the fitting input and output configurations, the Effective Radius ($R_e$) is strictly defined in units of arcseconds (arcsec). Before evaluating the fitting results, $R_e$ must be dynamically converted into pixel units using the WCS (World Coordinate System) metadata extracted from the corresponding FITS headers. This step is essential to accurately map the analytical model profiles onto the actual observational image grid, especially since the physical pixel scale ($arcsec/\text{pixel}$) varies across different wavebands.
 

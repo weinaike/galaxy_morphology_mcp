@@ -96,7 +96,7 @@
             - 如果携带lopsidedness的 Disk 在后续多成分拟合过程中，经过多轮（不少于 3 轮）调参参数始终无法获得符合物理意义的结果。可能是因为 lopsidedness 判断有误。需要回退到单成分，重新进行无 lopsidedness的多成分分解流程。
         3. 多成分分解流程
             - Disk 成分与Bulge的认定方法
-                - 优先采用“核球+盘”（Bulge + Disk）的双成分结构。Disk 固定n=1， Bulge 先固定 n=4 或 1 进行拟合，初步分配 flux，正常后再 free n 进行重新拟合调整。（这个步骤是必要的）
+                - 优先采用“核球+盘”（Bulge + Disk）的双成分结构。Disk 的 n 一律固定为 1（永不释放）；Bulge 先固定 n=4 或 1 进行拟合，初步分配 flux，正常后再 free **bulge 的** n 进行重新拟合调整。（这个步骤是必要的）
                 - 另外从原图和 model 中的轮廓也是一种很好的辅助判断，是否需要增加成分，来平衡外部大的轮廓和内部的亮度区域。使得两者亮度轮廓达到基本相似
                 - Disk + Bulge 双成分拟合时，Bulge的 q < 0.5, 即残差中观察到明显的 bar成分，需先将 Bulge 切换为 Bar（即固定n=0.5）进行拟合; Disk + Bar 稳定后再添加 Bulge，构建 Disk + Bar + Bulge 三成分。
             - Lens认定方法
@@ -176,8 +176,8 @@
 
 + 如果Bulge拟合出来的结果, re很小（如 < 0.2 px；多波段拟合下要求每个波段 WCS 转换后全部 < 0.2 px），意味着这个成分拟合的是一个点源，必须替换为 **N 块 AGN 组件**（Na1-Na27）去拟合。注意：GalfitS 中 AGN 使用 N 前缀，不要用 P 块的 `psf` 或 `Gaussian` 类型。（这个方法仅当所有策略都已经使用，都无法改善拟合效果时才能使用）
 + 如果Bulge拟合出来的结果, re处于边界区域（0.2–0.5 px；多波段拟合下要求每个波段 WCS 转换后均在 0.2–0.5 px 之间），Bulge处于勉强可分辨状态。可以创建一个 N 块 AGN 替代方案进行竞争对比——只有 AGN 方案的2D残差（尤其是中心区域）明显更优时才采纳 AGN，否则保留 Sersic。不要仅凭 BIC 判断。（这个方法仅当所有策略都已经使用，都无法改善拟合效果时才能使用）
-+ 对于盘星系而言，同一个源的两个成分bulge+disk拟合完，如果bulge的re 大于disk的re，意味着在拟合的过程中，bulge和disk的标签反了，可以交换这两个成分的标签。多成分拟合同一个源时，中心成分 Re 必须严格遵循全序基准链 `re_disk > re_lens > re_bar > re_bulge`——**仅比较实际存在的中心成分**（把缺失者从链中剔除，剩下按相对顺序严格递减；AGN/N 块与伴星系 G 块不参与）。例：{Disk,Bar,Bulge}→`re_disk>re_bar>re_bulge`；{Disk,Lens,Bulge}（无 Bar）→`re_disk>re_lens>re_bulge`；{Disk,Lens,Bar}（无 Bulge）→`re_disk>re_lens>re_bar`。<br>**反置处理（区分成分对）**：<br>· **{Disk, Bulge} 反置**（`re_bulge ≥ re_disk`）：两者均为自由 Sersic（Disk 的 n=1 是后锁定），fitter 常把两者搞混，**直接交换两者标签后重拟**是标准修法。<br>· **涉及 Bar 或 Lens 的任何反置**（如 `re_bar ≥ re_disk`、`re_lens ≥ re_disk`、`re_lens ≤ re_bar` 等）：**严禁交换标签**——Bar 有强先验 n=0.5 固定且 q<0.4，Lens 有强先验 n<0.5 且 q>0.5，与其他成分物理不可互换。此类反置应视为拟合失败（成分分配混乱或初值/约束不当），具体修复策略由 VLM 基于当前状态生成候选（如收紧过大成分的 Re 上限、重新分配通量、回退上一轮稳定结果重拟等）。
-+ 星系盘 Disk 成分的 Sersic 指数 n：n=1 是指数盘的标准值，但 **n<1 是合法的物理解**（对应低表面亮度盘 / 平滑盘 / 截断盘，面亮度中心平坦、外围下降偏陡，n≈0.3–0.7 是常见的真实情形）。操作上分阶段：建立基础结构阶段（双成分 Disk+Bulge 尚未稳定）固定 n=1 作为先验；深化阶段（双成分已稳定）可释放 n 让拟合器探索真实轮廓。释放 n 后需联合诊断身份互换退化——只有当 disk_n 触下界 **且同时** bulge_Re 触上界（或反之）时，才判定为 disk↔bulge 标签互换的退化拟合，单看 n<1 不构成退化判据。
++ 对于盘星系而言，同一个源的两个成分bulge+disk拟合完，如果bulge的re 大于disk的re，意味着在拟合的过程中，bulge和disk的标签反了，可以交换这两个成分的标签。多成分拟合同一个源时，中心成分 Re 必须严格遵循全序基准链 `re_disk > re_lens > re_bar > re_bulge`——**仅比较实际存在的中心成分**（把缺失者从链中剔除，剩下按相对顺序严格递减；AGN/N 块与伴星系 G 块不参与）。例：{Disk,Bar,Bulge}→`re_disk>re_bar>re_bulge`；{Disk,Lens,Bulge}（无 Bar）→`re_disk>re_lens>re_bulge`；{Disk,Lens,Bar}（无 Bulge）→`re_disk>re_lens>re_bar`。<br>**反置处理（区分成分对）**：<br>· **{Disk, Bulge} 反置**（`re_bulge ≥ re_disk`）：两者同为 sersic profile（Disk 的 n 固定为 1，Bulge 的 n 可自由），fitter 常把两者搞混，**直接交换两者标签后重拟**是标准修法。<br>· **涉及 Bar 或 Lens 的任何反置**（如 `re_bar ≥ re_disk`、`re_lens ≥ re_disk`、`re_lens ≤ re_bar` 等）：**严禁交换标签**——Bar 有强先验 n=0.5 固定且 q<0.4，Lens 有强先验 n<0.5 且 q>0.5，与其他成分物理不可互换。此类反置应视为拟合失败（成分分配混乱或初值/约束不当），具体修复策略由 VLM 基于当前状态生成候选（如收紧过大成分的 Re 上限、重新分配通量、回退上一轮稳定结果重拟等）。
++ 星系盘 Disk 成分的 Sersic 指数 n：**Disk 成分的 n 一律固定为 1，永不释放**（与单 Sersic 策略不同——当整星系仅用单个 sersic 拟合、无 Bulge/Bar/Lens 并列时，n 是自由的整体浓度观测量，那种情况下 n 不固定）。n<1 的盘（低表面亮度盘 / 平滑盘 / 截断盘）在多成分分解中不由释放 Disk n 来吸收，而通过 Bulge/Lens 的自由 n 调整中心轮廓来承接。disk↔bulge 身份互换退化的判据是 `disk_n` 触下界 **且同时** `bulge_Re` 触上界（或反之）的**联合诊断**——单看 n<1 不构成退化判据。
 + Bugle 的 n 的范围一般在 0.1 < n < 8 之间，并不要求一定要大于 1，Re在 0.2 px以上都具有物理意义。 但对于 最亮星系系星系（BCGs）或 cD 星系，n 可能会超过 8；对于一些极端的伪核球（Pseudobulge），n 也可以小于 1。
 + Disk、Bar、Bulge 他们基本同心，偏离太大的情况需要考虑增加一个成分拟合伴源，同时通过constrain文件限制同一个源不同成分之间中心的距离。
 + m=1 Fourier mode 的 amplitude 大于 阈值 0.02 ，其物理意义上就应该保留。

@@ -6,8 +6,8 @@
 
 ## 成分类型的规范（必须严格遵守）
 
-- **Disk（盘）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 1（当确认了disk成分后，后续的拟合过程中n必须固定为1）。
-- **Bulge（核球）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 4（范围 0.1–8，不用固定）。
+- **Disk（盘）**：Profile type 选用 `sersic`，Sérsic 指数 n = 1（**多成分分解中的 Disk 组件 n 一律固定为 1，vary=0，永不释放**）。注意与"单 Sersic 策略"区分：当整星系仅用单个 sersic 拟合（无 Bulge/Bar/Lens 并列）时，n 是自由的整体浓度观测量，不固定——本条仅适用于"Disk 成分"角色。
+- **Bulge（核球）**：Profile type 选用 `sersic`，Sérsic 指数 n ≈ 4（范围 0.1–8）。先固定 n=4 进行拟合，后续优化可释放（按 `fix n=4 → fix n=1 → free n` 三级尝试）。
 - **Edge-on Disk（侧视盘）**：Profile type 选用 `edgeondisk`。
 - **Bar（棒）**：Profile type 选用 `sersic`，Sérsic 指数 n = 0.5。
 - **Lens（透镜结构）**：Profile type 选用 `sersic`，Sérsic 指数 n 自由（vary=1）但物理先验 **n < 0.5**（推荐五元组 `[0.3, 0.1, 0.5, 0.05, 1]`）；轴比 q (b/a) > 0.5；Re 满足全序基准 `Re_disk > Re_lens > Re_bar > Re_bulge`（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减；Re 单位 arcsec，每波段用 WCS 转 px 校验）。**认定触发**：当 Bar 拟合后出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`（Bar 被强行拉去拟合 Lens，物理意义异常）时，需将 Bar 拆分为 Lens + Bar 进行拟合。Lens 与 bulge/bar/disk 同心，中心约束走 `.constrain` 绑定（规则同 bulge/bar）。

@@ -108,10 +108,10 @@ tools: Read, Grep, Glob, Bash
 | 子项 | 拟合结果判定标准（基于 summary 或 gssummary） | 违反判定 |
 |---|---|---|
 | **5a 单波段 Disk profile 类别** | 当存在 $\ge 2$ 个中心成分时，Disk 成分的类型必须为 `expdisk`（非 `sersic`）。 | 违反（使用了 sersic 盘） → **FAIL** |
-| **5a 多波段 Disk profile 类别** | Disk 成分的类型使用 `sersic` 但 n = 1。 | 违反（ sersic 盘 n = 1 约束） → **FAIL** |
+| **5a 多波段 Disk profile 类别** | Disk 成分的类型使用 `sersic` 但 n = 1（固定）。**例外**：整星系单 sersic 拟合（无 Bulge/Bar/Lens 并列中心成分）时 n 自由，不触发 FAIL。 | 违反（ sersic 盘 n = 1 约束） → **FAIL** |
 | **5b Bar 指数 n 固定** | Bar 成分的 Sersic 指数 `n` 必须为固定状态，且其值等于 `0.5` | 违反（Bar n 自由拟合或数值不等于 0.5） → **FAIL** |
 | **5c 中心成分同心性** | 所有中心星系成分（Disk、Bulge、Bar、Nucleus）的最终拟合坐标 `xcen` 和 `ycen` 必须完全一致。 | 中心星系成分的未同心 → **FAIL** |
-| **5d 不过度固定** | 中心成分的 `Re`、`mag` 和 `n`（Bar 的 n 除外）、`PA`、`b/a`在拟合中必须是自由（free）状态（即不应出现在 `# fixed parameters` 固定参数列表中）。 | 核心参数非必要地被固定/约束为常量 → **WARN** |
+| **5d 不过度固定** | 中心成分的 `Re`、`mag` 和 `n`（Bar 的 n、**Disk 的 n** 除外）、`PA`、`b/a`在拟合中必须是自由（free）状态（即不应出现在 `# fixed parameters` 固定参数列表中）。Disk 的 n 一律固定为 1（见 5a）。 | 核心参数非必要地被固定/约束为常量 → **WARN** |
 | **5e 伴星系位置漂移** | 伴星系（Companion）的最终拟合坐标 `xcen` 和 `ycen` 不能偏离其在 `working_note.md` 中记录的初始坐标 $\ge 10$ 像素。 | 伴星系最终位置严重漂移（漂移距离 $\ge 10$ 像素） → **WARN** |
 | **5f 异常参数与边界校验** | 检查所有自由（free）拟合参数是否触碰约束边界（如 Sersic `n` 恰好等于 8.0/20.0，轴比 `q` 恰好等于 0.05/1.0 等）；或出现极值/异常值（如 mag 值为 99.0 哑值，有效半径 Re 异常超大 $\ge 500$ px，或坐标漂移到拟合区域/图像边缘之外）。 | 任一拟合参数触碰边界、或出现极大/极小异常值 → **FAIL**（说明拟合不收敛或发生退化） |
 

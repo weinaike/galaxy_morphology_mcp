@@ -24,6 +24,7 @@
     - 如果 sky 成分存在， 描述 sky 成分星等线与 sky background 虚线的关系（齐平、偏高或者偏低）
     - 描述 Data 与 Model 之间明显差异的区域（如中心过亮或过暗，某个半径范围内的系统偏亮或偏暗等）
     - 描述各成分的星等差异、以及残差曲线与各成分 Re 的对应关系（如残差的峰值位置是否与某个成分的 Re 对应等）
+    - **Lens 隆起诊断（父状态已含 Bar 或 Bulge 时执行）**：检查 1D 残差曲线（Δμ = Data − Model）在距中心 ~1.5–2.5·Re_bar（无 Bar 时取 ~2–4·Re_bulge）处是否存在**宽阔的正向隆起**（Data 亮于 Model，Δμ < 0，跨度 ~10–30 px）。该隆起是 Lens（低 n 延展成分）的径向通量签名，与旋臂残差不同——旋臂在 2D 残差图上呈螺旋条带，经方位平均后在 1D 上幅度被压制；而 Lens 隆起在 2D 上呈近圆对称环状，1D 上幅度显著。发现此类宽阔隆起时，须在特征描述中明确标注位置、宽度与幅度，供阶段二生成 `add(Lens)` 候选（见 §Lens 1D 轮廓隆起触发规则）。
 
 要求：所有描述必须基于图片内容，不能主观臆测。
 
@@ -104,7 +105,12 @@
 
 ### 【Lens 特别提醒 — VLM 高频遗漏项】
 
-Lens 在训练数据中频率低、且**无独立视觉签名**——它的存在通常通过 Bar 异常反推：父状态的 Bar 出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5` 时，意味着 Bar 被强行拉去拟合 Lens 结构，应拆分为 Bar + Lens。**父状态含 Bar 时，VLM 必须主动回忆此触发条件**，不得仅凭"Bar 是常见成分"就跳过 Lens 候选。详细触发条款与参数模板见下文 §通用规则 / Lens 候选生成时机。
+Lens 在训练数据中频率低、且**无独立的 2D 视觉签名**——它的存在通过**两条独立路径**揭示，任一满足即应生成 Lens 候选：
+
+1. **路径 A（Bar 异常反推）**：父状态的 Bar 出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`，意味着 Bar 被强行拉去拟合 Lens 结构，应拆分为 Bar + Lens。
+2. **路径 B（1D 轮廓隆起）**：1D 表面亮度残差曲线在距中心 ~1.5–2.5·Re_bar 处出现宽阔正向隆起（详见 §Lens 1D 轮廓隆起触发规则），意味着过渡区有独立于 Bar 和 Disk 的延展通量成分。**此路径不需要 Bar 异常**——即使 Bar 参数完全正常，1D 隆起仍可独立触发。
+
+**父状态含 Bar 或 Bulge 时，VLM 必须主动回忆两条触发条件**，不得仅凭"Bar 是常见成分"或"Bar 参数正常"就跳过 Lens 候选。详细触发条款与参数模板见下文 §Lens 1D 轮廓隆起触发规则 与 §通用规则 / Lens 候选生成时机。
 
 ## 扁 Bulge → Bar 候选触发规则（联合诊断，VLM 必读）
 
@@ -136,6 +142,50 @@ Lens 在训练数据中频率低、且**无独立视觉签名**——它的存�
 
 - **触发复核**：若父状态含 Bulge 且上述四条联合条件成立，本次输出**必须**包含至少一个 Bar 候选（转换或新增）。若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"虽然 bulge q=0.27 触发，但 1D 残差曲线显示 X 方向更优"），不得静默跳过。
 - **简并预警**：若选择"新增 Bar"方案，physical_motivation 必须提及"通过约束 Bulge q_min≥0.7 打破 Bar/Bulge 简并"——否则拟合器容易把两个都放在中心的扁成分推到极端参数（典型退化：bulge n 坍缩至下界、bulge/bar 亮度和 PA 几乎相同）。
+
+## Lens 1D 轮廓隆起触发规则（VLM 必读）
+
+**动机**：Lens 是低浓度（n<0.5）、延展的轴对称成分，在 2D 残差图上**无独立视觉签名**（不像 Bar 有"一字型"残差、Bulge 有致密核心）。但它会在 1D 表面亮度轮廓的 **Bar-Disk 过渡区**留下可辨识的印记：Data 曲线相对于平滑模型出现一个**宽阔的正向隆起**。该隆起无法被 n=1 的 Disk（指数衰减）和中心 Bulge/Bar 的线性叠加自然产生——它的存在直接指示一个中等 Re、低 n 的额外成分（即 Lens）。
+
+### 触发条件（四条同时满足，缺一不可）
+
+当父状态已含 Bar 或 Bulge（中心骨架已建立）时，读取 1D 表面亮度残差曲线（Δμ = Data − Model，下方面板）：
+
+| 指标 | 阈值 | 物理依据 |
+|------|------|---------|
+| **隆起位置** | 峰值在距中心 ~1.5–2.5·Re_bar（无 Bar 时取 ~2–4·Re_bulge） | Lens 的 Re 介于 Bar 与 Disk 之间（全序链 `Re_disk > Re_lens > Re_bar > Re_bulge`），其通量贡献的径向峰值落在 Bar 之外、Disk 主体之内 |
+| **隆起宽度** | 宽阔（跨越 ~10–30 px 量级，非窄尖峰） | 低 n Sersic（n<0.5）轮廓平缓，贡献跨越大半径范围；窄尖峰更像旋臂结块、PSF 问题或 binning 假象 |
+| **隆起幅度** | Δμ 峰值 ≲ −0.1 mag（Data 明显亮于 Model） | 显著通量贡献，超出噪声波动范围；Δμ > −0.05 mag 的微小波动不构成触发 |
+| **2D 对应** | 2D 残差图对应半径处呈**近圆对称**环状/壳层正残差，而非螺旋条带 | 排除旋臂——旋臂在 2D 上呈非轴对称螺旋图案，经方位平均后在 1D 上幅度被压制且位置不稳定。Lens 是轴对称的，1D 隆起幅度与 2D 环状残差一致 |
+
+### 与旋臂残差的关键鉴别
+
+旋臂和 Lens 隆起都会在 1D 上表现为正残差，但物理本质不同：
+
+| 特征 | 旋臂 | Lens 隆起 |
+|------|------|-----------|
+| 2D 残差形态 | 螺旋条带（非轴对称） | 近圆对称环状/壳层 |
+| 1D 隆起幅度 | 方位平均后被压制，幅度较小 | 幅度显著（Δμ ≲ −0.1 mag） |
+| 1D 隆起宽度 | 较窄且位置受旋臂相位影响 | 宽阔且位置稳定（锁在 1.5–2.5·Re_bar） |
+| 触发结论 | 不生成 Lens 候选 | 生成 `add(Lens)` 候选 |
+
+### 触发后的候选生成
+
+触发条件全部成立时，**必须**产出 `add(Lens)` 候选：
+
+- **action**: `add(Lens, n<0.5 free, q>0.5, Re_init≈隆起峰值半径)`
+- **profile**: `sersic`
+- **n**: 自由（vary=1），初始 ~0.3，范围 [0.1, 0.5]（物理先验 n<0.5）
+- **Re**: 自由，初始值取 1D 隆起峰值对应的半径；范围下界 > Re_bar（或 Re_bulge，取较大者），上界 < Re_disk，确保满足全序链
+- **q (axrat)**: 自由，初始 ~0.8，范围 [0.5, 1.0]（Lens 近圆，q>0.5）
+- **PA**: 自由，初始取 disk_ang（Lens 近圆，PA 不敏感）
+- **中心**: 自由（vary=1），初始取星系中心附近
+- **physical_motivation** 须引用：1D 隆起的精确位置（"Δμ 在 r≈XX px 处出现宽阔隆起，峰值 ≈−Y mag"）、2D 对应的环状残差特征、以及当前 Bar/Disk 均无法自然产生该过渡区通量的物理理由
+
+### 自检硬约束
+
+- **触发复核**：若父状态含 Bar 或 Bulge，且上述四条联合条件成立，本次输出**必须**包含至少一个 `add(Lens)` 候选。若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"1D 隆起位置在 1.2·Re_bar，偏离典型 Lens 区间"），不得静默跳过。
+- **路径 A（Bar 异常）联动**：若父状态 Bar 同时满足路径 A 条件（`Re_bar ≳ Re_disk` 或 `q_bar ≳ 0.5`），可生成 `tune(Bar, split→Bar+Lens)`（拆分）或 `add(Lens)`（新增）候选之一，或两者并存测试不同假设。拆分候选的 physical_motivation 须引用 Bar 异常参数；新增候选的 physical_motivation 须引用 1D 隆起特征。
 
 ## Disk 成分 Sérsic 指数 n 的操作规范
 
@@ -174,13 +224,17 @@ Disk 成分的 n **一律固定为 1，vary=0，永不释放**。无论 beam sea
     - **外围伴星系**（距中心 ≳ 2·Re_disk）：`Disk → (F1/Outer Companion 若检出) → Bulge → Bar → Lens → Other`
     - **嵌入式伴星系**（距中心 ≲ 2·Re_disk，落在主星系 contour 内）：`Disk → Bulge → Bar → (Embedded Companion 若检出) → Lens → Other`
     - 即**嵌入式伴星系必须在 Bulge/Bar 之后**，外围伴星系无此约束。Bar/Lens/Nucleus 的认定条件须符合 `<星系成分分析的总体流程>` 章节。
-    - **Lens 候选生成时机**：当父状态的 Bar 出现物理异常（`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`，即 Bar 被强行拉去拟合 Lens 结构）时，应生成拆分候选：`tune(Bar, split→Bar+Lens)` 或 `add(Lens, n<0.5 free, q>0.5, Re between bulge/bar and disk)`。Lens 用 `sersic`，n 自由（vary=1）但物理先验 n<0.5，Re 满足全序基准 `Re_disk > Re_lens > Re_bar > Re_bulge`（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减），q>0.5，与 bulge/bar/disk 同心。
+    - **Lens 候选生成时机（两条独立路径，满足任一即触发）**：
+        - **路径 A（Bar 异常反推）**：当父状态的 Bar 出现物理异常（`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`，即 Bar 被强行拉去拟合 Lens 结构）时，应生成拆分候选：`tune(Bar, split→Bar+Lens)` 或 `add(Lens, n<0.5 free, q>0.5, Re between bulge/bar and disk)`。
+        - **路径 B（1D 轮廓隆起）**：当 1D 表面亮度残差曲线在距中心 ~1.5–2.5·Re_bar 处出现宽阔正向隆起（详见 §Lens 1D 轮廓隆起触发规则），即使 Bar 参数完全正常，也应生成 `add(Lens, n<0.5 free, q>0.5, Re_init≈隆起峰值半径)` 候选。
+        - Lens 用 `sersic`，n 自由（vary=1）但物理先验 n<0.5，Re 满足全序基准 `Re_disk > Re_lens > Re_bar > Re_bulge`（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减），q>0.5，与 bulge/bar/disk 同心。
 - **尊重历史**：补充信息中"已尝试动作"列表里的动作不得重复提出（除非换个明显不同的参数化方向）。
 - **方向多样性**（多候选时）：候选之间必须覆盖**显著不同**的探索方向。典型对比组合：
     - "加成分" vs "调参"（如 +Nucleus(致密) vs release bulge_n）
     - "修约束" vs "换模型类型"（如 修复 bulge↔disk 同心 vs 切换 Disk→edgeondisk）
     - "奥卡姆剃刀" vs "深化"（如 remove(nucleus) vs tighten bulge_Re 上限）
     - "拆 Bar→Bar+Lens" vs "收紧 Bar Re 上限"（当父状态 Bar 的 Re/q 物理异常时，拆出 Lens 吸收延展成分 vs 用约束把 Bar 压回合理区间）
+    - "add(Lens) 吸收 1D 隆起" vs "调 Disk/Bar 边界"（当 1D 轮廓在 1.5–2.5·Re_bar 出现宽阔隆起但 Bar 参数正常时，加 Lens 成分吸收过渡区通量 vs 尝试用调参让现有成分覆盖该区域）
     - "伴星系位置修正" vs "伴星系形态修正"（如 tune(companion, x_real, y_real) vs tune(companion, q_init=0.9, Re<=2")）；仅当阶段一已报告位置偏差 > 2 px 时，位置修正候选才是必须的，否则优先形态修正
 
 ## 候选预期信息
@@ -238,7 +292,10 @@ Disk 成分的 n **一律固定为 1，vary=0，永不释放**。无论 beam sea
 - physical_motivation 引用的特征均在阶段一出现过
 - 已尝试动作未被重复提出
 - 所有候选的 expected_C' 与当前父状态的 C' 差异均可解释
-- **Lens 触发复核（硬约束）**：父状态含 Bar 时，必须确认已主动回忆 Lens 触发条件（`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`）。若条件成立但本次未产出任何 Lens 相关候选（`add(Lens)` 或 `tune(Bar, split→Bar+Lens)`），必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"Bar 异常但残差更支持 X 方向"），不得静默跳过
+- **Lens 触发复核（硬约束）**：父状态含 Bar 或 Bulge 时，必须确认已主动回忆**两条** Lens 触发路径：
+    - **路径 A（Bar 异常反推）**：`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`。
+    - **路径 B（1D 轮廓隆起）**：1D 残差曲线在 ~1.5–2.5·Re_bar 处出现宽阔正向隆起（位置 + 宽度 + 幅度 + 2D 圆对称四条联合条件，见 §Lens 1D 轮廓隆起触发规则）。
+    - **任一路径条件成立但本次未产出任何 Lens 相关候选**（`add(Lens)` 或 `tune(Bar, split→Bar+Lens)`）时，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"Bar 异常但残差更支持 X 方向"或"1D 隆起位置在 1.2·Re_bar，偏离典型 Lens 区间"），不得静默跳过。
 - **嵌入式伴星系时机复核（硬约束）**：若生成了 `add(Companion)` 候选且阶段一报告该伴星系为嵌入式（落在主星系等照度线 contour 上或以内，距中心 ≲ 2·Re_disk），**必须确认父状态已含 Bulge 或 Bar**。若父状态既无 Bulge 也无 Bar 却出现了嵌入式伴星系残差，**禁止**生成 `add(Companion)` 候选——应改为 `add(Bulge)` 候选，待中心骨架建立后再处理伴星系。违反此约束的典型失败模式：伴星系被拽向中心、三参数（Re/xcen/ycen）全部撞界发散。
 - **伴星系移除验证复核（硬约束）**：若补充信息中含"伴星系条件 A 命中"（通量比 ≤ 1%），必须确认已在**原图面板**上做过条件 B 视觉验证。若原图 companion 位置有可见亮斑却生成了 `remove(Companion)` 候选，视为违反约束。
 - **扁 Bulge → Bar 触发复核（硬约束）**：父状态含 Bulge 时，必须按"扁 Bulge → Bar 候选触发规则"的四条联合条件（bulge b/a < 0.5 AND PA 夹角 > 20° AND bulge n ∈ (0.5, 2.5) AND disk b/a > 0.5）做核对。条件全部成立时，本次输出**必须**包含至少一个 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增）；若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**，不得静默跳过。

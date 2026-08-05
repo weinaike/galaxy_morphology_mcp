@@ -26,7 +26,7 @@ tools: Read, Grep, Glob, Bash
 | `locked_round_dir` | 被锁定轮次的输出目录绝对路径 |
 | `mode` | `single-band` 或 `multi-band` |
 | `working_note` | `working_note.md` 路径（通常在星系主目录） |
-| 其余文件 | lyric/feedme、gssummary/summary、comparison_png 路径（可选，自行 Glob） |
+| 其余文件 | lyric/feedme、gssummary/summary、comparison_png、`.best_round.json`、best_round_comparison 路径（可选，自行 Glob） |
 
 # 第 0 步：定位与取证
 
@@ -85,13 +85,13 @@ tools: Read, Grep, Glob, Bash
 
 ## 维度 3 — 拟合条件
 
-**评判方法：** 结合待锁轮次的 `*_component_analysis*.md` 文件分析结论与历史拟合数据，判定拟合是否已达到相对最优/接近的状态：
+**评判方法：** 结合待锁轮次的 `*_component_analysis*.md` 文件分析结论与历史拟合数据(特别是`.best_round.json`与`best_round_comparison.md`历史轮次间视觉对比最优轮次缓存数据)，判定拟合是否已达到相对最优/接近的状态：
 
 | 评估维度 | 量化与判定标准 | 判定 |
 |---|---|---|
+|视觉特征维度|当前锁定轮次的残差视觉特征是否为全局最优，读取锁定轮次下的`best_round_comparison.md`与 `<galaxy_dir>/.best_round.json`, 如果锁定轮次与缓存最优轮不一致，需要找到两个轮次的`*_component_analysis*.md` 文件，对比阅读他们对于视觉特征的客观描述部分， 对比分析明确支持锁定轮视觉效果更优。则 Pass, 反之则 FAIL; |→ **FAIL / PASS**|
 | **3a 2D 卡方值相对优度** | 检查 summary（单波段）或 gssummary（多波段）获取待锁轮次的 2D 减量卡方值（reduced chi-sq）。并读 `working_note.md` 提取所有历史轮次记录的卡方值进行对比：<br>1. 待锁轮次的 2D 减量卡方值在所有已尝试的历史轮次中处于**最优状态**（即卡方值最小，或与其他残差效果相近轮次的卡方差异在 10% 以内） → **PASS**<br>2. 存在某一历史轮次的卡方值更低（低出 >10%），且 `working_note.md` 中**没有**关于为何不选择该轮的物理/合理说明（如“由于参数非物理/过拟合而回退”等） → **FAIL**（未选择卡方更优的可用轮次） | → **FAIL / PASS** |
-
-## 维度 4 — 物理条件
+# 维度 4 — 物理条件
 
 **评判方法：** 所有拟合结果的关键结构尺寸必须符合天体物理学物理约束，重点核查各成分的大小与层级排布：
 

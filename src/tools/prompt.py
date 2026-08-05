@@ -4,8 +4,10 @@ Prompt templates for GALFIT and GalfitS analysis using VLLM multimodal models.
 This module centralizes all prompt templates used for analyzing galaxy morphology
 fitting results from GALFIT (single-band) and GalfitS (multi-band) tools.
 """
+import inspect
 import sys
 from pathlib import Path
+from typing import Any
 try:
     from ..prompts import prompts
 except ImportError as e:
@@ -41,18 +43,26 @@ def _make_prompt(name: str, title: str, description: str, md_file: str) -> MCP_P
     return MCP_Prompt(name=name, title=title, description=description, arguments=[], context_kwarg=None, fn=fn)
 
 
+# Sentinel marking a required prompt argument (no default). Pass it as the
+# value in *params*; FastMCP then exposes the argument as required to clients.
+_REQUIRED = inspect.Parameter.empty
+
+
 def _make_templated_prompt(
     name: str,
     title: str,
     description: str,
     md_file: str,
-    params: dict[str, str],
+    params: dict[str, Any],
 ) -> MCP_Prompt:
     """Create an MCP Prompt with user-supplied arguments rendered into *md_file*.
 
     *params* maps template variable names to their default values.
     e.g. ``{"galaxy_list": ""}`` means the prompt accepts a ``galaxy_list``
     argument with default ``""`` (optional).
+
+    To declare a **required** argument (no default), use the ``_REQUIRED``
+    sentinel as the value, e.g. ``{"feedme": _REQUIRED}``.
 
     In the markdown file use ``{galaxy_list}`` (single braces) — the
     standard ``str.format()`` syntax.
@@ -71,17 +81,21 @@ def _make_templated_prompt(
         for i, val in enumerate(args):
             if i < len(param_names):
                 kwargs.setdefault(param_names[i], val)
-        # Fill missing keys with their defaults
+        # Fill missing keys with their defaults (skip required ones —
+        # FastMCP enforces their presence before this is called).
         for pn, default_val in zip(param_names, param_defaults):
+            if default_val is _REQUIRED:
+                continue
             kwargs.setdefault(pn, default_val)
         return _p._read_prompt_and_render(md_file, **kwargs)
 
-    # Dynamically create a function with the correct signature
-    import inspect
-    sig_params = [
-        inspect.Parameter(n, inspect.Parameter.KEYWORD_ONLY, default=d)
-        for n, d in zip(param_names, param_defaults)
-    ]
+    # Dynamically create a function with the correct signature.
+    sig_params = []
+    for n, d in zip(param_names, param_defaults):
+        if d is _REQUIRED:
+            sig_params.append(inspect.Parameter(n, inspect.Parameter.KEYWORD_ONLY))
+        else:
+            sig_params.append(inspect.Parameter(n, inspect.Parameter.KEYWORD_ONLY, default=d))
     _render.__signature__ = inspect.Signature(sig_params)
     _render.__name__ = name
     _render.__qualname__ = name
@@ -93,10 +107,10 @@ workflow_galfit = _make_templated_prompt(
     name="workflow_galfit",
     title="GALFIT Workflow",
     description=(
-        "Single-band galaxy morphology fitting workflow: `workflow_galfit [feedme_file]`; "
+        "Single-band galaxy morphology fitting workflow: `workflow_galfit <feedme_file>`; "
     ),
     md_file="workflow_galfit.md",
-    params={"argument": ""},
+    params={"argument": _REQUIRED},
 )
 
 workflow_galfits = _make_templated_prompt(
@@ -104,10 +118,10 @@ workflow_galfits = _make_templated_prompt(
     title="GalfitS Workflow",
     description=(
         "Multi-band galaxy morphology fitting workflow with "
-        "three-phase diagnosis logic and SED modelling. `workflow_galfits [lyric_file]`"
+        "three-phase diagnosis logic and SED modelling. `workflow_galfits <lyric_file>`"
     ),
     md_file="workflow_galfits.md",
-    params={"argument": ""},
+    params={"argument": _REQUIRED},
 )
 
 workflow_galfit_s1 = _make_templated_prompt(
@@ -117,8 +131,8 @@ workflow_galfit_s1 = _make_templated_prompt(
         "Expert-guided single-band galaxy morphology fitting workflow. "
         "Receives an expert-specified component composition and incrementally "
         "builds the model from a single component up to the target set. "
-        "Usage: `workflow_galfit_s1 <feedme_file> [expert_components]`"
+        "Usage: `workflow_galfit_s1 <feedme_file> <expert_components>`"
     ),
     md_file="workflow_galfit_s1.md",
-    params={"argument": ""},
+    params={"argument": _REQUIRED, "expert_components": _REQUIRED},
 )

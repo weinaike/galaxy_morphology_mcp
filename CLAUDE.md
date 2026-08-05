@@ -160,14 +160,22 @@ obj195/
 ### Rules
 - New config files must be written to the **galaxy's main directory** (where the original .lyric is), with `_iter{n}` suffix
 - To reuse parameters from an earlier fitting, manually extract the fitted values from the previous round's `.gssummary` and write them as the `initial_value` of the corresponding parameters in the new `.lyric` file. **Do NOT use `--readsummary`** (see Core Principles #6).
-- If you need to constrain galaxy components to share the same center (e.g., make bulge, bar and disk have identical centers), complete the following three steps:
-    - In the .lyric configuration file, set the x and y parameters (maybe Pb3, Pb4, Pc3, Pc4, it depends) of bulge and bar to fixed.
-    - Create a constraint file named iter{n}.constrain with the following content (python function):
-          def Update_Constraints(pardictlc):
-              pardictlc['bulge_xcen'] = pardictlc['bar_xcen'] = 1 * pardictlc['disk_xcen']
-              pardictlc['bulge_ycen'] = pardictlc['bar_ycen'] = 1 * pardictlc['disk_ycen']
-    - Add the parameter --parconstrain iter{n}.constrain when calling Galfits fitting methods to load this constraint file.
-    - For multi-band AGN/Nuclei components, the center parameter names are `xcen_agn` and `ycen_agn`, not `agn_xcen` or `agn_ycen`. Use these exact names in `.constrain` files when tying AGN centers to other components.
+- **Main-galaxy concentric constraint (mandatory default, NOT optional)**: when the main galaxy contains **≥ 2 central components** (any two or more of Disk / Bulge / Bar / Lens), you **MUST** bind them to the same center via a `.constrain` file. This is a default hard rule, not an "apply only when needed" option. Companion galaxies (P-block labels containing `comp`/`companion`/`secondary`/`satellite`) are **excluded** from this constraint — their centers must remain `vary=1` for free fitting. Steps:
+    1. In `.lyric`, set the subordinate components' (Bulge/Bar/Lens) `P*3`/`P*4` (x/y center) to `vary=0` (any value, the constraint file overrides it); keep the Disk's `Pa3`/`Pa4` at `vary=1` as the concentric anchor.
+    2. Create the constraint file `iter{n}.constrain` (follow the `Update_Constraints` naming convention), binding all main-galaxy central components' xcen/ycen to the Disk:
+        ```python
+        def Update_Constraints(pardictlc):
+            pardictlc['bulge_xcen'] = 1 * pardictlc['disk_xcen']
+            pardictlc['bulge_ycen'] = 1 * pardictlc['disk_ycen']
+            pardictlc['bar_xcen']   = 1 * pardictlc['disk_xcen']
+            pardictlc['bar_ycen']   = 1 * pardictlc['disk_ycen']
+            pardictlc['lens_xcen']  = 1 * pardictlc['disk_xcen']
+            pardictlc['lens_ycen']  = 1 * pardictlc['disk_ycen']
+        ```
+       (List only the components actually present; `<x>` and `<y>` must be bound together — never bind only one of the pair.)
+    3. The GalfitS invocation **must** include `--parconstrain iter{n}.constrain`.
+    - **Single-component exemption**: when the lyric contains only one central component (e.g., the starting single Sersic disk, with no Bulge/Bar/Lens alongside), no constraint file is needed.
+    - **AGN/Nuclei (N-block) center parameter names** are `xcen_agn` / `ycen_agn` (NOT `agn_xcen` / `agn_ycen`); when an N block coexists with the main galaxy, it must likewise be bound to `disk_xcen`/`disk_ycen` by adding `pardictlc['xcen_agn'] = 1 * pardictlc['disk_xcen']` (and the ycen counterpart) to `Update_Constraints`.
 - When including companion galaxies in the fitting:
     - The companion center must be set to `vary=1` within a ±2 arcsec (~±5 pixel) window around the initial estimate (from `pixel2arcsec_offset`), so the fitter can calibrate the true centroid. Never set `vary=0` on a companion center based solely on a VLM pixel estimate — VLM positions can be off by 10-20 px, especially when the parent model's residuals contaminate the companion region.
     - The position unit for all galaxy components in the Lyric file is arcsec; unit conversion from pixels to arcsec is therefore required beforehand. This conversion must be executed externally using the mcp tool rather than being calculated manually.

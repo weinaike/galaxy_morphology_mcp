@@ -35,7 +35,7 @@ GalfitS 的参数格式为 `[initial_value, min, max, step, vary]`，其中 `var
 
 ### 通用参数获取方式
 
-- **Pa3 / Pa4（中心位置 x, y）**：单位为 arcsec（相对于 region center）。先读取图像上该成分的亮度峰值像素坐标，再转换为相对于 region center 的 arcsec 偏移量。多成分同心时（如 Bulge+Disk），应将它们的 Pa3 和 Pa4 的初始值设为相同，保证同心。
+- **Pa3 / Pa4（中心位置 x, y）**：单位为 arcsec（相对于 region center）。先读取图像上该成分的亮度峰值像素坐标，再转换为相对于 region center 的 arcsec 偏移量。**主星系 ≥ 2 个中心成分时，初值相同只是最低要求——还必须按"规则 3"写 `.constrain` 文件做硬绑定**（伴星系中心不参与）。
 - **Pa5（Re，单位 arcsec）**：初始化时先用像素估算，再乘以该波段的 pixel scale（arcsec/pixel）转换为 arcsec。
 - **Pa8（轴比 b/a）**：视觉估算。正圆为 1，越扁越接近 0。
 - **Pa7（位置角 PA）**：长轴相对于正北方向逆时针旋转的角度。Bar 的 PA 初值非常关键，务必从原图中仔细测量。
@@ -126,11 +126,20 @@ GalfitS 的参数格式为 `[initial_value, min, max, step, vary]`，其中 `var
 
 **注意：不同波段的pixscale不一致，所以不同波段Re对应的pixel值不一致，只要最大的Re值大于0.1就不算异常。**
 
-### 规则 3：多成分拟合时的位置约束
+### 规则 3：主星系多成分同心约束（强制默认）
 
-当模型包含多个同心成分（如 Bulge+Disk）时：
-- 所有成分的 Pa3（x）和 Pa4（y）初始值必须相同
-- 如果拟合后中心位置偏移 > 2 pixel（需通过 WCS 换算为 arcsec 进行比较），应检查是否存在成分退化，必要时回退
+当主星系模型包含 **≥ 2 个中心成分**（Disk / Bulge / Bar / Lens 四类中的任意两个或以上）时，**必须**通过 `.constrain` 文件把它们绑定到同一个中心——这是默认硬约束，不是"初值相同就够了"的可选项。
+
+**三层操作（缺一不可）**：
+1. **初值相同**：所有主星系成分的 Pa3（x）和 Pa4（y）初始值设为相同值。
+2. **.lyric vary 标记**：从属成分（Bulge/Bar/Lens）的 `P*3`/`P*4` 设为 `vary=0`（任意值，约束会覆盖）；主成分 Disk 的 `Pa3`/`Pa4` 保持 `vary=1` 作为同心锚点。
+3. **`.constrain` 文件**：写 `iter{n}.constrain`（`Update_Constraints` 函数把所有主星系成分 xcen/ycen 绑定到 `disk_xcen`/`disk_ycen`，成对出现缺一不可），调用时必带 `--parconstrain`。
+
+**伴星系豁免**：伴星系（P 块 label 含 `comp`/`companion`/`secondary`/`satellite`）的中心**不参与**主星系同心约束——伴星系中心必须保持 `vary=1` 自由拟合。
+
+**AGN/N 块**：用 `xcen_agn`/`ycen_agn`（不是 `agn_xcen`），与主星系共存时同样绑定到 disk。
+
+**诊断**：如果拟合后主星系某成分中心偏离 Disk 中心 > 2 pixel（需通过 WCS 换算为 arcsec 进行比较），**先检查 `.constrain` 是否正确加载**；若已加载仍偏离，说明该成分身份可能已退化（如被伴星系拽偏、或与另一成分简并），应检查是否存在成分退化，必要时回退到上一轮稳定结果。
 
 ## 约束条件最佳实践
 

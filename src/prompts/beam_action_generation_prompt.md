@@ -88,7 +88,16 @@
 ### B. 附加修饰维度（正交于成分类型，可与任一组合叠加）
 
 - **Lopsidedness（m=1 Fourier 模式）**：把 Disk 的 `Pa2) sersic` 改为 `sersic_f`；当阶段一 `detect_galfits_bar_lopsidedness` 检出偏心残差时，Lopsidedness存在的可能性较高，是否启用需要进一步结合残差图分析；**只能作用于 Disk**，严禁加在 Bulge/Bar/Lens/AGN 上
-- **同心约束**：主星系多中心成分（Disk/Bulge/Bar/Lens）通过 `.constrain` 文件绑定 xcen/ycen；AGN 中心参数名是 `xcen_agn` / `ycen_agn`（不是 `agn_xcen`）
+
+### B'. 主星系同心约束（强制默认，非附加修饰——VLM 与主模型共享的硬约束）
+
+**触发条件**：只要本轮父状态的 `expected_C'` 包含 **≥ 2 个主星系中心成分**（Disk/Bulge/Bar/Lens 四类中的任意两个或以上），同心约束就**必须生效**——这是默认硬约束，不是"需要时才做"的可选项，与候选的具体方向（加成分/调参/修约束）无关。
+
+**VLM 职责**：在生成 `add(Bulge)` / `add(Bar)` / `add(Lens)` / `add(AGN)` 等新增主星系中心成分的候选时，`physical_motivation` **必须显式提及**"新增成分与现有 Disk/Bulge/Bar/Lens 通过 `.constrain` 绑定同一中心"；在 `expected_behavior_tag` 中可使用 `concentric_bound` 标识。生成 `tune(...)` 或 `remove(...)` 候选时，只要 `expected_C'` 仍含 ≥ 2 个主星系中心成分，同样默认继承同心约束（无需每轮重复声明，但不得遗忘）。
+
+**伴星系豁免**：伴星系（P 块 label 含 `comp`/`companion`/`secondary`/`satellite`）的中心**严禁参与**主星系同心约束——伴星系中心必须保持 `vary=1` 自由拟合。VLM 不得在 `physical_motivation` 中建议把伴星系中心绑定到主星系。
+
+**AGN 中心参数名**：N 块的中心参数是 `xcen_agn` / `ycen_agn`（不是 `agn_xcen` / `agn_ycen`）；绑定 AGN 时用这两个名字。
 
 ### C. 伴星系（独立 G 块，与主星系正交）
 
@@ -299,3 +308,4 @@ Disk 成分的 n **一律固定为 1，vary=0，永不释放**。无论 beam sea
 - **嵌入式伴星系时机复核（硬约束）**：若生成了 `add(Companion)` 候选且阶段一报告该伴星系为嵌入式（落在主星系等照度线 contour 上或以内，距中心 ≲ 2·Re_disk），**必须确认父状态已含 Bulge 或 Bar**。若父状态既无 Bulge 也无 Bar 却出现了嵌入式伴星系残差，**禁止**生成 `add(Companion)` 候选——应改为 `add(Bulge)` 候选，待中心骨架建立后再处理伴星系。违反此约束的典型失败模式：伴星系被拽向中心、三参数（Re/xcen/ycen）全部撞界发散。
 - **伴星系移除验证复核（硬约束）**：若补充信息中含"伴星系条件 A 命中"（通量比 ≤ 1%），必须确认已在**原图面板**上做过条件 B 视觉验证。若原图 companion 位置有可见亮斑却生成了 `remove(Companion)` 候选，视为违反约束。
 - **扁 Bulge → Bar 触发复核（硬约束）**：父状态含 Bulge 时，必须按"扁 Bulge → Bar 候选触发规则"的四条联合条件（bulge b/a < 0.5 AND PA 夹角 > 20° AND bulge n ∈ (0.5, 2.5) AND disk b/a > 0.5）做核对。条件全部成立时，本次输出**必须**包含至少一个 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增）；若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**，不得静默跳过。
+- **主星系同心约束复核（硬约束）**：本轮输出的每个候选，只要其 `expected_C'` 包含 **≥ 2 个主星系中心成分**（Disk/Bulge/Bar/Lens，不含伴星系），就**必须**默认继承同心约束——`add(...)` 类候选的 `physical_motivation` 必须显式提及"通过 `.constrain` 绑定同一中心"；`tune(...)` / `remove(...)` 类候选默认继承无需重复声明。**伴星系（label 含 comp/companion/secondary/satellite）严禁参与**主星系同心约束。若本次输出中出现 `add(Bulge/Bar/Lens/AGN)` 候选却未在任何候选的 physical_motivation 中提及同心绑定，视为违反约束。

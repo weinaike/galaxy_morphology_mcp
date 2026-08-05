@@ -70,9 +70,12 @@ while Q 非空 and n < 15 and stagnation < 15:
 a. **出队**：从 Q 取出 g 最高的 (s, a, σ, g, branch, depth)。把它从 Q 中移除。
 b. **执行转移 T(s, a)**：
     1) `global_iter_id += 1`；拷贝 s 对应的 `.lyric`，按 a 的 primitives 修改成分与参数，写入星系主目录的 `_iter{global_iter_id}.lyric`。**转写时必须严格遵守 §候选动作忠实执行原则**——候选声明中的语义核心字段（成分类型、n/vary 状态、量级约束、增删/中心约束策略、Fourier 阶数等）不得擅自修改；若主模型认为某候选有缺陷，应整条丢弃（记入"跨分支决策日志"），而不是修改后执行。
-    2) 若 a 涉及约束，写 `iter{global_iter_id}.constrain`（命名遵循 `Update_Constraints` 规范；AGN 中心参数名用 `xcen_agn` / `ycen_agn`）。
+    2) **主星系同心约束检查（硬约束，无论 a 是否声明约束都必须执行）**：统计本轮 `_iter{global_iter_id}.lyric` 中主星系中心成分（Disk/Bulge/Bar/Lens，即 P 块且 label 不含 `comp`/`companion`/`secondary`/`satellite`）的数量 K：
+       - **K ≥ 2**：**必须**写 `iter{global_iter_id}.constrain`（命名遵循 `Update_Constraints` 规范），把所有主星系中心成分的 xcen/ycen 绑定到 Disk（`pardictlc['bulge_xcen'] = 1 * pardictlc['disk_xcen']` 等成对出现，严禁仅绑定一个变量）。在 lyric 中把 Bulge/Bar/Lens 的 `P*3`/`P*4` 设为 `vary=0`（Disk 的 `Pa3`/`Pa4` 保持 `vary=1` 作为同心锚点）。AGN/N 块若共存则用 `xcen_agn`/`ycen_agn`（不是 `agn_xcen`）同样绑定到 disk。**伴星系（label 含 comp/companion/secondary/satellite）的中心严禁参与此约束**——伴星系中心必须保持 `vary=1` 自由拟合。调用 `run_galfits_image_fitting` 时必带 `--parconstrain iter{global_iter_id}.constrain`。
+       - **K ≤ 1**（仅单 Disk 或起手单 sersic）：不写约束文件，正常拟合。
+       - 该检查是主模型的强制职责，**不得依赖 VLM 候选声明**——即使 VLM 候选未提及同心约束，主模型也必须按上述规则补齐 `.constrain` 文件。
     3) **必须调用 `check_lyric_file`** 校验格式；失败按提示修复后再次校验，不得跳过。
-    4) 调用 `run_galfits_image_fitting`，必带 `--fit_method ES`；若 `.constrain` 存在则带 `--parconstrain iter{global_iter_id}.constrain`。`n += 1`。
+    4) 调用 `run_galfits_image_fitting`，必带 `--fit_method ES`；若步骤 2) 产出了 `.constrain` 则必带 `--parconstrain iter{global_iter_id}.constrain`。`n += 1`。
     5) **失败处置**：若工具异常或未产出 summary/对比图，把该 (s, a) 记入 `working_note.md` 的"分支: 失败归档"小节，把 a 加入 s 的禁忌集，`stagnation += 1`，回到循环开头。
 c. **构造新状态 s'**：从新生成的 `.gssummary` 读 reduced_χ² 与 BIC；`R'` 取新生成的 `all_bands_comparison.png`；`C'`、`P'` 取自新的 `.lyric` 与 `.gssummary`。轮次命名：在所属分支内取 `branch.local_round`（如 A.2、A.3、B.1…，A.1 已被首次拟合占用），与 global_iter_id 解耦。s' 的深度 = `depth + 1`。
 c.1 **Re 全序程序化校验**（Re-ordering gate）：调用 `check_re_ordering(summary_file=<新.gssummary 绝对路径>, lyric_file=<新_iter{n}.lyric 绝对路径>)`。该工具在 arcsec 域按基准链 `Re_disk > Re_lens > Re_bar > Re_bulge` 的子序列规则做严格数值比对，把 AGN(N 块) 与伴星系自动排除。
@@ -119,7 +122,8 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 ### 步骤 3. 进入阶段三前的收尾
 1. 在 `working_note.md` 的"跨分支决策日志"写下：终止条件、累计拟合次数 n、被探索过的分支数、被截掉的候选 action_id 列表。
 2. 锁定 s\*：在 `working_note.md` 头部的"Beam 状态快照 / 当前最优 s\*"小节确认其对应的 `output/<timestamp>_<lyric_stem>/` 目录与 `_iter{global_iter_id}.lyric` 文件路径——这两个路径将作为阶段三、四、五的输入。
-3. 若 s\* 是退化状态（如成分参数碰边界、bulge/disk 通量完全相同），不要强行进入阶段三；改为：把"修复退化"作为强约束写入 `generate_beam_actions` 的 `custom_instructions`，重启一轮 beam search（重置 Q 与 stagnation，但保留 n 与 global_iter_id 计数）。
+3. **同心约束合规性回查（硬约束）**：若 s\* 的主星系成分数 K ≥ 2（Disk/Bulge/Bar/Lens），但其对应的 `_iter{n}.lyric` 与 `run_galfits_image_fitting` 调用未附带 `.constrain` 文件与 `--parconstrain`，视为流程违规——回退到步骤 1.b.2 补齐 `.constrain` 后重跑该轮拟合，再进入阶段三。
+4. 若 s\* 是退化状态（如成分参数碰边界、bulge/disk 通量完全相同），不要强行进入阶段三；改为：把"修复退化"作为强约束写入 `generate_beam_actions` 的 `custom_instructions`，重启一轮 beam search（重置 Q 与 stagnation，但保留 n 与 global_iter_id 计数）。
 
 ### §候选生成的诊断式原则（主模型硬约束）
 

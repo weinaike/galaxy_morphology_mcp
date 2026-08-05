@@ -168,7 +168,7 @@
                 - **Re 0.2–0.5 px**（所有波段；边界区域）：可以创建一个 N 块 AGN 竞争方案与原 Sersic Bulge 方案对比拟合效果。只有 AGN 方案的 2D 残差（尤其是中心区域）明显更优时才采纳 AGN，否则保留 Sersic。不要仅凭 BIC 判断。
         4. 当 (Disk + Bar)/(Disk + Bulge + Bar) 拟合后， Re_bar > Re_disk(=1.68*Rs_disk), 或者 q_bar > 0.5; 导致物理意义异常，同时中心星系延展区残留正残差，可能存在Lens。
             - 对策：考虑将 Bar 拆分为Bar + Lens, Lens建议使用使用低 n值的sersic来拟合，通常的结构特征：Re_disk > Re_lens > Re_bar > Re_bulge（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减），n_lens<0.5，q_lens > 0.5。
-        5. 如果同星系新增成分，要求成分参数<x><y>与原有成分的<x><y>绑定，即保证她们同心（要求<x>和<y>同时绑定，严禁仅绑定一个变量）
+        5. **主星系同心约束（强制默认，非可选）**：当主星系包含 **≥ 2 个中心成分**（Disk/Bulge/Bar/Lens 四类中的任意两个或以上）时，**必须**通过 `.constrain` 文件把它们绑定到同一个中心——这是默认硬约束，不是"需要时才做"的可选项。操作要点：在 `.lyric` 中把从属成分（Bulge/Bar/Lens）的 `P*3`/`P*4` 设为 `vary=0`，主成分 Disk 的 `Pa3`/`Pa4` 保持 `vary=1` 作为同心锚点；写 `iter{n}.constrain`（`Update_Constraints` 函数中 `pardictlc['bulge_xcen'] = 1 * pardictlc['disk_xcen']` 等成对出现，`<x>` 和 `<y>` 必须同时绑定，严禁仅绑定一个变量）；调用时带 `--parconstrain`。**伴星系（P 块 label 含 comp/companion/secondary/satellite）的中心严禁参与此约束**——伴星系中心必须保持 `vary=1` 自由拟合。AGN/N 块用 `xcen_agn`/`ycen_agn`（不是 `agn_xcen`）。
         6. 当遇到某个通量占比过低，同时残差特征又预示着该成分的存在，各成分的 mag 初值需要重新分配。
         7. 对于一般情况，可以直接让 Re、Mag 和 n 都自由拟合; 当前成分拟合收敛合理后，再考增加下一个成分.
 
@@ -179,7 +179,7 @@
 + 对于盘星系而言，同一个源的两个成分bulge+disk拟合完，如果bulge的re 大于disk的re，意味着在拟合的过程中，bulge和disk的标签反了，可以交换这两个成分的标签。多成分拟合同一个源时，中心成分 Re 必须严格遵循全序基准链 `re_disk > re_lens > re_bar > re_bulge`——**仅比较实际存在的中心成分**（把缺失者从链中剔除，剩下按相对顺序严格递减；AGN/N 块与伴星系 G 块不参与）。例：{Disk,Bar,Bulge}→`re_disk>re_bar>re_bulge`；{Disk,Lens,Bulge}（无 Bar）→`re_disk>re_lens>re_bulge`；{Disk,Lens,Bar}（无 Bulge）→`re_disk>re_lens>re_bar`。<br>**反置处理（区分成分对）**：<br>· **{Disk, Bulge} 反置**（`re_bulge ≥ re_disk`）：两者同为 sersic profile（Disk 的 n 固定为 1，Bulge 的 n 可自由），fitter 常把两者搞混，**直接交换两者标签后重拟**是标准修法。<br>· **涉及 Bar 或 Lens 的任何反置**（如 `re_bar ≥ re_disk`、`re_lens ≥ re_disk`、`re_lens ≤ re_bar` 等）：**严禁交换标签**——Bar 有强先验 n=0.5 固定且 q<0.4，Lens 有强先验 n<0.5 且 q>0.5，与其他成分物理不可互换。此类反置应视为拟合失败（成分分配混乱或初值/约束不当），具体修复策略由 VLM 基于当前状态生成候选（如收紧过大成分的 Re 上限、重新分配通量、回退上一轮稳定结果重拟等）。
 + 星系盘 Disk 成分的 Sersic 指数 n：**Disk 成分的 n 一律固定为 1，永不释放**（与单 Sersic 策略不同——当整星系仅用单个 sersic 拟合、无 Bulge/Bar/Lens 并列时，n 是自由的整体浓度观测量，那种情况下 n 不固定）。n<1 的盘（低表面亮度盘 / 平滑盘 / 截断盘）在多成分分解中不由释放 Disk n 来吸收，而通过 Bulge/Lens 的自由 n 调整中心轮廓来承接。disk↔bulge 身份互换退化的判据是 `disk_n` 触下界 **且同时** `bulge_Re` 触上界（或反之）的**联合诊断**——单看 n<1 不构成退化判据。
 + Bugle 的 n 的范围一般在 0.1 < n < 8 之间，并不要求一定要大于 1，Re在 0.2 px以上都具有物理意义。 但对于 最亮星系系星系（BCGs）或 cD 星系，n 可能会超过 8；对于一些极端的伪核球（Pseudobulge），n 也可以小于 1。
-+ Disk、Bar、Bulge 他们基本同心，偏离太大的情况需要考虑增加一个成分拟合伴源，同时通过constrain文件限制同一个源不同成分之间中心的距离。
++ Disk、Bar、Bulge、Lens 四类主星系中心成分**必须同心**——这不是"基本"要求而是**强制默认**：只要 lyric 中存在 ≥ 2 个主星系中心成分，就必须通过 `.constrain` 文件把它们绑定到 Disk 中心（`xcen`/`ycen` 成对绑定，缺一不可），调用时带 `--parconstrain`。伴星系（label 含 comp/companion/secondary/satellite）的中心**严禁参与**此约束。若拟合后某主星系成分中心偏离 Disk 中心 > 2 px（需 WCS 换算），先检查 `.constrain` 是否正确加载；若已加载仍偏离，说明该成分身份可能已退化（如被伴星系拽偏、或与另一成分简并），需要考虑增加成分拟合真实伴源、或回退上一轮稳定结果。
 + m=1 Fourier mode 的 amplitude 大于 阈值 0.02 ，其物理意义上就应该保留。
 + 盘星系的已经包含 Bulge 时，Nucleus 成分只在有充分证据条件下才添加（例如 1D SB Profile 0-5px呈现明显正残差残留，无法被 Bulge 吸收）；如果盘星系的Bulge成分缺失，Nucleus 作为代偿在 1D SB Profile 中的能量成分占比大于 0.01(1%)，其在物理意义上也需要保留。
 + 关于成分简并的论述，要谨慎使用，只有在成分的 Re、q、PA（sky-PA） 等参数都接近时，才可以考虑使用简并。如果参数差异导致物理意义不同，则建议保留

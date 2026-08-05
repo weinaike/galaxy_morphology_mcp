@@ -82,8 +82,8 @@ c.1 **Re 全序程序化校验**（Re-ordering gate）：调用 `check_re_orderi
      2. 若 `swappable_overall=True`（反置仅涉及 {Disk, Bulge}）：主 agent **直接生成**交换 disk ↔ bulge 标签后的 `_iter{n+1}.lyric`（复用 s' 的其他参数；经 `check_lyric_file` 校验后进入下一轮拟合），**跳过** generate_beam_actions 调用。
      3. 若 `swappable_overall=False`：把返回的 `custom_instructions_hint` 字段**原样拼接**到下一步 `generate_beam_actions` 的 `custom_instructions` 末尾；正常走候选生成流程。
    - **status="error"**：记录 `error_message` 到 `working_note.md`，**不阻断**（沿用现状，由落锁前 verifier 兜底）；进入 d。
-d. **更新 s\***：按 §去重与排序 中的 score 函数评分；若 score(s') > score(s\*)，则 s\* ← s'，`stagnation = 0`；否则 `stagnation += 1`。覆写 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节。
-e. **候选生成（两个正交来源，合并后统一进入步骤 f 打分入队）**：每轮主循环的候选由两个触发条件正交的来源并行生成——e.i 由 VLM 基于残差图像的视觉分析驱动，e.ii 由主模型基于 `.gssummary` 的客观阈值驱动。两类候选合并后走完全相同的去重 / 打分 / 截断规则（步骤 f），彼此平等竞争入队。
+d. **登记 s' 评分并更新 s\***：按 §去重与排序 中的 score 函数给 s' 打分；若 score(s') > score(s\*)，s\* ← s'，`stagnation = 0`；否则 `stagnation += 1`。覆写 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节。**注意：stagnation 仅用于终止判定，不构成跳过步骤 e 的理由——s' 的后继可能优于 s\*（详见 §候选生成的诊断式原则）**。
+e. **候选生成（无条件硬约束——见 §候选生成的诊断式原则；两个正交来源合并后统一进入步骤 f 打分入队）**：本步骤只要步骤 b 拟合成功就**必须**执行（失败处置分支 b.5 除外），无论 s' 是否更新 s\*、BIC 是否反升、参数是否触界、队列是否仍有未消费候选、拟合预算是否紧张。每轮主循环的候选由两个触发条件正交的来源并行生成——e.i 由 VLM 基于残差图像的视觉分析驱动，e.ii 由主模型基于 `.gssummary` 的客观阈值驱动。两类候选合并后走完全相同的去重 / 打分 / 截断规则（步骤 f），彼此平等竞争入队。
     - **e.i VLM 视觉驱动候选**：以新对比图为 `comparison_file`、新 `.lyric` 为 `lyric_file`、新 `.gssummary` 为 `summary_file`，调用：
         ```
         generate_beam_actions(
@@ -121,6 +121,20 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 2. 锁定 s\*：在 `working_note.md` 头部的"Beam 状态快照 / 当前最优 s\*"小节确认其对应的 `output/<timestamp>_<lyric_stem>/` 目录与 `_iter{global_iter_id}.lyric` 文件路径——这两个路径将作为阶段三、四、五的输入。
 3. 若 s\* 是退化状态（如成分参数碰边界、bulge/disk 通量完全相同），不要强行进入阶段三；改为：把"修复退化"作为强约束写入 `generate_beam_actions` 的 `custom_instructions`，重启一轮 beam search（重置 Q 与 stagnation，但保留 n 与 global_iter_id 计数）。
 
+### §候选生成的诊断式原则（主模型硬约束）
+
+**核心命题**：步骤 e（候选生成）是 beam search 的诊断回路，不是"拟合改善时的奖励"。只要步骤 b 拟合成功产出 summary/对比图（即未进入 b.5 失败处置分支），**必须**无条件执行步骤 e——无论 s' 是否更新 s\*、BIC 是否反升、参数是否触界、队列是否仍有未消费候选、拟合预算是否紧张。
+
+**原理**：s' 的 BIC 反升不等于物理假设错误——常见情况是候选的物理方向正确，但某个次级参数（中心位置 / PA / Re 量级 / n / q）初始化不当，拟合器收敛到次优解。此时 s' 的残差携带"哪个参数需要修正"的诊断信息，只有调用 `generate_beam_actions` 才能把残差转译为修正候选。跳过步骤 e 会令 beam search 退化为贪心搜索，错过"同方向、修正参数"的后继——这正是 beam search 相对贪心搜索的核心价值所在。
+
+**通用失败→修正模式**（由 VLM 在候选生成阶段自主识别；主模型不得在 `custom_instructions` 中预先指定这些方向，见 §custom_instructions 内容规范）：
+- 成分中心位置初始估计有误 → s' 残差在"模型位置"与"真实位置"之间呈偶极 → `tune(component, x_real, y_real)`
+- 成分 PA 与真实主轴斜交 → s' 残差呈四极矩 → `tune(component, pa)`
+- 新增成分 Re 量级偏小 → s' 残差呈中心环状正残差 → `tune(component, Re_init≈...)`
+- 新增成分与父状态成分简并 → s' 中某成分身份坍缩（n/Re 触界）→ 释放/固定 n，或加同心约束打破简并
+
+**执行校验**：下一轮迭代出队前，确认 working_note 相应分支小节已有"本轮 generate_beam_actions 返回的候选 action_id 列表"记录；若缺失，视为漏执行——禁止出队，回到步骤 e 补做。
+
 ### §去重与排序（主模型职责，禁用规则去重）
 
 **语义去重判据**——两个 (s_i, a_i) 与 (s_j, a_j) **同时满足**以下三条即视为等价，保留 g 较高者：
@@ -132,7 +146,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 1. **残差改善潜力**：结合 VLM 给的 σ 与主模型独立判断的残差可解释比例。
 2. **物理合理性先验**：是否符合"Disk → (F1/Companion 若检出) → Bulge → Bar → Other"的成分添加次序；是否符合 Bar/Bulge/Lens/Nucleus 的认定条件（见 `<星系成分分析的总体流程>`）。**阶段一 detect_galfits_bar_lopsidedness 的检测结果在此维度仅作为弱先验**：检出可适度加分（提示性正证据），但**未检出不得扣分**——未检出是零证据而非负证据（详见阶段一"检测性质"条款）。一个基于残差证据（如中心四极矩、高扁率内部结构、bar 状残差等）的 Bar/Lens/Fourier 候选，即使阶段一未检出，其物理合理性得分应基于**残差证据的强度**评判，不得因阶段一未检出而压低。判定成分存在性的金标准是残差驱动的拟合验证，不是阶段一检测。
 3. **路径多样性 bonus**：与当前 Q 中已有元素的方向差异越大越加分（对抗贪心坍缩）。例如 Q 中已有 3 个"加 Bulge"方向候选时，一个"切 edgeondisk"方向候选应得该维高分。
-4. **退化惩罚**：父状态是否已退化（如 `--parconstrain` 被覆盖、bulge/disk 通量相同）；本动作是否可能继承退化。
+4. **退化惩罚**：父状态是否已退化（如 `--parconstrain` 被覆盖、bulge/disk 通量相同）；本动作是否可能继承退化。**此维度评估的是"候选本身是否继承父状态退化"，不是"父状态 s' 是否优于 s\*"**——一个 BIC 反升的 s'（如某成分参数初始化不当）其后继修正候选（位置修正 / PA 修正 / Re 修正）正在修复退化，应得**低**退化惩罚，即使其父状态 s' 看似"更差"。
 5. **历史一致性**：是否与 `working_note.md` 前序目标连贯，避免反复横跳。
 6. **BIC 门槛**：仅当动作涉及 Nucleus/AGN 的增删时启用；预估 ΔBIC 能否跨过 +10 门槛。
 

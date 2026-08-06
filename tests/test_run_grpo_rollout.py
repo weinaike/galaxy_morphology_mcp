@@ -10,6 +10,7 @@ from eval.run_grpo_rollout import (
     execute_prediction,
     load_physical_ids,
     select_parent_records,
+    validate_model_spec_for_execution,
 )
 
 
@@ -170,6 +171,65 @@ def test_invalid_model_response_is_policy_invalid(tmp_path):
     )
     assert result["outcome"] == "policy_invalid"
     assert result["failure_reason"] == "no_valid_json_spec"
+
+
+def test_incomplete_component_spec_is_policy_invalid_before_evaluator(tmp_path):
+    parent_feedme = tmp_path / "A.feedme"
+    parent_feedme.write_text("not needed: validation must run first", encoding="utf-8")
+    prediction = {
+        "group_id": "g",
+        "group_index": 0,
+        "candidate_id": "c0",
+        "candidate_index": 0,
+        "prediction": "",
+        "pred_spec": {
+            "components": [
+                {
+                    "role": "disk",
+                    "model": "expdisk",
+                    "mag": 16.0,
+                    "re": None,
+                    "q": 0.7,
+                    "pa": 30.0,
+                }
+            ]
+        },
+        "action_type": "modify",
+    }
+    result = asyncio.run(
+        execute_prediction(
+            prediction,
+            {"feedme_path": str(parent_feedme)},
+            work_root=str(tmp_path),
+            max_iter=100,
+            use_vlm=False,
+            vlm_model=None,
+            api_key=None,
+        )
+    )
+    assert result["outcome"] == "policy_invalid"
+    assert result["failure_stage"] == "response_validation"
+    assert result["failure_reason"] == "invalid_model_spec: component_0_missing_or_null:re"
+
+
+def test_execution_spec_validation_accepts_model_specific_fields():
+    spec = {
+        "components": [
+            {"role": "nucleus", "model": "psf", "x": None, "y": None, "mag": 18.0},
+            {
+                "role": "disk",
+                "model": "expdisk",
+                "x": None,
+                "y": None,
+                "mag": 16.0,
+                "re": 10.0,
+                "q": 0.7,
+                "pa": 30.0,
+            },
+        ],
+        "sky": {"value": None, "fix": 0},
+    }
+    assert validate_model_spec_for_execution(spec) is None
 
 
 def test_load_physical_ids_supports_report_dict(tmp_path):

@@ -15,12 +15,14 @@ import asyncio
 import hashlib
 import importlib
 import json
+import math
 import os
 import random
 import shutil
 import subprocess
 import tempfile
 import time
+import traceback
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -36,6 +38,7 @@ def preflight_grpo_runtime(work_root: str | Path) -> dict[str, Any]:
         "scipy",
         "astropy",
         "photutils",
+        "skimage",
     )
     missing_modules: list[str] = []
     for module_name in required_modules:
@@ -434,6 +437,61 @@ def _base_rollout_record(prediction: Mapping[str, Any]) -> dict[str, Any]:
     return {key: prediction.get(key) for key in keys}
 
 
+def validate_model_spec_for_execution(spec: Mapping[str, Any]) -> str | None:
+    """Return a policy-attributable error before the GALFIT evaluator is called.
+
+    The online policy must emit the complete component specification consumed by
+    write_feedme_from_spec. Missing/null/non-numeric component parameters are
+    model-output errors, not evaluator failures.
+    """
+
+    components = spec.get("components")
+    if not isinstance(components, list) or not components:
+        return "components_must_be_a_nonempty_list"
+
+    required_by_model = {
+        "sersic": ("mag", "re", "n", "q", "pa"),
+        "expdisk": ("mag", "re", "q", "pa"),
+        "psf": ("mag",),
+    }
+    for index, component in enumerate(components):
+        if not isinstance(component, Mapping):
+            return f"component_{index}_must_be_an_object"
+        model = str(component.get("model", "")).strip().lower()
+        if model not in required_by_model:
+            return f"component_{index}_unsupported_model:{model or '<missing>'}"
+
+        for field in required_by_model[model]:
+            value = component.get(field)
+            if value is None:
+                return f"component_{index}_missing_or_null:{field}"
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return f"component_{index}_non_numeric:{field}"
+            if not math.isfinite(float(value)):
+                return f"component_{index}_non_finite:{field}"
+
+        for field in ("x", "y"):
+            value = component.get(field)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return f"component_{index}_non_numeric:{field}"
+            if not math.isfinite(float(value)):
+                return f"component_{index}_non_finite:{field}"
+
+    sky = spec.get("sky")
+    if sky is not None and not isinstance(sky, Mapping):
+        return "sky_must_be_an_object_or_null"
+    if isinstance(sky, Mapping) and sky.get("value") is not None:
+        try:
+            sky_value = float(sky["value"])
+        except (TypeError, ValueError):
+            return "sky_value_non_numeric"
+        if not math.isfinite(sky_value):
+            return "sky_value_non_finite"
+    return None
+
+
 async def execute_prediction(
     prediction: Mapping[str, Any],
     manifest_row: Mapping[str, Any],
@@ -464,6 +522,7 @@ async def execute_prediction(
     if prediction.get("generation_error"):
         record.update(
             outcome=OUTCOME_EVALUATOR_FAILURE,
+            failure_stage="model_generation",
             failure_reason=f"generation_error: {prediction['generation_error']}",
         )
         return record
@@ -474,7 +533,17 @@ async def execute_prediction(
     if not isinstance(pred_spec, dict):
         record.update(
             outcome=OUTCOME_POLICY_INVALID,
+            failure_stage="response_parsing",
             failure_reason="no_valid_json_spec",
+        )
+        return record
+
+    spec_error = validate_model_spec_for_execution(pred_spec)
+    if spec_error is not None:
+        record.update(
+            outcome=OUTCOME_POLICY_INVALID,
+            failure_stage="response_validation",
+            failure_reason=f"invalid_model_spec: {spec_error}",
         )
         return record
 
@@ -482,6 +551,7 @@ async def execute_prediction(
     if not parent_feedme or not os.path.exists(str(parent_feedme)):
         record.update(
             outcome=OUTCOME_EVALUATOR_FAILURE,
+            failure_stage="evaluator_input",
             failure_reason=f"parent_feedme_missing: {parent_feedme}",
         )
         return record
@@ -512,7 +582,9 @@ async def execute_prediction(
         # attributed to the policy action and receives the coarse -1 reward.
         record.update(
             outcome=OUTCOME_EVALUATOR_FAILURE,
+            failure_stage="galfit_evaluator",
             failure_reason=f"galfit_evaluator_exception: {type(exc).__name__}: {exc}",
+            failure_traceback=traceback.format_exc(),
         )
         return record
     record["galfit_status"] = galfit_result.get("status")
@@ -522,6 +594,7 @@ async def execute_prediction(
     if galfit_result.get("status") != "success":
         record.update(
             outcome=OUTCOME_POLICY_EXECUTION_FAILURE,
+            failure_stage="galfit_execution",
             failure_reason=str(galfit_result.get("error") or galfit_result.get("status")),
         )
         return record
@@ -542,6 +615,7 @@ async def execute_prediction(
         raw_reward = float(raw_result["reward"])
         record.update(
             outcome=OUTCOME_SUCCESS,
+            failure_stage=None,
             raw_reward=raw_reward,
             model_metrics=new_metrics,
             bounds_ok=raw_result.get("bounds_ok"),
@@ -554,7 +628,9 @@ async def execute_prediction(
     except Exception as exc:
         record.update(
             outcome=OUTCOME_EVALUATOR_FAILURE,
+            failure_stage="v11_evaluator",
             failure_reason=f"v11_error: {type(exc).__name__}: {exc}",
+            failure_traceback=traceback.format_exc(),
         )
         return record
 

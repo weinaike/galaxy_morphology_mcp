@@ -227,13 +227,56 @@ async def execute_galfit_with_spec(
     result = await run_galfit(
         os.path.abspath(new_feedme_path), ["-imax", str(max_iter)]
     )
+    raw_console = result.get("log")
+    raw_console_path = None
+    if raw_console is not None:
+        raw_console_path = os.path.join(work_dir, "galfit_console_raw.log")
+        with open(raw_console_path, "w", encoding="utf-8") as f:
+            f.write(str(raw_console))
+
+    fit_log_path = os.path.join(work_dir, "fit.log")
+    if not os.path.isfile(fit_log_path):
+        fit_log_path = None
+
+    diagnostic_path = os.path.join(work_dir, "galfit_executor_result.json")
+    diagnostic_payload = {k: v for k, v in result.items() if k != "log"}
+    diagnostic_payload.update(
+        {
+            "feedme_path": os.path.abspath(new_feedme_path),
+            "raw_console_log": raw_console_path,
+            "fit_log": fit_log_path,
+        }
+    )
+    with open(diagnostic_path, "w", encoding="utf-8") as f:
+        json.dump(diagnostic_payload, f, ensure_ascii=False, indent=2, default=str)
+    diagnostic_fields = {
+        "galfit_diagnostic_file": diagnostic_path,
+        "galfit_console_log": raw_console_path or result.get("console_log_file"),
+        "galfit_fit_log": fit_log_path,
+    }
+
 
     if result.get("status") == "success":
+        _, artifact_errors = validate_galfit_reward_artifacts(
+            result.get("summary_file"), result.get("image_file")
+        )
+        if artifact_errors:
+            return {
+                "status": "evaluator_failed",
+                "failure_origin": "evaluator",
+                "error": "incomplete GALFIT evaluator artifacts: "
+                + "; ".join(artifact_errors),
+                "image_file": result.get("image_file"),
+                "summary_file": result.get("summary_file"),
+                "feedme_path": new_feedme_path,
+                **diagnostic_fields,
+            }
         return {
             "status": "success",
             "image_file": result.get("image_file"),
             "summary_file": result.get("summary_file"),
             "feedme_path": new_feedme_path,
+            **diagnostic_fields,
         }
 
     # --- run_galfit 报 failure，检查输出文件是否已写出 ---
@@ -246,7 +289,12 @@ async def execute_galfit_with_spec(
             log_lines = log.strip().split("\n")
             log_tail = "\n".join(log_lines[-15:])
             print(f"  [GALFIT LOG tail]\n{log_tail}")
-        return {"status": "galfit_failed", "error": err}
+        return {
+            "status": "galfit_failed",
+            "error": err,
+            "feedme_path": new_feedme_path,
+            **diagnostic_fields,
+        }
 
     print(f"  [GALFIT] returncode!=0 but output exists, recovering...")
 
@@ -291,11 +339,28 @@ async def execute_galfit_with_spec(
         shutil.copy(max(matched_galfit_files, key=lambda f: int(f.rsplit(".", 1)[-1])), ar_dir)
     shutil.copy(os.path.abspath(new_feedme_path), ar_dir)
 
+    _, artifact_errors = validate_galfit_reward_artifacts(
+        summary_path, comparison_png_path
+    )
+    if artifact_errors:
+        original_error = str(result.get("error") or "GALFIT returned failure")
+        return {
+            "status": "galfit_failed",
+            "failure_origin": "policy",
+            "error": original_error + "; incomplete GALFIT output: "
+            + "; ".join(artifact_errors),
+            "image_file": comparison_png_path,
+            "summary_file": summary_path,
+            "feedme_path": new_feedme_path,
+            **diagnostic_fields,
+        }
+
     return {
         "status": "success",
         "image_file": comparison_png_path,
         "summary_file": summary_path,
         "feedme_path": new_feedme_path,
+        **diagnostic_fields,
     }
 
 
@@ -335,6 +400,53 @@ def extract_metrics_from_summary(summary_path):
         print(f"  [WARN] metrics extraction failed: {e}")
 
     return metrics
+
+
+def validate_galfit_reward_artifacts(summary_path, image_path):
+    """Validate artifacts required to compute a real v11 reward."""
+    import math
+
+    metrics = extract_metrics_from_summary(summary_path)
+    errors = []
+    if not summary_path or not os.path.isfile(str(summary_path)):
+        errors.append("summary_missing")
+
+    required = ("chi2_nu", "chi2", "ndof", "bic")
+    for name in required:
+        value = metrics.get(name)
+        if value is None:
+            errors.append(f"metric_missing:{name}")
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            errors.append(f"metric_invalid:{name}={value!r}")
+            continue
+        if not math.isfinite(numeric):
+            errors.append(f"metric_nonfinite:{name}={value!r}")
+
+    try:
+        chi2_nu = float(metrics.get("chi2_nu", 9999.0))
+    except (TypeError, ValueError):
+        chi2_nu = 9999.0
+    try:
+        chi2 = float(metrics.get("chi2", 999999.0))
+    except (TypeError, ValueError):
+        chi2 = 999999.0
+    try:
+        ndof = int(metrics.get("ndof") or 0)
+    except (TypeError, ValueError):
+        ndof = 0
+    if chi2_nu >= 9999.0:
+        errors.append("metric_sentinel:chi2_nu")
+    if chi2 >= 999999.0:
+        errors.append("metric_sentinel:chi2")
+    if ndof <= 0:
+        errors.append("metric_invalid:ndof<=0")
+    if not image_path or not os.path.isfile(str(image_path)):
+        errors.append("comparison_image_missing")
+
+    return metrics, errors
 
 
 # ============================================================

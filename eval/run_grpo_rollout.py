@@ -558,7 +558,7 @@ async def execute_prediction(
 
     from eval.run_exec_eval import (
         execute_galfit_with_spec,
-        extract_metrics_from_summary,
+        validate_galfit_reward_artifacts,
     )
 
     group_index = int(prediction.get("group_index") or 0)
@@ -591,10 +591,25 @@ async def execute_prediction(
     record["model_feedme_path"] = galfit_result.get("feedme_path")
     record["model_residual_path"] = galfit_result.get("image_file")
     record["model_summary_path"] = galfit_result.get("summary_file")
+    record["galfit_diagnostic_file"] = galfit_result.get("galfit_diagnostic_file")
+    record["galfit_console_log"] = galfit_result.get("galfit_console_log")
+    record["galfit_fit_log"] = galfit_result.get("galfit_fit_log")
+    record["galfit_error"] = galfit_result.get("error")
+    record["galfit_failure_origin"] = galfit_result.get("failure_origin")
+
     if galfit_result.get("status") != "success":
+        is_evaluator_failure = galfit_result.get("failure_origin") == "evaluator"
         record.update(
-            outcome=OUTCOME_POLICY_EXECUTION_FAILURE,
-            failure_stage="galfit_execution",
+            outcome=(
+                OUTCOME_EVALUATOR_FAILURE
+                if is_evaluator_failure
+                else OUTCOME_POLICY_EXECUTION_FAILURE
+            ),
+            failure_stage=(
+                "galfit_artifact_validation"
+                if is_evaluator_failure
+                else "galfit_execution"
+            ),
             failure_reason=str(galfit_result.get("error") or galfit_result.get("status")),
         )
         return record
@@ -604,7 +619,13 @@ async def execute_prediction(
         from eval.validate_reward_alignment import _parse_fitted_components
 
         summary_path = galfit_result.get("summary_file")
-        new_metrics = extract_metrics_from_summary(summary_path)
+        new_metrics, artifact_errors = validate_galfit_reward_artifacts(
+            summary_path, galfit_result.get("image_file")
+        )
+        if artifact_errors:
+            raise ValueError(
+                "incomplete GALFIT reward artifacts: " + "; ".join(artifact_errors)
+            )
         fitted_components = _parse_fitted_components(summary_path)
         raw_result = compute_rl_reward(
             old_metrics=dict(manifest_row.get("parent_metrics") or {}),

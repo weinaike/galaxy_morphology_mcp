@@ -513,7 +513,7 @@ def create_multiband_comparison_png(
         # ---- Col 0: Original (99.5th percentile) ----
         ax1 = fig.add_subplot(gs[r0, 0])
         orig_info = render_asinh_panel(
-            ax1, original_data, mask, region=region, components=components_sorted, show_isophotes=True)
+            ax1, original_data, mask, region=region, show_isophotes=True)
         ax1.set_title(
             f"Original Data (vmax=99.5th pctl)\n"
             f"asinh: a={orig_info['asinh_a']:.4f}, "
@@ -526,7 +526,7 @@ def create_multiband_comparison_png(
         # ---- Col 1: Original (99.99th percentile) ----
         ax1b = fig.add_subplot(gs[r0, 1])
         orig_info_9999 = render_asinh_panel(
-            ax1b, original_data, mask, region=region, components=components_sorted,
+            ax1b, original_data, mask, region=region,
             show_isophotes=True, vmax_percentile=99.99)
         ax1b.set_title(
             f"Original Data (vmax=99.99th pctl)\n"

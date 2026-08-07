@@ -99,13 +99,19 @@ e. **候选生成（无条件硬约束——见 §候选生成的诊断式原则
         )
         ```
         工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个）。
-    - **e.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查，向 VLM 委托需视觉验证的候选。这类候选针对"视觉上可见但数值上可疑的成分"——VLM 从图像上看到该成分存在会倾向于保留，但数值上若可疑（如通量极低），主模型把客观观数据交给 VLM，由 VLM 结合原图视觉验证决定是否生成移除候选。当前定义的触发规则：
+    - **e.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查，向 VLM 委托需视觉验证的候选。这类候选针对"视觉上可见但数值上可疑的成分"——VLM 从图像上看到该成分存在会倾向于保留，但数值上若可疑（如通量极低、或基础成分 Re 偏小被延展成分代偿），主模型把客观观数据交给 VLM，由 VLM 结合原图视觉验证决定是否生成调整候选（移除或参数调整）。当前定义的触发规则：
         - **伴星系必要性检查（数值 + 视觉双轴判据）**：若 s' 含 Companion，读取 `.gssummary` 中 companion 与 disk 的 `logNorm_<component>_<band>` / `Mag_<component>_<band>`，计算通量比 `f_companion/f_disk = 10^(−0.4·ΔMag)`（其中 `ΔMag = Mag_companion − Mag_disk`）。
           - 若通量比 > 1%：companion 通量显著，不触发移除检查。
           - 若通量比 ≤ 1%（**条件 A 命中**）：主模型**不直接生成 remove 候选**，而是把三项数值（通量比、ΔMag、`ΔlogNorm = logNorm_companion − logNorm_disk`）写入当轮 `generate_beam_actions` 的 `custom_instructions`，格式为："伴星系条件 A 命中：companion 通量比 = 0.4%, ΔMag = 5.91, ΔlogNorm = -2.37。请 VLM 做条件 B 视觉验证：查看原图面板 companion 位置是否有肉眼可见亮斑，无可见源才生成 remove(Companion)。" 由 VLM 在候选生成阶段执行条件 B 视觉验证（见 `beam_action_generation_prompt.md` §伴星系移除验证）：仅当 A（数值暗）AND B（原图无可见源）同时成立时，VLM 才生成 `remove(Companion)` 候选。若原图有可见亮斑（B 不命中），VLM 不生成 remove 候选，companion 保留。
           - 若 s' 不含 Companion，不触发。
+        - **disk Re 瓶颈检查（延展成分触界 + Re/通量简并判据）**：若 s' 含 lens 或 bar（P 块 label 含 `lens`/`bar`），读取其 `Re` 拟合值与 lyric 中对应的 `re_max`，以及 disk 的 `Re` 与 `Mag`。当 lens/bar 的 `Re` 触上限（拟合值 == re_max，或在 re_max 的 2% 范围内）且满足下列**任一**子条件时，判定为"disk Re 瓶颈命中"——延展成分想更大但被 disk Re 拖住，是 disk Re 偏小的客观信号：
+          - **子条件 A（Re 简并）**：`Re_lens/bar / Re_disk ≥ 0.85`（两者在 Re 维度高度简并，lens/bar 几乎追上 disk）。
+          - **子条件 B（通量接近或超过）**：`Mag_lens/bar ≤ Mag_disk + 0.2`（即 lens/bar 通量 ≥ disk 的 ~83%，甚至超过 disk）。此条件捕捉 lens/bar 被迫接管 disk 外缘通量的退化模式。
+          - **生成动作**（任一子条件命中后）：若 disk Re 未触界（disk Re < disk 的 re_max），主模型生成 `tune(disk, re_init = 1.3–1.5 × current_disk_Re)` 候选（保底分 g ≥ 0.5，强制保留条款），并把瓶颈信号写入 `custom_instructions`，格式为："disk Re 瓶颈命中（触界+简并）：lens_Re=5.0 触上限（re_max=5.0），Re_lens/Re_disk=0.93 ≥ 0.85（Re 简并命中）/ lens_Mag=16.86 ≤ disk_Mag+0.2=17.28（通量 125% ≥ 83%，通量超过 disk 命中）。延展成分想更大但被 disk 拖住，是 disk Re 偏小的客观信号。请 VLM 做视觉验证：查看 1D 亮度曲线 r > 2×Re_disk 区域是否系统性 Data 亮于 Model，若是则确认生成 tune(disk, Re 更大) 候选。" 由 VLM 在候选生成阶段结合 1D 曲线视觉确认。若 disk Re 也触上限，不触发（disk 已无空间）。
+          - **原理**：该规则针对的是"lens/bar 膨胀去代偿 disk 外缘通量"的退化模式——当 lens/bar Re 触上限且与 disk 在 Re 或通量维度简并时，根因往往是 disk Re 本身偏小，而非 lens/bar 真的需要那么大。此信号完全客观（来自 `.gssummary` 数值），不依赖 VLM 在低信噪比外围区域的视觉判读（后者已证实不稳定——当 lens 已代偿外缘通量时，1D 曲线变平，视觉检查难以触发）。典型场景：lens_Re=5.0 触上限且 lens_Mag=16.86 比 disk_Mag=17.08 还亮（lens 通量 125% disk），配合 disk_Re=6.1 时几乎必然指向 disk Re 被低估。
+          - 若 s' 不含 lens/bar，不触发。
         - 未来若需扩展其他客观数值触发（如 sky 背景异常、某成分 Mag 异常暗等），按同样模式在此子项追加规则。
-    - **追溯标记**：e.ii 触发的数值检查（无论 VLM 最终是否生成 remove 候选）在 `working_note.md` 的相应分支小节标注"[主模型数值规则委托]"，记录三项实测数值与 VLM 的视觉验证结论（原图有无可见源）。便于后续审计伴星系保留/移除决策的依据。
+    - **追溯标记**：e.ii 触发的数值检查（无论 VLM 最终是否生成对应候选）在 `working_note.md` 的相应分支小节标注"[主模型数值规则委托]"，记录实测数值（伴星系：通量比/ΔMag/ΔlogNorm；disk Re 瓶颈：lens/bar Re 与 re_max、disk Re 与 re_max、Re 比值、通量比、命中子条件 A/B）与 VLM 的视觉验证结论。便于后续审计成分保留/移除/参数调整决策的依据。
 f. **去重 + 打分 + 入队**：主模型对每个新候选（e.i VLM 候选与 e.ii 主模型数值规则候选合并后的完整集合）：
     - 与 Q 中已有 (s_j, a_j) 做 §去重与排序 的语义去重；若等价则保留 g 较高者。
     - 对保留者按六维打分得到 g。
@@ -197,6 +203,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 - **扁 Bulge → Bar 候选**：当父状态含 Bulge 且满足联合触发条件（`bulge_axrat < 0.5` AND `|bulge_ang − disk_ang| > 20°` AND `0.5 < bulge_n < 2.5`（若 free）AND `disk_axrat > 0.5`）时，主模型必须把 VLM 返回的 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增，至少一个）以 g 不低于 0.5 的保底分入队，**不得因"阶段一未检出 bar"在物理合理性维度（维度 2）压分**。主模型在 custom_instructions 中须客观写出四条触发数值（见 §custom_instructions），让 VLM 知道触发条件已成立。若 VLM 在已触发情况下未返回任何 Bar 候选，主模型应**主动生成**一个 `add(Bar, n=0.5 fixed, PA≈bulge_ang)` 候选（参照 §候选动作忠实执行原则 的"B 类填空"规则初始化参数），追溯标记"[主模型扁-bulge 触发补充]"，走同样的打分入队流程。
 - **Lens 候选**：父状态含 Bar 且 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5` 时，Lens 候选同上保底入队。
 - **Re-ordering FAIL 恢复候选**（见 §非物理结果恢复协议）：当 s' FAIL Re-ordering（swappable=False）时，主模型在 e.ii 生成的恢复候选 A（Re-bound 收紧）和 B（热启动+收紧）以 g ≥ 0.5 保底入队。这类候选针对的是程序化诊断（`check_re_ordering` 精确数值违规）驱动的机械修复，VLM 从残差图不容易直觉判断其改善潜力，故需保底保护。
+- **disk Re 瓶颈候选**（见 e.ii 主模型数值规则）：当 lens/bar Re 触上限且满足 Re 简并（≥0.85）或通量接近（≥83% disk）任一子条件时，主模型在 e.ii 生成的 `tune(disk, Re 更大)` 候选以 g ≥ 0.5 保底入队。这类候选针对"基础骨架成分 Re 偏小被延展成分代偿"的退化模式——VLM 因注意力被中心强残差吸引、且在 lens 已代偿外缘通量时 1D 曲线变平导致视觉判读不稳定，对"调大基础成分 Re"方向不敏感，故需客观信号保底保护。
 - **持续候选保护条款（VLM 跨轮次重复提议）**：若 VLM 在最近 **≥2 次 `generate_beam_actions` 调用**中（无论父轮次是否相邻、是否同分支）都返回了**同方向**候选，且每次 σ ≥ 0.7，则该方向候选**必须**入队并至少被执行一次，主模型不得以"历史路径失败"、"认知一致性"、"路径多样性"等理由将其 g 压到 g_min=0.3 以下。
   - **"同方向"判据**：`expected_behavior_tag` 相同，且 `expected_C'` 在物理身份上等价（允许参数微调，如 PA=90° vs PA=85°、Re_init=1.5" vs 2.0" 均视为同方向）。
   - **触发后处理**：把该候选的 g 强制设为 **≥0.6**（保底分），在 working_note 标注"[持续候选保护触发]"，记录触发的 2 次（或更多）`generate_beam_actions` 调用的 session_id 与 σ 值。
@@ -216,6 +223,8 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
    - 残差图上观察到的未拟合特征（位置 / 对称性 / 强度，引用阶段一视觉特征的客观描述）；
    - 成分身份是否混淆（如 disk 与 bulge 标签互换、bar 丧失棒形态变圆变胖、bulge 坍缩成致密点源）；
    - **扁 Bulge → Bar 触发数值（若父状态含 Bulge）**：客观列出 `bulge_axrat=...`、`|bulge_ang − disk_ang|=...°`、`bulge_n=...`、`disk_axrat=...` 四个值，并标注联合触发条件是否成立（成立 / 不成立 + 缺哪条）。这是让 VLM 判断是否该生成 Bar 候选的客观依据，主模型只报数值，**不**暗示方向（不写"建议加 bar"或"应该转换"）。
+   - **disk Re 瓶颈信号（若父状态含 lens/bar）**：客观列出 lens/bar 的 `Re` 拟合值、`re_max`、是否触上限；以及 disk 的 `Re` 与 `re_max`、是否触界。若 lens/bar 触上限且 disk 未触界，标注"disk Re 瓶颈命中"。这是让 VLM 判断是否该生成 `tune(disk, Re 更大)` 候选的客观依据，主模型只报数值，**不**暗示方向。
+   - **外围残差符号（1D 曲线 r > 2×Re_disk 区域）**：客观描述 1D 残差曲线在该区域的系统性符号——"Data 亮于 Model"（正残差，disk Re 可能偏小）/ "Model 亮于 Data"（负残差，disk Re 可能偏大）/ "平坦"（拟合良好）。引用 VLM 阶段一视觉特征的原文描述，不做主观推断。
 4. 父轮次已尝试动作清单（避免 VLM 重复提出）。
 
 **严禁包含**（候选方向建议）：

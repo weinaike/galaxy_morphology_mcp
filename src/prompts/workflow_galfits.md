@@ -110,8 +110,16 @@ e. **候选生成（无条件硬约束——见 §候选生成的诊断式原则
           - **生成动作**（任一子条件命中后）：若 disk Re 未触界（disk Re < disk 的 re_max），主模型生成 `tune(disk, re_init = 1.3–1.5 × current_disk_Re)` 候选（保底分 g ≥ 0.5，强制保留条款），并把瓶颈信号写入 `custom_instructions`，格式为："disk Re 瓶颈命中（触界+简并）：lens_Re=5.0 触上限（re_max=5.0），Re_lens/Re_disk=0.93 ≥ 0.85（Re 简并命中）/ lens_Mag=16.86 ≤ disk_Mag+0.2=17.28（通量 125% ≥ 83%，通量超过 disk 命中）。延展成分想更大但被 disk 拖住，是 disk Re 偏小的客观信号。请 VLM 做视觉验证：查看 1D 亮度曲线 r > 2×Re_disk 区域是否系统性 Data 亮于 Model，若是则确认生成 tune(disk, Re 更大) 候选。" 由 VLM 在候选生成阶段结合 1D 曲线视觉确认。若 disk Re 也触上限，不触发（disk 已无空间）。
           - **原理**：该规则针对的是"lens/bar 膨胀去代偿 disk 外缘通量"的退化模式——当 lens/bar Re 触上限且与 disk 在 Re 或通量维度简并时，根因往往是 disk Re 本身偏小，而非 lens/bar 真的需要那么大。此信号完全客观（来自 `.gssummary` 数值），不依赖 VLM 在低信噪比外围区域的视觉判读（后者已证实不稳定——当 lens 已代偿外缘通量时，1D 曲线变平，视觉检查难以触发）。典型场景：lens_Re=5.0 触上限且 lens_Mag=16.86 比 disk_Mag=17.08 还亮（lens 通量 125% disk），配合 disk_Re=6.1 时几乎必然指向 disk Re 被低估。
           - 若 s' 不含 lens/bar，不触发。
+        - **lens Re 膨胀检查（参数状态触发，生成三条竞争式候选）**：若 s' 含 lens，读取 lens 的 `Re` 拟合值、lyric 中 lens 的 `re_max`、以及 disk 的 `Re` 与 `Mag`。
+          - **触发条件（任一命中）**：
+            - **触上限**：`lens_Re ≥ 0.98 × re_max`。
+            - **Re 反置**：`lens_Re ≥ disk_Re`（Re-ordering FAIL 时由 `check_re_ordering` 报告，或主模型直接比对）。
+          - **生成动作**（主模型把信号写入 `custom_instructions`，**不直接生成候选**——由 VLM 按 `beam_action_generation_prompt.md` §Lens Re 膨胀触发规则 生成三条竞争路径 A/B/C，主模型打分入队）：格式为："Lens Re 膨胀命中：lens_Re=X 触上限（re_max=Y）[和/或] lens_Re=X ≥ disk_Re=Z（Re 全序反置）。lens_Mag=W，disk_Mag=V。请 VLM 按 §Lens Re 膨胀触发规则 生成候选 A（收紧 lens Re，re_max=0.9×disk_Re）/ B（增大 disk Re，re_init=1.3–1.5×disk_Re；若 disk 已触 re_max 则跳过 B 并说明）/ C（移除 lens）三条竞争路径。"
+          - **主模型保底**：若 VLM 在已触发情况下漏掉了候选 A/B/C 中的某条且未在 physical_motivation 中说明放弃理由，主模型应**主动生成**缺失的候选（保底分 g ≥ 0.5，强制保留条款），追溯标记"[主模型 lens 膨胀补充]"。候选 A 的 re_max 取 `0.9 × disk_Re`；候选 B 的 disk re_init 取 `1.3 × disk_Re`（仅当 disk 未触界）；候选 C 为 `remove(lens)`。
+          - **原理**：lens 膨胀是 lens 被添加后最常见的退化模式，有三种互斥的物理假设（lens 越界 / disk 骨架偏小 / lens 寄生），单一方向探索会错过最优修复。强制三路径竞争让 beam search 并行探索能力完整发挥。
+          - 若 s' 不含 lens，不触发。
         - 未来若需扩展其他客观数值触发（如 sky 背景异常、某成分 Mag 异常暗等），按同样模式在此子项追加规则。
-    - **追溯标记**：e.ii 触发的数值检查（无论 VLM 最终是否生成对应候选）在 `working_note.md` 的相应分支小节标注"[主模型数值规则委托]"，记录实测数值（伴星系：通量比/ΔMag/ΔlogNorm；disk Re 瓶颈：lens/bar Re 与 re_max、disk Re 与 re_max、Re 比值、通量比、命中子条件 A/B）与 VLM 的视觉验证结论。便于后续审计成分保留/移除/参数调整决策的依据。
+    - **追溯标记**：e.ii 触发的数值检查（无论 VLM 最终是否生成对应候选）在 `working_note.md` 的相应分支小节标注"[主模型数值规则委托]"，记录实测数值（伴星系：通量比/ΔMag/ΔlogNorm；disk Re 瓶颈：lens/bar Re 与 re_max、disk Re 与 re_max、Re 比值、通量比、命中子条件 A/B；lens Re 膨胀：lens Re 与 re_max、disk Re、是否触上限/反置、lens_Mag、disk_Mag、命中的竞争路径 A/B/C）与 VLM 的视觉验证结论。便于后续审计成分保留/移除/参数调整决策的依据。
 f. **去重 + 打分 + 入队**：主模型对每个新候选（e.i VLM 候选与 e.ii 主模型数值规则候选合并后的完整集合）：
     - 与 Q 中已有 (s_j, a_j) 做 §去重与排序 的语义去重；若等价则保留 g 较高者。
     - 对保留者按六维打分得到 g。

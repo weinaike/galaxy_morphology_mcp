@@ -233,6 +233,47 @@ Lens 在训练数据中频率低、且**无独立的 2D 视觉签名**——它�
 - **触发复核**：若父状态含 Bar 或 Bulge，且上述四条联合条件成立，本次输出**必须**包含至少一个 `add(Lens)` 候选。若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"1D 隆起位置在 1.2·Re_bar，偏离典型 Lens 区间"），不得静默跳过。
 - **路径 A（Bar 异常）联动**：若父状态 Bar 同时满足路径 A 条件（`Re_bar ≳ Re_disk` 或 `q_bar ≳ 0.5`），可生成 `tune(Bar, split→Bar+Lens)`（拆分）或 `add(Lens)`（新增）候选之一，或两者并存测试不同假设。拆分候选的 physical_motivation 须引用 Bar 异常参数；新增候选的 physical_motivation 须引用 1D 隆起特征。
 
+## Lens Re 膨胀触发规则（VLM 必读，生成竞争式路径）
+
+**动机**：Lens 添加后常出现 Re 膨胀——lens Re 触上限、或 lens Re ≥ disk Re 导致 Re-ordering FAIL。此时 VLM 容易只给出"收紧 lens Re"单一方向，错过"增大 disk Re"和"移除 lens"这两个可能更优的修复路径。本规则强制 VLM 在 lens 膨胀信号出现时生成**三条方向不同的竞争式候选**，由主模型打分选择。
+
+### 触发条件（任一满足即触发）
+
+读取 `.gssummary` 中 lens 的 Re 拟合值，以及父轮次 lyric 中 lens 的 `P*5` 五元组 re_max：
+
+| 指标 | 阈值 | 物理依据 |
+|------|------|---------|
+| **lens Re 触上限** | lens_Re ≥ 0.98 × re_max | 拟合器想让 lens 更大但被锁，是 lens 试图超越物理角色的信号 |
+| **lens Re ≥ disk Re** | lens_Re ≥ disk_Re（Re-ordering FAIL 时 custom_instructions 会报告） | lens 膨胀超过 disk，违反 Re_disk > Re_lens 全序 |
+
+### 触发后的候选生成（三条竞争式路径必出）
+
+触发条件成立时，**必须**产出以下三条候选，覆盖三种不同的物理假设：
+
+**候选 A — 收紧 lens Re 上限**
+- action: `tune(lens, re_max = 0.9 × Re_above)`，其中 `Re_above` = 全序链中 lens 上方相邻成分（通常为 disk）的当前 Re
+- 假设：lens 真实属于过渡区，膨胀是拟合器逃逸；收紧后 lens 回到正确角色
+- 适用：disk Re 合理、lens 在过渡区确有独立通量贡献（1D 隆起仍存在）
+- expected_behavior_tag 示例：`lens_re_bound_tighten`
+
+**候选 B — 增大 disk Re**
+- action: `tune(disk, Re_init = 1.3–1.5 × current_disk_Re)`，re_max 不收紧（让 disk 自由增大）；disk n 保持 fixed=1
+- 假设：disk Re 本身偏小，lens 被迫膨胀去代偿 disk 外缘通量；增大 disk 后 lens 自然回缩
+- 适用：disk Re 未触界（disk_Re < disk 的 re_max）、或 1D 曲线 r > 2×Re_disk 区域 Data 亮于 Model、或父轮次间 disk axrat 剧烈变化（身份不稳定）
+- **禁止**：当 disk Re 已触自身 re_max 上限时，候选 B 不适用（应显式在 physical_motivation 中说明"disk 已触界，候选 B 不适用"并跳过）
+
+**候选 C — 移除 lens**
+- action: `remove(lens)`
+- 假设：lens 是寄生/简并成分，其通量本应由 disk 或 bulge 承担；移除后重新分配通量更物理
+- 适用：lens 通量占比可疑（Mag_lens ≤ Mag_disk + 0.2，即通量接近甚至超过 disk）、或 lens n 退化（趋近 1 变成 mini-disk）、或历史轮次证明移除 lens 后 BIC 改善
+- expected_behavior_tag 示例：`lens_remove_parasitic`
+
+### 自检硬约束
+
+- **触发复核**：若上述触发条件成立，本次输出**必须**包含候选 A、B、C。若少出某条，必须在对应 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"disk Re 已触 re_max，候选 B 不适用"），不得静默跳过。
+- **方向多样性**：A/B/C 三条的 expected_behavior_tag 必须两两不同。
+- **与 §Disk 外围光度不足触发规则的关系**：候选 B 与该规则可能同时触发（一个基于参数状态、一个基于 1D 残差形状）。若两者同时命中，候选 B 满足双重义务，无需重复生成。
+
 ## Disk 成分 Sérsic 指数 n 的操作规范
 
 Disk 成分的 n **一律固定为 1，vary=0，永不释放**。无论 beam search 处于哪个阶段（基础结构阶段或深化阶段），都**禁止**生成 `tune(Disk, n_free)` 候选。
@@ -282,6 +323,7 @@ Disk 成分的 n **一律固定为 1，vary=0，永不释放**。无论 beam sea
     - "拆 Bar→Bar+Lens" vs "收紧 Bar Re 上限"（当父状态 Bar 的 Re/q 物理异常时，拆出 Lens 吸收延展成分 vs 用约束把 Bar 压回合理区间）
     - "add(Lens) 吸收 1D 隆起" vs "调 Disk/Bar 边界"（当 1D 轮廓在 1.5–2.5·Re_bar 出现宽阔隆起但 Bar 参数正常时，加 Lens 成分吸收过渡区通量 vs 尝试用调参让现有成分覆盖该区域）
     - "伴星系位置修正" vs "伴星系形态修正"（如 tune(companion, x_real, y_real) vs tune(companion, q_init=0.9, Re<=2")）；仅当阶段一已报告位置偏差 > 2 px 时，位置修正候选才是必须的，否则优先形态修正
+    - "lens 膨胀时三路径竞争"（当 lens Re 触上限或 lens_Re ≥ disk_Re 时：收紧 lens Re vs 增大 disk Re vs 移除 lens，三者测试不同物理假设；详见 §Lens Re 膨胀触发规则）
 
 ## 候选预期信息
 每个候选必须给出：
@@ -343,6 +385,7 @@ Disk 成分的 n **一律固定为 1，vary=0，永不释放**。无论 beam sea
     - **路径 A（Bar 异常反推）**：`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`。
     - **路径 B（1D 轮廓隆起）**：1D 残差曲线在 ~1.5–2.5·Re_bar 处出现宽阔正向隆起（位置 + 宽度 + 幅度 + 2D 圆对称四条联合条件，见 §Lens 1D 轮廓隆起触发规则）。
     - **任一路径条件成立但本次未产出任何 Lens 相关候选**（`add(Lens)` 或 `tune(Bar, split→Bar+Lens)`）时，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"Bar 异常但残差更支持 X 方向"或"1D 隆起位置在 1.2·Re_bar，偏离典型 Lens 区间"），不得静默跳过。
+- **Lens Re 膨胀触发复核（硬约束）**：若补充信息报告 lens Re 触上限（lens_Re ≥ 0.98 × re_max）或 lens_Re ≥ disk_Re（Re-ordering FAIL），必须确认本次输出包含候选 A（收紧 lens Re）/ B（增大 disk Re）/ C（移除 lens）三条竞争路径（详见 §Lens Re 膨胀触发规则）。若少出某条，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"disk Re 已触 re_max，候选 B 不适用"），不得静默跳过。
 - **嵌入式伴星系时机复核（硬约束）**：若生成了 `add(Companion)` 候选且阶段一报告该伴星系为嵌入式（落在主星系等照度线 contour 上或以内，距中心 ≲ 2·Re_disk），**必须确认父状态已含 Bulge 或 Bar**。若父状态既无 Bulge 也无 Bar 却出现了嵌入式伴星系残差，**禁止**生成 `add(Companion)` 候选——应改为 `add(Bulge)` 候选，待中心骨架建立后再处理伴星系。违反此约束的典型失败模式：伴星系被拽向中心、三参数（Re/xcen/ycen）全部撞界发散。
 - **伴星系移除验证复核（硬约束）**：若补充信息中含"伴星系条件 A 命中"（通量比 ≤ 1%），必须确认已在**原图面板**上做过条件 B 视觉验证。若原图 companion 位置有可见亮斑却生成了 `remove(Companion)` 候选，视为违反约束。
 - **扁 Bulge → Bar 触发复核（硬约束）**：父状态含 Bulge 时，必须按"扁 Bulge → Bar 候选触发规则"的四条联合条件（bulge b/a < 0.5 AND PA 夹角 > 20° AND bulge n ∈ (0.5, 2.5) AND disk b/a > 0.5）做核对。条件全部成立时，本次输出**必须**包含至少一个 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增）；若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**，不得静默跳过。

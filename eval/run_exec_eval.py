@@ -172,6 +172,12 @@ def _shorten_feedme_paths(feedme_path):
 
     lines = content.splitlines()
     new_lines = []
+    alias_names = {
+        "A)": "input.fit",
+        "C)": "sigma.fit",
+        "D)": "psf.fit",
+        "F)": "mask.fit",
+    }
 
     for line in lines:
         stripped = line.strip()
@@ -182,17 +188,56 @@ def _shorten_feedme_paths(feedme_path):
                 path_str = rest.split("#")[0].strip()
                 comment = "  #" + rest.split("#", 1)[1] if "#" in rest else ""
 
-                if path_str.lower() not in ("none", "") and ".." in path_str:
+                if path_str.lower() not in ("none", ""):
+                    source_path = path_str
+                    fits_section = ""
+                    if "[" in path_str and path_str.endswith("]"):
+                        source_path, section = path_str.split("[", 1)
+                        fits_section = "[" + section
                     abs_path = os.path.normpath(
-                        os.path.join(feedme_dir, path_str)
+                        os.path.join(feedme_dir, source_path)
                     )
-                    if os.path.exists(abs_path):
-                        line = f"{parts[0]} {abs_path}{comment}"
+                    if not os.path.isfile(abs_path):
+                        raise FileNotFoundError(
+                            f"GALFIT input {parts[0]} does not exist: {abs_path}"
+                        )
+
+                    alias_name = alias_names[parts[0]]
+                    alias_path = os.path.join(feedme_dir, alias_name)
+                    if os.path.lexists(alias_path):
+                        if not os.path.islink(alias_path):
+                            raise FileExistsError(
+                                f"GALFIT short alias already exists and is not a symlink: {alias_path}"
+                            )
+                        if os.path.realpath(alias_path) != os.path.realpath(abs_path):
+                            os.unlink(alias_path)
+                            os.symlink(abs_path, alias_path)
+                    else:
+                        os.symlink(abs_path, alias_path)
+                    line = f"{parts[0]} {alias_name}{fits_section}{comment}"
 
         new_lines.append(line)
 
     with open(feedme_path, "w") as f:
         f.write("\n".join(new_lines) + "\n")
+
+
+def _classify_galfit_failure_origin(result):
+    """Separate evaluator/runtime faults from policy-caused GALFIT rejection."""
+    text = "\n".join(
+        str(result.get(key) or "") for key in ("error", "log")
+    ).lower()
+    evaluator_markers = (
+        "buffer overflow",
+        "stack smashing",
+        "executable not found",
+        "error while loading shared libraries",
+        "symbol lookup error",
+        "permission denied",
+    )
+    if any(marker in text for marker in evaluator_markers):
+        return "evaluator"
+    return "policy"
 
 
 async def execute_galfit_with_spec(
@@ -222,7 +267,7 @@ async def execute_galfit_with_spec(
     if not success:
         return {"status": "feedme_failed", "error": "write_feedme_from_spec failed"}
 
-    # _shorten_feedme_paths(new_feedme_path)
+    _shorten_feedme_paths(new_feedme_path)
 
     result = await run_galfit(
         os.path.abspath(new_feedme_path), ["-imax", str(max_iter)]
@@ -291,6 +336,7 @@ async def execute_galfit_with_spec(
             print(f"  [GALFIT LOG tail]\n{log_tail}")
         return {
             "status": "galfit_failed",
+            "failure_origin": _classify_galfit_failure_origin(result),
             "error": err,
             "feedme_path": new_feedme_path,
             **diagnostic_fields,
@@ -346,7 +392,7 @@ async def execute_galfit_with_spec(
         original_error = str(result.get("error") or "GALFIT returned failure")
         return {
             "status": "galfit_failed",
-            "failure_origin": "policy",
+            "failure_origin": _classify_galfit_failure_origin(result),
             "error": original_error + "; incomplete GALFIT output: "
             + "; ".join(artifact_errors),
             "image_file": comparison_png_path,

@@ -751,12 +751,16 @@ def aggregate_exec_results(results):
 
     # === 主指标 1: SSR (rule-based binary) ===
     rule_binaries = [r["rule_binary"] for r in results if r.get("rule_binary") is not None]
-    ssr = round(sum(rule_binaries) / len(rule_binaries), 4) if rule_binaries else None
-
+    rule_successes = sum(rule_binaries)
+    # End-to-end SSR: invalid output or GALFIT failure counts as 0.
+    ssr = round(rule_successes / n, 4)
+    conditional_ssr = round(rule_successes / len(rule_binaries), 4) if rule_binaries else None
     # === 主指标 2: VLM improvement rate (Option A) ===
     vlm_imps = [r["vlm_improvement"] for r in results if r.get("vlm_improvement") is not None]
-    vlm_imp_rate = round(sum(vlm_imps) / len(vlm_imps), 4) if vlm_imps else None
-
+    vlm_successes = sum(vlm_imps)
+    # End-to-end VLM improvement rate: missing evaluation counts as 0.
+    vlm_imp_rate = round(vlm_successes / n, 4)
+    conditional_vlm_imp_rate = round(vlm_successes / len(vlm_imps), 4) if vlm_imps else None
     # === 主指标 3: VLM-Rule 一致率（交叉验证） ===
     agreements = [r["agreement"] for r in results if r.get("agreement") is not None]
     agreement_rate = round(sum(agreements) / len(agreements), 4) if agreements else None
@@ -797,8 +801,10 @@ def aggregate_exec_results(results):
             "n": pt["n"],
             "galfit_success_rate": round(pt["galfit_ok"] / pt["n"], 4) if pt["n"] > 0 else 0,
             "type_accuracy": round(pt["type_match"] / pt["n"], 4) if pt["n"] > 0 else 0,
-            "ssr": round(sum(pt["rule_binaries"]) / len(pt["rule_binaries"]), 4) if pt["rule_binaries"] else None,
-            "vlm_imp_rate": round(sum(pt["vlm_imps"]) / len(pt["vlm_imps"]), 4) if pt["vlm_imps"] else None,
+            "ssr": round(sum(pt["rule_binaries"]) / pt["n"], 4) if pt["n"] > 0 else 0,
+            "conditional_ssr": round(sum(pt["rule_binaries"]) / len(pt["rule_binaries"]), 4) if pt["rule_binaries"] else None,
+            "vlm_imp_rate": round(sum(pt["vlm_imps"]) / pt["n"], 4) if pt["n"] > 0 else 0,
+            "conditional_vlm_imp_rate": round(sum(pt["vlm_imps"]) / len(pt["vlm_imps"]), 4) if pt["vlm_imps"] else None,
             "agreement_rate": round(sum(pt["agreements"]) / len(pt["agreements"]), 4) if pt["agreements"] else None,
             "mean_chi2_ratio_diagnostic": round(sum(pt["chi2_ratios"]) / len(pt["chi2_ratios"]), 4) if pt["chi2_ratios"] else None,
         }
@@ -807,8 +813,10 @@ def aggregate_exec_results(results):
         "n_samples": n,
         "n_galfit_success": galfit_success,
         # === 主指标 ===
-        "ssr": ssr,                          # 单步成功率（rule-based，binary）
-        "vlm_improvement_rate": vlm_imp_rate,  # VLM 判 improvement 的比例
+        "ssr": ssr,
+        "conditional_ssr": conditional_ssr,                          # 单步成功率（rule-based，binary）
+        "vlm_improvement_rate": vlm_imp_rate,
+        "conditional_vlm_improvement_rate": conditional_vlm_imp_rate,  # VLM 判 improvement 的比例
         "agreement_rate": agreement_rate,     # rule vs VLM 一致率
         # === 基础能力 ===
         "format_rate": round(format_ok / n, 4),
@@ -995,10 +1003,14 @@ async def run_exec_evaluation(
     print()
     print("  === 主指标 ===")
     ssr = agg.get("ssr")
-    print(f"  SSR (rule-based):       {ssr:.1%}" if ssr is not None else "  SSR:                    N/A")
+    print(f"  SSR (end-to-end):       {ssr:.1%}" if ssr is not None else "  SSR:                    N/A")
+    conditional_ssr = agg.get("conditional_ssr")
+    print(f"  SSR (GALFIT-success):   {conditional_ssr:.1%}" if conditional_ssr is not None else "  SSR (GALFIT-success):   N/A")
     vir = agg.get("vlm_improvement_rate")
     if vir is not None:
-        print(f"  VLM improvement rate:   {vir:.1%}")
+        print(f"  VLM improvement (E2E):  {vir:.1%}")
+        conditional_vir = agg.get("conditional_vlm_improvement_rate")
+        print(f"  VLM improvement (cond): {conditional_vir:.1%}" if conditional_vir is not None else "  VLM improvement (cond): N/A")
         ar = agg.get("agreement_rate")
         print(f"  VLM-Rule 一致率:        {ar:.1%}" if ar is not None else "")
     print()

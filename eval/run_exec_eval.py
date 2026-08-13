@@ -58,6 +58,7 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
 import time
 import traceback
 from collections import defaultdict
@@ -160,6 +161,24 @@ def build_step_prompt(parent_node, child_node, tree, max_steps=15):
 # GALFIT 执行
 # ============================================================
 
+def _create_short_alias(source_path, alias_path):
+    if os.path.abspath(source_path) == os.path.abspath(alias_path):
+        return
+    if os.path.lexists(alias_path):
+        if os.path.islink(alias_path):
+            if os.path.realpath(alias_path) == os.path.realpath(source_path):
+                return
+        elif not os.path.isfile(alias_path):
+            raise FileExistsError(alias_path)
+        os.unlink(alias_path)
+    try:
+        os.symlink(source_path, alias_path)
+    except OSError as exc:
+        if exc.errno not in {1, 38, 95}:
+            raise
+        shutil.copy2(source_path, alias_path)
+
+
 def _shorten_feedme_paths(feedme_path):
     """
     将 feedme 中 A/C/D/F 行的长相对路径（../../../...）替换为绝对路径。
@@ -205,15 +224,18 @@ def _shorten_feedme_paths(feedme_path):
                     alias_name = alias_names[parts[0]]
                     alias_path = os.path.join(feedme_dir, alias_name)
                     if os.path.lexists(alias_path):
-                        if not os.path.islink(alias_path):
+                        if not os.path.islink(alias_path) and os.path.isfile(alias_path):
+                            os.unlink(alias_path)
+                            _create_short_alias(abs_path, alias_path)
+                        elif not os.path.islink(alias_path):
                             raise FileExistsError(
                                 f"GALFIT short alias already exists and is not a symlink: {alias_path}"
                             )
                         if os.path.realpath(alias_path) != os.path.realpath(abs_path):
                             os.unlink(alias_path)
-                            os.symlink(abs_path, alias_path)
+                            _create_short_alias(abs_path, alias_path)
                     else:
-                        os.symlink(abs_path, alias_path)
+                        _create_short_alias(abs_path, alias_path)
                     line = f"{parts[0]} {alias_name}{fits_section}{comment}"
 
         new_lines.append(line)

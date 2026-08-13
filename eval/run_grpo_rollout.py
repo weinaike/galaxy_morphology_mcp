@@ -680,6 +680,28 @@ async def execute_prediction(
     return record
 
 
+def execute_prediction_sync(
+    prediction: Mapping[str, Any],
+    manifest_row: Mapping[str, Any],
+    work_root: str,
+    max_iter: int,
+    use_vlm: bool = False,
+    vlm_model: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    return asyncio.run(
+        execute_prediction(
+            prediction,
+            manifest_row,
+            work_root=work_root,
+            max_iter=max_iter,
+            use_vlm=use_vlm,
+            vlm_model=vlm_model,
+            api_key=api_key,
+        )
+    )
+
+
 def _augment_report(
     report: dict[str, Any],
     raw_rows: Sequence[Mapping[str, Any]],

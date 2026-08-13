@@ -101,6 +101,7 @@ tests-js/*
 .cline/*
 8021
 docs/superpowers/
+docs/patent/
 .claude/worktrees/
 .superpowers/
 

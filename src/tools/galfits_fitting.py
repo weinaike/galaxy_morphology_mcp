@@ -289,10 +289,11 @@ def guess_mass(
         }
 
 def do_pure_sed_fitting(
-    mock_root: Annotated[str, "Path to the mock root directory."], 
-    args: Annotated[Optional[str|List[str]], "Additional command line arguments for galfitS fitting. It can be a single string or a list of strings."] = None
+    mock_root: Annotated[str, "Path to the mock root directory."],
+    args: Annotated[Optional[str|List[str]], "Additional command line arguments for galfitS fitting. It can be a single string or a list of strings."] = None,
+    timeout_sec: Annotated[int, "timeout in seconds for each galfits subprocess"] = 1800,
 ) -> Annotated[List[dict], "Each dict contains the status and content of the fitting result for each profile in each galaxy. The status can be 'success' or 'failed', and the content provides detailed information about the fitting result or error message."]:
-    results = [] 
+    results = []
     args = args or []
     if isinstance(args, str):
         args = [args]
@@ -304,7 +305,7 @@ def do_pure_sed_fitting(
             cmd_working_dir = os.path.join(mock_root, galaxy_name, profile_name)
             workplace = os.path.join(cmd_working_dir, "result")
 
-            r = ImageFitting(lyric_file, workplace, args)
+            r = ImageFitting(lyric_file, workplace, args, timeout_sec=timeout_sec)
             results.append(r)
 
     return results            
@@ -312,7 +313,8 @@ def do_pure_sed_fitting(
 def ImageFitting(
     lyric_file: Annotated[str, "Path to the galfits config file (.lyric)"], 
     workplace: Annotated[str, "Path to the galfits workplace where gssummary can be found"],
-    args: Annotated[Optional[str|List[str]], "Additional command line arguments for galfits fitting. It can be a single string or a list of strings."] = None
+    args: Annotated[Optional[str|List[str]], "Additional command line arguments for galfits fitting. It can be a single string or a list of strings."] = None,
+    timeout_sec: Annotated[int, "timeout in seconds for the galfits subprocess"] = 1800,
 ) -> Annotated[dict, "A dict containing the status and content of the galfits fitting result. The status can be 'success' or 'error', and the content provides detailed information about the result or error message."]:
     args = args or []
     if isinstance(args, str):
@@ -325,7 +327,7 @@ def ImageFitting(
             capture_output=True,
             text=True,
             check=True,
-            timeout=1800,  # 30 minute timeout
+            timeout=timeout_sec,
         )
         return {
             "status": "success",
@@ -581,15 +583,15 @@ def update_lyric_with_gssummaries(
             "message": f"Failed to assign gssummary values: {str(e)}"
         }
 
-def PureSEDFitting(lyric_file, workplace, new_lyric_file, mock_root=None, args=[]):
-    if mock_root is None:            
+def PureSEDFitting(lyric_file, workplace, new_lyric_file, mock_root=None, args=[], timeout_sec=1800):
+    if mock_root is None:
         mock_root = Path(os.path.dirname(lyric_file)) / f"{Path(lyric_file).stem}_mock"
         mock_root = str(mock_root)
     result = guess_mass(config_lyric=lyric_file, workplace=workplace, mock_root=mock_root)
     if result["status"] != "success":
         return result
 
-    results = do_pure_sed_fitting(mock_root=mock_root, args=args)
+    results = do_pure_sed_fitting(mock_root=mock_root, args=args, timeout_sec=timeout_sec)
     failed_results = [result for result in results if result["status"] != "success"]
     if len(failed_results) != 0:
         return {"status": "failed", "message": "\n".join([r["message"] for r in failed_results])}

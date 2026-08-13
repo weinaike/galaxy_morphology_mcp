@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/numeric_evidence/1.0",
+  "title": "Numeric Evidence",
+  "description": "Layer-1 output contract: fact-type measurements only. No component inference, no action fields (bar_candidate / add_* are forbidden by design; feature names are free-form measurement identifiers, actions live only in the decision artifact).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "round_id", "manifest_ref", "features", "band_quality"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "round_id": {"type": "string", "minLength": 1},
+    "manifest_ref": {"type": "string", "description": "Path or id of the artifact manifest this evidence was computed from", "minLength": 1},
+    "algorithm_versions": {
+      "type": "object",
+      "description": "feature-family -> algorithm/version string",
+      "additionalProperties": {"type": "string"}
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["feature_id", "name", "status", "source"],
+        "properties": {
+          "feature_id": {"type": "string", "minLength": 1},
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Measurement identifier, e.g. isophote_ellipticity_profile, central_fwhm_obs, residual_m2_amplitude",
+            "not": {"pattern": "(^|_)(add|remove|replace)_|_candidate$"}
+          },
+          "status": {"enum": ["AVAILABLE", "UNAVAILABLE", "INVALID"]},
+          "value": {
+            "description": "Measurement value; null when status != AVAILABLE",
+            "type": ["number", "string", "boolean", "array", "object", "null"]
+          },
+          "uncertainty": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {"enum": ["stddev", "bootstrap_ci", "mad", "none"]},
+              "value": {"type": ["number", "array", "null"]},
+              "confidence_level": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1}
+            }
+          },
+          "unit": {"type": ["string", "null"]},
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["band"],
+            "properties": {
+              "band": {"type": ["string", "null"], "description": "null for cross-band aggregate features"},
+              "file": {"type": ["string", "null"]},
+              "hdu": {"type": ["integer", "null"]},
+              "frame": {"enum": ["pixel", "sky", "none", null]},
+              "region": {"type": ["string", "null"], "description": "Region id or spec the feature was measured in"}
+            }
+          },
+          "quality_flags": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "low_snr", "high_mask_fraction", "psf_undersampled", "psf_missing",
+                "fit_not_converged", "wcs_invalid", "unit_unknown", "saturated",
+                "edge_truncated", "nan_in_region", "other"
+              ]
+            }
+          },
+          "candidate_regions": {
+            "type": "array",
+            "description": "Numeric-layer generated candidate regions (the only legal source of coordinates for the VLM layer)",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["region_id", "x_pix", "y_pix", "band"],
+              "properties": {
+                "region_id": {"type": "string", "minLength": 1},
+                "band": {"type": "string", "minLength": 1},
+                "x_pix": {"type": "number"},
+                "y_pix": {"type": "number"},
+                "radius_pix": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                "ra_deg": {"type": ["number", "null"]},
+                "dec_deg": {"type": ["number", "null"]},
+                "local_snr": {"type": ["number", "null"]},
+                "detected_in_bands": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "band_quality": {
+      "type": "array",
+      "description": "Per-band quality-gate results used for cross-band evidence fusion",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["band", "passed"],
+        "properties": {
+          "band": {"type": "string", "minLength": 1},
+          "passed": {"type": "boolean"},
+          "psf_available": {"type": ["boolean", "null"]},
+          "psf_undersampled": {"type": ["boolean", "null"]},
+          "psf_fwhm_pix": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "central_snr": {"type": ["number", "null"]},
+          "valid_pixel_fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "mask_fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "wcs_valid": {"type": ["boolean", "null"]},
+          "fit_succeeded": {"type": ["boolean", "null"]},
+          "reasons": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

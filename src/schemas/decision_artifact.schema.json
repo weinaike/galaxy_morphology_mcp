@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/decision_artifact/1.0",
+  "title": "Decision Artifact",
+  "description": "Layer-3 output contract: exactly one action per round with machine-readable rule trace. Only this layer may emit actions. component values use physical_role vocabulary; compact_central_source_candidate is an analysis state modeled as a small-Re Sersic P-block, never a final reported component.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "round_id", "state", "action",
+    "rule_trace", "evidence_refs", "rules_version", "thresholds_version"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "round_id": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string"},
+    "rules_version": {"type": "string", "minLength": 1},
+    "thresholds_version": {"type": "string", "minLength": 1},
+    "state": {
+      "enum": ["PROPOSE", "EVALUATE_REFIT"],
+      "description": "State-machine phase that produced this artifact"
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_type"],
+      "properties": {
+        "action_type": {
+          "enum": [
+            "PROPOSE_ADD", "PROPOSE_REPLACE", "PROPOSE_REMOVE",
+            "REFIT_PARAMETERS", "KEEP_AND_CONTINUE", "CONVERGED", "INCONCLUSIVE",
+            "ACCEPT_REFIT", "REJECT_REFIT"
+          ]
+        },
+        "component": {
+          "enum": [
+            "disk", "bulge", "edge_on_disk", "bar", "agn",
+            "fourier_m1", "companion", "compact_central_source_candidate", "lens", null
+          ],
+          "description": "Required for PROPOSE_ADD / PROPOSE_REMOVE / ACCEPT_REFIT / REJECT_REFIT"
+        },
+        "replace_from": {
+          "enum": [
+            "disk", "bulge", "edge_on_disk", "bar", "agn",
+            "fourier_m1", "companion", "compact_central_source_candidate", "lens", null
+          ]
+        },
+        "replace_to": {
+          "enum": [
+            "disk", "bulge", "edge_on_disk", "bar", "agn",
+            "fourier_m1", "companion", "compact_central_source_candidate", "lens", null
+          ]
+        },
+        "target_model_label": {
+          "type": ["string", "null"],
+          "description": "Lyric component label (e.g. 'b' of P-block Pb*) the action applies to, when it exists"
+        },
+        "physical_identity": {
+          "enum": ["agn", "stellar_nucleus", "unconfirmed", null],
+          "description": "Only meaningful for central-source actions; agn requires independent physical evidence recorded in rule_trace"
+        },
+        "resolved_state": {
+          "enum": ["resolved", "unresolved", "inconclusive", null]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"action_type": {"enum": ["PROPOSE_ADD", "PROPOSE_REMOVE", "ACCEPT_REFIT", "REJECT_REFIT"]}}},
+          "then": {
+            "properties": {"component": {"type": "string"}},
+            "required": ["component"]
+          }
+        },
+        {
+          "if": {"properties": {"action_type": {"const": "PROPOSE_REPLACE"}}},
+          "then": {
+            "properties": {
+              "replace_from": {"type": "string"},
+              "replace_to": {"type": "string"}
+            },
+            "required": ["replace_from", "replace_to"]
+          }
+        }
+      ]
+    },
+    "rule_trace": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "outcome"],
+        "properties": {
+          "rule_id": {"type": "string", "minLength": 1},
+          "outcome": {"enum": ["SATISFIED", "NOT_SATISFIED", "NOT_APPLICABLE", "INCONCLUSIVE"]},
+          "inputs": {
+            "type": "array",
+            "description": "feature_id / target_id references from numeric and VLM evidence",
+            "items": {"type": "string"}
+          },
+          "unmet_conditions": {"type": "array", "items": {"type": "string"}},
+          "detail": {"type": ["string", "null"], "maxLength": 1000}
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numeric_evidence", "vlm_evidence"],
+      "properties": {
+        "numeric_evidence": {"type": ["string", "null"], "description": "Path or id; null only when layer was unavailable"},
+        "vlm_evidence": {"type": ["string", "null"]},
+        "manifest": {"type": ["string", "null"]},
+        "previous_round": {"type": ["string", "null"]}
+      }
+    },
+    "automation": {
+      "type": ["object", "null"],
+      "description": "Automation-policy resolution record: how an INCONCLUSIVE outcome was deterministically resolved so the fitting loop never blocks on human review",
+      "additionalProperties": false,
+      "required": ["policy_version", "resolution", "original_action_type", "needs_review"],
+      "properties": {
+        "policy_version": {"type": "string", "minLength": 1},
+        "resolution": {"enum": ["trial_fit", "conservative_keep", "reject_fallback", "numeric_only_retry"]},
+        "original_action_type": {"type": "string", "minLength": 1},
+        "resolved_rule_id": {"type": ["string", "null"]},
+        "reason": {"type": ["string", "null"], "maxLength": 500},
+        "needs_review": {"type": "boolean"}
+      }
+    },
+    "refit_evaluation": {
+      "type": ["object", "null"],
+      "description": "Required content when state == EVALUATE_REFIT",
+      "additionalProperties": false,
+      "required": ["fit_converged", "residual_improved", "parameters_physical"],
+      "properties": {
+        "fit_converged": {"enum": ["yes", "no", "inconclusive"]},
+        "residual_improved": {"enum": ["yes", "no", "inconclusive"]},
+        "parameters_physical": {"enum": ["yes", "no", "inconclusive"]},
+        "boundary_hits": {"type": "array", "items": {"type": "string"}},
+        "degeneracy_warnings": {"type": "array", "items": {"type": "string"}},
+        "bic": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["bic_simple", "bic_complex", "bic_gain", "comparable"],
+          "properties": {
+            "bic_simple": {"type": "number"},
+            "bic_complex": {"type": "number"},
+            "bic_gain": {"type": "number", "description": "BIC_simple - BIC_complex"},
+            "comparable": {"type": "boolean", "description": "Same data region, mask, PSF, sigma, weights, band set and fit mode"},
+            "formula": {"type": ["string", "null"]},
+            "n_data_points": {"type": ["integer", "null"], "minimum": 1},
+            "n_free_parameters_simple": {"type": ["integer", "null"], "minimum": 0},
+            "n_free_parameters_complex": {"type": ["integer", "null"], "minimum": 0}
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "EVALUATE_REFIT"}}},
+      "then": {"properties": {"refit_evaluation": {"type": "object"}}, "required": ["refit_evaluation"]}
+    },
+    {
+      "if": {"properties": {"state": {"const": "PROPOSE"}}},
+      "then": {
+        "properties": {
+          "action": {
+            "properties": {
+              "action_type": {"not": {"enum": ["ACCEPT_REFIT", "REJECT_REFIT"]}}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"state": {"const": "EVALUATE_REFIT"}}},
+      "then": {
+        "properties": {
+          "action": {
+            "properties": {
+              "action_type": {"enum": ["ACCEPT_REFIT", "REJECT_REFIT", "INCONCLUSIVE"]}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

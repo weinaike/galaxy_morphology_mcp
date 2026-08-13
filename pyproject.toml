@@ -42,6 +42,7 @@ dependencies = [
     "scipy>=1.10.0",
     "photutils>=1.8.0",
     "pandas>=3.0.0",
+    "jsonschema>=4.18.0",
 ]
 
 [project.optional-dependencies]
@@ -64,6 +65,9 @@ galaxy-morphology-mcp = "mcp_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+schemas = ["*.schema.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

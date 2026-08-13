@@ -874,7 +874,7 @@ async def run_galfits_sed_fitting(
     # config file location. Create an absolute-path copy to avoid FileNotFoundError.
     abs_config = _resolve_config_paths(config_file)
 
-    res = PureSEDFitting(lyric_file=abs_config, workplace=image_fitting_workplace, new_lyric_file=new_lyric_file, mock_root=workplace_dir, args=extra_args)
+    res = PureSEDFitting(lyric_file=abs_config, workplace=image_fitting_workplace, new_lyric_file=new_lyric_file, mock_root=workplace_dir, args=extra_args, timeout_sec=timeout_sec)
     if res.get("status") != "success":
         return {
             "status": "failure",

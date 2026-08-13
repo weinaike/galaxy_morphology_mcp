@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/vlm_evidence/1.0",
+  "title": "VLM Morphology Evidence",
+  "description": "Layer-2 output contract: controlled morphology labels on numeric-layer candidate targets only. The VLM must not emit coordinates, parameter values, or add_*/remove_* actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "round_id", "parse_status", "observations"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "round_id": {"type": "string", "minLength": 1},
+    "model_id": {"type": ["string", "null"], "description": "VLM model identifier and version"},
+    "prompt_version": {"type": ["string", "null"]},
+    "parse_status": {
+      "enum": ["OK", "PARSE_FAILED", "TIMEOUT", "REFUSED"],
+      "description": "Anything other than OK must be treated as INCONCLUSIVE by layer 3; observations must then be empty"
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target_id", "label", "confidence"],
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Either 'central' or a candidate region_id issued by the numeric layer"
+          },
+          "label": {
+            "enum": [
+              "disk_like", "spheroid_like", "central_compact_excess", "bar_like",
+              "peanut_x", "edge_on_disk", "spiral_arm", "dust_lane",
+              "independent_source", "clump", "diffraction_psf", "tidal_feature",
+              "none", "uncertain"
+            ]
+          },
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "evidence_regions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^:]+:[^:]+:[^:]+$",
+              "description": "band:panel:region_id"
+            }
+          },
+          "quality_flags": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "low_image_quality", "label_conflict", "occluded_by_mask",
+                "saturated_display", "ambiguous_stretch", "other"
+              ]
+            }
+          },
+          "notes": {"type": ["string", "null"], "maxLength": 500}
+        }
+      }
+    }
+  },
+  "if": {"properties": {"parse_status": {"const": "OK"}}},
+  "else": {"properties": {"observations": {"maxItems": 0}}}
+}

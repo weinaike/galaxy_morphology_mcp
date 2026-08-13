@@ -217,6 +217,15 @@ def _shorten_feedme_paths(feedme_path):
                         os.path.join(feedme_dir, source_path)
                     )
                     if not os.path.isfile(abs_path):
+                        mount_marker = "/mnt/"
+                        marker_index = source_path.find(mount_marker)
+                        if marker_index >= 0:
+                            mounted_path = os.path.normpath(
+                                source_path[marker_index:]
+                            )
+                            if os.path.isfile(mounted_path):
+                                abs_path = mounted_path
+                    if not os.path.isfile(abs_path):
                         raise FileNotFoundError(
                             f"GALFIT input {parts[0]} does not exist: {abs_path}"
                         )

@@ -640,11 +640,17 @@ async def execute_prediction(
             raw_reward=raw_reward,
             model_metrics=new_metrics,
             bounds_ok=raw_result.get("bounds_ok"),
+            bounds_violations=raw_result.get("bounds_violations", []),
             fitted_bounds_ok=raw_result.get("fitted_bounds_ok", True),
+            fitted_violations=raw_result.get("fitted_violations", []),
+            fitted_components=fitted_components,
             chi2_vetoed=raw_result.get("chi2_vetoed", False),
             r_chi2=raw_result.get("r_chi2"),
             r_bic=raw_result.get("r_bic"),
+            effective_r_bic=raw_result.get("effective_r_bic"),
+            bic_damping=raw_result.get("bic_damping"),
             r_noise=raw_result.get("r_noise"),
+            noise_detail=raw_result.get("noise_detail"),
         )
     except Exception as exc:
         record.update(

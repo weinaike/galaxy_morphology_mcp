@@ -346,6 +346,7 @@ async def execute_galfit_with_spec(
                 + "; ".join(artifact_errors),
                 "image_file": result.get("image_file"),
                 "summary_file": result.get("summary_file"),
+                "output_fits_file": result.get("optimized_fits_file"),
                 "feedme_path": new_feedme_path,
                 **diagnostic_fields,
             }
@@ -353,6 +354,7 @@ async def execute_galfit_with_spec(
             "status": "success",
             "image_file": result.get("image_file"),
             "summary_file": result.get("summary_file"),
+            "output_fits_file": result.get("optimized_fits_file"),
             "feedme_path": new_feedme_path,
             **diagnostic_fields,
         }
@@ -430,6 +432,7 @@ async def execute_galfit_with_spec(
             + "; ".join(artifact_errors),
             "image_file": comparison_png_path,
             "summary_file": summary_path,
+            "output_fits_file": output_file,
             "feedme_path": new_feedme_path,
             **diagnostic_fields,
         }
@@ -438,6 +441,7 @@ async def execute_galfit_with_spec(
         "status": "success",
         "image_file": comparison_png_path,
         "summary_file": summary_path,
+        "output_fits_file": output_file,
         "feedme_path": new_feedme_path,
         **diagnostic_fields,
     }

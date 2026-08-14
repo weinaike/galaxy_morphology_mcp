@@ -590,6 +590,7 @@ async def execute_prediction(
     record["galfit_status"] = galfit_result.get("status")
     record["model_feedme_path"] = galfit_result.get("feedme_path")
     record["model_residual_path"] = galfit_result.get("image_file")
+    record["model_output_fits_path"] = galfit_result.get("output_fits_file")
     record["model_summary_path"] = galfit_result.get("summary_file")
     record["galfit_diagnostic_file"] = galfit_result.get("galfit_diagnostic_file")
     record["galfit_console_log"] = galfit_result.get("galfit_console_log")
@@ -615,7 +616,13 @@ async def execute_prediction(
         return record
 
     try:
-        from eval.reward_for_rl import compute_rl_reward
+        reward_version = os.environ.get("GALAXY_REWARD_VERSION", "v11").strip().lower()
+        if reward_version == "v11":
+            from eval.reward_for_rl import compute_rl_reward
+        elif reward_version == "v12.4":
+            from eval.reward_for_rl_v12_4 import compute_rl_reward
+        else:
+            raise ValueError(f"unsupported GALAXY_REWARD_VERSION={reward_version!r}")
         from eval.validate_reward_alignment import _parse_fitted_components
 
         summary_path = galfit_result.get("summary_file")
@@ -638,6 +645,7 @@ async def execute_prediction(
             outcome=OUTCOME_SUCCESS,
             failure_stage=None,
             raw_reward=raw_reward,
+            reward_version=raw_result.get("reward_version", reward_version),
             model_metrics=new_metrics,
             bounds_ok=raw_result.get("bounds_ok"),
             bounds_violations=raw_result.get("bounds_violations", []),
@@ -651,12 +659,17 @@ async def execute_prediction(
             bic_damping=raw_result.get("bic_damping"),
             r_noise=raw_result.get("r_noise"),
             noise_detail=raw_result.get("noise_detail"),
+            structure_ok=raw_result.get("structure_ok"),
+            structure_vetoed=raw_result.get("structure_vetoed", False),
+            structure_violations=raw_result.get("structure_violations", []),
+            structure_warnings=raw_result.get("structure_warnings", []),
+            structure_detail=raw_result.get("structure_detail"),
         )
     except Exception as exc:
         record.update(
             outcome=OUTCOME_EVALUATOR_FAILURE,
-            failure_stage="v11_evaluator",
-            failure_reason=f"v11_error: {type(exc).__name__}: {exc}",
+            failure_stage="reward_evaluator",
+            failure_reason=f"reward_error: {type(exc).__name__}: {exc}",
             failure_traceback=traceback.format_exc(),
         )
         return record

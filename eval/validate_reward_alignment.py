@@ -35,6 +35,7 @@ import re
 from collections import defaultdict
 
 import numpy as np
+from eval.reward_for_rl_v12 import compute_rl_reward_v12
 
 from eval.reward_for_rl import (
     check_param_bounds,
@@ -196,10 +197,16 @@ def _parse_fitted_components(summary_path):
     return comps if comps else None
 
 
-def compute_rule_reward_for_pair(pair):
-    """对一步回溯计算 rule-based reward。"""
+def compute_rule_reward_for_pair(pair, reward_version="v11"):
+    """Recompute one trajectory pair with the selected rule-reward version."""
+    reward_functions = {
+        "v11": compute_rl_reward,
+        "v12": compute_rl_reward_v12,
+    }
+    if reward_version not in reward_functions:
+        raise ValueError(f"Unsupported reward version: {reward_version}")
     fitted_components = _parse_fitted_components(pair.get("summary_path"))
-    rl_result = compute_rl_reward(
+    rl_result = reward_functions[reward_version](
         old_metrics=pair["parent_metrics"],
         new_metrics=pair["child_metrics"],
         action_spec=pair["action_spec"],
@@ -217,6 +224,10 @@ def compute_rule_reward_for_pair(pair):
         "reward": rl_result["reward"],
         "bounds_ok": rl_result["bounds_ok"],
         "fitted_bounds_ok": rl_result.get("fitted_bounds_ok", True),
+        "structure_ok": rl_result.get("structure_ok", True),
+        "structure_vetoed": rl_result.get("structure_vetoed", False),
+        "structure_violations": rl_result.get("structure_violations", []),
+        "reward_version": reward_version,
         "chi2_vetoed": rl_result.get("chi2_vetoed", False),
         "r_chi2": rl_result["r_chi2"],
         "r_bic": rl_result["r_bic"],
@@ -371,6 +382,25 @@ def compute_dimension_alignment(pairs):
         "agreement": round(n_agree / n_both, 4) if n_both > 0 else None,
     }
 
+
+    # Full parameter-plausibility gate used by V12.
+    n_both = n_agree = 0
+    for p in pairs:
+        vlm_pp = p["vlm_detail"].get("param_plausible")
+        if vlm_pp is None:
+            continue
+        rule_param_ok = (
+            p["rule_bounds_ok"]
+            and p.get("rule_fitted_bounds_ok", True)
+            and p.get("rule_structure_ok", True)
+        )
+        n_both += 1
+        if rule_param_ok == vlm_pp:
+            n_agree += 1
+    results["all_param_checks_vs_param_plausible"] = {
+        "n": n_both,
+        "agreement": round(n_agree / n_both, 4) if n_both > 0 else None,
+    }
     # chi2 方向 vs VLM chisq_trend
     n_both = n_agree = 0
     vlm_trend_dist = defaultdict(int)
@@ -451,6 +481,9 @@ def collect_disagreements(pairs, threshold):
             "r_bic": round(p["rule_r_bic"], 4),
             "bounds_ok": p["rule_bounds_ok"],
             "fitted_bounds_ok": p.get("rule_fitted_bounds_ok", True),
+            "structure_ok": p.get("rule_structure_ok", True),
+            "structure_vetoed": p.get("rule_structure_vetoed", False),
+            "structure_violations": p.get("rule_structure_violations", []),
             "chi2_vetoed": p["rule_chi2_vetoed"],
             "parent_chi2_nu": p["parent_metrics"].get("chi2_nu"),
             "child_chi2_nu": p["child_metrics"].get("chi2_nu"),
@@ -564,18 +597,22 @@ def plot_reward_distribution(pairs, threshold, out_path):
 # ============================================================
 
 def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip_test=False,
-                              threshold_strategy="precision_first_f1", precision_floor=0.85):
+                              threshold_strategy="precision_first_f1", precision_floor=0.85,
+                              reward_version="v11"):
     """完整的对齐验证流程。"""
     os.makedirs(out_dir, exist_ok=True)
 
     # 1. 计算 rule-based reward
     print("计算 rule-based reward...")
     for p in pairs:
-        rule = compute_rule_reward_for_pair(p)
+        rule = compute_rule_reward_for_pair(p, reward_version=reward_version)
         p["rule_reward"] = rule["reward"]
         p["rule_bounds_ok"] = rule["bounds_ok"]
         p["rule_fitted_bounds_ok"] = rule.get("fitted_bounds_ok", True)
         p["rule_chi2_vetoed"] = rule["chi2_vetoed"]
+        p["rule_structure_ok"] = rule.get("structure_ok", True)
+        p["rule_structure_vetoed"] = rule.get("structure_vetoed", False)
+        p["rule_structure_violations"] = rule.get("structure_violations", [])
         p["rule_r_chi2"] = rule["r_chi2"]
         p["rule_r_bic"] = rule["r_bic"]
         p["rule_r_noise"] = rule["r_noise"]
@@ -669,11 +706,13 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
     n_fitted_fail = sum(1 for p in val_pairs if not p.get("rule_fitted_bounds_ok", True))
     n_chi2_veto = sum(1 for p in val_pairs if p["rule_chi2_vetoed"])
     n_zero_reward = sum(1 for p in val_pairs if p["rule_reward"] == 0.0)
+    n_structure_veto = sum(1 for p in val_pairs if p.get("rule_structure_vetoed", False))
     print(f"\n  门控统计:")
     print(f"    spec 边界违规 (R=0): {n_bounds_fail} ({n_bounds_fail/len(val_pairs):.1%})")
     print(f"    拟合边界违规 (R=0): {n_fitted_fail} ({n_fitted_fail/len(val_pairs):.1%})")
     print(f"    chi2 否决 (R=0): {n_chi2_veto} ({n_chi2_veto/len(val_pairs):.1%})")
     print(f"    总 reward=0: {n_zero_reward} ({n_zero_reward/len(val_pairs):.1%})")
+    print(f"    fitted structure veto (R<=0): {n_structure_veto} ({n_structure_veto/len(val_pairs):.1%})")
 
     # 不一致样本
     disagreements = collect_disagreements(val_pairs, best_thr)
@@ -692,6 +731,7 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
     # 保存 val 报告
     val_report = {
         "threshold": best_thr,
+        "reward_version": reward_version,
         "auc": auc,
         "metrics": val_metrics,
         "dimension_alignment": dim_alignment,
@@ -745,6 +785,7 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
 
         test_report = {
             "threshold": best_thr,
+            "reward_version": reward_version,
             "metrics": test_metrics,
             "per_type": test_per_type,
             "n_disagreements": len(test_disagreements),
@@ -787,6 +828,8 @@ def main():
                     help="precision_first_f1 策略下的 precision 下限（默认 0.85）")
     ap.add_argument("--skip-test", action="store_true",
                     help="只跑 val 集，不跑 test（调参阶段用；锁参跑 test 时不加此 flag）")
+    ap.add_argument("--reward-version", choices=["v11", "v12"], default="v11",
+                    help="Rule-reward version used for offline recomputation")
     args = ap.parse_args()
 
     threshold = None
@@ -836,7 +879,8 @@ def main():
     run_alignment_validation(pairs, args.out_dir, args.val_ratio, threshold,
                              skip_test=args.skip_test,
                              threshold_strategy=args.threshold_strategy,
-                             precision_floor=args.precision_floor)
+                             precision_floor=args.precision_floor,
+                             reward_version=args.reward_version)
 
 
 if __name__ == "__main__":

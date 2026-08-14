@@ -36,6 +36,7 @@ from collections import defaultdict
 
 import numpy as np
 from eval.reward_for_rl_v12 import compute_rl_reward_v12
+from eval.reward_for_rl_v12_1 import compute_rl_reward_v12_1
 
 from eval.reward_for_rl import (
     check_param_bounds,
@@ -202,6 +203,7 @@ def compute_rule_reward_for_pair(pair, reward_version="v11"):
     reward_functions = {
         "v11": compute_rl_reward,
         "v12": compute_rl_reward_v12,
+        "v12.1": compute_rl_reward_v12_1,
     }
     if reward_version not in reward_functions:
         raise ValueError(f"Unsupported reward version: {reward_version}")
@@ -227,6 +229,7 @@ def compute_rule_reward_for_pair(pair, reward_version="v11"):
         "structure_ok": rl_result.get("structure_ok", True),
         "structure_vetoed": rl_result.get("structure_vetoed", False),
         "structure_violations": rl_result.get("structure_violations", []),
+        "structure_warnings": rl_result.get("structure_warnings", []),
         "reward_version": reward_version,
         "chi2_vetoed": rl_result.get("chi2_vetoed", False),
         "r_chi2": rl_result["r_chi2"],
@@ -484,6 +487,7 @@ def collect_disagreements(pairs, threshold):
             "structure_ok": p.get("rule_structure_ok", True),
             "structure_vetoed": p.get("rule_structure_vetoed", False),
             "structure_violations": p.get("rule_structure_violations", []),
+            "structure_warnings": p.get("rule_structure_warnings", []),
             "chi2_vetoed": p["rule_chi2_vetoed"],
             "parent_chi2_nu": p["parent_metrics"].get("chi2_nu"),
             "child_chi2_nu": p["child_metrics"].get("chi2_nu"),
@@ -613,6 +617,7 @@ def run_alignment_validation(pairs, out_dir, val_ratio=0.7, threshold=None, skip
         p["rule_structure_ok"] = rule.get("structure_ok", True)
         p["rule_structure_vetoed"] = rule.get("structure_vetoed", False)
         p["rule_structure_violations"] = rule.get("structure_violations", [])
+        p["rule_structure_warnings"] = rule.get("structure_warnings", [])
         p["rule_r_chi2"] = rule["r_chi2"]
         p["rule_r_bic"] = rule["r_bic"]
         p["rule_r_noise"] = rule["r_noise"]
@@ -828,7 +833,7 @@ def main():
                     help="precision_first_f1 策略下的 precision 下限（默认 0.85）")
     ap.add_argument("--skip-test", action="store_true",
                     help="只跑 val 集，不跑 test（调参阶段用；锁参跑 test 时不加此 flag）")
-    ap.add_argument("--reward-version", choices=["v11", "v12"], default="v11",
+    ap.add_argument("--reward-version", choices=["v11", "v12", "v12.1"], default="v11",
                     help="Rule-reward version used for offline recomputation")
     args = ap.parse_args()
 

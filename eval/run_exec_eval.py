@@ -259,8 +259,6 @@ def _classify_galfit_failure_origin(result):
         str(result.get(key) or "") for key in ("error", "log")
     ).lower()
     evaluator_markers = (
-        "buffer overflow",
-        "stack smashing",
         "executable not found",
         "error while loading shared libraries",
         "symbol lookup error",
@@ -338,8 +336,12 @@ async def execute_galfit_with_spec(
         )
         if artifact_errors:
             return {
-                "status": "evaluator_failed",
-                "failure_origin": "evaluator",
+                "status": "galfit_failed",
+                # GALFIT completed, but the candidate did not produce the
+                # complete summary.md metrics required by the v11 reward
+                # (including the 1D BIC). Treat it as an end-to-end policy
+                # execution failure so GRPO assigns -1 instead of masking it.
+                "failure_origin": "policy",
                 "error": "incomplete GALFIT evaluator artifacts: "
                 + "; ".join(artifact_errors),
                 "image_file": result.get("image_file"),
@@ -663,13 +665,19 @@ async def eval_single_step(
     rule_reward = rl_reward_result["reward"]
     result["rule_reward"] = round(rule_reward, 4)
     result["rule_binary"] = 1 if rule_reward > threshold else 0
+    result["fitted_components"] = fitted_components
     result["rule_reward_detail"] = {
         "bounds_ok": rl_reward_result["bounds_ok"],
+        "bounds_violations": rl_reward_result.get("bounds_violations", []),
         "fitted_bounds_ok": rl_reward_result.get("fitted_bounds_ok", True),
+        "fitted_violations": rl_reward_result.get("fitted_violations", []),
         "chi2_vetoed": rl_reward_result.get("chi2_vetoed", False),
         "r_chi2": rl_reward_result["r_chi2"],
         "r_bic": rl_reward_result["r_bic"],
+        "effective_r_bic": rl_reward_result.get("effective_r_bic"),
+        "bic_damping": rl_reward_result.get("bic_damping"),
         "r_noise": rl_reward_result["r_noise"],
+        "noise_detail": rl_reward_result.get("noise_detail"),
     }
 
     # --- (e) VLM reward (Option A: parent → model_new)，可选 ---

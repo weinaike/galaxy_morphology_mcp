@@ -11,8 +11,10 @@ import mimetypes
 import requests
 import time
 import traceback
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, List
 from PIL import Image
+from sympy import python
+from pathlib import Path
 
 def calculate_reward_rule(old_metrics: dict, new_metrics: dict, action: dict, step: int, 
                      initial_params: dict = None, current_params: dict = None) -> tuple:
@@ -565,354 +567,1133 @@ def get_openAI_response_multiturn(
 
     return responses, total_usage
 
+def _safe_binary(value: Any, default: int = 0) -> int:
+    """Convert model output to a strict 0/1 value."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed in (0, 1) else default
 
-def is_good_fit(
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Convert model output to float and clamp confidence-like values to [0, 1]."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, parsed))
+
+
+def _safe_list(value: Any) -> List[str]:
+    """Normalize model evidence fields to a list of non-empty strings."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _load_trajectory_context(
+    trajectory_context: Optional[str],
+    trajectory_context_path: Optional[str],
+) -> Optional[str]:
+    """Load optional trajectory context from either direct text or a file."""
+    if trajectory_context and trajectory_context_path:
+        raise ValueError(
+            "Provide only one of trajectory_context or trajectory_context_path."
+        )
+
+    if trajectory_context_path:
+        path = Path(trajectory_context_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"trajectory_context_path does not exist: {trajectory_context_path}"
+            )
+        text = path.read_text(encoding="utf-8").strip()
+        return text or None
+
+    if trajectory_context:
+        text = str(trajectory_context).strip()
+        return text or None
+
+    return None
+
+
+def is_stop(
     residual_image_path: str,
-    param: bool = False,
-    summary_md_path: Optional[str] = None,
+    summary_md_path: str,
+    trajectory_context: Optional[str] = None,
+    trajectory_context_path: Optional[str] = None,
     model_name: str = "gemini-3.1-pro-preview",
-    api_key: str = None,
-    temperature: float = 0.1,
-    max_tokens: int = 2048,
+    api_key: Optional[str] = None,
+    temperature: float = 0.0,
+    max_tokens: int = 6000,
     timeout: int = 300,
     confidence_threshold: float = 0.6,
+    force_low_confidence_stop_to_continue: bool = True,
     max_retries: int = 3,
     retry_sleep: int = 10,
 ) -> Dict[str, Any]:
     """
-    Judge whether a GALFIT residual image is good_fit.
+    Judge whether the current GALFIT fitting process should terminate.
+
+    Revised task definition:
+
+    - ``is_stop=1`` only when the current fit quality is ``acceptable`` or
+      ``excellent`` and the fitting process should terminate.
+    - ``is_stop=0`` for every other case, including poor/invalid fits even when
+      the current trajectory may need to be abandoned.
+    - This function therefore predicts successful stopping, not unsuccessful
+      termination.
+
+    The GALFIT summary is mandatory because stopping decisions must consider
+    fitted parameters, convergence, boundaries, degeneracy, and actionability.
 
     Args:
         residual_image_path:
-            Path to residual image or GALFIT comparison image.
-
-        param:
-            Whether to use GALFIT summary markdown information.
-            False: judge only by residual image.
-            True: judge by residual image + summary_md_path content.
+            Path to the residual image or GALFIT comparison image.
 
         summary_md_path:
-            Path to *_summary.md file.
-            Only used when param=True.
+            Path to the current ``*_summary.md`` file. Required.
+
+        trajectory_context:
+            Optional direct text describing previous fitting rounds, attempted
+            actions, parameter changes, repeated failures, or plateaus.
+
+        trajectory_context_path:
+            Optional path to a text/markdown file containing trajectory context.
+            Do not provide together with ``trajectory_context``.
 
         model_name:
             Multimodal model name.
 
         api_key:
-            API key.
+            API key passed to ``get_openAI_response_one_image``. When omitted,
+            the function reads the ``OPENAI_API_KEY`` environment variable.
 
         temperature:
             Recommend 0.0 for stable evaluation.
 
         confidence_threshold:
-            If model outputs good_fit=1 but confidence is lower than this threshold,
-            force good_fit to 0.
+            Used only when ``force_low_confidence_stop_to_continue=True``.
+            A low-confidence model prediction of ``is_stop=1`` is changed to 0.
+
+        force_low_confidence_stop_to_continue:
+            When true, prevent an uncertain stop decision from ending fitting
+            prematurely. Raw output is always retained in ``raw_is_stop``.
 
     Returns:
-        {
-            "good_fit": 0 or 1,
-            "raw_good_fit": 0 or 1,
-            "confidence": float,
-            "reason": str,
-            "usage": dict,
-            "raw_response": str,
-            "image_path": str,
-            "summary_md_path": str or None,
-            "param_used": bool
-        }
+        A dictionary containing the final and raw labels, confidence,
+        fit-quality assessment, stop type/reason, proposed next action,
+        evidence, consistency warnings, usage, and raw model response.
+
+    Required external helpers already used by the existing codebase:
+
+    - ``read_summary_md(path)``
+    - ``get_openAI_response_one_image(...)``
+    - ``extract_json_from_response(raw_response)``
     """
 
-    if param:
-        if summary_md_path is None:
-            print("    ⚠️ param=True but summary_md_path is None. Fall back to residual-only judgement.")
-            param_used = False
-            summary_md_text = None
-        else:
-            summary_md_text = read_summary_md(summary_md_path)
-            param_used = True
-    else:
-        param_used = False
-        summary_md_text = None
+    # Valid values are local to this function so they do not create
+    # module-level constants.
+    allowed_fit_quality = {"invalid", "poor", "acceptable", "excellent"}
+    allowed_stop_types = {
+        "successful_termination",
+        "continue_fitting",
+    }
+    allowed_stop_reasons = {
+        "excellent_fit",
+        "acceptable_fit",
+        "fit_not_acceptable",
+        "major_residual_structure",
+        "parameter_invalidity",
+        "further_improvement_needed",
+        "clear_next_action_available",
+    }
 
-    prompt = """
+    image_path = Path(residual_image_path)
+    if not image_path.exists():
+        raise FileNotFoundError(
+            f"residual_image_path does not exist: {residual_image_path}"
+        )
+
+    if not summary_md_path:
+        raise ValueError(
+            "summary_md_path is required for is_stop because parameter and "
+            "convergence evidence must be considered."
+        )
+
+    summary_path = Path(summary_md_path)
+    if not summary_path.exists():
+        raise FileNotFoundError(
+            f"summary_md_path does not exist: {summary_md_path}"
+        )
+
+    # Use the existing project helper so behavior remains consistent with
+    # is_good_fit().
+    summary_md_text = read_summary_md(str(summary_path))
+    if not summary_md_text or not str(summary_md_text).strip():
+        raise ValueError(f"GALFIT summary is empty: {summary_md_path}")
+
+    trajectory_text = _load_trajectory_context(
+        trajectory_context=trajectory_context,
+        trajectory_context_path=trajectory_context_path,
+    )
+
+    resolved_api_key = api_key or os.getenv("OPENAI_API_KEY")
+    if not resolved_api_key:
+        raise ValueError(
+            "No API key was provided. Pass api_key or set OPENAI_API_KEY."
+        )
+
+    
+    
+    
+    # GALFIT is_stop Evaluation Prompt
+
+    # GALFIT is_stop Prompt — Incremental Update
+      # GALFIT is_stop Prompt — Simplified Calibration Version
+
+    prompt = r"""
 You are an astronomer experienced in GALFIT galaxy component decomposition.
 
-You will be given exactly one image.
+You will be given:
 
-The image may be a full GALFIT comparison figure with multiple panels.
-If multiple panels are present, focus mainly on the residual panel, usually the third panel from the left, titled "Residual/σ", "Residual", or similar.
-Ignore the original data panel, fitted model panel, surface-brightness profile panel, and any blank diagnostic panels, unless they help identify the residual panel.
+1. one GALFIT comparison image;
+2. the GALFIT fitting summary and fitted parameters;
+3. optionally, trajectory context describing previous fitting rounds.
 
-Task:
-Evaluate whether the GALFIT decomposition has reached an acceptable final fit based mainly on the residual image.
+Your task is to determine whether the CURRENT fitting result is a successful
+stopping point.
 
-Current modeling scope:
-The current GALFIT model is mainly intended to describe four component types:
+The decision must consider two separate questions:
 
-* bulge
-* disk
-* bar
-* PSF / compact central source
+1. Is the current residual quality scientifically acceptable within the defined
+   bulge/disk/bar/PSF modeling scope?
+2. Is the fitted decomposition physically and numerically valid?
 
-Do not require the model to perfectly fit all possible galaxy substructures.
-Weak spiral arms, faint diffuse features, minor asymmetries, weak outer clumps, or small background fluctuations may remain in the residual image and can still be acceptable, as long as they do not indicate a major missing or poorly fitted bulge, disk, bar, or PSF component.
+A successful stopping point requires BOTH conditions to be satisfied.
 
-Core idea:
-Do NOT directly judge the image only by whether it looks perfectly white-noise-like.
-Instead, evaluate the residual image using a structured scoring scheme.
+Do NOT interpret this task as asking whether any additional optimization is
+theoretically possible.
 
-The final decision should be based on:
+A fit may still be a successful stopping point even if minor refinements could
+produce a slightly cleaner residual or slightly different fitted parameters.
 
-1. whether any hard failure pattern is present;
-2. five visual residual quality scores;
-3. the weighted final_score;
-4. whether final_score passes the threshold.
 
-Scoring dimensions:
-Assign each score as a float between 0 and 1.
+## Core decision principle
 
-1. central_residual_score:
-   Measures whether the PSF, compact central source, and central bulge region are well fitted.
+Evaluate the current result using two independent gates:
 
-* 1.0: center is clean or only has tiny noise-level residuals.
-* 0.7-0.9: very weak central residuals exist, but they are not visually dominant and do not form a clear red/blue pair.
-* 0.4-0.6: noticeable central residuals exist, such as compact red/blue blobs, mild dipole, or moderate central over/under-subtraction.
-* 0.0-0.3: strong central residuals, compact point-like residual, clear red/blue positive-negative pair, central dipole, or severe PSF/bulge mismatch.
+### Gate A: residual-quality gate
 
-2. bar_residual_score:
-   Measures whether bar-like structures are reasonably modeled.
+Determine whether the residual image still contains a clear, coherent, and
+scientifically meaningful systematic residual attributable to:
 
-* 1.0: no obvious bar-like, X-shaped, or elongated central residual.
-* 0.7-0.9: only weak elongated residuals that are not dominant.
-* 0.4-0.6: noticeable bar-like or elongated residuals remain.
-* 0.0-0.3: strong bar-like, X-shaped, or elongated symmetric residual indicating a poorly fitted or missing bar.
+- bulge;
+- disk;
+- bar;
+- PSF or compact central point source.
 
-3. disk_residual_score:
-   Measures whether the disk and large-scale galaxy structure are reasonably modeled.
+The residual image is the PRIMARY evidence for this gate.
 
-* 1.0: no obvious large-scale disk residual, ring, bullseye pattern, or strong gradient.
-* 0.7-0.9: weak outer spiral-like or diffuse residuals remain but are not dominant.
-* 0.4-0.6: noticeable disk-like residuals, ring-like features, elliptical residuals, or mild large-scale mismatch.
-* 0.0-0.3: strong disk mismatch, strong ring/bullseye structure, large-scale over/under-subtraction, or obvious systematic gradient.
+### Gate B: physical-validity gate
 
-4. artifact_score:
-   Measures whether artifacts or masking problems affect the fit judgment.
+Determine whether the fitted bulge/disk/bar/PSF decomposition is physically and
+numerically valid.
 
-* 1.0: no obvious foreground star, diffraction spike, cosmic ray, bad pixel, or unmasked contaminant affecting the residual.
-* 0.7-0.9: minor artifacts exist but do not affect the galaxy fitting judgment.
-* 0.4-0.6: noticeable artifacts may affect the judgment.
-* 0.0-0.3: severe artifacts, unmasked stars, bad pixels, or contaminants dominate or strongly affect the galaxy region.
+The GALFIT summary and fitted parameters are the PRIMARY evidence for this
+gate.
 
-5. overall_noise_score:
-   Measures how close the residual image is to random noise overall.
+A clean residual does NOT automatically imply a successful stopping point if
+the fitted decomposition itself contains a clear physical or numerical failure.
 
-* 1.0: residual is mostly random white-noise-like.
-* 0.7-0.9: mostly noise-like, with only weak non-dominant structures.
-* 0.4-0.6: several visible residual structures remain.
-* 0.0-0.3: residual is dominated by coherent, structured, or systematic patterns.
+Likewise, an unusual but still physically plausible parameter must NOT turn an
+otherwise acceptable decomposition into a failure.
 
-Weighted final score:
-Compute final_score using the following weighting:
+Set `is_stop=1` only when BOTH gates pass.
 
-final_score =
-0.35 * central_residual_score
+Set `is_stop=0` when either:
 
-* 0.20 * disk_residual_score
-* 0.20 * bar_residual_score
-* 0.15 * overall_noise_score
-* 0.10 * artifact_score
+- a meaningful in-scope residual problem remains; or
+- a clear physical/numerical validity problem materially compromises the
+  decomposition.
 
-The central residual score has the highest weight because PSF, compact central source, and bulge residuals are especially important for deciding whether the fit can stop.
+Do NOT set `is_stop=0` merely because another fitting action can be imagined.
 
-Hard failure patterns:
-Set hard_failure = true if any of the following strong failure patterns are clearly present:
 
-* strong central compact point-like residual at or very near the galaxy center;
-* clear adjacent red/blue positive-negative residual blobs near the center;
-* clear central dipole or bipolar residual pattern;
-* strong central over-subtraction or under-subtraction around the bulge;
-* clear bar-like, X-shaped, or elongated symmetric central residual;
-* strong large-scale disk-like residual, strong elliptical residual, or obvious disk over/under-subtraction;
-* strong radial bullseye pattern or strong closed ring structure;
-* strong large-scale linear gradient across the galaxy region;
-* dominant clumpy irregular residuals in the galaxy region;
-* severe dark patchy residuals suggesting strong over-subtraction;
-* prominent arcs, shells, tidal tails, or diffuse fragments that dominate the residual;
-* obvious unmasked artifact, foreground star, diffraction spike, cosmic ray, bad pixel, or contaminant that strongly affects the fit judgment.
+## Modeling scope
 
-Important tolerance rules:
-Do NOT set hard_failure = true for weak or minor residuals.
+Only evaluate the following structural component families:
 
-The following should NOT be considered hard failure if weak:
+- bulge;
+- disk;
+- bar;
+- PSF or compact central point source.
 
-* faint spiral-like residuals;
-* weak diffuse outskirts;
-* weak outer clumps far from the center;
-* mild background texture;
-* slight asymmetry;
-* tiny weak central speck close to the surrounding noise level;
-* tiny weak central residual that does not form a clear red/blue pair, dipole, or bar-like shape.
+Residual structures outside this scope must generally be ignored when assessing
+fit quality.
 
-Central residual distinction:
-This distinction is critical.
+Examples of out-of-scope structures include:
 
-Classify as bad:
+- spiral arms;
+- star-forming clumps;
+- dust lanes;
+- tidal features;
+- irregular morphology;
+- lopsidedness;
+- shells;
+- streams;
+- faint outer asymmetries;
+- patchy non-axisymmetric structures;
+- morphology that cannot reasonably be represented by bulge, disk, bar, or PSF.
 
-* compact central residual that is high-contrast compared with the surrounding noise;
-* adjacent red/blue blobs near the center;
-* central dipole or bipolar residual;
-* central residual that is visually dominant;
-* central residual clearly suggesting poor PSF, bulge, or bar fitting.
+These structures must NOT lower residual fit quality merely because they remain
+visible.
 
-Classify as acceptable:
+Do NOT propose adding extra components solely to model these out-of-scope
+features.
 
-* tiny weak central residual;
-* central speck close to noise level;
-* weak isolated center residual without clear red/blue pair;
-* weak center residual that is not visually dominant and the rest of the residual is mostly noise-like.
+However, contamination by an unrelated source or artifact may still matter if
+it is severe enough to make the target decomposition unreliable.
 
-Decision rule:
-Use the following rule to determine good_fit:
 
-* If hard_failure = true, output good_fit = 0.
-* Else, if final_score >= 0.75, output good_fit = 1.
-* Else, output good_fit = 0.
+## Evidence priority
 
-Confidence rule:
+Use the evidence in the following way:
 
-* Use high confidence, around 0.80-0.95, when the decision is visually clear.
-* Use moderate confidence, around 0.60-0.79, when the case is borderline.
-* Use lower confidence, around 0.50-0.65, when the image is ambiguous or the residual panel is hard to identify.
+### For residual quality
 
-Interpretation:
+1. 2D residual morphology of the target galaxy;
+2. spatial extent and coherence of the residual;
+3. consistency with bulge/disk/bar/PSF morphology;
+4. 1D surface-brightness profile as secondary evidence;
+5. scalar metrics such as reduced chi-square, AIC, or BIC as supporting
+   evidence only.
 
-* good_fit = 1 means the fit is acceptable under the current bulge/disk/bar/PSF modeling scope, and the fitting process can reasonably stop.
-* good_fit = 0 means the fit is not yet acceptable, and fitting should continue.
+### For physical validity
 
-Please focus mainly on the residual quality.
-Do not judge based only on whether the model image visually resembles the original galaxy, unless this helps interpret the residual panel.
-The main criterion is whether the residual panel shows serious systematic structures related to bulge, disk, bar, PSF, artifacts, or severe over/under-subtraction.
+1. convergence and numerical validity;
+2. component parameters and physical plausibility;
+3. component degeneracy or collapse;
+4. whether the intended structural decomposition remains interpretable;
+5. residual morphology as supporting evidence.
+
+Do NOT allow one weak piece of evidence to dominate the entire decision.
+
+
+## Step 1: inspect the residual image
+
+Focus on the target galaxy and determine whether a meaningful systematic
+bulge/disk/bar/PSF residual remains.
+
+Do NOT reject a fit merely because red and blue pixels are visible.
+
+Residual panels may be strongly stretched, so visual color intensity alone is
+not a reliable measure of residual severity.
+
+
+## Spatial-extent rule
+
+Judge residual severity primarily by whether the residual materially affects
+the recovered bulge/disk/bar/PSF decomposition.
+
+A compact central dipole, bullseye, ring, or positive-negative pattern should
+normally remain compatible with `acceptable` when it is confined to the
+central region.
+
+Do NOT classify such a compact residual as `poor` based on visual strength,
+coherence, or color contrast alone.
+
+Classify a compact central residual as `poor` only when there is independent
+evidence that the mismatch materially affects the structural decomposition,
+such as:
+
+- the same systematic mismatch extends beyond the compact central region;
+- a broad bulge-, disk-, bar-, or PSF-scale residual is also present;
+- a substantial 1D profile mismatch extends over a meaningful radial range;
+- the fitted parameters independently show a clear physical-validity failure
+  of the affected major component.
+
+Without such independent evidence, prefer `acceptable` over `poor` for a
+localized central residual.
+
+
+### Bulge-related residuals
+
+Relevant bulge residuals may include:
+
+- broad central over-subtraction;
+- broad central under-subtraction;
+- an extended smooth central mismatch;
+- a large radial residual pattern;
+- a bulge-scale ring or bullseye extending over a meaningful region.
+
+A very small or localized central residual does NOT automatically indicate a
+failed bulge fit.
+
+
+### Disk-related residuals
+
+Relevant disk residuals may include:
+
+- smooth galaxy-scale over-subtraction;
+- smooth galaxy-scale under-subtraction;
+- extended elliptical residual structure;
+- a systematic radial mismatch across a substantial fraction of the disk.
+
+Spiral arms, patchy star formation, and other small-scale disk morphology are
+outside the modeling scope and must be ignored.
+
+
+### Bar-related residuals
+
+Relevant bar residuals may include:
+
+- a clear elongated residual extending over a substantial central region;
+- a strong bar-shaped structure;
+- an X-shaped or boxy residual;
+- a coherent quadrupole structure associated with the modeled bar.
+
+Do NOT infer a major bar problem from a weak or spatially limited elongated
+feature alone.
+
+
+### PSF / compact central-source residuals
+
+Relevant PSF residuals may include:
+
+- a strong compact central excess;
+- a strong compact central deficit;
+- a central dipole;
+- a PSF-scale bullseye;
+- repeated positive-negative central structure.
+
+However, these structures may still be acceptable when they are:
+
+- spatially localized;
+- confined to the compact central region;
+- non-dominant relative to the full galaxy;
+- not accompanied by a broader bulge/disk/bar mismatch.
+
+A compact central dipole, bullseye, or ring is diagnostic evidence but is NOT
+automatically a major fitting failure.
+
+
+## Missing-component inference rule
+
+Do NOT infer that a bulge, bar, lens, PSF, or additional structural component
+is missing solely from the morphology of a compact or central residual.
+
+A missing-component interpretation requires independent supporting evidence,
+such as:
+
+- a substantial residual extending beyond the compact central region;
+- a broad and coherent mismatch in the 1D profile;
+- fitted component parameters that independently demonstrate that an intended
+  major component is absent, collapsed, or physically inconsistent.
+
+A central bullseye, ring, dipole, or compact positive-negative pattern alone is
+not sufficient evidence that the structural model is incomplete.
+
+If the missing-component interpretation is speculative, do NOT use that
+speculation to convert an otherwise acceptable fit into `poor`.
+
+Do NOT infer a severe bar-orientation mismatch solely from visual appearance
+unless the fitted component is explicitly identifiable as the bar and the
+mismatch is clear and materially supported by the residual morphology.
+
+Do NOT infer severe component degeneracy solely because two fitted components
+have similar sizes or other individual parameter values.
+
+A degeneracy-based physical-validity failure requires clear evidence that the
+components are jointly redundant and that their physical roles are no longer
+meaningfully distinguishable.
+
+
+## Step 2: classify residual fit quality
+
+Internally classify the current visual fit quality as exactly one of:
+
+### excellent
+
+Use `excellent` when:
+
+- no meaningful systematic bulge/disk/bar/PSF residual remains;
+- the target residual is largely noise-like or contains only out-of-scope
+  morphology;
+- any remaining central residual is weak, compact, and non-dominant;
+- the structural decomposition is clearly scientifically usable.
+
+Out-of-scope structures may still remain.
+
+
+### acceptable
+
+Use `acceptable` when:
+
+- the bulge/disk/bar/PSF decomposition is scientifically usable;
+- no large-scale or dominant in-scope systematic residual remains;
+- localized in-scope residuals may still remain;
+- a compact central dipole, bullseye, ring, or over-/under-subtraction may
+  remain when it is spatially limited and does not materially compromise the
+  large-scale decomposition;
+- the residual does not need to be perfectly noise-like.
+
+An acceptable fit may contain visible residual structure.
+
+The relevant question is whether that residual represents a substantial failure
+of the bulge/disk/bar/PSF decomposition.
+
+
+### poor
+
+Use `poor` only when a clear in-scope systematic residual materially
+compromises the decomposition.
+
+Examples include:
+
+- a strong extended bulge-scale mismatch;
+- a galaxy-scale disk over- or under-subtraction;
+- a strong bar-shaped residual extending over a substantial region;
+- a central mismatch that extends well beyond the compact core;
+- multiple coherent in-scope residual structures across different spatial
+  scales;
+- a clearly missing major bulge/disk/bar/PSF component supported by BOTH
+  extended residual morphology and independent fitted-parameter evidence.
+
+Do NOT classify a fit as poor solely because of:
+
+- a compact central dipole;
+- a localized bullseye;
+- a localized central ring;
+- a high-contrast but spatially small residual;
+- a mismatch restricted to the inner few pixels;
+- a fixed parameter;
+- an unusual but physically plausible parameter.
+
+
+### invalid
+
+Use `invalid` only when the current decomposition is not physically or
+numerically reliable.
+
+Examples include:
+
+- failed or unreliable convergence;
+- NaN, undefined, or non-finite fitted values;
+- a required component that has collapsed;
+- severe component degeneracy that prevents a meaningful structural
+  interpretation;
+- clearly nonphysical parameter values;
+- a severe numerical or modeling failure that makes the decomposition
+  uninterpretable.
+
+Do NOT classify a fit as invalid solely because the residual contains
+out-of-scope morphology.
+
+
+## Step 3: assess physical and parameter validity
+
+The residual image is the primary evidence for VISUAL FIT QUALITY.
+
+However, the fitted parameters provide an INDEPENDENT assessment of whether the
+decomposition is physically and numerically valid.
+
+A clean residual does NOT rescue a physically invalid decomposition.
+
+Do NOT search for possible parameter changes merely to justify continuing the
+fit.
+
+Instead, determine whether there is a CLEAR EXISTING parameter or component
+failure that materially compromises the current decomposition.
+
+
+### Parameters that are NOT problems by themselves
+
+The following must NOT independently cause `is_stop=0`:
+
+- a fixed Sérsic index;
+- a tied component center;
+- a low Sérsic index;
+- a high Sérsic index;
+- a highly elongated component;
+- a compact effective radius;
+- similar component scales;
+- an unusual parameter that remains physically plausible.
+
+For example:
+
+- Sérsic n fixed to values such as 0.5, 1, 2, or 4 may be intentional;
+- disk-like components may intentionally use n=1;
+- bar-like components may intentionally have low Sérsic index and strong
+  elongation;
+- tied centers may be an intentional modeling constraint.
+
+Do NOT recommend freeing such parameters merely because additional flexibility
+might improve the fit.
+
+
+### Parameter evidence must not amplify a minor residual
+
+A parameter feature must NOT upgrade a localized residual into a major fitting
+failure by itself.
+
+For example:
+
+- a fixed Sérsic index;
+- a low Sérsic index;
+- a tied center;
+- an elongated axis ratio;
+- a compact radius;
+- similar component scales;
+
+may help explain a residual, but they do not make the decomposition poor unless
+there is independent evidence that the decomposition is materially unreliable.
+
+
+### Internal consistency of the component decomposition
+
+Do NOT assess physical validity only by checking whether each parameter value
+is individually plausible.
+
+The complete set of fitted components must form a coherent, physically
+interpretable, and internally consistent bulge/disk/bar/PSF decomposition.
+
+A collection of individually plausible parameter values may still represent an
+invalid or unreliable decomposition when their COMBINATION is inconsistent.
+
+Look for clear cases such as:
+
+- component sizes or structural roles that are inconsistent with the intended
+  bulge/disk/bar hierarchy;
+- a nominal bulge becoming larger than or structurally indistinguishable from
+  the disk in a way that destroys the intended physical interpretation;
+- two components becoming effectively redundant in size, shape, orientation,
+  and flux;
+- a component intended to represent a meaningful bulge, disk, bar, or PSF
+  becoming negligible or collapsed;
+- severe overlap or degeneracy that makes component identities ambiguous;
+- fitted components whose roles cannot be assigned consistently to the
+  intended physical structures.
+
+Do NOT declare a failure merely because two components share one similar
+parameter.
+
+Internal inconsistency must be supported by the overall combination of
+component properties and must materially compromise the physical
+interpretability of the decomposition.
+
+Internal inconsistency must be demonstrated by the combined behavior of
+multiple component properties.
+
+Do NOT declare the decomposition invalid from a single unusual ordering,
+ratio, or parameter value.
+
+In particular, component radius ordering alone does not establish invalidity.
+
+Thus, "each parameter is individually plausible" is NOT sufficient evidence
+that the physical-validity gate passes.
+
+Do NOT infer a physical-validity failure by assigning speculative physical
+roles to components.
+
+A component-role inconsistency or severe degeneracy should invalidate the fit
+only when the GALFIT summary provides clear parameter evidence that the
+decomposition is no longer physically interpretable.
+
+Do NOT declare `physical_validity_assessment="invalid"` solely because:
+
+- two components have similar sizes;
+- two components overlap spatially;
+- their position angles differ;
+- one component appears visually bar-like;
+- one component could alternatively be interpreted as a bulge, bar, or disk.
+
+When the physical interpretation is uncertain rather than clearly invalid,
+prefer `valid`.
+
+
+## Explicit physical or numerical validity failures
+
+The following may independently prevent `is_stop=1` when they are CLEAR,
+SEVERE, and MATERIAL:
+
+- failed or unreliable GALFIT convergence;
+- NaN, undefined, or non-finite fitted values;
+- a required component that has collapsed or contributes effectively
+  negligible flux;
+- severe component degeneracy that prevents a meaningful bulge/disk/bar/PSF
+  interpretation;
+- a severe component-role inconsistency in which the combined fitted
+  parameters make the intended bulge/disk/bar interpretation physically
+  untenable.
+
+A simple ordering such as one component having a larger fitted radius than
+another is NOT, by itself, a validity failure.
+
+Do NOT infer a "size inversion" failure solely from comparing two fitted
+radii or scale lengths. The component roles must become clearly physically
+inconsistent when considered together with profile shape, flux contribution,
+axis ratio, and other fitted properties.
+
+- clearly unphysical ellipticity or axis ratio;
+- severe center misalignment that makes the intended component assignment
+  unreliable;
+- extremely large parameter uncertainty that makes a required component
+  effectively unconstrained;
+- a parameter stuck at an unintended hard boundary such that the component no
+  longer has a physically meaningful interpretation.
+
+These are validity failures, not merely possible opportunities for additional
+optimization.
+
+Do NOT apply these rules aggressively.
+
+A parameter value must be clearly problematic and materially affect the
+scientific interpretation before it prevents stopping.
+
+
+### Boundary rule
+
+A boundary warning alone is NOT sufficient for `is_stop=0`.
+
+Treat a boundary issue as a validity failure only when:
+
+- the parameter is clearly stuck at an unintended or physically implausible
+  limit; AND
+- the affected component becomes unreliable or physically uninterpretable.
+
+Intentional fixed values or standard modeling constraints must not be treated
+as boundary failures.
+
+
+### Negligible-component rule
+
+A weak component is NOT automatically a failure.
+
+A negligible component prevents stopping only when:
+
+- that component is required for the intended decomposition; AND
+- its collapse or near-zero contribution makes the physical decomposition
+  incomplete or misleading.
+
+An optional, unnecessary, or redundant weak component does not automatically
+make the fit invalid.
+
+
+## Contamination exception
+
+Foreground/background objects, neighboring sources, masking artifacts, or
+unmodeled sources are not structural components and should NOT be modeled by
+inventing additional bulge/disk/bar/PSF components.
+
+However, contamination must not be ignored when it substantially compromises
+the target decomposition.
+
+Set the physical-validity gate to fail when contamination or masking problems
+are severe enough that:
+
+- fitted target-galaxy parameters are likely biased;
+- the target residual cannot be reliably interpreted;
+- the decomposition of the target galaxy is no longer scientifically reliable.
+
+If the contaminating source or artifact is spatially separate and does not
+materially affect the target decomposition, ignore it.
+
+
+## 1D surface-brightness profile rule
+
+The 1D surface-brightness profile is secondary evidence.
+
+Do NOT classify a fit as poor solely because the inner few pixels of the 1D
+profile show a mismatch when the 2D residual morphology is otherwise
+scientifically acceptable.
+
+A large, coherent 1D mismatch extending over a substantial radial range may
+support a poor-fit decision when it agrees with a meaningful 2D residual.
+
+
+## Step 4: combine residual quality and physical validity
+
+Evaluate the two gates independently.
+
+### Residual-quality gate passes when:
+
+- visual fit quality is `acceptable` or `excellent`.
+
+### Residual-quality gate fails when:
+
+- visual fit quality is `poor`.
+
+### Physical-validity gate passes when:
+
+- the fitted decomposition is physically meaningful;
+- no clear major numerical or component failure is present.
+
+### Physical-validity gate fails when:
+
+- the decomposition is `invalid`;
+- a clear severe physical or numerical problem materially compromises the
+  decomposition.
+
+
+## Residual-quality versus physical-validity rule
+
+Use the following logic:
+
+- acceptable/excellent residual + valid decomposition
+  -> `is_stop=1`;
+
+- acceptable/excellent residual + clear physical/numerical validity failure
+  -> `is_stop=0`;
+
+- poor residual + otherwise plausible parameters
+  -> `is_stop=0`;
+
+- invalid decomposition + visually clean residual
+  -> `is_stop=0`.
+
+A clean residual cannot rescue an invalid physical decomposition.
+
+An unusual but plausible parameter cannot invalidate an otherwise acceptable
+fit.
+
+
+## Step 5: distinguish successful stop from continue
+
+Set `is_stop=1` only when BOTH conditions are satisfied:
+
+1. residual quality is `acceptable` or `excellent` within the
+   bulge/disk/bar/PSF modeling scope;
+2. the fitted decomposition is physically and numerically valid, with no clear
+   major parameter or component failure.
+
+Set `is_stop=0` when either condition fails.
+
+IMPORTANT:
+
+Do NOT set `is_stop=0` merely because further optimization is possible.
+
+Do NOT ask whether another action could be attempted.
+
+Do NOT search for a next action before deciding `is_stop`.
+
+There must already be evidence of either:
+
+- a meaningful in-scope residual problem; OR
+- a clear physical/numerical validity problem.
+
+Optional refinements are NOT reasons to continue fitting.
+
+The correct reasoning order is:
+
+1. assess the residual;
+2. classify visual fit quality;
+3. independently assess physical/numerical validity;
+4. combine the two assessments;
+5. decide `is_stop`;
+6. only AFTER `is_stop=0` is established, optionally identify a corrective
+   action.
+
+
+## Trajectory context
+
+When trajectory context is available, use it as additional evidence.
+
+Trajectory information may help determine whether:
+
+- a known physical or parameter problem remains unresolved;
+- a previous fitting action has not yet achieved its intended purpose;
+- the current apparently acceptable residual is still part of an unfinished
+  fitting trajectory.
+
+If trajectory context explicitly shows that the current result is an
+intermediate fitting stage, or that a known in-scope fitting objective remains
+meaningfully unresolved, this may justify `is_stop=0` even when the current
+residual quality appears acceptable or excellent.
+
+Examples include explicit evidence that:
+
+- a previous action was intended to correct a specific bulge/disk/bar/PSF
+  problem and that problem remains unresolved;
+- an intended component or parameter objective has not yet been achieved;
+- the current round is explicitly described as an intermediate state requiring
+  further in-scope fitting.
+
+This rule requires explicit trajectory evidence.
+
+The mere existence of earlier or later fitting rounds does NOT by itself imply
+that the current fit should continue.
+
+However, trajectory evidence must be explicit.
+
+Do NOT invent:
+
+- previous actions;
+- parameter oscillation;
+- trajectory plateau;
+- exhausted actions;
+- expert termination decisions.
+
+Trajectory context may justify `is_stop=0` for an otherwise visually acceptable
+fit when it explicitly shows that a meaningful unresolved fitting objective
+remains.
+
+Do NOT set `is_stop=0` merely because trajectory information is absent.
 """
-    if param_used and summary_md_text is not None:
+
+    prompt += f"""
+
+    ## GALFIT summary markdown
+
+    {summary_md_text}
+    """
+
+    if trajectory_text:
         prompt += f"""
 
-Additional GALFIT summary information is provided below.
-This information comes from a *_summary.md file.
+    ## Trajectory context
 
-Use the summary information only as supporting evidence.
-The residual image is still the primary criterion.
+    {trajectory_text}
+    """
+    else:
+        prompt += """
 
-GALFIT summary markdown:
-{summary_md_text}
+## Trajectory context
 
-When using the summary markdown, consider whether:
+No trajectory context was provided.
 
-* reduced chi-square, BIC, AIC, or other fitting indicators are reasonable;
-* key GALFIT parameters are physically plausible;
-* parameters are not obviously stuck at hard boundaries;
-* the number of components is reasonable for the current bulge/disk/bar/PSF modeling scope;
-* magnitudes, effective radii, Sérsic indices, axis ratios, and position angles are plausible;
-* the fit does not appear to be severely overfitting with unnecessary components;
-* the numerical indicators are broadly consistent with the visual residual quality.
+Base the decision on:
 
-However:
+1. the current residual quality;
+2. the physical and numerical validity of the current fitted decomposition.
 
-* Do not mark good_fit = 1 based only on good numerical indicators.
-* Do not mark good_fit = 0 based only on imperfect numerical indicators if the residual image is visually acceptable.
-* The residual image is the primary evidence.
-* The residual does not need to be perfectly white-noise-like.
-* Weak outer residual structures are acceptable if they do not indicate a major missing or poorly fitted bulge, disk, bar, or PSF component.
-* A tiny weak central residual is acceptable if it is not visually dominant and does not form a clear red/blue pair, dipole, or bar-like structure.
-* Obvious compact central residuals are not acceptable, even if numerical indicators look reasonable.
-* If the summary information conflicts with the residual image, trust the residual image more.
-  """
-    prompt += """
+Do NOT infer that fitting should continue merely because another parameter
+change or model adjustment could theoretically be attempted.
+"""
 
-Output STRICTLY in JSON format.
-Do not include any text outside the JSON.
+    prompt += r"""
 
-Required JSON format:
+## Required output
+
+Return strict JSON only.
+
+Do not add markdown fences or explanatory text outside the JSON object.
+Keep the JSON concise.
+
+- `parameter_evidence`: at most 3 short items.
+- `residual_evidence`: at most 3 short items.
+- `reason`: at most 2 sentences.
+- `next_action`: use a short action name or null.
+
+Do NOT repeat the same evidence across multiple fields.
+
 {
-"good_fit": 1,
-"final_score": 0.82,
-"confidence": 0.76,
-"hard_failure": false,
-"scores": {
-"central_residual_score": 0.78,
-"bar_residual_score": 0.88,
-"disk_residual_score": 0.86,
-"artifact_score": 0.90,
-"overall_noise_score": 0.82
-},
-"detected_patterns": [
-"tiny_weak_central_residual",
-"mostly_noise_like_background"
-],
-"reason": "The residual image is acceptable under the current bulge/disk/bar/PSF modeling scope. Only a tiny weak central residual remains, without a clear high-contrast red/blue pair, central dipole, bar-like structure, strong disk mismatch, severe gradient, or dominant artifact."
+  "is_stop": 1,
+  "confidence": 0.90,
+  "fit_quality_assessment": "acceptable",
+  "physical_validity_assessment": "valid",
+  "stop_type": "successful_termination",
+  "stop_reason": "acceptable_fit",
+  "has_concrete_next_action": false,
+  "next_action": null,
+  "parameter_evidence": [
+    "The current fitted decomposition is physically and numerically valid, with no major component failure."
+  ],
+  "residual_evidence": [
+    "No large-scale systematic bulge-, disk-, bar-, or PSF-shaped residual remains. Any remaining residuals are localized, minor, or outside the modeling scope."
+  ],
+  "reason": "The residual quality is scientifically acceptable and the fitted decomposition is physically valid, so the current result is a successful stopping point."
 }
 
-Output field definitions:
+Allowed values:
 
-* good_fit: integer, must be either 0 or 1.
+- `fit_quality_assessment`:
+  - `invalid`
+  - `poor`
+  - `acceptable`
+  - `excellent`
 
-  * 0 means not fitted well enough; fitting should continue.
-  * 1 means acceptable final fit under the current bulge/disk/bar/PSF modeling scope; fitting can stop.
-* final_score: float between 0 and 1, computed using the weighted scoring formula.
-* confidence: float between 0 and 1, indicating confidence in the final good_fit decision.
-* hard_failure: boolean. True if a strong failure pattern is clearly present.
-* scores: object containing the five residual quality scores.
-* detected_patterns: list of concise pattern labels observed in the residual image.
-* reason: concise explanation focusing on the residual quality and the final decision.
-  """
+- `physical_validity_assessment`:
+  - `valid`
+  - `invalid`
 
+- `stop_type`:
+  - `successful_termination`
+  - `continue_fitting`
 
-    #裁剪
-    # Crop residual panel before sending image to VLM
-    # try:
-    #     vlm_image_path = crop_residual_panel(residual_image_path)
-    # except Exception as e:
-    #     print(f"    ⚠️ [Crop Warning] Failed to crop residual panel: {e}")
-    #     print("    ⚠️ Fall back to original image.")
-    #     vlm_image_path = residual_image_path
+- `stop_reason`:
+  - `excellent_fit`
+  - `acceptable_fit`
+  - `major_residual_structure`
+  - `parameter_invalidity`
+  - `fit_not_acceptable`
+
+Consistency rules:
+
+### If `is_stop=1`
+
+- `fit_quality_assessment` must be `acceptable` or `excellent`;
+- `physical_validity_assessment` must be `valid`;
+- `stop_type` must be `successful_termination`;
+- `stop_reason` must be `acceptable_fit` or `excellent_fit`;
+- `has_concrete_next_action` must be false;
+- `next_action` must be null.
+
+### If `is_stop=0` because of residual quality
+
+- `fit_quality_assessment` should normally be `poor`;
+- `stop_type` must be `continue_fitting`;
+- `stop_reason` should normally be `major_residual_structure` or
+  `fit_not_acceptable`.
+
+### If `is_stop=0` because of physical/numerical validity
+
+- `physical_validity_assessment` must be `invalid`;
+- `stop_type` must be `continue_fitting`;
+- `stop_reason` must normally be `parameter_invalidity`.
+
+### Important calibration rules
+
+- Do NOT actively search for a next action.
+- The existence of a possible next action must NEVER be used to change
+  `is_stop=1` into `is_stop=0`.
+- Only identify a next action after a current residual or validity failure has
+  already justified `is_stop=0`.
+- A fixed parameter does not independently imply failure.
+- An unusual but physically plausible parameter does not independently imply
+  failure.
+- A localized central residual does not independently imply poor fit.
+- A clean residual does not override a clear severe physical-validity failure.
+- Spiral arms, clumps, dust lanes, tidal structures, irregular morphology,
+  lopsidedness, shells, streams, and similar out-of-scope structures must be
+  ignored for residual-quality assessment.
+"""
     raw_response, usage = get_openAI_response_one_image(
-        api_key=api_key,
+        api_key=resolved_api_key,
         model_name=model_name,
         prompt=prompt,
-        image_path=residual_image_path,
+        image_path=vlm_image_path,
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
         max_retries=max_retries,
         retry_sleep=retry_sleep,
     )
-        
+
     result = extract_json_from_response(raw_response)
+    if not isinstance(result, dict):
+        raise ValueError("Model response JSON is not an object.")
 
-    raw_good_fit = int(result.get("good_fit", 0))
-    confidence = float(result.get("confidence", 0.0))
-    reason = str(result.get("reason", ""))
+    raw_is_stop = _safe_binary(result.get("is_stop"), default=0)
+    confidence = _safe_float(result.get("confidence"), default=0.0)
 
-    if raw_good_fit not in [0, 1]:
-        raw_good_fit = 0
+    fit_quality_assessment = str(
+        result.get("fit_quality_assessment", "invalid")
+    ).strip().lower()
+    if fit_quality_assessment not in allowed_fit_quality:
+        fit_quality_assessment = "invalid"
 
-    final_good_fit = raw_good_fit
+    stop_type = str(result.get("stop_type", "")).strip().lower()
+    if stop_type not in allowed_stop_types:
+        stop_type = (
+            "successful_termination" if raw_is_stop == 1 else "continue_fitting"
+        )
 
-    if raw_good_fit == 1 and confidence < confidence_threshold:
-        final_good_fit = 0
-        reason = f"[Forced to 0 due to low confidence < {confidence_threshold}] " + reason
+    stop_reason = str(result.get("stop_reason", "")).strip().lower()
+    if stop_reason not in allowed_stop_reasons:
+        stop_reason = (
+            "acceptable_fit"
+            if raw_is_stop == 1
+            else "fit_not_acceptable"
+        )
 
-    
+    has_concrete_next_action = bool(result.get("has_concrete_next_action", False))
+    next_action_raw = result.get("next_action")
+    next_action = None
+    if next_action_raw is not None:
+        next_action_text = str(next_action_raw).strip()
+        next_action = next_action_text or None
+
+    parameter_evidence = _safe_list(result.get("parameter_evidence"))
+    residual_evidence = _safe_list(result.get("residual_evidence"))
+    reason = str(result.get("reason", "")).strip()
+
+    consistency_warnings: List[str] = []
+
+    if raw_is_stop == 0:
+        if stop_type != "continue_fitting":
+            consistency_warnings.append(
+                "is_stop=0 but stop_type is not continue_fitting"
+            )
+    else:
+        if fit_quality_assessment not in {"acceptable", "excellent"}:
+            consistency_warnings.append(
+                "is_stop=1 requires acceptable or excellent fit quality"
+            )
+        if stop_type != "successful_termination":
+            consistency_warnings.append(
+                "is_stop=1 requires successful_termination"
+            )
+        if stop_reason not in {"acceptable_fit", "excellent_fit"}:
+            consistency_warnings.append(
+                "is_stop=1 requires acceptable_fit or excellent_fit"
+            )
+        if has_concrete_next_action:
+            consistency_warnings.append(
+                "is_stop=1 but has_concrete_next_action is true"
+            )
+        if next_action:
+            consistency_warnings.append(
+                "is_stop=1 but next_action is not null"
+            )
+
+    if fit_quality_assessment in {"poor", "invalid"} and raw_is_stop == 1:
+        consistency_warnings.append(
+            "poor/invalid fit must not be a positive successful stop"
+        )
+
+    final_is_stop = raw_is_stop
+    confidence_gate_applied = False
+
+    if (
+        force_low_confidence_stop_to_continue
+        and raw_is_stop == 1
+        and confidence < confidence_threshold
+    ):
+        final_is_stop = 0
+        confidence_gate_applied = True
+        reason = (
+            f"[Forced to continue because stop confidence {confidence:.3f} "
+            f"< {confidence_threshold:.3f}] " + reason
+        ).strip()
+
     return {
-        "good_fit": final_good_fit,
-        "raw_good_fit": raw_good_fit,
+        "is_stop": final_is_stop,
+        "raw_is_stop": raw_is_stop,
         "confidence": confidence,
+        "confidence_threshold": confidence_threshold,
+        "confidence_gate_applied": confidence_gate_applied,
+        "fit_quality_assessment": fit_quality_assessment,
+        "stop_type": stop_type,
+        "stop_reason": stop_reason,
+        "has_concrete_next_action": has_concrete_next_action,
+        "next_action": next_action,
+        "parameter_evidence": parameter_evidence,
+        "residual_evidence": residual_evidence,
         "reason": reason,
+        "consistency_warnings": consistency_warnings,
         "usage": usage,
         "raw_response": raw_response,
         "image_path": vlm_image_path,
         "original_image_path": residual_image_path,
         "summary_md_path": summary_md_path,
-        "param_used": param_used,
+        "trajectory_context_path": trajectory_context_path,
+        "trajectory_context_used": bool(trajectory_text),
+        "param_used": True,
     }
 
 

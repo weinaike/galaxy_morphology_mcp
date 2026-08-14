@@ -37,6 +37,7 @@ from collections import defaultdict
 import numpy as np
 from eval.reward_for_rl_v12 import compute_rl_reward_v12
 from eval.reward_for_rl_v12_1 import compute_rl_reward_v12_1
+from eval.reward_for_rl_v12_2 import compute_rl_reward_v12_2
 
 from eval.reward_for_rl import (
     check_param_bounds,
@@ -204,6 +205,7 @@ def compute_rule_reward_for_pair(pair, reward_version="v11"):
         "v11": compute_rl_reward,
         "v12": compute_rl_reward_v12,
         "v12.1": compute_rl_reward_v12_1,
+        "v12.2": compute_rl_reward_v12_2,
     }
     if reward_version not in reward_functions:
         raise ValueError(f"Unsupported reward version: {reward_version}")
@@ -833,7 +835,7 @@ def main():
                     help="precision_first_f1 策略下的 precision 下限（默认 0.85）")
     ap.add_argument("--skip-test", action="store_true",
                     help="只跑 val 集，不跑 test（调参阶段用；锁参跑 test 时不加此 flag）")
-    ap.add_argument("--reward-version", choices=["v11", "v12", "v12.1"], default="v11",
+    ap.add_argument("--reward-version", choices=["v11", "v12", "v12.1", "v12.2"], default="v11",
                     help="Rule-reward version used for offline recomputation")
     args = ap.parse_args()
 

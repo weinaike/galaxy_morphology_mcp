@@ -71,6 +71,9 @@ def normalize_record(
     )
     result = dict(row)
     result.update(shaped)
+    # Shaping is version-agnostic. Preserve the reward implementation that
+    # produced raw_reward instead of silently relabeling every replay as V11.
+    result["reward_version"] = str(row.get("reward_version") or "v11")
     result["group_id"] = str(
         row.get("group_id")
         or f"{row.get('parent_id', 'unknown')}::{row.get('step_id', 0)}"
@@ -78,25 +81,29 @@ def normalize_record(
     return result
 
 
-def _pairwise_counts(groups: Mapping[str, Sequence[Mapping[str, Any]]]) -> Dict[str, Any]:
+def _pairwise_counts(
+    groups: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    score_key: str = "raw_reward",
+) -> Dict[str, Any]:
     wins = ties = losses = pairs = mixed_groups = 0
     for rows in groups.values():
         positives = [
             row for row in rows
             if row.get("vlm_improvement") in (1, True)
-            and row.get("raw_reward") is not None
+            and row.get(score_key) is not None
         ]
         negatives = [
             row for row in rows
             if row.get("vlm_improvement") in (0, False)
-            and row.get("raw_reward") is not None
+            and row.get(score_key) is not None
         ]
         mixed_groups += int(bool(positives and negatives))
         for positive in positives:
             for negative in negatives:
                 pairs += 1
-                pos_score = float(positive["raw_reward"])
-                neg_score = float(negative["raw_reward"])
+                pos_score = float(positive[score_key])
+                neg_score = float(negative[score_key])
                 if pos_score > neg_score:
                     wins += 1
                 elif pos_score == neg_score:
@@ -162,8 +169,23 @@ def build_replay_report(
         int(int(row["coarse_reward"]) == int(row["vlm_improvement"]))
         for row in labeled
     )
+    tp = sum(int(row["coarse_reward"] == 1.0 and bool(row["vlm_improvement"])) for row in labeled)
+    fp = sum(int(row["coarse_reward"] == 1.0 and not bool(row["vlm_improvement"])) for row in labeled)
+    tn = sum(int(row["coarse_reward"] == 0.0 and not bool(row["vlm_improvement"])) for row in labeled)
+    fn = sum(int(row["coarse_reward"] == 0.0 and bool(row["vlm_improvement"])) for row in labeled)
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    trainable_group_rows = {
+        group_id: rows
+        for group_id, rows in groups.items()
+        if any(bool(row.get("group_train_mask")) for row in rows)
+    }
     report = {
-        "reward_version": "v11",
+        "reward_version": (
+            next(iter({str(row.get("reward_version") or "v11") for row in output_rows}))
+            if len({str(row.get("reward_version") or "v11") for row in output_rows}) == 1
+            else "mixed"
+        ),
         "threshold": threshold,
         "margin_scale": margin_scale,
         "margin_weight": margin_weight,
@@ -176,7 +198,15 @@ def build_replay_report(
         "coarse_counts": dict(coarse_counts),
         "labeled_binary_n": len(labeled),
         "labeled_binary_accuracy": label_correct / len(labeled) if labeled else None,
+        "labeled_binary_precision": precision,
+        "labeled_binary_recall": recall,
+        "labeled_binary_f1": 2 * precision * recall / (precision + recall) if precision + recall else 0.0,
+        "labeled_binary_confusion": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
         "same_parent_pairwise": _pairwise_counts(groups),
+        "groupgate_pairwise_raw": _pairwise_counts(trainable_group_rows),
+        "groupgate_pairwise_shaped": _pairwise_counts(
+            trainable_group_rows, score_key="shaped_reward"
+        ),
     }
     return report, output_rows
 

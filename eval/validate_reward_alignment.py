@@ -210,6 +210,8 @@ def compute_rule_reward_for_pair(pair, reward_version="v11"):
         "v12.2": compute_rl_reward_v12_2,
         "v12.3": compute_rl_reward_v12_3,
         "v12.4": compute_rl_reward_v12_4,
+        # V12.5 final gate calibrated to 0.0, so its decision reward equals V12.4.
+        "v12.5": compute_rl_reward_v12_4,
     }
     if reward_version not in reward_functions:
         raise ValueError(f"Unsupported reward version: {reward_version}")
@@ -839,7 +841,7 @@ def main():
                     help="precision_first_f1 策略下的 precision 下限（默认 0.85）")
     ap.add_argument("--skip-test", action="store_true",
                     help="只跑 val 集，不跑 test（调参阶段用；锁参跑 test 时不加此 flag）")
-    ap.add_argument("--reward-version", choices=["v11", "v12", "v12.1", "v12.2", "v12.3", "v12.4"], default="v11",
+    ap.add_argument("--reward-version", choices=["v11", "v12", "v12.1", "v12.2", "v12.3", "v12.4", "v12.5"], default="v11",
                     help="Rule-reward version used for offline recomputation")
     args = ap.parse_args()
 

@@ -119,3 +119,24 @@ def test_parser_defaults_to_resumable_label_only_inputs():
     )
     assert args.vlm_concurrency == 2
     assert args.max_candidates == 0
+
+
+def test_replay_report_preserves_selected_reward_version():
+    report, rows = build_replay_report([
+        {
+            "group_id": "g1",
+            "outcome": "success",
+            "raw_reward": 0.8,
+            "vlm_improvement": 1,
+            "reward_version": "v12.4",
+        },
+        {
+            "group_id": "g1",
+            "outcome": "success",
+            "raw_reward": 0.0,
+            "vlm_improvement": 0,
+            "reward_version": "v12.4",
+        },
+    ])
+    assert report["reward_version"] == "v12.4"
+    assert {row["reward_version"] for row in rows} == {"v12.4"}

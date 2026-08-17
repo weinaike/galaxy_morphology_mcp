@@ -63,21 +63,20 @@ def _control_paths(feedme_path):
     return result
 
 
-def _summary_output(summary_path):
+def _summary_output_reference(summary_path):
     if not _existing(summary_path):
         return None
-    base = os.path.dirname(os.path.abspath(summary_path))
     text = Path(summary_path).read_text(encoding="utf-8", errors="replace")
     patterns = (
-        r"\*\*Output File:\*\*\s*`?([^`\n]+)",
-        r"^Output File:\s*`?([^`\n]+)",
+        r"\*\*Output File:\*\*\s*(.+)$",
+        r"^Output File:\s*(.+)$",
     )
     for pattern in patterns:
         match = re.search(pattern, text, re.MULTILINE)
         if match:
-            found = _resolve_from(base, match.group(1).strip())
-            if found:
-                return found
+            return (
+                match.group(1).strip().strip(chr(96)).strip('"').strip("'")
+            )
     return None
 
 
@@ -90,31 +89,77 @@ def _looks_like_galfit_output(path):
         return False
 
 
+def _local_output_candidate(owner_path, output_reference):
+    """Resolve the archived GALFIT output beside its owning node artifact."""
+
+    owner_path = _existing(owner_path)
+    if not owner_path or not output_reference:
+        return None
+    candidate = os.path.join(
+        os.path.dirname(owner_path), os.path.basename(str(output_reference))
+    )
+    candidate = _existing(candidate)
+    return candidate if candidate and _looks_like_galfit_output(candidate) else None
+
+
+def _control_reference(feedme_path, key):
+    if not _existing(feedme_path):
+        return None
+    with open(feedme_path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            match = re.match(r"^\s*([ABCDFG])\)\s+([^#\s]+)", line)
+            if match and match.group(1) == key:
+                return (
+                    match.group(2).strip().strip(chr(96)).strip('"').strip("'")
+                )
+    return None
+
+
 def _resolve_output_fits(node):
+    # Newer trajectories may store the exact archived output explicitly.
     for key in ("output_fits_file", "optimized_fits_file", "model_output_fits_path"):
         found = _existing(node.get(key))
         if found and _looks_like_galfit_output(found):
             return found
-    found = _summary_output(node.get("summary_path"))
-    if found and _looks_like_galfit_output(found):
+
+    # Historical trajectories store only summary/feedme paths. run_galfit
+    # archives the summary, feedme and output FITS together. Resolve beside the
+    # node artifact before considering the stale pre-archive path it contains.
+    summary_path = node.get("summary_path")
+    summary_reference = _summary_output_reference(summary_path)
+    found = _local_output_candidate(summary_path, summary_reference)
+    if found:
         return found
-    controls = _control_paths(node.get("feedme_path"))
-    found = controls.get("B")
-    if found and _looks_like_galfit_output(found):
+
+    feedme_path = node.get("feedme_path")
+    output_reference = _control_reference(feedme_path, "B")
+    found = _local_output_candidate(feedme_path, output_reference)
+    if found:
         return found
-    roots = []
-    for key in ("summary_path", "feedme_path"):
-        value = _existing(node.get(key))
-        if value:
-            roots.extend([os.path.dirname(value), os.path.join(os.path.dirname(value), "archives")])
-    candidates = []
-    for root in roots:
-        if os.path.isdir(root):
-            candidates.extend(glob.glob(os.path.join(root, "**", "*.fit*"), recursive=True))
-    for candidate in sorted(set(candidates), key=lambda p: os.path.getmtime(p), reverse=True):
-        if _looks_like_galfit_output(candidate):
-            return os.path.abspath(candidate)
+
+    # Do not recursively choose the newest FITS. That dangerous fallback bound
+    # many unrelated nodes to one file and silently made all deltas zero.
+    for owner_path, reference in (
+        (summary_path, summary_reference),
+        (feedme_path, output_reference),
+    ):
+        owner = _existing(owner_path)
+        if owner:
+            found = _resolve_from(os.path.dirname(owner), reference)
+            if found and _looks_like_galfit_output(found):
+                return found
     return None
+
+
+def _same_file(left, right):
+    if not left or not right:
+        return False
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return os.path.normcase(os.path.realpath(left)) == os.path.normcase(
+            os.path.realpath(right)
+        )
 
 
 def _sigma_mask(node, fallback_node):
@@ -160,6 +205,11 @@ def _build_rows(input_dir):
                 child_fits = _resolve_output_fits(child)
                 if not parent_fits or not child_fits:
                     raise FileNotFoundError("parent_or_child_output_fits")
+                if _same_file(parent_fits, child_fits):
+                    raise ValueError(
+                        "parent_child_output_fits_identical: "
+                        f"parent={parent_fits}, child={child_fits}"
+                    )
                 sigma_path, mask_path = _sigma_mask(child, parent)
                 if not sigma_path or not mask_path:
                     raise FileNotFoundError("sigma_or_mask")

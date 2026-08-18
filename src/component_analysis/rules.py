@@ -250,7 +250,7 @@ def _bar_rule(
             and value.get("scale_psf_ratio", -float("inf"))
             >= thresholds.bar_scale_psf_ratio
             and outer_change
-            and not value.get("psf_veto", False)
+            and value.get("psf_veto") is False
         ):
             strong_bands.append(str(band))
     if strong_bands:

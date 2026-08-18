@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 import numpy as np
-from scipy.ndimage import maximum_filter
+from scipy.ndimage import map_coordinates, maximum_filter
 
 from schemas import validate
 
@@ -40,6 +40,9 @@ class BandArrays:
     residual_hdu: int | None = None
     psf_file: str | None = None
     psf_hdu: int | None = None
+    pixscale_arcsec: float | None = None
+    pa_v3_deg: float | None = None
+    wcs: Any | None = None
 
 
 def _as_2d_float(array: np.ndarray, name: str) -> np.ndarray:
@@ -184,6 +187,173 @@ def measure_azimuthal_modes(
     }
 
 
+def measure_directional_harmonic_alignment(
+    image: np.ndarray,
+    sigma: np.ndarray,
+    template: np.ndarray,
+    *,
+    candidate_radius: float,
+    image_center: tuple[float, float] | None = None,
+    template_center: tuple[float, float] | None = None,
+    mask: np.ndarray | None = None,
+    order: int = 6,
+    inner_radius_fraction: float = 0.6,
+    outer_radius_fraction: float = 1.1,
+    min_template_amplitude: float = 0.1,
+    min_image_amplitude: float = 0.02,
+    min_harmonic_snr: float = 5.0,
+    min_coverage: float = 0.6,
+    phase_tolerance_deg: float = 7.5,
+) -> dict[str, Any]:
+    """Compare one image harmonic with a same-pixel-frame template.
+
+    The phase comparison treats positive and negative image residuals as the
+    same physical axes.  A sign inversion therefore changes neither the
+    alignment result nor the reported axis-phase separation.
+    """
+
+    values = _as_2d_float(image, "image")
+    errors = _as_2d_float(sigma, "sigma")
+    reference = _as_2d_float(template, "template")
+    if errors.shape != values.shape:
+        raise ValueError("sigma shape must match image")
+    if candidate_radius <= 0 or order < 1:
+        raise ValueError("candidate_radius and order must be positive")
+    if not 0 < inner_radius_fraction < outer_radius_fraction:
+        raise ValueError("invalid annulus radius fractions")
+    if not 0 < min_coverage <= 1:
+        raise ValueError("min_coverage must be in (0, 1]")
+
+    inner_radius = inner_radius_fraction * candidate_radius
+    outer_radius = outer_radius_fraction * candidate_radius
+    x_image, y_image = image_center or _default_center(values.shape)
+
+    finite_template = np.isfinite(reference)
+    border = np.concatenate(
+        (
+            reference[0, finite_template[0]],
+            reference[-1, finite_template[-1]],
+            reference[finite_template[:, 0], 0],
+            reference[finite_template[:, -1], -1],
+        )
+    )
+    background = float(np.median(border)) if border.size else 0.0
+    template_signal = np.where(
+        finite_template,
+        np.clip(reference - background, 0.0, None),
+        0.0,
+    )
+    if template_center is None:
+        y_template, x_template = np.unravel_index(
+            int(np.argmax(template_signal)),
+            template_signal.shape,
+        )
+        x_template, y_template = float(x_template), float(y_template)
+    else:
+        x_template, y_template = map(float, template_center)
+
+    def annulus_geometry(
+        shape: tuple[int, int],
+        center: tuple[float, float],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        yy, xx = np.indices(shape, dtype=float)
+        radius = np.hypot(xx - center[0], yy - center[1])
+        theta = np.arctan2(yy - center[1], xx - center[0])
+        return (radius >= inner_radius) & (radius <= outer_radius), theta
+
+    image_annulus, image_theta = annulus_geometry(
+        values.shape,
+        (x_image, y_image),
+    )
+    excluded = (
+        _matching_mask(values.shape, mask)
+        | ~np.isfinite(values)
+        | ~np.isfinite(errors)
+        | (errors <= 0)
+    )
+    image_selected = image_annulus & ~excluded
+    coverage = float(
+        np.count_nonzero(image_selected) / max(np.count_nonzero(image_annulus), 1)
+    )
+
+    template_annulus, template_theta = annulus_geometry(
+        reference.shape,
+        (x_template, y_template),
+    )
+    template_selected = template_annulus & finite_template
+
+    def mode(
+        signal: np.ndarray,
+        theta: np.ndarray,
+        selected: np.ndarray,
+    ) -> tuple[float, float, complex] | None:
+        selected_signal = signal[selected]
+        denominator = float(np.sum(np.abs(selected_signal)))
+        if selected_signal.size == 0 or denominator <= 0:
+            return None
+        coefficient = np.sum(
+            selected_signal * np.exp(-1j * order * theta[selected])
+        )
+        amplitude = float(2.0 * np.abs(coefficient) / denominator)
+        phase = float(
+            (-np.degrees(np.angle(coefficient)) / order) % (360.0 / order)
+        )
+        return amplitude, phase, coefficient
+
+    template_mode = mode(template_signal, template_theta, template_selected)
+    image_mode = mode(values, image_theta, image_selected)
+    if template_mode is None or image_mode is None:
+        return {
+            "status": "UNAVAILABLE",
+            "value": None,
+            "quality_flags": ["low_snr"],
+        }
+
+    template_amplitude, template_phase, _ = template_mode
+    image_amplitude, image_phase, image_coefficient = image_mode
+    harmonic_noise = float(np.sqrt(np.sum(np.square(errors[image_selected]))))
+    harmonic_snr = (
+        float(np.abs(image_coefficient) / harmonic_noise)
+        if harmonic_noise > 0
+        else 0.0
+    )
+    axis_period = 180.0 / order
+    phase_delta = float(
+        abs((image_phase - template_phase + axis_period / 2.0) % axis_period
+            - axis_period / 2.0)
+    )
+
+    flags: list[str] = []
+    if coverage < min_coverage:
+        flags.append("high_mask_fraction")
+    if (
+        template_amplitude < min_template_amplitude
+        or image_amplitude < min_image_amplitude
+        or harmonic_snr < min_harmonic_snr
+    ):
+        flags.append("low_snr")
+    evaluated = not flags
+    return {
+        "status": "AVAILABLE",
+        "value": {
+            "evaluated": evaluated,
+            "aligned": phase_delta <= phase_tolerance_deg if evaluated else None,
+            "order": order,
+            "inner_radius_pix": float(inner_radius),
+            "outer_radius_pix": float(outer_radius),
+            "template_amplitude": template_amplitude,
+            "image_amplitude": image_amplitude,
+            "template_phase_deg": template_phase,
+            "image_phase_deg": image_phase,
+            "phase_delta_deg": phase_delta,
+            "phase_tolerance_deg": float(phase_tolerance_deg),
+            "harmonic_snr": harmonic_snr,
+            "coverage_fraction": coverage,
+        },
+        "quality_flags": flags,
+    }
+
+
 def measure_fwhm(
     image: np.ndarray,
     *,
@@ -206,6 +376,104 @@ def measure_fwhm(
             "fwhm_geometric_pix": float(FWHM_FACTOR * np.sqrt(sigma_major * sigma_minor)),
         },
         "quality_flags": moments["quality_flags"],
+    }
+
+
+def measure_psf_fwhm(
+    image: np.ndarray,
+    *,
+    angle_count: int = 64,
+    radial_step: float = 0.05,
+) -> dict[str, Any]:
+    """Measure the PSF core FWHM from half-maximum radial crossings.
+
+    A PSF's full-image second moment is dominated by diffraction wings and is
+    therefore not a core-resolution measure.  This estimator subtracts a
+    border background, samples the profile from the peak along multiple
+    azimuths, and summarizes the first half-maximum crossing.
+    """
+
+    values = _as_2d_float(image, "image")
+    finite = np.isfinite(values)
+    if not np.any(finite):
+        return {
+            "status": "UNAVAILABLE",
+            "value": None,
+            "quality_flags": ["nan_in_region"],
+        }
+    border = np.concatenate(
+        (
+            values[0, finite[0]],
+            values[-1, finite[-1]],
+            values[finite[:, 0], 0],
+            values[finite[:, -1], -1],
+        )
+    )
+    background = float(np.median(border)) if border.size else 0.0
+    signal = np.where(finite, values - background, 0.0)
+    y_peak, x_peak = np.unravel_index(int(np.argmax(signal)), signal.shape)
+    peak = float(signal[y_peak, x_peak])
+    if peak <= 0 or angle_count < 8 or radial_step <= 0:
+        return {
+            "status": "UNAVAILABLE",
+            "value": None,
+            "quality_flags": ["low_snr"],
+        }
+
+    half = peak / 2.0
+    max_radius = float(
+        max(
+            np.hypot(x_peak, y_peak),
+            np.hypot(signal.shape[1] - 1 - x_peak, y_peak),
+            np.hypot(x_peak, signal.shape[0] - 1 - y_peak),
+            np.hypot(signal.shape[1] - 1 - x_peak, signal.shape[0] - 1 - y_peak),
+        )
+    )
+    radii = np.arange(0.0, max_radius + radial_step, radial_step)
+    crossings: list[float] = []
+    for angle in np.linspace(0.0, np.pi, angle_count, endpoint=False):
+        for direction in (1.0, -1.0):
+            x = x_peak + direction * radii * np.cos(angle)
+            y = y_peak + direction * radii * np.sin(angle)
+            profile = map_coordinates(
+                signal,
+                [y, x],
+                order=1,
+                mode="constant",
+                cval=0.0,
+            )
+            below = np.flatnonzero(profile <= half)
+            if below.size == 0:
+                continue
+            index = int(below[0])
+            if index == 0:
+                crossings.append(0.0)
+                continue
+            previous = float(profile[index - 1])
+            current = float(profile[index])
+            denominator = previous - current
+            fraction = (previous - half) / denominator if denominator > 0 else 0.0
+            crossings.append(float(radii[index - 1] + fraction * radial_step))
+
+    widths = 2.0 * np.asarray(crossings, dtype=float)
+    widths = widths[np.isfinite(widths) & (widths > 0)]
+    if widths.size < max(8, angle_count // 4):
+        return {
+            "status": "UNAVAILABLE",
+            "value": None,
+            "quality_flags": ["low_snr"],
+        }
+    minor, major = np.percentile(widths, [25.0, 75.0])
+    return {
+        "status": "AVAILABLE",
+        "value": {
+            "fwhm_major_pix": float(major),
+            "fwhm_minor_pix": float(minor),
+            "fwhm_geometric_pix": float(np.sqrt(major * minor)),
+            "center_x_pix": float(x_peak),
+            "center_y_pix": float(y_peak),
+        },
+        "quality_flags": [],
     }
 
 
@@ -395,7 +663,7 @@ def extract_numeric_evidence(
                 "quality_flags": ["psf_missing"],
             }
         else:
-            psf_measurement = measure_fwhm(band_data.psf)
+            psf_measurement = measure_psf_fwhm(band_data.psf)
             if psf_measurement["status"] == "AVAILABLE":
                 psf_fwhm = psf_measurement["value"]["fwhm_geometric_pix"]
 
@@ -473,6 +741,10 @@ def extract_numeric_evidence(
             center=center,
             center_exclusion_radius=aperture_radius,
         )
+        for peak in peaks:
+            # IDs are global within one evidence artifact; band-local IDs would
+            # make VLM targets ambiguous when several bands detect candidate_1.
+            peak["region_id"] = f"{prefix}:{peak['region_id']}"
         peak_feature = {
             "feature_id": f"{prefix}_residual_local_peaks",
             "name": "residual_local_peaks",

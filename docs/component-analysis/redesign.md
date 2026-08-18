@@ -1,7 +1,7 @@
 # 成分分析模块重构方案
 
 > 面向：星系拟合 workflow 中 `analyze_multiband_components`（阶段二步骤 2）的成分增删决策模块
-> 状态：v6（2026-08-13），三层架构与本轮规则边界已确认；第十一节开放问题已全部裁定为 v1 默认规则（待评测校准），Lens 保留入白名单、「Nucleus 代偿 Bulge」废弃；四类 artifact schema 已冻结 v1.0（见 `src/schemas/`）；新增第四节「INCONCLUSIVE 自动化消解策略」，流程全自动运行、人工复核改为事后批量审查
+> 状态：v7（2026-08-17），三层架构与本轮规则边界已确认；第十一节开放问题已全部裁定为 v1 默认规则（待评测校准），Lens 保留入白名单、「Nucleus 代偿 Bulge」废弃；四类 artifact schema 已冻结 v1.0（见 `src/schemas/`）；新增第四节「INCONCLUSIVE 自动化消解策略」，流程全自动运行、人工复核改为事后批量审查；Bar 的 PSF 否决采用三态，未完成方向相关性评估时不得投强证据
 > 核对范围：`workflow_galfits.md`、`component_specification_galfits.md`、`residual_analysis.py`、`bar_lopsidedness_core.py`、`best-round-verifier.md`、jwst0709/0710/0716 拟合产物
 
 ---
@@ -416,6 +416,7 @@ BIC_gain = BIC_simple - BIC_complex
 
 - 已裁定：允许单个通过质量门的高质量波段的强等照度证据触发 Bar 候选，无需第二类独立证据；其余波段是支持、反对还是不可用必须逐波段记录。
 - 高质量波段的等照度 Bar 检测成立，且无 PSF/衍射否决时，可提议 Bar；VLM 用于确认形态和发现冲突。
+- `psf_veto` 使用三态：`true` 表示命中 PSF／衍射否决，`false` 表示实际 PSF 模板或 V3 方向相关性检查已通过，`null` 表示尚未评估。只有显式 `false` 的波段可以贡献强等照度证据，`null` 不得按“无否决”处理。
 - 原图检测未成立时，必须同时具备局部数值拉长证据和 VLM `bar_like/peanut_x`，才进入弱候选。
 - 不再采用“所有波段无质量门的 OR-logic”；只有通过质量门的波段可以贡献证据。
 
@@ -647,7 +648,7 @@ FWHM_int = sqrt(max(FWHM_obs^2 - FWHM_psf^2, 0))
 
 ---
 
-## 十、规范同步提案（本轮不执行）
+## 十、规范同步提案（实施顺序第 7 步，本轮不执行）
 
 ### 1. `component_specification_galfits.md`
 
@@ -675,7 +676,7 @@ FWHM_int = sqrt(max(FWHM_obs^2 - FWHM_psf^2, 0))
 - BIC 按 `BIC_gain` 规则审计：可选成分默认检查 `>= 10`，但不能覆盖主成分的物理和残差证据。
 - 中心成分最终 `xcen`、`ycen` 完全一致作为硬规则；尺寸层级作为物理期望和标签检查，不因单独反置自动 `FAIL`。
 
-同步顺序：先确认本方案，再修改 component specification，再修改 workflow 和 verifier，最后实现代码与测试。
+本节是 shadow mode 与 held-out benchmark 完成后的接管前迁移提案，不是当前代码实施顺序。执行第 7 步时，先修改 component specification，再修改 workflow、residual analysis prompt 和 verifier；通过回归与科学家评审后，才按第 8 步让新规则层接管正式动作决策。
 
 ---
 

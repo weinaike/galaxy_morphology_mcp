@@ -1,12 +1,12 @@
 # 成分分析规范同步方案
 
 > 目的：记录 `docs/component-analysis/redesign.md` 已确认的目标规则，以及现有规范文件如何同步。
-> 状态：方案已确认，尚未执行文件同步和代码实现。
+> 状态：接管前迁移方案已确认；仅在 `redesign.md` 实施顺序第 5 步 shadow mode 和第 6 步 held-out benchmark 完成后执行。
 > 日期：2026-08-13
 
 ## 一、同步边界
 
-本文件只描述规范迁移，不修改现有 prompt、workflow、verifier 或代码。目标架构和逐成分判据以 `docs/component-analysis/redesign.md` 为准。
+本文件只描述实施顺序第 7 步的规范迁移，不修改现有 prompt、workflow、verifier 或代码，也不定义当前重构代码的实施顺序。目标架构、逐成分判据和总实施顺序以 `docs/component-analysis/redesign.md` 为准。
 
 同步原则：
 
@@ -99,17 +99,16 @@ BIC_gain = BIC_simple - BIC_complex
 | `src/tools/*.py` | 生成 numeric evidence、VLM evidence、decision artifact 和 rule trace；统一记录 BIC 定义 | 待执行 |
 | 测试与评测集 | 覆盖中心源身份、BIC 边界、主成分不误删、尺寸反置审计 | 待执行 |
 
-## 五、执行顺序
+## 五、第 7 步执行时的文件同步顺序
 
-1. 冻结 artifact manifest、numeric evidence、VLM evidence 和 decision artifact schema。
-2. 先同步 `component_specification_galfits.md` 和单／多波段成分术语。
-3. 再同步 `workflow_galfits.md` 的状态机和 BIC 使用阶段。
-4. 再同步 `residual_analysis_message.md`、`residual_analysis_prompt.md` 的输出契约。
-5. 再同步 `best-round-verifier.md`，确保审计规则与 specification、workflow 完全一致。
-6. 实现数值层和纯规则层，补充单元测试。
-7. 改造 VLM 为受控 JSON 输出，运行 shadow mode。
-8. 用 held-out 评测集校准阈值和检查错误案例。
-9. 通过回归测试与科学家评审后，才让新规则层接管正式动作决策。
+前置条件：`redesign.md` 实施顺序第 1～6 步已完成，held-out benchmark 已给出阈值校准和错误案例审查结果。
+
+1. 同步 `component_specification_galfits.md` 和单／多波段成分术语。
+2. 同步 `workflow_galfits.md` 的状态机和 BIC 使用阶段。
+3. 同步 `residual_analysis_message.md`、`residual_analysis_prompt.md` 的输出契约。
+4. 同步 `best-round-verifier.md`，确保审计规则与 specification、workflow 完全一致。
+5. 补齐正式接入所需的工具层代码和回归测试，但仍不自动接管动作决策。
+6. 通过回归测试与科学家评审后，才按 `redesign.md` 第 8 步让新规则层接管正式动作决策。
 
 ## 六、验收标准
 

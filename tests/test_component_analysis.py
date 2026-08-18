@@ -18,7 +18,9 @@ from component_analysis import (
     extract_numeric_evidence,
     measure_aperture_snr,
     measure_azimuthal_modes,
+    measure_directional_harmonic_alignment,
     measure_fwhm,
+    measure_psf_fwhm,
     measure_weighted_moments,
 )
 
@@ -68,6 +70,16 @@ def test_measure_fwhm_matches_gaussian_sigma():
     assert result["value"]["fwhm_geometric_pix"] == pytest.approx(expected, rel=0.03)
 
 
+def test_measure_psf_fwhm_uses_core_half_maximum():
+    sigma = 1.5
+    image = gaussian_image(shape=(101, 101), sigma_x=sigma, amplitude=1.0)
+    result = measure_psf_fwhm(image)
+    assert result["status"] == "AVAILABLE"
+    assert result["value"]["fwhm_geometric_pix"] == pytest.approx(
+        FWHM_FACTOR * sigma, rel=0.05
+    )
+
+
 def test_deconvolve_fwhm():
     assert deconvolve_fwhm(5.0, 3.0) == pytest.approx(4.0)
     assert deconvolve_fwhm(2.0, 3.0) == 0.0
@@ -101,6 +113,68 @@ def test_azimuthal_modes_recovers_m1_phase():
 def test_azimuthal_modes_zero_field_unavailable():
     result = measure_azimuthal_modes(np.zeros((64, 64)))
     assert result["status"] == "UNAVAILABLE"
+
+
+def _sixfold_pattern(*, phase_deg=0.0, amplitude=1.0, positive=False):
+    shape = (81, 81)
+    yy, xx = np.indices(shape, dtype=float)
+    radius = np.hypot(xx - 40.0, yy - 40.0)
+    theta = np.arctan2(yy - 40.0, xx - 40.0)
+    radial = np.exp(-0.5 * ((radius - 20.0) / 7.0) ** 2)
+    angular = np.cos(6.0 * (theta - np.radians(phase_deg)))
+    if positive:
+        angular = 1.0 + 0.8 * angular
+    return amplitude * radial * angular
+
+
+def test_directional_harmonic_alignment_accepts_signed_axis_inversion():
+    template = _sixfold_pattern(phase_deg=3.0, positive=True)
+    image = -_sixfold_pattern(phase_deg=3.0, amplitude=10.0)
+    result = measure_directional_harmonic_alignment(
+        image,
+        np.ones_like(image),
+        template,
+        image_center=(40.0, 40.0),
+        template_center=(40.0, 40.0),
+        candidate_radius=20.0,
+    )
+    assert result["status"] == "AVAILABLE"
+    assert result["value"]["evaluated"] is True
+    assert result["value"]["aligned"] is True
+    assert result["value"]["phase_delta_deg"] == pytest.approx(0.0, abs=1.0)
+
+
+def test_directional_harmonic_alignment_rejects_wrong_direction():
+    template = _sixfold_pattern(phase_deg=0.0, positive=True)
+    image = _sixfold_pattern(phase_deg=12.0, amplitude=10.0)
+    result = measure_directional_harmonic_alignment(
+        image,
+        np.ones_like(image),
+        template,
+        image_center=(40.0, 40.0),
+        template_center=(40.0, 40.0),
+        candidate_radius=20.0,
+    )
+    assert result["value"]["evaluated"] is True
+    assert result["value"]["aligned"] is False
+    assert result["value"]["phase_delta_deg"] == pytest.approx(12.0, abs=1.0)
+
+
+def test_directional_harmonic_alignment_keeps_low_snr_unknown():
+    template = _sixfold_pattern(positive=True)
+    image = _sixfold_pattern(amplitude=0.01)
+    result = measure_directional_harmonic_alignment(
+        image,
+        np.ones_like(image),
+        template,
+        image_center=(40.0, 40.0),
+        template_center=(40.0, 40.0),
+        candidate_radius=20.0,
+    )
+    assert result["status"] == "AVAILABLE"
+    assert result["value"]["evaluated"] is False
+    assert result["value"]["aligned"] is None
+    assert "low_snr" in result["quality_flags"]
 
 
 def test_aperture_snr_uniform_field():
@@ -158,6 +232,31 @@ def test_extract_numeric_evidence_schema_valid_and_quality_gated():
     assert "PSF unavailable" in quality["f090w"]["reasons"]
     names = {feature["name"] for feature in evidence["features"]}
     assert {"source_fwhm", "psf_fwhm", "residual_fourier_modes", "residual_local_peaks"} <= names
+
+
+def test_extract_numeric_evidence_qualifies_candidate_ids_by_band():
+    shape = (32, 32)
+    original = gaussian_image(shape=shape, sigma_x=3.0)
+    residual = np.zeros(shape)
+    residual[4, 5] = 10.0
+    sigma = np.ones(shape)
+    bands = [
+        BandArrays("f200w", original, residual, sigma, psf=None),
+        BandArrays("f444w", original, residual, sigma, psf=None),
+    ]
+    evidence = extract_numeric_evidence(
+        round_id="r1", manifest_ref="manifest.json", bands=bands
+    )
+    regions = [
+        region
+        for feature in evidence["features"]
+        if feature["name"] == "residual_local_peaks"
+        for region in feature.get("candidate_regions", [])
+    ]
+    assert {region["region_id"] for region in regions} == {
+        "f200w:candidate_1",
+        "f444w:candidate_1",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +404,16 @@ def test_bar_band_failing_quality_gate_cannot_trigger():
         components={"disk"},
         band_quality=[{"band": "f200w", "passed": False}],
     )
+    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+
+
+def test_bar_unknown_psf_veto_cannot_trigger_strong_evidence():
+    unknown_psf = feat(
+        "bar_unknown_psf",
+        "bar_isophote_profile",
+        {**STRONG_BAR["value"], "psf_veto": None},
+    )
+    decision = decide([unknown_psf], [], components={"disk"})
     assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
 
 

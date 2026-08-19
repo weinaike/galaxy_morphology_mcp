@@ -80,8 +80,6 @@ def _register_tools_and_prompts():
     app.add_tool(render_original)  
     app.add_tool(fourier_mode_analysis)
     app.add_tool(detect_bar_lopsidedness_from_isophote_tables)
-    app.add_tool(request_agent)
-    app.add_tool(wait_for_agent_response)
 
     if not has_galfit and not has_galfits:
         logger.warning(

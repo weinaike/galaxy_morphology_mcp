@@ -16,6 +16,7 @@ from tqdm.asyncio import tqdm
 try:
     from dotenv import load_dotenv
 except ModuleNotFoundError:
+    # modified by zl: keep the batch script usable without python-dotenv.
     def load_dotenv(*args, **kwargs):
         return False
 
@@ -46,31 +47,37 @@ LOG_COLUMNS = [
 ]
 
 
+# modified by zl: identify source feedmes for overfit evaluation.
 def is_source_feedme(feedme_path):
     parts = os.path.abspath(feedme_path).split(os.sep)
     return "archives" not in parts and "test" not in parts
 
 
+# modified by zl: derive per-galaxy overfit output directories.
 def output_subdir_for_feedme(galaxy_name):
     match = OVERFIT_FEEDME_RE.search(galaxy_name)
     return match.group(1) if match else "test"
 
 
+# modified by zl: classify the overfit template represented by a feedme.
 def overfit_template_for_feedme(feedme_path):
     match = OVERFIT_FEEDME_RE.search(os.path.splitext(os.path.basename(feedme_path))[0])
     return match.group(1) if match else None
 
 
+# modified by zl: group feedmes by galaxy example.
 def galaxy_example_key(feedme_path):
     parent = os.path.dirname(os.path.abspath(feedme_path))
     return os.path.dirname(parent) if os.path.basename(parent) == "overparameterized" else parent
 
 
+# modified by zl: extract stable source identifiers for result logs.
 def source_id_for_feedme(feedme_path):
     parent = os.path.dirname(os.path.abspath(feedme_path))
     return os.path.basename(os.path.dirname(parent)) if os.path.basename(parent) == "overparameterized" else os.path.basename(parent)
 
 
+# modified by zl: build normalized overfit result rows.
 def result_row(feedme_path, galaxy_name, output_dir, status, result=None, error=""):
     result = result or {}
     stats = result.get("fit_statistics") or {}
@@ -98,6 +105,7 @@ def result_row(feedme_path, galaxy_name, output_dir, status, result=None, error=
     }
 
 
+# modified by zl: append batch results without interleaving concurrent writes.
 async def append_log_row(log_file, row):
     if not log_file:
         return
@@ -111,6 +119,7 @@ async def append_log_row(log_file, row):
             writer.writerow(row)
 
 
+# modified by zl: apply per-example batch limits.
 def select_feedmes_by_example(feedmes, limit):
     if not limit:
         return feedmes
@@ -125,6 +134,7 @@ def select_feedmes_by_example(feedmes, limit):
     return selected
 
 
+# modified by zl: filter overfit inputs by requested template.
 def filter_feedmes_by_template(feedmes, template):
     if template == "all":
         return [path for path in feedmes if overfit_template_for_feedme(path)]
@@ -132,6 +142,7 @@ def filter_feedmes_by_template(feedmes, template):
     return [path for path in feedmes if overfit_template_for_feedme(path) == code]
 
 
+# modified by zl: load overfit input roots from JSON or a direct path.
 def load_input_dirs(input_json, input_dir):
     """Load and validate galaxy directories from a JSON array."""
     with open(input_json, encoding="utf-8") as f:
@@ -156,6 +167,7 @@ def load_input_dirs(input_json, input_dir):
     return selected
 
 
+# modified by zl: discover overfit feedmes across configured roots.
 def discover_feedmes(input_dir, input_json=None):
     search_dirs = load_input_dirs(input_json, input_dir) if input_json else [input_dir]
     feedmes = set()
@@ -167,6 +179,7 @@ def discover_feedmes(input_dir, input_json=None):
     return sorted(feedmes)
 
 
+# modified by zl: collect overfit result artifacts.
 def move_result_artifacts(result, output_dir, overwrite):
     fields = {
         "optimized_fits_file": result.get("optimized_fits_file"),
@@ -190,6 +203,7 @@ def move_result_artifacts(result, output_dir, overwrite):
         result[field] = target
 
 
+# modified by zl: execute and record one overfit galaxy task.
 async def process_galaxy(feedme_path, step, overwrite=False, log_file=None):
     # Keep the heavy project import out of --help and --dry_run. The GALFIT
     # toolchain requires the project's Python 3.10+ runtime.
@@ -221,6 +235,7 @@ async def process_galaxy(feedme_path, step, overwrite=False, log_file=None):
     return True
 
 
+# modified by zl: limit concurrent overfit batch work.
 async def bounded_process(feedme, step, overwrite, log_file, pbar):
     async with semaphore:
         did_run = await process_galaxy(feedme, step, overwrite, log_file)
@@ -228,6 +243,7 @@ async def bounded_process(feedme, step, overwrite, log_file, pbar):
         return did_run
 
 
+# modified by zl: orchestrate overfit discovery, execution, and logging.
 async def main(step, input_dir, input_json, limit, template, overwrite, log_file, dry_run):
     input_dir = os.path.abspath(input_dir)
     if input_json:

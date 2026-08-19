@@ -22,9 +22,10 @@ from .extract_summary_galfit import extract_summary_from_galfit
 from .parse_feedme import parse_feedme, parse_components
 from .render_original import render_asinh_panel, draw_re_ellipses, effective_re
 from .sb_profile import render_sb_profile
-from .fit_callback import existing_artifacts, notify_fit_round
+from .fit_event_publisher import existing_artifacts, publish_fit_round
 
 
+# modified by zl: serialize GALFIT round metadata for status files and service events.
 def _json_safe(value: Any) -> Any:
     """Convert numpy/path-like values into JSON-serializable Python objects."""
     if isinstance(value, dict):
@@ -471,10 +472,10 @@ def create_comparison_png(
         plt.close(fig)
 
 
+# modified by zl: emit round_status.json and optional fit events while preserving the original API.
 async def run_galfit(
     config_file: Annotated[str, "absolute path to the GALFIT configuration file"],
     options: Annotated[List[str], "options that control how galfit runs"] = [],
-    callback_url: Annotated[str | None, "Optional URL notified after this fitting round succeeds"] = None,
 ) -> dict[str, Any]:
     """Execute GALFIT single-band fitting with the given configuration file.
 
@@ -641,17 +642,13 @@ async def run_galfit(
     }
     with open(round_status_path, "w", encoding="utf-8") as f:
         json.dump(_json_safe(round_status), f, ensure_ascii=False, indent=2)
-    notification = notify_fit_round(callback_url, {
-        "event": "fit_round_finished",
-        "fitter": "galfit",
-        "status": "success",
-        "round_id": os.path.basename(ar_dir),
-        "archive_dir": ar_dir,
+    publish_fit_round({
+        "event": "fit_round_finished", "fitter": "galfit", "status": "success",
+        "round_id": os.path.basename(ar_dir), "archive_dir": ar_dir,
         "round_status_file": round_status_path,
         "artifacts": existing_artifacts(round_status["outputs"].values()),
         "fit_statistics": _json_safe(fit_stats),
     })
-
     stats_lines = ""
 
     chisq1d_nu = fit_stats.get("chisq1d_nu")
@@ -689,5 +686,4 @@ async def run_galfit(
         "console_log_file": console_log_path,
         "round_status_file": round_status_path,
         "fit_statistics": _json_safe(fit_stats),
-        "notification": notification,
     }

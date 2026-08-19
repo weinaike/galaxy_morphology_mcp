@@ -1,4 +1,4 @@
-"""Best-effort callbacks emitted after a fitting round has completed."""
+"""Optional fit-round event publishing, separate from fitting tool APIs."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from typing import Any
 import requests
 
 
+# modified by zl: normalize fitting outputs into an event artifact list.
 def existing_artifacts(values: Iterable[Any]) -> list[str]:
-    """Return unique, absolute paths for files that currently exist."""
     artifacts: list[str] = []
     seen: set[str] = set()
     for value in values:
@@ -25,29 +25,19 @@ def existing_artifacts(values: Iterable[Any]) -> list[str]:
     return artifacts
 
 
-def notify_fit_round(callback_url: str | None, event: dict[str, Any]) -> dict[str, Any]:
-    """POST a completed-round event without turning callback failures into fit failures."""
-    target = callback_url or os.getenv("FIT_ROUND_CALLBACK_URL")
+# modified by zl: publish optional service events without adding transport fields to tool APIs.
+def publish_fit_round(event: dict[str, Any]) -> dict[str, Any]:
+    """Publish through the configured adapter; become a no-op outside the service."""
+    target = os.getenv("FIT_ROUND_EVENT_URL", os.getenv("FIT_ROUND_CALLBACK_URL", "")).strip()
     if not target:
         return {"attempted": False, "status": "not_configured"}
-
     headers = {"Content-Type": "application/json"}
-    token = os.getenv("FIT_ROUND_CALLBACK_TOKEN")
+    token = os.getenv("FIT_ROUND_EVENT_TOKEN", os.getenv("FIT_ROUND_CALLBACK_TOKEN", ""))
     if token:
         headers["Authorization"] = f"Bearer {token}"
-
     try:
         response = requests.post(target, json=event, headers=headers, timeout=10)
-        return {
-            "attempted": True,
-            "status": "sent" if response.ok else "failed",
-            "callback_url": target,
-            "http_status": response.status_code,
-        }
+        return {"attempted": True, "status": "sent" if response.ok else "failed",
+                "http_status": response.status_code}
     except requests.RequestException as exc:
-        return {
-            "attempted": True,
-            "status": "failed",
-            "callback_url": target,
-            "error": str(exc),
-        }
+        return {"attempted": True, "status": "failed", "error": str(exc)}

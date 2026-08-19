@@ -12,6 +12,7 @@ from tqdm.asyncio import tqdm
 try:
     from dotenv import load_dotenv
 except ModuleNotFoundError:
+    # modified by zl: keep the batch script usable without python-dotenv.
     def load_dotenv(*args, **kwargs):
         return False
 
@@ -27,6 +28,7 @@ semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 DEFAULT_INPUT_DIR = "/mnt/data/galaxy_decomposition_evaluation/data/Gadotti/no-1D/Plate0349_MJD51699_Fiber620_r/archives"
 
 
+# modified by zl: collect fitting artifacts for batch output.
 def move_artifacts(result, output_dir, overwrite):
     for source in (
         result.get("optimized_fits_file"),
@@ -46,6 +48,7 @@ def move_artifacts(result, output_dir, overwrite):
         shutil.move(source, target)
 
 
+# modified by zl: run one Gadotti galaxy fitting task.
 async def process_galaxy(feedme_path, step, overwrite=False):
     galaxy_dir = os.path.dirname(feedme_path)
     galaxy_name = os.path.basename(galaxy_dir)
@@ -64,12 +67,14 @@ async def process_galaxy(feedme_path, step, overwrite=False):
     return True
 
 
+# modified by zl: limit concurrent Gadotti batch work.
 async def bounded_process(feedme, step, overwrite, pbar):
     async with semaphore:
         await process_galaxy(feedme, step, overwrite)
         pbar.update(1)
 
 
+# modified by zl: orchestrate the Gadotti batch runner.
 async def main(step, input_dir, overwrite):
     feedmes = sorted(glob.glob(os.path.join(os.path.abspath(input_dir), "**", "galfit.feedme"), recursive=True))
     if not feedmes:

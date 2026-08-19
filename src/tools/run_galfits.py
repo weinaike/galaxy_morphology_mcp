@@ -20,13 +20,14 @@ from typing import Any, Annotated, List, Dict, Tuple
 from .pix2radec import suppress_stdout_stderr
 from .render_original import render_asinh_panel
 from .sb_profile import render_sb_profile
-from .fit_callback import existing_artifacts, notify_fit_round
+from .fit_event_publisher import existing_artifacts, publish_fit_round
 from .parse_lyric import (
     parse_image_infos_from_lyric,
     parse_region_info_from_lyric,
     extract_component_attributes,
     generate_subcomps
 )
+
 
 WORKFLOW_OUTPUT_DIR_RE = re.compile(r"^\d{8}_\d{6}_.+(?:_iter\d+)?$")
 
@@ -653,13 +654,13 @@ def create_multiband_comparison_png(
 
     return png_filename, component_attr_file
 
+# modified by zl: emit multi-band round status and optional service events without API callbacks.
 async def run_galfits(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
     timeout_sec: Annotated[int, "timeout in seconds"] = 3600,
     extra_args: Annotated[list[str] | None, "extra GalfitS CLI args (e.g. ['--fit_method','optimizer','--num_steps','200'])"] = None,
     read_summary: Annotated[str | None, "path to previous .gssummary to carry forward best-fit parameters"] = None,
     prior_file: Annotated[str | None, "path to .prior file for mass/size constraints"] = None,
-    callback_url: Annotated[str | None, "Optional URL notified after this fitting round succeeds"] = None,
 ) -> dict[str, Any]:
     """Execute GalfitS (multi-band) with the given config file.
 
@@ -819,17 +820,12 @@ async def run_galfits(
             "outputs": artifact_paths,
             "fit_statistics": summary_stats,
         }, f, ensure_ascii=False, indent=2)
-    notification = notify_fit_round(callback_url, {
-        "event": "fit_round_finished",
-        "fitter": "galfits",
-        "status": "success",
-        "round_id": os.path.basename(workplace_dir),
-        "archive_dir": workplace_dir,
-        "round_status_file": round_status_path,
-        "artifacts": artifact_paths,
+    publish_fit_round({
+        "event": "fit_round_finished", "fitter": "galfits", "status": "success",
+        "round_id": os.path.basename(workplace_dir), "archive_dir": workplace_dir,
+        "round_status_file": round_status_path, "artifacts": artifact_paths,
         "fit_statistics": summary_stats,
     })
-
     return {
         "status": "success",
         "message": f"GalfitS completed successfully for {config_file}. Output files:\n"
@@ -855,27 +851,24 @@ async def run_galfits(
         "per_band_chisq": summary_stats.get("per_band_chisq", {}),
         "parameters": summary_stats.get("parameters", {}),
         "round_status_file": round_status_path,
-        "notification": notification,
     }
 
 async def run_galfits_image_fitting(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
     timeout_sec: Annotated[int, "timeout in seconds"] = 3600,
     extra_args: Annotated[list[str] | None, "extra GalfitS CLI args (e.g. ['--fit_method','optimizer','--num_steps','200'])"] = None,
-    callback_url: Annotated[str | None, "Optional URL notified after this fitting round succeeds"] = None,
 ) -> dict[str, Any]:
     """Execute GalfitS (multi-band) with the given config file for image fitting.
 
     It runs GalfitS as a subprocess and returns discovered artifacts (summary + PNGs) and logs.
     """
-    return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args, callback_url=callback_url)
+    return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
 
 async def run_galfits_sed_fitting(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
     image_fitting_workplace: Annotated[str, "the workplace directory containing results from image fitting, required for sed fitting"],
     timeout_sec: Annotated[int, "timeout in seconds"] = 3600,
     extra_args: Annotated[list[str] | None, "extra GalfitS CLI args (e.g. ['--fit_method','optimizer','--num_steps','200'])"] = None,
-    callback_url: Annotated[str | None, "Optional URL notified after this fitting round succeeds"] = None,
 ) -> dict[str, Any]:
     """
     Execute GalfitS (multi-band) with the given config file for sed fitting.
@@ -911,33 +904,21 @@ async def run_galfits_sed_fitting(
             "status": "failure",
             "message": f"SED fitting in the workplace {workplace_dir} failed: {res.get('message', 'Unknown error')}"
         }
-    artifact_paths = existing_artifacts([new_lyric_file])
-    round_status_path = os.path.join(workplace_dir, "round_status.json")
-    with open(round_status_path, "w", encoding="utf-8") as f:
-        json.dump({"stage": "galfits_sed_finished", "status": "success", "outputs": artifact_paths}, f, ensure_ascii=False, indent=2)
-    notification = notify_fit_round(callback_url, {
-        "event": "fit_round_finished", "fitter": "galfits_sed", "status": "success",
-        "round_id": os.path.basename(workplace_dir), "archive_dir": workplace_dir,
-        "round_status_file": round_status_path, "artifacts": artifact_paths, "fit_statistics": {},
-    })
     return {
         "status": "success",
-        "message": f"SED fitting completed successfully. New lyric file for image-sed fitting generated: {new_lyric_file}",
-        "round_status_file": round_status_path,
-        "notification": notification,
+        "message": f"SED fitting completed successfully. New lyric file for image-sed fitting generated: {new_lyric_file}"
     }    
 
 async def run_galfits_image_sed_fitting(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
     timeout_sec: Annotated[int, "timeout in seconds"] = 3600,
     extra_args: Annotated[list[str] | None, "extra GalfitS CLI args (e.g. ['--fit_method','optimizer','--num_steps','200'])"] = None,
-    callback_url: Annotated[str | None, "Optional URL notified after this fitting round succeeds"] = None,
 ) -> dict[str, Any]:
     """Execute GalfitS (multi-band) with the given config file for combined image and sed fitting.
 
     It runs GalfitS as a subprocess and returns discovered artifacts (summary + PNGs) and logs.
     """
-    return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args, callback_url=callback_url)
+    return await run_galfits(config_file=config_file, timeout_sec=timeout_sec, extra_args=extra_args)
 
 def TEST_create_multiband_comparison_png():
     lyric_file = "/home/jiangbo/galaxy_morphology_mcp/jwst_single_band/1071/output/20260629_191313_obj_1071_iter5_sed/obj_1071_iter5_for_image_sed_fitting.lyric"

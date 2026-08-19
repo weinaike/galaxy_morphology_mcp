@@ -113,6 +113,15 @@ VISUALRAG_MIN_SCORE=0.3            # 质量门：服务端丢弃 score < 该值�
 
 ## 使用方法
 
+### 外部编排与轮次事件
+
+本工程只提供 MCP 拟合与分析能力，不负责启动外部 Agent。平台侧的
+`communication_service` 接收任务、拉起 Codex/Claude，并通过 stdio 挂载本 MCP。
+`run_galfit` 和 `run_galfits_*` 的公开参数不包含通信字段。
+
+编排服务可在启动 MCP 时设置任务级 `FIT_ROUND_EVENT_URL`。拟合成功后 tools 会发布标准
+`fit_round_finished` 事件；普通 CLI 或独立 MCP 未配置该变量时自动使用空发布器，不产生网络请求。
+
 ### 启动 MCP 服务器
 
 **STDIO 模式**（本地 MCP 客户端，如 Claude Code）：

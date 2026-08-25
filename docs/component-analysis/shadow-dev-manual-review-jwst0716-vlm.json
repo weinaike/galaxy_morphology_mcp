@@ -1,0 +1,293 @@
+{
+  "schema_version": "1.0",
+  "review_version": "jwst0716-vlm-manual-review@v2-contract-updated",
+  "dataset_id": "jwst0716",
+  "review_status": "complete_for_requested_scope",
+  "reviewed_result": "docs/component-analysis/shadow-dev-results-jwst0716-vlm.json",
+  "expert_labels": "docs/component-analysis/expert-final-labels.json",
+  "artifact_root": "/tmp/jwst0716-shadow-rounds-20260820-vlm",
+  "methodology": {
+    "expert_label_semantics": "Expert labels describe terminal component sets, not the correct action at every historical round.",
+    "directional_assessment": "A proposal for a currently missing expert-final component is directionally aligned but is not automatically a true positive. A proposal outside the final set is a review priority, not automatically a false positive.",
+    "manual_classification": "Representative-round classifications remain provisional because expert labels describe terminal component sets rather than per-round actions, and no refit was performed to test residual and parameter improvement.",
+    "visual_review_status": "not_in_scope_by_user_direction",
+    "round_level_metric_limit": "The 116 rounds are correlated fitting states from 32 objects, not 116 independent galaxies. Round-level rates diagnose how rules behave across historical states; object-level generalization requires an object-grouped held-out split and aggregation per object or full fitting sequence.",
+    "central_semantics": "Scheme B: Bulge, single-Sersic spheroid, and Disk routing is numeric-only. Legacy spheroid_like remains schema-readable for historical artifacts but is excluded from the v1.2 prompt and rule evidence."
+  },
+  "evaluation_scope": {
+    "excluded_components_from_optimization": ["edge_on_disk"],
+    "exclusion_reason": "The scientific definition and modeling boundary for Edge-on Disk are not yet agreed. Historical counts are retained for audit completeness, but they are excluded from performance conclusions and threshold, prompt, or rule optimization.",
+    "existing_rule_status": "retained_unchanged_pending_scientific_decision"
+  },
+  "vlm_contract_follow_up": {
+    "implemented": [
+      {
+        "issue": "evidence_regions_format_not_exposed",
+        "change": "component-analysis-vlm@v1.1 states the exact band:panel:region_id format, includes a valid example, and instructs the model to use an empty array when localization is unreliable.",
+        "behavioral_scope": "prompt_contract_only; parser, schema, decision rules, thresholds, and workflow are unchanged",
+        "historical_results_rerun": false
+      },
+      {
+        "issue": "candidate_id_image_mapping",
+        "change": "The shadow runner writes candidate_overlay.png with numeric-layer candidate_N markers on each band original/residual panel and passes that image to the VLM. Coordinates remain internal to the renderer and never enter the prompt.",
+        "behavioral_scope": "VLM input image contract; original comparison_png is preserved",
+        "historical_results_rerun": false
+      },
+      {
+        "issue": "central_target_scale_semantics",
+        "change": "Scheme B removes spheroid_like from the v1.2 prompt and removes it from rule-layer evidence. Bulge and single-Sersic routing uses numeric evidence only; the frozen schema retains the label for historical compatibility.",
+        "behavioral_scope": "new prompt and rules; historical artifacts are not rewritten",
+        "historical_results_rerun": false
+      }
+    ],
+    "pending_decisions": [
+      {
+        "issue": "diffraction_localization_and_priority",
+        "decision_needed": "Define the band, panel, and scale localization required for diffraction_psf to veto numeric evidence.",
+        "recommendation": "Require spatially and spectrally matched evidence; scientific review must set the final priority."
+      }
+    ]
+  },
+  "parse_failed_audit": {
+    "total": 19,
+    "cause_counts": {
+      "central_label_exclusivity_mismatch": 7,
+      "truncated_json_response": 7,
+      "evidence_regions_contract_mismatch": 4,
+      "low_quality_label_violation": 1
+    },
+    "root_cause_summary": [
+      "The seven central-label conflicts belong to the historical prompt and central target contract. Scheme B removes spheroid_like from new VLM evidence and routes Bulge/single-Sersic decisions through numeric evidence; the seven historical artifacts remain unchanged and are not rerun.",
+      "All seven strict-JSON syntax failures end abruptly in the middle of an object, property, or string. The artifacts do not retain provider finish_reason or usage metadata, so response truncation is verified but its upstream cause is not.",
+      "The historical prompt does not state the required band:panel:region_id pattern for evidence_regions and shows only an empty-list example. Four otherwise parseable responses therefore violate a contract that was not exposed clearly to the model. This prompt contract is fixed in component-analysis-vlm@v1.1; the historical 116 rounds were not rerun.",
+      "The low-image-quality failure directly violates the explicit instruction to use uncertain when a low-quality flag is present."
+    ],
+    "entries": [
+      {"object_id": "1429", "round_id": "20260717_045153_obj_1429_iter2", "cause": "central_label_exclusivity_mismatch", "detail": "central=disk_like and central=spheroid_like"},
+      {"object_id": "163", "round_id": "20260717_131744_obj_163_iter5", "cause": "evidence_regions_contract_mismatch", "detail": "Coordinate array used where a string was required."},
+      {"object_id": "163", "round_id": "20260717_132629_obj_163_iter6", "cause": "evidence_regions_contract_mismatch", "detail": "Free-form region names do not match band:panel:region_id."},
+      {"object_id": "1803", "round_id": "20260717_170946_obj_1803_iter3", "cause": "central_label_exclusivity_mismatch", "detail": "central=disk_like, spheroid_like, and spiral_arm"},
+      {"object_id": "1803", "round_id": "20260717_174809_obj_1803_iter7", "cause": "central_label_exclusivity_mismatch", "detail": "central=disk_like, spheroid_like, and spiral_arm"},
+      {"object_id": "1803", "round_id": "20260717_181250_obj_1803_iter10", "cause": "truncated_json_response", "detail": "Response ends after the quality_flags property name."},
+      {"object_id": "2185", "round_id": "20260718_042426_obj_2185_iter2", "cause": "low_quality_label_violation", "detail": "disk_like was emitted with low_image_quality instead of uncertain."},
+      {"object_id": "1071", "round_id": "20260716_195552_obj_1071_iter4", "cause": "truncated_json_response", "detail": "Response ends in the candidate_1 confidence value."},
+      {"object_id": "1429", "round_id": "20260717_050010_obj_1429_iter3", "cause": "central_label_exclusivity_mismatch", "detail": "central=disk_like and central=spheroid_like; candidate_1 also has conflicting compact-excess and diffraction labels."},
+      {"object_id": "1803", "round_id": "20260717_172017_obj_1803_iter4", "cause": "truncated_json_response", "detail": "Response ends immediately after opening another observation object."},
+      {"object_id": "2185", "round_id": "20260718_042954_obj_2185_iter3", "cause": "evidence_regions_contract_mismatch", "detail": "original_data and model do not match band:panel:region_id."},
+      {"object_id": "28", "round_id": "20260718_054906_obj_28_iter4", "cause": "truncated_json_response", "detail": "Response ends inside a confidence property name."},
+      {"object_id": "365", "round_id": "20260718_170012_obj_365_iter3", "cause": "truncated_json_response", "detail": "Response ends inside the central_compact_excess label."},
+      {"object_id": "1831", "round_id": "20260717_193341_obj_1831", "cause": "evidence_regions_contract_mismatch", "detail": "Band names alone do not match band:panel:region_id."},
+      {"object_id": "170", "round_id": "20260717_154445_obj_170_iter2", "cause": "central_label_exclusivity_mismatch", "detail": "central=disk_like, spheroid_like, and spiral_arm"},
+      {"object_id": "170", "round_id": "20260717_155340_obj_170_iter3", "cause": "central_label_exclusivity_mismatch", "detail": "central=disk_like, spheroid_like, and spiral_arm"},
+      {"object_id": "170", "round_id": "20260717_160304_obj_170_iter4", "cause": "truncated_json_response", "detail": "Response ends inside a target_id property name."},
+      {"object_id": "314", "round_id": "20260718_080429_obj_314_iter4", "cause": "central_label_exclusivity_mismatch", "detail": "central=disk_like and central=spheroid_like"},
+      {"object_id": "331", "round_id": "20260718_122733_obj_331_iter6", "cause": "truncated_json_response", "detail": "Response ends in the central spheroid_like confidence value."}
+    ]
+  },
+  "full_set_direction_summary": {
+    "rounds": 116,
+    "objects": 32,
+    "actions": {"PROPOSE_ADD": 48, "KEEP_AND_CONTINUE": 68, "PROPOSE_REMOVE": 0, "PROPOSE_REPLACE": 0},
+    "proposal_direction": {"missing_expert_final_component": 16, "outside_expert_final": 32},
+    "keep_direction": {"exact_component_set": 15, "missing_final_component": 44, "extra_component_only": 9},
+    "proposal_components": {
+      "bar": {"total": 14, "missing_expert_final_component": 6, "outside_expert_final": 8},
+      "bulge": {"total": 11, "missing_expert_final_component": 5, "outside_expert_final": 6},
+      "companion": {"total": 18, "missing_expert_final_component": 4, "outside_expert_final": 14},
+      "disk": {"total": 1, "missing_expert_final_component": 1, "outside_expert_final": 0},
+      "fourier_m1": {"total": 4, "missing_expert_final_component": 0, "outside_expert_final": 4}
+    },
+    "missing_component_opportunities": {
+      "agn": {"rounds": 9, "direct_proposals": 0},
+      "bar": {"rounds": 22, "direct_proposals": 6},
+      "bulge": {"rounds": 22, "direct_proposals": 5},
+      "companion": {"rounds": 17, "direct_proposals": 4},
+      "disk": {"rounds": 1, "direct_proposals": 1},
+      "edge_on_disk": {"rounds": 6, "direct_proposals": 0, "optimization_status": "out_of_scope_pending_scientific_definition"},
+      "fourier_m1": {"rounds": 34, "direct_proposals": 0}
+    },
+    "vlm_vs_numeric_only": {
+      "changed_actions": 21,
+      "suppressed_outside_final_proposals": 13,
+      "suppressed_missing_final_proposals": 6,
+      "changed_proposal_target_or_component": 2,
+      "numeric_only_proposals": 67,
+      "full_vlm_proposals": 48,
+      "numeric_only_directional_alignment_fraction": 0.3284,
+      "full_vlm_directional_alignment_fraction": 0.3333
+    },
+    "candidate_localization_issue": {
+      "candidate_observations_in_parse_ok_rounds": 286,
+      "independent_source_observations": 142,
+      "problem": "Historical runs provided candidate IDs but no coordinates or candidate-ID overlay, so their candidate-specific VLM labels lack a verifiable image-to-ID mapping.",
+      "decision_impact": "Five historical Companion rules were marked SATISFIED from independent_source labels; four proposed companions outside the expert final set and one proposed a final-set companion. Thirteen additional Companion actions are trial-fit resolutions of INCONCLUSIVE evidence.",
+      "current_status": "implemented_for_new_runs_with_candidate_overlay"
+    }
+  },
+  "representative_batch": {
+    "selection_count": 16,
+    "visual_review_status": "not_in_scope_by_user_direction",
+    "reviews": [
+      {
+        "object_id": "170",
+        "round_id": "20260717_153356_obj_170",
+        "action": "PROPOSE_ADD bulge",
+        "key_evidence": "central_excess_multiband=true; four strong bands are resolved with SNR 22.7-55.3; expert final is disk+fourier_m1+bulge.",
+        "vlm_assessment": "central=disk_like is compatible with the galaxy but does not describe the resolved central excess.",
+        "rule_assessment": "The numeric resolved-source rule is applied as designed; no VLM conflict label is present.",
+        "classification": "provisional_true_positive",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1071",
+        "round_id": "20260716_194051_obj_1071_iter2",
+        "action": "PROPOSE_ADD bar",
+        "key_evidence": "F277W and F150W pass the strong isophote and explicit psf_veto=false gates; bar is the only missing expert-final component.",
+        "vlm_assessment": "central=edge_on_disk is outside the current optimization scope and is not required by the strong Bar rule.",
+        "rule_assessment": "The rule correctly relies on quality-gated numeric Bar evidence and does not require a positive VLM label.",
+        "classification": "provisional_true_positive",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1639",
+        "round_id": "20260717_145129_obj_1639_iter2",
+        "action": "PROPOSE_ADD disk",
+        "key_evidence": "extent/PSF=14.03, stable outer geometry, systematic outer residual, and central=disk_like; disk is missing from the final set.",
+        "vlm_assessment": "disk_like is directionally consistent, but confidence 0.85 with occluded_by_mask should be treated cautiously.",
+        "rule_assessment": "The N1/N2/N3 and VLM combination is applied correctly.",
+        "classification": "provisional_true_positive",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1429",
+        "round_id": "20260717_044425_obj_1429",
+        "action": "KEEP_AND_CONTINUE",
+        "key_evidence": "Bulge is missing; central excess is multiband and F410M is strongly resolved at SNR=20.9, with several weak resolved bands.",
+        "vlm_assessment": "central=diffraction_psf may identify contamination but does not by itself negate a resolved central excess.",
+        "rule_assessment": "A global diffraction label overrides the resolved-source evidence without band- or region-matched VLM support.",
+        "classification": "provisional_false_negative",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "28",
+        "round_id": "20260718_052329_obj_28",
+        "action": "KEEP_AND_CONTINUE",
+        "key_evidence": "Final label is edge_on_disk; VLM reports edge_on_disk and dust_lane at 0.95, extent/PSF=18.95, PA is stable, but outer q=0.268 misses the hard q<0.17 trigger.",
+        "vlm_assessment": "The two labels are mutually compatible and directionally match the expert final label.",
+        "rule_assessment": "No threshold judgment is made because the scientific definition and modeling boundary for Edge-on Disk are unresolved.",
+        "classification": "out_of_scope_edge_on_disk",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "331",
+        "round_id": "20260718_115818_obj_331_iter2",
+        "action": "KEEP_AND_CONTINUE",
+        "key_evidence": "Bar is missing; F115W passes the strong isophote and psf_veto=false gates; the final set contains Bar.",
+        "vlm_assessment": "central=diffraction_psf conflicts with the F115W numeric pass but is not tied to a specific band or Bar-scale region.",
+        "rule_assessment": "The global VLM diffraction veto suppresses band-specific numeric Bar evidence; this is an over-broad use of VLM evidence.",
+        "classification": "provisional_false_negative",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1502",
+        "round_id": "20260717_081358_obj_1502_iter5",
+        "action": "KEEP_AND_CONTINUE",
+        "key_evidence": "The source already matches the final disk+bulge set. Four bands pass numeric Bar gates, while two long-wave bands have psf_veto=true.",
+        "vlm_assessment": "central=diffraction_psf supports caution and the terminal direction, but is not band-matched to the four numeric passes.",
+        "rule_assessment": "The outcome is directionally favorable, but the same global veto logic that misses obj331 is not sufficiently localized.",
+        "classification": "provisional_true_negative",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "163",
+        "round_id": "20260717_131744_obj_163_iter5",
+        "action": "KEEP_AND_CONTINUE",
+        "key_evidence": "The source exactly matches the final set; central excess is false, residual elongation is false, and available Bar profiles fail scale or PSF gates.",
+        "vlm_assessment": "The raw spheroid_like observation is plausible for a Bulge but was rejected only because evidence_regions used coordinates.",
+        "rule_assessment": "Numeric-only degradation does not change the scientifically supported KEEP direction.",
+        "classification": "provisional_true_negative",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "2185",
+        "round_id": "20260718_042426_obj_2185_iter2",
+        "action": "KEEP_AND_CONTINUE",
+        "key_evidence": "The source exactly matches the final single Disk, but extent and outer geometry are unavailable and all central measurements are below SNR 10.",
+        "vlm_assessment": "disk_like with low_image_quality violates the explicit uncertain-label instruction.",
+        "rule_assessment": "The fallback KEEP is conservative, but the evidence quality is insufficient for a strong true-negative claim.",
+        "classification": "evidence_insufficient",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1825",
+        "round_id": "20260717_190207_obj_1825_iter3",
+        "action": "PROPOSE_ADD companion candidate_9",
+        "key_evidence": "candidate_9 has an original-image match and detections in all seven bands at residual SNR 5.4-16.3; Companion is the missing final component.",
+        "vlm_assessment": "No candidate_9 observation was returned, so there is no visual independent-source confirmation.",
+        "rule_assessment": "The rule returns INCONCLUSIVE and policy correctly downgrades it to a trial fit.",
+        "classification": "evidence_insufficient",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1429",
+        "round_id": "20260717_045153_obj_1429_iter2",
+        "action": "PROPOSE_ADD companion candidate_5",
+        "key_evidence": "candidate_5 has an original-image match and five-band detections at residual SNR 5.6-11.9, but the current source already matches the final set.",
+        "vlm_assessment": "The raw response gives candidate_5=uncertain; disk_like+spheroid_like was rejected because central labels are treated as exclusive.",
+        "rule_assessment": "The weak trial-fit path is appropriate; it must not be counted as a confirmed positive.",
+        "classification": "evidence_insufficient_high_false_positive_risk",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1803",
+        "round_id": "20260717_181250_obj_1803_iter10",
+        "action": "PROPOSE_ADD companion candidate_16",
+        "key_evidence": "candidate_16 has an original-image match and seven-band detections, but all residual SNR values are only 6.8-9.4 and the current set already matches the final set.",
+        "vlm_assessment": "The response was truncated; preceding content labels many masked candidates as independent sources, which is not a reliable candidate-specific assessment.",
+        "rule_assessment": "The rule remains INCONCLUSIVE and policy proposes only a trial fit.",
+        "classification": "evidence_insufficient_high_false_positive_risk",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1071",
+        "round_id": "20260716_200158_obj_1071_iter5",
+        "action": "PROPOSE_ADD companion candidate_4",
+        "key_evidence": "candidate_4 has an original-image match and three-band detections at residual SNR 6.7-8.1; the current set already matches the final set.",
+        "vlm_assessment": "All six candidates are labeled independent_source at 0.9 even though the prompt and PNG provide no image-to-ID mapping.",
+        "rule_assessment": "The rule mechanically uses the label correctly, but the VLM evidence is not epistemically grounded to candidate_4.",
+        "classification": "evidence_insufficient_high_false_positive_risk",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1398",
+        "round_id": "20260717_041513_obj_1398_iter4",
+        "action": "PROPOSE_ADD bar",
+        "key_evidence": "Residual m2=0.579 and central elongation are positive, but every available isophote profile has psf_veto=null and the current set already matches the final set.",
+        "vlm_assessment": "peanut_x at 0.7 is the only VLM label that enables the weak Bar rule; the edge_on_disk observation is outside the current optimization scope.",
+        "rule_assessment": "The rule uses VLM as specified, but the decisive VLM observation is weak and not corroborated by a PSF-cleared Bar band.",
+        "classification": "evidence_insufficient_high_false_positive_risk",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "2758",
+        "round_id": "20260718_044529_obj_2758_iter1",
+        "action": "PROPOSE_ADD fourier_m1",
+        "key_evidence": "original_m1_amplitude=0.148 exceeds the 0.1 trigger and m1_confusion_present=false, but the final label is Disk only and extent/PSF=2.94 is below the Disk extent threshold.",
+        "vlm_assessment": "central=edge_on_disk is outside the current optimization scope and is not used by the m1 rule.",
+        "rule_assessment": "The numeric m1 rule is applied exactly as specified; refit and visual checks are still required before calling it a false positive.",
+        "classification": "evidence_insufficient_high_false_positive_risk",
+        "visual_support": "not_assessed"
+      },
+      {
+        "object_id": "1833",
+        "round_id": "20260717_211408_obj_1833_iter1",
+        "action": "PROPOSE_ADD bulge",
+        "key_evidence": "Central excess is true and four bands are strongly resolved at SNR 22.0-52.5, but the final set instead contains Bar, Companion, and Fourier m=1 without Bulge.",
+        "vlm_assessment": "central=spheroid_like supports a central component, while all candidates are uncertain.",
+        "rule_assessment": "The Bulge rule has genuine evidence but runs before Bar and Companion; the excess may be a competing structure rather than a terminal Bulge.",
+        "classification": "evidence_insufficient_competing_explanation",
+        "visual_support": "not_assessed"
+      }
+    ]
+  }
+}

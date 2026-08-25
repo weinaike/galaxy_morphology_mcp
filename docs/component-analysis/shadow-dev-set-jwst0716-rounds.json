@@ -1,0 +1,3274 @@
+{
+  "schema_version": "2.0",
+  "dataset_id": "jwst0716",
+  "fitting_root": "/home/www/2026/GALFITS_examples/jwst0716",
+  "expert_labels_file": "docs/component-analysis/expert-final-labels.json",
+  "sample_count": 116,
+  "relation_counts": {
+    "exact": 29,
+    "extra_or_conflicting": 15,
+    "missing_multiple": 24,
+    "missing_one": 26,
+    "mixed_difference": 22
+  },
+  "selection_policy": {
+    "ground_truth": "expert-final-labels.json is the only expert truth source. Historical fitting rounds are shadow inputs, never expert final results.",
+    "round_scope": "Non-SED historical rounds with lyric, gssummary, comparison PNG, and manifest validation passed.",
+    "exact": "Keep every complete round whose semantic source_components exactly match the expert final components.",
+    "missing": "Keep every complete round missing one or multiple expert final components.",
+    "extra_or_conflicting": "Keep the earliest complete representative round per object whose source has extra components but no missing final component.",
+    "mixed_difference": "Keep the earliest complete representative round per object whose source both misses expert components and contains extra components.",
+    "semantic_mapping": "Component names and comments come from lyric. A disk sersic_f profile with Pa21=1 is normalized to disk plus fourier_m1. gssummary supplies BIC and reduced_chisq."
+  },
+  "evaluation_scope": {
+    "target": "Manual compatibility review of each shadow decision against expert_final_components and the source-to-final relation bucket.",
+    "not_evaluated": [
+      "Reproduction of the expert action sequence.",
+      "Treating any historical round as expert final truth.",
+      "Numerical parameter quality after an unimplemented refit."
+    ]
+  },
+  "samples": [
+    {
+      "object_id": "1071",
+      "round_id": "20260716_200158_obj_1071_iter5",
+      "round_dir": "1071/output/20260716_200158_obj_1071_iter5",
+      "lyric_file": "obj_1071_iter5.lyric",
+      "summary_file": "obj1071.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 82048.671875,
+        "reduced_chisq": 0.38069698214530945
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1398",
+      "round_id": "20260717_040038_obj_1398_iter2",
+      "round_dir": "1398/output/20260717_040038_obj_1398_iter2",
+      "lyric_file": "obj_1398_iter2.lyric",
+      "summary_file": "obj1398.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 74221.9296875,
+        "reduced_chisq": 0.34367460012435913
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1398",
+      "round_id": "20260717_041513_obj_1398_iter4",
+      "round_dir": "1398/output/20260717_041513_obj_1398_iter4",
+      "lyric_file": "obj_1398_iter4.lyric",
+      "summary_file": "obj1398.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 74119.8515625,
+        "reduced_chisq": 0.3430878818035126
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1429",
+      "round_id": "20260717_045153_obj_1429_iter2",
+      "round_dir": "1429/output/20260717_045153_obj_1429_iter2",
+      "lyric_file": "obj_1429_iter2.lyric",
+      "summary_file": "obj1429.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 117676.1640625,
+        "reduced_chisq": 0.25787338614463806
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1502",
+      "round_id": "20260717_075859_obj_1502_iter3",
+      "round_dir": "1502/output/20260717_075859_obj_1502_iter3",
+      "lyric_file": "obj_1502_iter3.lyric",
+      "summary_file": "obj1502.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 52068.10546875,
+        "reduced_chisq": 0.3122037649154663
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1502",
+      "round_id": "20260717_081358_obj_1502_iter5",
+      "round_dir": "1502/output/20260717_081358_obj_1502_iter5",
+      "lyric_file": "obj_1502_iter5.lyric",
+      "summary_file": "obj1502.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 52067.546875,
+        "reduced_chisq": 0.3122003972530365
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1574",
+      "round_id": "20260717_105439_obj_1574_iter2",
+      "round_dir": "1574/output/20260717_105439_obj_1574_iter2",
+      "lyric_file": "obj_1574_iter2.lyric",
+      "summary_file": "obj1574.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 148457.921875,
+        "reduced_chisq": 0.32317450642585754
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1574",
+      "round_id": "20260717_111659_obj_1574_iter4",
+      "round_dir": "1574/output/20260717_111659_obj_1574_iter4",
+      "lyric_file": "obj_1574_iter4.lyric",
+      "summary_file": "obj1574.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 149173.171875,
+        "reduced_chisq": 0.3247932493686676
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_130428_obj_163_iter3",
+      "round_dir": "163/output/20260717_130428_obj_163_iter3",
+      "lyric_file": "obj_163_iter3.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 200153.078125,
+        "reduced_chisq": 0.33993038535118103
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_131319_obj_163_iter4",
+      "round_dir": "163/output/20260717_131319_obj_163_iter4",
+      "lyric_file": "obj_163_iter4.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 203066.140625,
+        "reduced_chisq": 0.3449133038520813
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_131744_obj_163_iter5",
+      "round_dir": "163/output/20260717_131744_obj_163_iter5",
+      "lyric_file": "obj_163_iter5.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 199259.734375,
+        "reduced_chisq": 0.33836492896080017
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_132629_obj_163_iter6",
+      "round_dir": "163/output/20260717_132629_obj_163_iter6",
+      "lyric_file": "obj_163_iter6.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 198547.9375,
+        "reduced_chisq": 0.33715274930000305
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_133518_obj_163_iter7",
+      "round_dir": "163/output/20260717_133518_obj_163_iter7",
+      "lyric_file": "obj_163_iter7.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 198656.828125,
+        "reduced_chisq": 0.3373382091522217
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_133925_obj_163_iter8",
+      "round_dir": "163/output/20260717_133925_obj_163_iter8",
+      "lyric_file": "obj_163_iter8.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 198743.296875,
+        "reduced_chisq": 0.3375295400619507
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "170",
+      "round_id": "20260717_162232_obj_170_iter6",
+      "round_dir": "170/output/20260717_162232_obj_170_iter6",
+      "lyric_file": "obj_170_iter6.lyric",
+      "summary_file": "obj170.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 471816.0625,
+        "reduced_chisq": 0.3845934271812439
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1803",
+      "round_id": "20260717_170946_obj_1803_iter3",
+      "round_dir": "1803/output/20260717_170946_obj_1803_iter3",
+      "lyric_file": "obj_1803_iter3.lyric",
+      "summary_file": "obj1803.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 398886.84375,
+        "reduced_chisq": 0.4148412346839905
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1803",
+      "round_id": "20260717_174809_obj_1803_iter7",
+      "round_dir": "1803/output/20260717_174809_obj_1803_iter7",
+      "lyric_file": "obj_1803_iter7.lyric",
+      "summary_file": "obj1803.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 398788.34375,
+        "reduced_chisq": 0.41473865509033203
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1803",
+      "round_id": "20260717_180819_obj_1803_iter9",
+      "round_dir": "1803/output/20260717_180819_obj_1803_iter9",
+      "lyric_file": "obj_1803_iter9.lyric",
+      "summary_file": "obj1803.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 398710.78125,
+        "reduced_chisq": 0.414657860994339
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1803",
+      "round_id": "20260717_181250_obj_1803_iter10",
+      "round_dir": "1803/output/20260717_181250_obj_1803_iter10",
+      "lyric_file": "obj_1803_iter10.lyric",
+      "summary_file": "obj1803.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 398856.46875,
+        "reduced_chisq": 0.41483744978904724
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1845",
+      "round_id": "20260717_225348_obj_1845_iter2",
+      "round_dir": "1845/output/20260717_225348_obj_1845_iter2",
+      "lyric_file": "obj_1845_iter2.lyric",
+      "summary_file": "obj1845.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 30042.958984375,
+        "reduced_chisq": 0.3670197129249573
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "216",
+      "round_id": "20260718_023900_obj_216_iter2",
+      "round_dir": "216/output/20260718_023900_obj_216_iter2",
+      "lyric_file": "obj_216_iter2.lyric",
+      "summary_file": "obj216.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 63383.01953125,
+        "reduced_chisq": 0.5706250071525574
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "2185",
+      "round_id": "20260718_042010_obj_2185",
+      "round_dir": "2185/output/20260718_042010_obj_2185",
+      "lyric_file": "obj_2185.lyric",
+      "summary_file": "obj2185.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 15969.0791015625,
+        "reduced_chisq": 0.3503740429878235
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "2185",
+      "round_id": "20260718_042426_obj_2185_iter2",
+      "round_dir": "2185/output/20260718_042426_obj_2185_iter2",
+      "lyric_file": "obj_2185_iter2.lyric",
+      "summary_file": "obj2185.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 15958.6982421875,
+        "reduced_chisq": 0.3503735363483429
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "2758",
+      "round_id": "20260718_044529_obj_2758_iter1",
+      "round_dir": "2758/output/20260718_044529_obj_2758_iter1",
+      "lyric_file": "obj_2758_iter1.lyric",
+      "summary_file": "obj2758.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 8521.8544921875,
+        "reduced_chisq": 0.33501937985420227
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "2758",
+      "round_id": "20260718_044959_obj_2758_iter2",
+      "round_dir": "2758/output/20260718_044959_obj_2758_iter2",
+      "lyric_file": "obj_2758_iter2.lyric",
+      "summary_file": "obj2758.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 8552.4013671875,
+        "reduced_chisq": 0.33665692806243896
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "2758",
+      "round_id": "20260718_045400_obj_2758_iter3",
+      "round_dir": "2758/output/20260718_045400_obj_2758_iter3",
+      "lyric_file": "obj_2758_iter3.lyric",
+      "summary_file": "obj2758.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 8520.17578125,
+        "reduced_chisq": 0.3349511921405792
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "331",
+      "round_id": "20260718_120506_obj_331_iter3",
+      "round_dir": "331/output/20260718_120506_obj_331_iter3",
+      "lyric_file": "obj_331_iter3.lyric",
+      "summary_file": "obj331.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 99338,
+        "reduced_chisq": 0.3371676802635193
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "331",
+      "round_id": "20260718_121215_obj_331_iter4",
+      "round_dir": "331/output/20260718_121215_obj_331_iter4",
+      "lyric_file": "obj_331_iter4.lyric",
+      "summary_file": "obj331.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 100032.84375,
+        "reduced_chisq": 0.33975064754486084
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "331",
+      "round_id": "20260718_122015_obj_331_iter5",
+      "round_dir": "331/output/20260718_122015_obj_331_iter5",
+      "lyric_file": "obj_331_iter5.lyric",
+      "summary_file": "obj331.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "exact",
+      "missing_components": [],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 99625.8984375,
+        "reduced_chisq": 0.33819305896759033
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1071",
+      "round_id": "20260716_195552_obj_1071_iter4",
+      "round_dir": "1071/output/20260716_195552_obj_1071_iter4",
+      "lyric_file": "obj_1071_iter4.lyric",
+      "summary_file": "obj1071.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "agn",
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "agn"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 81878.2265625,
+        "reduced_chisq": 0.37929099798202515
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1398",
+      "round_id": "20260717_040813_obj_1398_iter3",
+      "round_dir": "1398/output/20260717_040813_obj_1398_iter3",
+      "lyric_file": "obj_1398_iter3.lyric",
+      "summary_file": "obj1398.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bar"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 73919.2265625,
+        "reduced_chisq": 0.34170830249786377
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1429",
+      "round_id": "20260717_050010_obj_1429_iter3",
+      "round_dir": "1429/output/20260717_050010_obj_1429_iter3",
+      "lyric_file": "obj_1429_iter3.lyric",
+      "summary_file": "obj1429.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "companion",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "companion"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 115335.390625,
+        "reduced_chisq": 0.2523573338985443
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1502",
+      "round_id": "20260717_080610_obj_1502_iter4",
+      "round_dir": "1502/output/20260717_080610_obj_1502_iter4",
+      "lyric_file": "obj_1502_iter4.lyric",
+      "summary_file": "obj1502.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bar"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 54040.87890625,
+        "reduced_chisq": 0.3234274387359619
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1574",
+      "round_id": "20260717_110450_obj_1574_iter3",
+      "round_dir": "1574/output/20260717_110450_obj_1574_iter3",
+      "lyric_file": "obj_1574_iter3.lyric",
+      "summary_file": "obj1574.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 148231.5625,
+        "reduced_chisq": 0.3224298059940338
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_135455_obj_163_iter9",
+      "round_dir": "163/output/20260717_135455_obj_163_iter9",
+      "lyric_file": "obj_163_iter9.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bar"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 198309.390625,
+        "reduced_chisq": 0.3364819288253784
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1803",
+      "round_id": "20260717_172017_obj_1803_iter4",
+      "round_dir": "1803/output/20260717_172017_obj_1803_iter4",
+      "lyric_file": "obj_1803_iter4.lyric",
+      "summary_file": "obj1803.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "agn",
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "agn"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 383815.03125,
+        "reduced_chisq": 0.39900338649749756
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1831",
+      "round_id": "20260717_194744_obj_1831_iter3",
+      "round_dir": "1831/output/20260717_194744_obj_1831_iter3",
+      "lyric_file": "obj_1831_iter3.lyric",
+      "summary_file": "obj1831.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 5,
+      "gssummary": {
+        "bic": 54914.1640625,
+        "reduced_chisq": 0.5291389226913452
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1845",
+      "round_id": "20260717_230118_obj_1845_iter3",
+      "round_dir": "1845/output/20260717_230118_obj_1845_iter3",
+      "lyric_file": "obj_1845_iter3.lyric",
+      "summary_file": "obj1845.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 27373.435546875,
+        "reduced_chisq": 0.33226025104522705
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "186",
+      "round_id": "20260718_003935_obj_186_iter4",
+      "round_dir": "186/output/20260718_003935_obj_186_iter4",
+      "lyric_file": "obj_186_iter4.lyric",
+      "summary_file": "obj186.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "edge_on_disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 59941.4765625,
+        "reduced_chisq": 0.3643416464328766
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "216",
+      "round_id": "20260718_024421_obj_216_iter3",
+      "round_dir": "216/output/20260718_024421_obj_216_iter3",
+      "lyric_file": "obj_216_iter3.lyric",
+      "summary_file": "obj216.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 65772.4375,
+        "reduced_chisq": 0.5921436548233032
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "2185",
+      "round_id": "20260718_042954_obj_2185_iter3",
+      "round_dir": "2185/output/20260718_042954_obj_2185_iter3",
+      "lyric_file": "obj_2185_iter3.lyric",
+      "summary_file": "obj2185.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 16011.201171875,
+        "reduced_chisq": 0.34992653131484985
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "2758",
+      "round_id": "20260718_045928_obj_2758_iter4",
+      "round_dir": "2758/output/20260718_045928_obj_2758_iter4",
+      "lyric_file": "obj_2758_iter4.lyric",
+      "summary_file": "obj2758.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 8593.6318359375,
+        "reduced_chisq": 0.33316969871520996
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "28",
+      "round_id": "20260718_054906_obj_28_iter4",
+      "round_dir": "28/output/20260718_054906_obj_28_iter4",
+      "lyric_file": "obj_28_iter4.lyric",
+      "summary_file": "obj28.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "edge_on_disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 270585.9375,
+        "reduced_chisq": 0.6766895055770874
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "365",
+      "round_id": "20260718_170012_obj_365_iter3",
+      "round_dir": "365/output/20260718_170012_obj_365_iter3",
+      "lyric_file": "obj_365_iter3.lyric",
+      "summary_file": "obj365.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "extra_or_conflicting",
+      "missing_components": [],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 275025.90625,
+        "reduced_chisq": 0.31959637999534607
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "104",
+      "round_id": "20260716_175416_obj_104",
+      "round_dir": "104/output/20260716_175416_obj_104",
+      "lyric_file": "obj_104.lyric",
+      "summary_file": "obj104.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "agn",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 71292.3984375,
+        "reduced_chisq": 0.36772048473358154
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "104",
+      "round_id": "20260716_182152_obj_104_iter4",
+      "round_dir": "104/output/20260716_182152_obj_104_iter4",
+      "lyric_file": "obj_104_iter4.lyric",
+      "summary_file": "obj104.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "agn",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 71292.3671875,
+        "reduced_chisq": 0.3677203059196472
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1071",
+      "round_id": "20260716_193225_obj_1071",
+      "round_dir": "1071/output/20260716_193225_obj_1071",
+      "lyric_file": "obj_1071.lyric",
+      "summary_file": "obj1071.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 84371.8671875,
+        "reduced_chisq": 0.392147958278656
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1118",
+      "round_id": "20260716_210552_obj_1118",
+      "round_dir": "1118/output/20260716_210552_obj_1118",
+      "lyric_file": "obj_1118.lyric",
+      "summary_file": "obj1118.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "agn",
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "agn",
+        "bar",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 49580.59375,
+        "reduced_chisq": 0.347255676984787
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1182",
+      "round_id": "20260716_230143_obj_1182_iter1",
+      "round_dir": "1182/output/20260716_230143_obj_1182_iter1",
+      "lyric_file": "obj_1182_iter1.lyric",
+      "summary_file": "obj1182.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bulge",
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 75499.5078125,
+        "reduced_chisq": 0.3851367235183716
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1182",
+      "round_id": "20260717_002406_obj_1182_iter9",
+      "round_dir": "1182/output/20260717_002406_obj_1182_iter9",
+      "lyric_file": "obj_1182_iter9.lyric",
+      "summary_file": "obj1182.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 71258.1875,
+        "reduced_chisq": 0.362679660320282
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1574",
+      "round_id": "20260717_104329_obj_1574",
+      "round_dir": "1574/output/20260717_104329_obj_1574",
+      "lyric_file": "obj_1574.lyric",
+      "summary_file": "obj1574.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 156939.34375,
+        "reduced_chisq": 0.3422100245952606
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_124329_obj_163",
+      "round_dir": "163/output/20260717_124329_obj_163",
+      "lyric_file": "obj_163.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bulge",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 205667.671875,
+        "reduced_chisq": 0.3496299982070923
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1639",
+      "round_id": "20260717_144328_obj_1639",
+      "round_dir": "1639/output/20260717_144328_obj_1639",
+      "lyric_file": "obj_1639.lyric",
+      "summary_file": "obj1639.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "agn",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 119565.875,
+        "reduced_chisq": 0.3384874165058136
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "170",
+      "round_id": "20260717_153356_obj_170",
+      "round_dir": "170/output/20260717_153356_obj_170",
+      "lyric_file": "obj_170.lyric",
+      "summary_file": "obj170.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bulge",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 530096.4375,
+        "reduced_chisq": 0.4323504567146301
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1803",
+      "round_id": "20260717_164902_obj_1803",
+      "round_dir": "1803/output/20260717_164902_obj_1803",
+      "lyric_file": "obj_1803.lyric",
+      "summary_file": "obj1803.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bulge",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 452182.71875,
+        "reduced_chisq": 0.47058871388435364
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1825",
+      "round_id": "20260717_184712_obj_1825",
+      "round_dir": "1825/output/20260717_184712_obj_1825",
+      "lyric_file": "obj_1825.lyric",
+      "summary_file": "obj1825.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 112729.5625,
+        "reduced_chisq": 0.39712879061698914
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1831",
+      "round_id": "20260717_193341_obj_1831",
+      "round_dir": "1831/output/20260717_193341_obj_1831",
+      "lyric_file": "obj_1831.lyric",
+      "summary_file": "obj1831.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bulge",
+        "companion"
+      ],
+      "extra_components": [],
+      "band_count": 5,
+      "gssummary": {
+        "bic": 58645.9296875,
+        "reduced_chisq": 0.5681171417236328
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1833",
+      "round_id": "20260717_211408_obj_1833_iter1",
+      "round_dir": "1833/output/20260717_211408_obj_1833_iter1",
+      "lyric_file": "obj_1833_iter1.lyric",
+      "summary_file": "obj1833.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 65920.328125,
+        "reduced_chisq": 0.5046610236167908
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1833",
+      "round_id": "20260717_212121_obj_1833_iter2",
+      "round_dir": "1833/output/20260717_212121_obj_1833_iter2",
+      "lyric_file": "obj_1833_iter2.lyric",
+      "summary_file": "obj1833.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "companion"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 65848.8125,
+        "reduced_chisq": 0.5035037994384766
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1833",
+      "round_id": "20260717_213710_obj_1833_iter4",
+      "round_dir": "1833/output/20260717_213710_obj_1833_iter4",
+      "lyric_file": "obj_1833_iter4.lyric",
+      "summary_file": "obj1833.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 54730.1640625,
+        "reduced_chisq": 0.41779187321662903
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1833",
+      "round_id": "20260717_214540_obj_1833_iter5",
+      "round_dir": "1833/output/20260717_214540_obj_1833_iter5",
+      "lyric_file": "obj_1833_iter5.lyric",
+      "summary_file": "obj1833.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 54728.515625,
+        "reduced_chisq": 0.41777917742729187
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "205",
+      "round_id": "20260718_013112_obj_205",
+      "round_dir": "205/output/20260718_013112_obj_205",
+      "lyric_file": "obj_205.lyric",
+      "summary_file": "obj205.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bulge",
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 257900.21875,
+        "reduced_chisq": 0.6027384400367737
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "287",
+      "round_id": "20260718_062018_obj_287",
+      "round_dir": "287/output/20260718_062018_obj_287",
+      "lyric_file": "obj_287.lyric",
+      "summary_file": "obj287.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "agn",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "agn",
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 93622.140625,
+        "reduced_chisq": 0.5716512799263
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "314",
+      "round_id": "20260718_074647_obj_314",
+      "round_dir": "314/output/20260718_074647_obj_314",
+      "lyric_file": "obj_314.lyric",
+      "summary_file": "obj314.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bulge",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 49896.2734375,
+        "reduced_chisq": 0.564485490322113
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "317",
+      "round_id": "20260718_090623_obj_317",
+      "round_dir": "317/output/20260718_090623_obj_317",
+      "lyric_file": "obj_317.lyric",
+      "summary_file": "obj317.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 6,
+      "gssummary": {
+        "bic": 111953.578125,
+        "reduced_chisq": 0.8111337423324585
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "331",
+      "round_id": "20260718_114403_obj_331",
+      "round_dir": "331/output/20260718_114403_obj_331",
+      "lyric_file": "obj_331.lyric",
+      "summary_file": "obj331.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 106221.2734375,
+        "reduced_chisq": 0.3616848289966583
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "345",
+      "round_id": "20260718_132226_obj_345",
+      "round_dir": "345/output/20260718_132226_obj_345",
+      "lyric_file": "obj_345.lyric",
+      "summary_file": "obj345.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 45350.5546875,
+        "reduced_chisq": 0.35224196314811707
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "345",
+      "round_id": "20260718_134229_obj_345_iter4",
+      "round_dir": "345/output/20260718_134229_obj_345_iter4",
+      "lyric_file": "obj_345_iter4.lyric",
+      "summary_file": "obj345.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_multiple",
+      "missing_components": [
+        "bar",
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 45350.74609375,
+        "reduced_chisq": 0.35224345326423645
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "104",
+      "round_id": "20260716_182718_obj_104_iter5",
+      "round_dir": "104/output/20260716_182718_obj_104_iter5",
+      "lyric_file": "obj_104_iter5.lyric",
+      "summary_file": "obj104.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "agn",
+        "disk"
+      ],
+      "expert_final_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 71595.2578125,
+        "reduced_chisq": 0.3686782717704773
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "104",
+      "round_id": "20260716_183809_obj_104_iter6",
+      "round_dir": "104/output/20260716_183809_obj_104_iter6",
+      "lyric_file": "obj_104_iter6.lyric",
+      "summary_file": "obj104.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "agn"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 70866.8984375,
+        "reduced_chisq": 0.3650874197483063
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1071",
+      "round_id": "20260716_194051_obj_1071_iter2",
+      "round_dir": "1071/output/20260716_194051_obj_1071_iter2",
+      "lyric_file": "obj_1071_iter2.lyric",
+      "summary_file": "obj1071.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 83133.671875,
+        "reduced_chisq": 0.38631483912467957
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1182",
+      "round_id": "20260716_231252_obj_1182_iter2",
+      "round_dir": "1182/output/20260716_231252_obj_1182_iter2",
+      "lyric_file": "obj_1182_iter2.lyric",
+      "summary_file": "obj1182.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "companion"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 71127.6015625,
+        "reduced_chisq": 0.36158666014671326
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1398",
+      "round_id": "20260717_035415_obj_1398",
+      "round_dir": "1398/output/20260717_035415_obj_1398",
+      "lyric_file": "obj_1398.lyric",
+      "summary_file": "obj1398.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 88944.78125,
+        "reduced_chisq": 0.4128192663192749
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1429",
+      "round_id": "20260717_044425_obj_1429",
+      "round_dir": "1429/output/20260717_044425_obj_1429",
+      "lyric_file": "obj_1429.lyric",
+      "summary_file": "obj1429.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 134227.6875,
+        "reduced_chisq": 0.29457342624664307
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1502",
+      "round_id": "20260717_074352_obj_1502",
+      "round_dir": "1502/output/20260717_074352_obj_1502",
+      "lyric_file": "obj_1502.lyric",
+      "summary_file": "obj1502.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 60406.78125,
+        "reduced_chisq": 0.36333832144737244
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "163",
+      "round_id": "20260717_125519_obj_163_iter2",
+      "round_dir": "163/output/20260717_125519_obj_163_iter2",
+      "lyric_file": "obj_163_iter2.lyric",
+      "summary_file": "obj163.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 205575.4375,
+        "reduced_chisq": 0.34942886233329773
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "170",
+      "round_id": "20260717_154445_obj_170_iter2",
+      "round_dir": "170/output/20260717_154445_obj_170_iter2",
+      "lyric_file": "obj_170_iter2.lyric",
+      "summary_file": "obj170.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 529823.625,
+        "reduced_chisq": 0.43198361992836
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "170",
+      "round_id": "20260717_155340_obj_170_iter3",
+      "round_dir": "170/output/20260717_155340_obj_170_iter3",
+      "lyric_file": "obj_170_iter3.lyric",
+      "summary_file": "obj170.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 476818.1875,
+        "reduced_chisq": 0.3887651860713959
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "170",
+      "round_id": "20260717_160304_obj_170_iter4",
+      "round_dir": "170/output/20260717_160304_obj_170_iter4",
+      "lyric_file": "obj_170_iter4.lyric",
+      "summary_file": "obj170.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 445510.40625,
+        "reduced_chisq": 0.36318957805633545
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "170",
+      "round_id": "20260717_161120_obj_170_iter5",
+      "round_dir": "170/output/20260717_161120_obj_170_iter5",
+      "lyric_file": "obj_170_iter5.lyric",
+      "summary_file": "obj170.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 471712.3125,
+        "reduced_chisq": 0.3845866620540619
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1803",
+      "round_id": "20260717_165859_obj_1803_iter2",
+      "round_dir": "1803/output/20260717_165859_obj_1803_iter2",
+      "lyric_file": "obj_1803_iter2.lyric",
+      "summary_file": "obj1803.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 443462.96875,
+        "reduced_chisq": 0.4614233672618866
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1825",
+      "round_id": "20260717_190207_obj_1825_iter3",
+      "round_dir": "1825/output/20260717_190207_obj_1825_iter3",
+      "lyric_file": "obj_1825_iter3.lyric",
+      "summary_file": "obj1825.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "companion"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 135297.671875,
+        "reduced_chisq": 0.4766591489315033
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1845",
+      "round_id": "20260717_224500_obj_1845",
+      "round_dir": "1845/output/20260717_224500_obj_1845",
+      "lyric_file": "obj_1845.lyric",
+      "summary_file": "obj1845.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 31632.662109375,
+        "reduced_chisq": 0.3872090280056
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "314",
+      "round_id": "20260718_075213_obj_314_iter2",
+      "round_dir": "314/output/20260718_075213_obj_314_iter2",
+      "lyric_file": "obj_314_iter2.lyric",
+      "summary_file": "obj314.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 50400.75,
+        "reduced_chisq": 0.5698588490486145
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "314",
+      "round_id": "20260718_075709_obj_314_iter3",
+      "round_dir": "314/output/20260718_075709_obj_314_iter3",
+      "lyric_file": "obj_314_iter3.lyric",
+      "summary_file": "obj314.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 47957.59765625,
+        "reduced_chisq": 0.541182816028595
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "314",
+      "round_id": "20260718_080429_obj_314_iter4",
+      "round_dir": "314/output/20260718_080429_obj_314_iter4",
+      "lyric_file": "obj_314_iter4.lyric",
+      "summary_file": "obj314.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "fourier_m1"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 49491.07421875,
+        "reduced_chisq": 0.5587640404701233
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "317",
+      "round_id": "20260718_091303_obj_317_iter2",
+      "round_dir": "317/output/20260718_091303_obj_317_iter2",
+      "lyric_file": "obj_317_iter2.lyric",
+      "summary_file": "obj317.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [],
+      "band_count": 6,
+      "gssummary": {
+        "bic": 93692.1796875,
+        "reduced_chisq": 0.6777592897415161
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "317",
+      "round_id": "20260718_091830_obj_317_iter3",
+      "round_dir": "317/output/20260718_091830_obj_317_iter3",
+      "lyric_file": "obj_317_iter3.lyric",
+      "summary_file": "obj317.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 6,
+      "gssummary": {
+        "bic": 98927.90625,
+        "reduced_chisq": 0.7158733010292053
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "317",
+      "round_id": "20260718_093115_obj_317_iter5",
+      "round_dir": "317/output/20260718_093115_obj_317_iter5",
+      "lyric_file": "obj_317_iter5.lyric",
+      "summary_file": "obj317.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [],
+      "band_count": 6,
+      "gssummary": {
+        "bic": 94847.1875,
+        "reduced_chisq": 0.6860685348510742
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "317",
+      "round_id": "20260718_093621_obj_317_iter6",
+      "round_dir": "317/output/20260718_093621_obj_317_iter6",
+      "lyric_file": "obj_317_iter6.lyric",
+      "summary_file": "obj317.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [],
+      "band_count": 6,
+      "gssummary": {
+        "bic": 93693.1328125,
+        "reduced_chisq": 0.6777662634849548
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "331",
+      "round_id": "20260718_115818_obj_331_iter2",
+      "round_dir": "331/output/20260718_115818_obj_331_iter2",
+      "lyric_file": "obj_331_iter2.lyric",
+      "summary_file": "obj331.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 99899.796875,
+        "reduced_chisq": 0.33958899974823
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "331",
+      "round_id": "20260718_122733_obj_331_iter6",
+      "round_dir": "331/output/20260718_122733_obj_331_iter6",
+      "lyric_file": "obj_331_iter6.lyric",
+      "summary_file": "obj331.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 99884.9296875,
+        "reduced_chisq": 0.33953821659088135
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "345",
+      "round_id": "20260718_140458_obj_345_iter7",
+      "round_dir": "345/output/20260718_140458_obj_345_iter7",
+      "lyric_file": "obj_345_iter7.lyric",
+      "summary_file": "obj345.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 44727.203125,
+        "reduced_chisq": 0.34674137830734253
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "365",
+      "round_id": "20260718_164258_obj_365_iter1",
+      "round_dir": "365/output/20260718_164258_obj_365_iter1",
+      "lyric_file": "obj_365_iter1.lyric",
+      "summary_file": "obj365.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "missing_one",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 299556.09375,
+        "reduced_chisq": 0.34841105341911316
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "104",
+      "round_id": "20260716_180334_obj_104_iter2",
+      "round_dir": "104/output/20260716_180334_obj_104_iter2",
+      "lyric_file": "obj_104_iter2.lyric",
+      "summary_file": "obj104.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "agn",
+        "fourier_m1"
+      ],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 71553.609375,
+        "reduced_chisq": 0.36852362751960754
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1071",
+      "round_id": "20260716_194911_obj_1071_iter3",
+      "round_dir": "1071/output/20260716_194911_obj_1071_iter3",
+      "lyric_file": "obj_1071_iter3.lyric",
+      "summary_file": "obj1071.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 81713.5546875,
+        "reduced_chisq": 0.379077672958374
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1118",
+      "round_id": "20260716_211727_obj_1118_iter2",
+      "round_dir": "1118/output/20260716_211727_obj_1118_iter2",
+      "lyric_file": "obj_1118_iter2.lyric",
+      "summary_file": "obj1118.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "agn",
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "agn",
+        "bar"
+      ],
+      "extra_components": [
+        "companion"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 49573.3125,
+        "reduced_chisq": 0.3460678160190582
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1182",
+      "round_id": "20260716_232223_obj_1182_iter3",
+      "round_dir": "1182/output/20260716_232223_obj_1182_iter3",
+      "lyric_file": "obj_1182_iter3.lyric",
+      "summary_file": "obj1182.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [
+        "bar"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 74956.0859375,
+        "reduced_chisq": 0.3812038004398346
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "133",
+      "round_id": "20260717_005859_obj_133",
+      "round_dir": "133/output/20260717_005859_obj_133",
+      "lyric_file": "obj_133.lyric",
+      "summary_file": "obj133.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "edge_on_disk"
+      ],
+      "extra_components": [
+        "disk"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 86710.765625,
+        "reduced_chisq": 0.5301913619041443
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1446",
+      "round_id": "20260717_062349_obj_1446",
+      "round_dir": "1446/output/20260717_062349_obj_1446",
+      "lyric_file": "obj_1446.lyric",
+      "summary_file": "obj1446.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "edge_on_disk"
+      ],
+      "extra_components": [
+        "disk"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 62077.1484375,
+        "reduced_chisq": 0.33714041113853455
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1502",
+      "round_id": "20260717_075057_obj_1502_iter2",
+      "round_dir": "1502/output/20260717_075057_obj_1502_iter2",
+      "lyric_file": "obj_1502_iter2.lyric",
+      "summary_file": "obj1502.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 60432.24609375,
+        "reduced_chisq": 0.36335137486457825
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1525",
+      "round_id": "20260717_084658_obj_1525",
+      "round_dir": "1525/output/20260717_084658_obj_1525",
+      "lyric_file": "obj_1525.lyric",
+      "summary_file": "obj1525.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "edge_on_disk"
+      ],
+      "extra_components": [
+        "disk"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 83983.984375,
+        "reduced_chisq": 0.38354218006134033
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1639",
+      "round_id": "20260717_145129_obj_1639_iter2",
+      "round_dir": "1639/output/20260717_145129_obj_1639_iter2",
+      "lyric_file": "obj_1639_iter2.lyric",
+      "summary_file": "obj1639.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "agn",
+        "bulge"
+      ],
+      "expert_final_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 112667.109375,
+        "reduced_chisq": 0.31858256459236145
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1825",
+      "round_id": "20260717_185442_obj_1825_iter2",
+      "round_dir": "1825/output/20260717_185442_obj_1825_iter2",
+      "lyric_file": "obj_1825_iter2.lyric",
+      "summary_file": "obj1825.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "companion"
+      ],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 126200.8203125,
+        "reduced_chisq": 0.44404447078704834
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1831",
+      "round_id": "20260717_194119_obj_1831_iter2",
+      "round_dir": "1831/output/20260717_194119_obj_1831_iter2",
+      "lyric_file": "obj_1831_iter2.lyric",
+      "summary_file": "obj1831.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 5,
+      "gssummary": {
+        "bic": 56511.73828125,
+        "reduced_chisq": 0.5455387830734253
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "1833",
+      "round_id": "20260717_213002_obj_1833_iter3",
+      "round_dir": "1833/output/20260717_213002_obj_1833_iter3",
+      "lyric_file": "obj_1833_iter3.lyric",
+      "summary_file": "obj1833.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bar",
+        "companion",
+        "fourier_m1"
+      ],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 54746.89453125,
+        "reduced_chisq": 0.41783320903778076
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "186",
+      "round_id": "20260718_001654_obj_186",
+      "round_dir": "186/output/20260718_001654_obj_186",
+      "lyric_file": "obj_186.lyric",
+      "summary_file": "obj186.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "edge_on_disk"
+      ],
+      "extra_components": [
+        "disk"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 57687.26171875,
+        "reduced_chisq": 0.35125109553337097
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "205",
+      "round_id": "20260718_014006_obj_205_iter2",
+      "round_dir": "205/output/20260718_014006_obj_205_iter2",
+      "lyric_file": "obj_205_iter2.lyric",
+      "summary_file": "obj205.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "agn",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bulge",
+        "companion"
+      ],
+      "extra_components": [
+        "agn"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 233648.515625,
+        "reduced_chisq": 0.5456631183624268
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "28",
+      "round_id": "20260718_052329_obj_28",
+      "round_dir": "28/output/20260718_052329_obj_28",
+      "lyric_file": "obj_28.lyric",
+      "summary_file": "obj28.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "edge_on_disk"
+      ],
+      "extra_components": [
+        "disk"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 330265.15625,
+        "reduced_chisq": 0.8265031576156616
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "287",
+      "round_id": "20260718_062636_obj_287_iter2",
+      "round_dir": "287/output/20260718_062636_obj_287_iter2",
+      "lyric_file": "obj_287_iter2.lyric",
+      "summary_file": "obj287.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "agn",
+        "companion",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "agn",
+        "companion"
+      ],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 85814.9140625,
+        "reduced_chisq": 0.5225491523742676
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "314",
+      "round_id": "20260718_080841_obj_314_iter5",
+      "round_dir": "314/output/20260718_080841_obj_314_iter5",
+      "lyric_file": "obj_314_iter5.lyric",
+      "summary_file": "obj314.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bar",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bulge",
+        "fourier_m1"
+      ],
+      "extra_components": [
+        "bar"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 48400.62890625,
+        "reduced_chisq": 0.5463499426841736
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "317",
+      "round_id": "20260718_092522_obj_317_iter4",
+      "round_dir": "317/output/20260718_092522_obj_317_iter4",
+      "lyric_file": "obj_317_iter4.lyric",
+      "summary_file": "obj317.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "agn",
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [
+        "agn"
+      ],
+      "band_count": 6,
+      "gssummary": {
+        "bic": 93475.1875,
+        "reduced_chisq": 0.675534725189209
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "331",
+      "round_id": "20260718_123831_obj_331_iter7",
+      "round_dir": "331/output/20260718_123831_obj_331_iter7",
+      "lyric_file": "obj_331_iter7.lyric",
+      "summary_file": "obj331.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bar",
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bar"
+      ],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 99964.9375,
+        "reduced_chisq": 0.3396023213863373
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "345",
+      "round_id": "20260718_132845_obj_345_iter2",
+      "round_dir": "345/output/20260718_132845_obj_345_iter2",
+      "lyric_file": "obj_345_iter2.lyric",
+      "summary_file": "obj345.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "bulge",
+        "disk"
+      ],
+      "expert_final_components": [
+        "bar",
+        "disk",
+        "fourier_m1"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bar",
+        "fourier_m1"
+      ],
+      "extra_components": [
+        "bulge"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 44151.2421875,
+        "reduced_chisq": 0.3417001962661743
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "350",
+      "round_id": "20260718_144939_obj_350",
+      "round_dir": "350/output/20260718_144939_obj_350",
+      "lyric_file": "obj_350.lyric",
+      "summary_file": "obj350.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk"
+      ],
+      "expert_final_components": [
+        "edge_on_disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "edge_on_disk"
+      ],
+      "extra_components": [
+        "disk"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 327219.15625,
+        "reduced_chisq": 0.40901052951812744
+      },
+      "manifest_validation": "passed"
+    },
+    {
+      "object_id": "365",
+      "round_id": "20260718_165125_obj_365_iter2",
+      "round_dir": "365/output/20260718_165125_obj_365_iter2",
+      "lyric_file": "obj_365_iter2.lyric",
+      "summary_file": "obj365.gssummary",
+      "comparison_png": "all_bands_comparison.png",
+      "source_components": [
+        "disk",
+        "fourier_m1"
+      ],
+      "expert_final_components": [
+        "bulge",
+        "disk"
+      ],
+      "relation_to_expert_final": "mixed_difference",
+      "missing_components": [
+        "bulge"
+      ],
+      "extra_components": [
+        "fourier_m1"
+      ],
+      "band_count": 7,
+      "gssummary": {
+        "bic": 296581.9375,
+        "reduced_chisq": 0.34485453367233276
+      },
+      "manifest_validation": "passed"
+    }
+  ]
+}

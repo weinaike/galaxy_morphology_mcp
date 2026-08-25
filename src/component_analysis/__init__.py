@@ -39,6 +39,7 @@ from .policy import (
     evaluate_refit_with_policy,
 )
 from .provider import OpenAICompatibleVLM
+from .candidate_overlay import create_candidate_overlay
 from .rules import RuleThresholds, decide_proposal, evaluate_refit
 from .vlm import (
     CONTROLLED_LABELS,
@@ -57,6 +58,7 @@ __all__ = [
     "PROMPT_VERSION",
     "PolicyState",
     "OpenAICompatibleVLM",
+    "create_candidate_overlay",
     "RESULT_HDU",
     "RuleThresholds",
     "allowed_target_ids",

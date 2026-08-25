@@ -10,7 +10,7 @@ import ast
 from datetime import datetime, timezone
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, MutableMapping
 
 import numpy as np
 
@@ -533,6 +533,7 @@ def extract_numeric_evidence_from_manifest(
     manifest: dict[str, Any],
     *,
     manifest_ref: str | None = None,
+    isophote_cache: MutableMapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the deterministic numeric layer on a validated manifest."""
     arrays = load_band_arrays(manifest)
@@ -545,4 +546,5 @@ def extract_numeric_evidence_from_manifest(
         primitive,
         arrays,
         fit_components=_fit_components(manifest),
+        isophote_cache=isophote_cache,
     )

@@ -6,11 +6,12 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, MutableMapping
 
 from schemas import validate
 
 from .artifact_adapter import extract_numeric_evidence_from_manifest
+from .candidate_overlay import create_candidate_overlay
 from .policy import PolicyState, decide_proposal_with_policy
 from .vlm import (
     build_vlm_prompt,
@@ -21,14 +22,120 @@ from .vlm import (
 VLMCallback = Callable[[str, str], str]
 
 
+_COMPONENT_NAME_MAP = {
+    "agn": "agn",
+    "bar": "bar",
+    "bulge": "bulge",
+    "companion": "companion",
+    "disk": "disk",
+    "edge-on": "edge_on_disk",
+    "edge_on": "edge_on_disk",
+    "edge_on_disk": "edge_on_disk",
+    "edgeondisk": "edge_on_disk",
+    "lens": "lens",
+    "neighbor": "companion",
+    "neighbour": "companion",
+    "nucleus": "agn",
+}
+_PROFILE_NAME_RE = re.compile(r"^P([a-z])1\)\s+(\S+)", re.IGNORECASE)
+_PROFILE_TYPE_RE = re.compile(r"^P([a-z])2\)\s+(\S+)", re.IGNORECASE)
+_FOURIER_MODE_RE = re.compile(r"^P([a-z])21\)\s+(\S+)", re.IGNORECASE)
+
+
+def _semantic_name(raw_name: str, comments: str, profile_type: str | None) -> str | None:
+    normalized = raw_name.strip().lower().replace("-", "_")
+    if profile_type and profile_type.lower().replace("-", "_") in {
+        "edgeondisk",
+        "edge_on_disk",
+    }:
+        return "edge_on_disk"
+    if normalized in _COMPONENT_NAME_MAP:
+        return _COMPONENT_NAME_MAP[normalized]
+
+    comment_lower = comments.lower()
+    matches = [
+        (comment_lower.find(token), component)
+        for token, component in (
+            ("edge-on disk", "edge_on_disk"),
+            ("edge_on_disk", "edge_on_disk"),
+            ("edgeondisk", "edge_on_disk"),
+            ("nucleus", "agn"),
+            ("agn", "agn"),
+            ("companion", "companion"),
+            ("neighbor", "companion"),
+            ("neighbour", "companion"),
+            ("bulge", "bulge"),
+            ("bar", "bar"),
+            ("disk", "disk"),
+        )
+        if comment_lower.find(token) >= 0
+    ]
+    return min(matches)[1] if matches else None
+
+
 def _components_from_lyric(lyric_file: str) -> set[str]:
+    """Return current semantic components from a historical GALFIT lyric.
+
+    Older runs often called profiles obj0/obj1. Those names are normalized
+    using nearby profile comments; an unresolved generic profile is rejected
+    instead of being passed to the rules layer as a fake component. sersic_f
+    with P?21) 1 contributes the explicit Fourier m=1 marker.
+    """
     components: set[str] = set()
-    pattern = re.compile(r"^P[a-z]1\)\s+(\S+)")
-    with open(lyric_file, encoding="utf-8") as handle:
-        for line in handle:
-            match = pattern.match(line.strip())
-            if match:
-                components.add(match.group(1).lower())
+    profiles: list[dict[str, str | None]] = []
+    lines = Path(lyric_file).read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        match = _PROFILE_NAME_RE.match(line.strip())
+        if not match:
+            continue
+        prefix, raw_name = match.groups()
+        profile_type = None
+        fourier_mode = None
+        for later_line in lines[index + 1 : index + 40]:
+            type_match = _PROFILE_TYPE_RE.match(later_line.strip())
+            if type_match and type_match.group(1).lower() == prefix.lower():
+                profile_type = type_match.group(2).lower()
+            mode_match = _FOURIER_MODE_RE.match(later_line.strip())
+            if mode_match and mode_match.group(1).lower() == prefix.lower():
+                fourier_mode = mode_match.group(2).strip("[] ,")
+            if _PROFILE_NAME_RE.match(later_line.strip()):
+                break
+        comments = "\n".join(
+            previous.strip()
+            for previous in lines[max(0, index - 8) : index]
+            if previous.strip().startswith("#")
+        )
+        profiles.append(
+            {
+                "raw_name": raw_name.lower(),
+                "profile_type": profile_type,
+                "fourier_mode": fourier_mode,
+                "semantic": _semantic_name(raw_name, comments, profile_type),
+            }
+        )
+
+    for profile in profiles:
+        if profile["semantic"] is None and profile["raw_name"] == "obj0" and profile["profile_type"] in {
+            "sersic",
+            "sersic_f",
+        }:
+            profile["semantic"] = "disk"
+
+    unresolved = [profile["raw_name"] for profile in profiles if profile["semantic"] is None]
+    if unresolved:
+        raise ValueError(
+            f"Unable to normalize lyric profile names {unresolved} in {lyric_file}"
+        )
+    for profile in profiles:
+        semantic = profile["semantic"]
+        if semantic:
+            components.add(semantic)
+        if (
+            semantic == "disk"
+            and profile["profile_type"] == "sersic_f"
+            and profile["fourier_mode"] == "1"
+        ):
+            components.add("fourier_m1")
     return components
 
 
@@ -53,10 +160,11 @@ def run_shadow_round(
     vlm_callback: VLMCallback | None = None,
     current_components: Iterable[str] | None = None,
     policy_state: PolicyState | None = None,
+    isophote_cache: MutableMapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run numeric, controlled VLM and rules layers without fitting actions.
 
-    vlm_callback receives (comparison_png, prompt) and returns raw model text.
+    vlm_callback receives (candidate_overlay_png, prompt) and returns raw model text.
     If omitted, the run is explicitly marked REFUSED and policy performs its
     existing numeric-only degradation path.
     """
@@ -71,6 +179,7 @@ def run_shadow_round(
     numeric = extract_numeric_evidence_from_manifest(
         manifest,
         manifest_ref=manifest_ref,
+        isophote_cache=isophote_cache,
     )
     if output_path:
         output_path.mkdir(parents=True, exist_ok=True)
@@ -86,6 +195,16 @@ def run_shadow_round(
         prompt_ref = output_path / "vlm_prompt.txt"
         prompt_ref.write_text(prompt, encoding="utf-8")
 
+    vlm_image = manifest.get("comparison_png")
+    overlay_ref: str | None = None
+    if output_path and manifest.get("comparison_png"):
+        overlay_ref = create_candidate_overlay(
+            manifest,
+            numeric,
+            output_path / "candidate_overlay.png",
+        )
+        vlm_image = overlay_ref
+
     vlm_error: str | None = None
     raw_response: str | None = None
     model_id = getattr(vlm_callback, "model_id", None)
@@ -96,12 +215,12 @@ def run_shadow_round(
             model_id=model_id,
         )
         vlm_error = "VLM callback not configured; numeric-only shadow run"
-    elif not manifest.get("comparison_png"):
+    elif not vlm_image:
         vlm = make_unavailable_vlm_evidence(round_id=round_id, status="PARSE_FAILED")
-        vlm_error = "comparison_png is missing from the manifest"
+        vlm_error = "comparison_png and candidate overlay are missing from the manifest"
     else:
         try:
-            raw_response = vlm_callback(manifest["comparison_png"], prompt)
+            raw_response = vlm_callback(vlm_image, prompt)
             vlm, vlm_error = parse_vlm_response(
                 raw_response,
                 round_id=round_id,
@@ -168,5 +287,6 @@ def run_shadow_round(
             "vlm_evidence": vlm_ref,
             "decision_artifact": decision_ref,
             "prompt": str(prompt_ref) if prompt_ref else None,
+            "candidate_overlay": overlay_ref,
         },
     }

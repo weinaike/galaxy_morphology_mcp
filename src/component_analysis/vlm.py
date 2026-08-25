@@ -14,16 +14,22 @@ import jsonschema
 
 from schemas import load_schema, validate
 
-PROMPT_VERSION = "component-analysis-vlm@v1"
+PROMPT_VERSION = "component-analysis-vlm@v1.2"
 
 _OBSERVATION_PROPERTIES = load_schema("vlm_evidence")["properties"]["observations"][
     "items"
 ]["properties"]
-CONTROLLED_LABELS = tuple(_OBSERVATION_PROPERTIES["label"]["enum"])
+# Keep the legacy label in the frozen v1 schema so historical artifacts remain
+# readable, but do not expose it to new VLM calls under central-semantics B.
+LEGACY_LABELS = frozenset({"spheroid_like"})
+CONTROLLED_LABELS = tuple(
+    label
+    for label in _OBSERVATION_PROPERTIES["label"]["enum"]
+    if label not in LEGACY_LABELS
+)
 QUALITY_FLAGS = tuple(_OBSERVATION_PROPERTIES["quality_flags"]["items"]["enum"])
 
 _EXCLUSIVE_LABEL_GROUPS = (
-    frozenset({"disk_like", "spheroid_like"}),
     frozenset({"independent_source", "clump", "diffraction_psf", "tidal_feature"}),
     frozenset({"bar_like", "diffraction_psf"}),
     frozenset({"peanut_x", "diffraction_psf"}),
@@ -75,7 +81,7 @@ def build_vlm_prompt(
                 "target_id": "central",
                 "label": "uncertain",
                 "confidence": 0.0,
-                "evidence_regions": [],
+                "evidence_regions": ["nircam_f200w:residual:central_r5px"],
                 "quality_flags": [],
                 "notes": None,
             }
@@ -83,12 +89,12 @@ def build_vlm_prompt(
     }
     return "\n".join(
         (
-            "你负责 comparison PNG 的受控形态标注，不负责成分增删决策。",
+            "你负责数值层 candidate overlay 的受控形态标注，不负责成分增删决策。",
             f"prompt_version: {PROMPT_VERSION}",
             f"round_id: {round_id}",
             "只能描述数值层已经给出的 target_id："
             + json.dumps(target_ids, ensure_ascii=False),
-            "label 只能取以下枚举值："
+            "label 只能取以下新方案枚举值（历史兼容标签不在此列表）："
             + json.dumps(CONTROLLED_LABELS, ensure_ascii=False),
             "quality_flags 只能取以下枚举值："
             + json.dumps(QUALITY_FLAGS, ensure_ascii=False),
@@ -102,6 +108,15 @@ def build_vlm_prompt(
             ),
             "同一 target 可以有多个相容标签，但 none 或 uncertain "
             "不得与其他标签并存。",
+            (
+                "中心 Bulge、单 Sérsic 光球和 Disk 的分流只由数值证据决定；"
+                "不要输出任何未列出的历史兼容标签。"
+            ),
+            (
+                "evidence_regions 是可选的证据定位字符串数组；每项必须严格使用 "
+                "band:panel:region_id 格式，例如 "
+                "nircam_f200w:residual:central_r5px。无法可靠定位时使用空数组。"
+            ),
             "只输出一个 JSON 对象，不要使用 Markdown 代码块，"
             "不要在 JSON 前后添加文字。",
             "输出结构如下；observations 可以为空，notes 只能记录简短视觉歧义，"
@@ -151,6 +166,11 @@ def _semantic_error(
             return f"VLM target_id {target_id!r} was not issued by the numeric layer"
 
         label = observation["label"]
+        if label in LEGACY_LABELS:
+            return (
+                f"legacy VLM label {label!r} is not accepted by "
+                f"{PROMPT_VERSION}"
+            )
         flags = set(observation.get("quality_flags", []))
         if "label_conflict" in flags:
             return f"VLM reported a label conflict for target {target_id!r}"

@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.0",
+  "label_version": "expert-final-labels@v1",
+  "dataset_id": "jwst0716",
+  "source_file": "docs/component-analysis/labelall_jwst_multibands_new.txt",
+  "label_scope": "Expert final multi-band fitting labels",
+  "normalization_notes": [
+    "disk(lop) is represented as disk plus fourier_m1.",
+    "single sersic is represented as disk.",
+    "nucleus is represented as agn.",
+    "edge_on_disk is preserved as a distinct final component label."
+  ],
+  "objects": [
+    {
+      "object_id": "28",
+      "label_status": "confirmed",
+      "source_label": "edge-on disk",
+      "final_components": ["edge_on_disk"]
+    },
+    {
+      "object_id": "104",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+nucleus",
+      "final_components": ["disk", "fourier_m1", "agn"]
+    },
+    {
+      "object_id": "133",
+      "label_status": "confirmed",
+      "source_label": "edge-on disk",
+      "final_components": ["edge_on_disk"]
+    },
+    {
+      "object_id": "163",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bulge",
+      "final_components": ["disk", "fourier_m1", "bulge"]
+    },
+    {
+      "object_id": "170",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bulge",
+      "final_components": ["disk", "fourier_m1", "bulge"]
+    },
+    {
+      "object_id": "186",
+      "label_status": "confirmed",
+      "source_label": "edge-on disk",
+      "final_components": ["edge_on_disk"]
+    },
+    {
+      "object_id": "205",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bulge+companion",
+      "final_components": ["disk", "fourier_m1", "bulge", "companion"]
+    },
+    {
+      "object_id": "216",
+      "label_status": "confirmed",
+      "source_label": "single sersic",
+      "final_components": ["disk"]
+    },
+    {
+      "object_id": "287",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+nucleus+companion",
+      "final_components": ["disk", "fourier_m1", "agn", "companion"]
+    },
+    {
+      "object_id": "314",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bulge",
+      "final_components": ["disk", "fourier_m1", "bulge"]
+    },
+    {
+      "object_id": "317",
+      "label_status": "confirmed",
+      "source_label": "disk+bulge+bar",
+      "final_components": ["disk", "bulge", "bar"]
+    },
+    {
+      "object_id": "331",
+      "label_status": "confirmed",
+      "source_label": "disk+bulge+bar",
+      "final_components": ["disk", "bulge", "bar"]
+    },
+    {
+      "object_id": "345",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bar",
+      "final_components": ["disk", "fourier_m1", "bar"]
+    },
+    {
+      "object_id": "350",
+      "label_status": "confirmed",
+      "source_label": "edge-on disk",
+      "final_components": ["edge_on_disk"]
+    },
+    {
+      "object_id": "365",
+      "label_status": "confirmed",
+      "source_label": "bulge+disk",
+      "final_components": ["bulge", "disk"]
+    },
+    {
+      "object_id": "1071",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bar",
+      "final_components": ["disk", "fourier_m1", "bar"]
+    },
+    {
+      "object_id": "1118",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+nucleus+bar",
+      "final_components": ["disk", "fourier_m1", "agn", "bar"]
+    },
+    {
+      "object_id": "1182",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bulge+companion",
+      "final_components": ["disk", "fourier_m1", "bulge", "companion"]
+    },
+    {
+      "object_id": "1398",
+      "label_status": "confirmed",
+      "source_label": "disk+bulge",
+      "final_components": ["disk", "bulge"]
+    },
+    {
+      "object_id": "1429",
+      "label_status": "confirmed",
+      "source_label": "bulge+disk",
+      "final_components": ["bulge", "disk"]
+    },
+    {
+      "object_id": "1446",
+      "label_status": "confirmed",
+      "source_label": "edge-on disk",
+      "final_components": ["edge_on_disk"]
+    },
+    {
+      "object_id": "1502",
+      "label_status": "confirmed",
+      "source_label": "disk+bulge",
+      "final_components": ["disk", "bulge"]
+    },
+    {
+      "object_id": "1525",
+      "label_status": "confirmed",
+      "source_label": "edge-on disk",
+      "final_components": ["edge_on_disk"]
+    },
+    {
+      "object_id": "1574",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bar",
+      "final_components": ["disk", "fourier_m1", "bar"]
+    },
+    {
+      "object_id": "1639",
+      "label_status": "confirmed",
+      "source_label": "nucleus+ disk (lop)",
+      "final_components": ["agn", "disk", "fourier_m1"]
+    },
+    {
+      "object_id": "1803",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bulge",
+      "final_components": ["disk", "fourier_m1", "bulge"]
+    },
+    {
+      "object_id": "1825",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+companion",
+      "final_components": ["disk", "fourier_m1", "companion"]
+    },
+    {
+      "object_id": "1831",
+      "label_status": "confirmed",
+      "source_label": "disk+bulge+companion",
+      "final_components": ["disk", "bulge", "companion"]
+    },
+    {
+      "object_id": "1833",
+      "label_status": "confirmed",
+      "source_label": "disk(lop)+bar+companion",
+      "final_components": ["disk", "fourier_m1", "bar", "companion"]
+    },
+    {
+      "object_id": "1845",
+      "label_status": "confirmed",
+      "source_label": "single sersic (lop)",
+      "final_components": ["disk", "fourier_m1"]
+    },
+    {
+      "object_id": "2185",
+      "label_status": "confirmed",
+      "source_label": "single sersic",
+      "final_components": ["disk"]
+    },
+    {
+      "object_id": "2758",
+      "label_status": "confirmed",
+      "source_label": "single sersic",
+      "final_components": ["disk"]
+    }
+  ]
+}

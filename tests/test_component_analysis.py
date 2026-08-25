@@ -335,17 +335,16 @@ def test_disk_neutral_with_partial_evidence_inconclusive():
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
 
 
-def test_disk_numeric_vlm_conflict_inconclusive():
+def test_legacy_spheroid_label_does_not_create_vlm_disk_conflict():
     decision = decide(
         [EXTENT, GEOMETRY, RESIDUAL_OUTER], [obs("spheroid_like", confidence=0.9)]
     )
-    assert decision["action"]["action_type"] == "INCONCLUSIVE"
-    assert decision["rule_trace"][-1]["rule_id"] == "DISK_VLM_CONFLICT_V1"
+    assert decision["rule_trace"][-1]["rule_id"] != "DISK_VLM_CONFLICT_V1"
 
 
 def test_spheroid_kept_as_single_sersic():
     sersic = feat("n", "single_sersic_n", {"n": 4.0, "at_boundary": False})
-    decision = decide([EXTENT, sersic], [obs("spheroid_like")])
+    decision = decide([EXTENT, sersic])
     assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
     assert decision["rule_trace"][-1]["rule_id"] == "SPHEROID_SINGLE_SERSIC_V1"
 

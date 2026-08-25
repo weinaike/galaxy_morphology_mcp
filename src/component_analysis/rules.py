@@ -152,18 +152,8 @@ def _disk_rule(
     labels = _labels(vlm)
     disk_label = bool(labels & {"disk_like", "spiral_arm", "edge_on_disk"})
     neutral_label = not labels or bool(labels & {"uncertain", "none"})
-    spheroid_label = "spheroid_like" in labels
     numeric_disk_support = n1 and n2 and n3
 
-    if numeric_disk_support and _high_confidence_label(
-        vlm, "spheroid_like", thresholds.vlm_conflict_confidence
-    ):
-        return {"action_type": "INCONCLUSIVE"}, _trace(
-            "DISK_VLM_CONFLICT_V1",
-            "INCONCLUSIVE",
-            inputs=("source_extent_psf_ratio", "outer_isophote_geometry", "central"),
-            detail="Numeric disk evidence conflicts with high-confidence spheroid morphology.",
-        )
     if (n1 and (n2 or n3) and disk_label) or (numeric_disk_support and neutral_label):
         return {"action_type": "PROPOSE_ADD", "component": "disk"}, _trace(
             "DISK_N1_N2_N3_V1",
@@ -175,15 +165,14 @@ def _disk_rule(
                 "outer_residual_systematic",
                 "central",
             ),
-        )
+    )
     if n1 and not n2 and not n3 and n_unbound and n_value >= thresholds.spheroid_n_min:
-        if spheroid_label or neutral_label:
-            return {"action_type": "KEEP_AND_CONTINUE"}, _trace(
-                "SPHEROID_SINGLE_SERSIC_V1",
-                "SATISFIED",
-                inputs=("source_extent_psf_ratio", "single_sersic_n", "central"),
-                detail="Evidence supports retaining a single Sersic spheroid.",
-            )
+        return {"action_type": "KEEP_AND_CONTINUE"}, _trace(
+            "SPHEROID_SINGLE_SERSIC_V1",
+            "SATISFIED",
+            inputs=("source_extent_psf_ratio", "single_sersic_n"),
+            detail="Numeric evidence supports retaining a single Sersic spheroid; VLM morphology is not used.",
+        )
     ambiguous_n = n_unbound and thresholds.disk_n_max < n_value < thresholds.spheroid_n_min
     if ambiguous_n or (n1 and neutral_label and n2 != n3):
         return {"action_type": "INCONCLUSIVE"}, _trace(

@@ -90,6 +90,10 @@ def test_prompt_is_versioned_label_only_and_does_not_leak_coordinates():
     assert "143.2" not in prompt
     assert "88.9" not in prompt
     assert all(label in prompt for label in CONTROLLED_LABELS)
+    assert "spheroid_like" not in prompt
+    assert "中心 Bulge、单 Sérsic 光球和 Disk 的分流只由数值证据决定" in prompt
+    assert "band:panel:region_id" in prompt
+    assert "nircam_f200w:residual:central_r5px" in prompt
     assert "只输出一个 JSON 对象" in prompt
 
 
@@ -107,6 +111,23 @@ def test_valid_response_is_wrapped_with_controlled_metadata():
     assert evidence["model_id"] == "test-vlm"
     assert evidence["prompt_version"] == PROMPT_VERSION
     validate(evidence, "vlm_evidence")
+
+
+def test_valid_evidence_region_contract_is_accepted():
+    region = "nircam_f200w:residual:central_r5px"
+    payload = response_fixture(
+        [observation("disk_like", evidence_regions=[region])]
+    )
+    evidence, error = parse(payload)
+    assert error is None
+    assert evidence["observations"][0]["evidence_regions"] == [region]
+
+
+def test_legacy_spheroid_label_is_rejected_by_the_v12_parser():
+    payload = response_fixture([observation("spheroid_like")])
+    evidence, error = parse(payload)
+    assert evidence["parse_status"] == "PARSE_FAILED"
+    assert "legacy VLM label" in error
 
 
 def test_markdown_fenced_json_is_rejected_as_non_strict():
@@ -148,7 +169,6 @@ def test_target_not_issued_by_numeric_layer_is_downgraded():
 @pytest.mark.parametrize(
     "labels",
     [
-        ("disk_like", "spheroid_like"),
         ("independent_source", "clump"),
         ("bar_like", "diffraction_psf"),
         ("none", "disk_like"),

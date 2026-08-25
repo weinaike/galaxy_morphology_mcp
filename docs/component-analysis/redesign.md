@@ -1,7 +1,7 @@
 # 成分分析模块重构方案
 
 > 面向：星系拟合 workflow 中 `analyze_multiband_components`（阶段二步骤 2）的成分增删决策模块
-> 状态：v7（2026-08-17），三层架构与本轮规则边界已确认；第十一节开放问题已全部裁定为 v1 默认规则（待评测校准），Lens 保留入白名单、「Nucleus 代偿 Bulge」废弃；四类 artifact schema 已冻结 v1.0（见 `src/schemas/`）；新增第四节「INCONCLUSIVE 自动化消解策略」，流程全自动运行、人工复核改为事后批量审查；Bar 的 PSF 否决采用三态，未完成方向相关性评估时不得投强证据
+> 状态：v9（2026-08-24），三层架构与本轮规则边界已确认；第十一节开放问题已全部裁定为 v1 默认规则（待评测校准），Lens 保留入白名单、「Nucleus 代偿 Bulge」废弃；四类 artifact schema 已冻结 v1.0（见 `src/schemas/`）；新增第四节「INCONCLUSIVE 自动化消解策略」，流程全自动运行、人工复核改为事后批量审查；Bar 的 PSF 否决采用三态，未完成方向相关性评估时不得投强证据；JWST0716 人工复核后的 VLM 契约状态、Edge-on Disk 暂缓范围、中心源方案 B 和候选 overlay 输入契约已记录
 > 核对范围：`workflow_galfits.md`、`component_specification_galfits.md`、`residual_analysis.py`、`bar_lopsidedness_core.py`、`best-round-verifier.md`、jwst0709/0710/0716 拟合产物
 
 ---
@@ -172,7 +172,7 @@ VLM 输出严格 JSON：
   "observations": [
     {
       "target_id": "central_or_candidate_1",
-      "label": "disk_like | spheroid_like | central_compact_excess | bar_like | peanut_x | edge_on_disk | spiral_arm | dust_lane | independent_source | clump | diffraction_psf | none | uncertain",
+      "label": "disk_like | central_compact_excess | bar_like | peanut_x | edge_on_disk | spiral_arm | dust_lane | independent_source | clump | diffraction_psf | none | uncertain",
       "confidence": 0.0,
       "evidence_regions": ["band:panel:region_id"],
       "quality_flags": []
@@ -187,6 +187,20 @@ VLM 输出严格 JSON：
 - 只返回受控标签，不输出自然语言动作。
 - 不输出 `add_*`、`remove_*`、初始参数或坐标。
 - 低质量图像、标签冲突或 JSON 解析失败时进入 `INCONCLUSIVE`。
+
+#### 2026-08-24 人工复核后的 VLM 契约状态
+
+本轮可以直接修复且不改变科学判据的契约缺口：prompt 必须明确 `evidence_regions` 为可选字符串数组；每个元素严格使用 `band:panel:region_id`，无法可靠定位时返回空数组。该修复只提高结构化输出的可解析性，不改变标签、规则或阈值。
+
+以下一项仍会改变证据优先级，待科学家裁定：
+
+1. 待科学家裁定：`diffraction_psf` 是否必须绑定 band、panel 和尺度，以及它与逐波段数值 PSF 检查冲突时的优先级。建议只允许空间与波段相匹配的 VLM 衍射证据否决局部数值证据，但最终优先级需要科学判据确认。
+
+已裁定并实施的候选定位契约：候选区域使用数值层生成的 `candidate_N` overlay 映射到 comparison evidence。坐标和标记只由数值层生成，VLM 只接收候选 ID，不接收自由文本坐标；原始 comparison PNG 不覆盖。
+
+已裁定并实施的中心语义方案 B：VLM 不新增或主动使用中心 Bulge 形态标签；Bulge、单 Sérsic 光球和 Disk 的分流完全依赖数值证据。历史 `spheroid_like` 仍由 v1 schema 兼容读取，但从新 prompt 标签集合、v1.2 parser 和规则逻辑中移除，不再作为新决策证据。
+
+方案 B 的具体边界：`spheroid_like` 不是八类 GALFIT 成分，也不是新的中心组件；它只保留在历史 VLM artifact 的兼容枚举中。新 prompt 不再列出该标签，`_disk_rule` 不再读取该标签，`_central_source_rule` 继续只使用中心过量、分辨尺度和 SNR 等数值事实决定 Bulge 或 compact central source candidate。
 
 ### 第 3 层：规则与迭代控制层
 
@@ -342,8 +356,8 @@ BIC_gain = BIC_simple - BIC_complex
 最低组合：
 
 - 提议 Disk：N1 必备；VLM 为 `disk_like`／`spiral_arm`／`edge_on_disk` 时，N2、N3 至少一项成立；VLM 为 `uncertain`／`none` 时，N2、N3 必须同时成立。
-- 判为椭圆光球（不加 Disk）：N1 成立但 N2、N3 均不成立，自由 n 单 Sérsic `n >= 3` 且未触界，且 VLM 为 `spheroid_like` 或 `uncertain`。此时主体记为单 Sérsic 光球（`physical_role = bulge`）。
-- 数值与 VLM 强冲突（数值支持盘但 VLM 高置信 `spheroid_like`，或反向），或 `2.5 < n < 3`、N2 与 N3 结果矛盾时，返回 `INCONCLUSIVE`，保持自由 n 单 Sérsic，按第四节自动化策略消解并留痕；不得默认 Disk 或 Elliptical。
+- 判为椭圆光球（不加 Disk）：N1 成立但 N2、N3 均不成立，自由 n 单 Sérsic `n >= 3` 且未触界。此时主体记为单 Sérsic 光球（`physical_role = bulge`）；VLM 不参与该分流。
+- 数值证据不足或矛盾（`2.5 < n < 3`、N2 与 N3 结果矛盾）时，返回 `INCONCLUSIVE`，保持自由 n 单 Sérsic，按第四节自动化策略消解并留痕；不得默认 Disk 或 Elliptical。
 
 #### 重拟合后接受条件
 
@@ -376,6 +390,8 @@ BIC_gain = BIC_simple - BIC_complex
 - 中心残差改善；BIC 不作为单独删除 Bulge 的依据。
 
 ### 3. Edge-on Disk
+
+> 2026-08-21 评测范围说明：科学家团队对 Edge-on Disk 的物理定义和建模边界尚未达成一致。现有 v1 规则与代码暂时保留，但本阶段不使用 JWST0716 shadow 结果优化该成分的阈值、prompt 或决策逻辑，也不把其 precision／recall 纳入方案优劣结论；待科学判据确认后再单独评测。
 
 #### 数值证据
 

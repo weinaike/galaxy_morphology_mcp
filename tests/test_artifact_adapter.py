@@ -194,6 +194,7 @@ def test_shadow_runner_writes_artifacts_without_vlm_or_fitting(tmp_path):
     assert (output_dir / "manifest.json").is_file()
     assert (output_dir / "numeric_evidence.json").is_file()
     assert (output_dir / "vlm_prompt.txt").is_file()
+    assert (output_dir / "candidate_overlay.png").is_file()
     assert (output_dir / "vlm_response.raw.json").read_text() == ""
     assert (output_dir / "vlm_evidence.json").is_file()
     assert (output_dir / "decision_artifact.json").is_file()
@@ -223,7 +224,9 @@ def test_shadow_runner_preserves_raw_controlled_vlm_response(tmp_path):
     )
 
     def callback(image_path, prompt):
-        assert image_path == str(comparison.resolve())
+        assert image_path == str((output_dir / "candidate_overlay.png").resolve())
+        assert image_path != str(comparison.resolve())
+        assert (output_dir / "candidate_overlay.png").is_file()
         assert '"candidate_1"' in prompt
         assert all(
             field not in prompt for field in ("x_pix", "y_pix", "ra_deg", "dec_deg")

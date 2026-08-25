@@ -28,6 +28,7 @@
             "description": "Either 'central' or a candidate region_id issued by the numeric layer"
           },
           "label": {
+            "description": "spheroid_like is retained only so pre-v1.2 historical artifacts remain schema-valid; component-analysis-vlm@v1.2 does not expose or accept it.",
             "enum": [
               "disk_like", "spheroid_like", "central_compact_excess", "bar_like",
               "peanut_x", "edge_on_disk", "spiral_arm", "dust_lane",

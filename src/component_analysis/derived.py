@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import warnings
 from copy import deepcopy
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, MutableMapping, Sequence
 
 import numpy as np
 
@@ -420,9 +421,21 @@ def _derived_feature(
     }
 
 
+def _isophote_cache_key(band: BandArrays) -> str:
+    digest = hashlib.sha256()
+    for array in (band.original, band.mask):
+        contiguous = np.ascontiguousarray(array)
+        digest.update(contiguous.view(np.uint8))
+    digest.update(str(band.band).encode())
+    digest.update(str(band.pixscale_arcsec).encode())
+    return digest.hexdigest()
+
+
 def _isophote_measurements(
     band: BandArrays,
     psf_fwhm: float,
+    *,
+    isophote_cache: MutableMapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     from tools.bar_lopsidedness_core import (
         analyze_dolfi_a1,
@@ -445,12 +458,19 @@ def _isophote_measurements(
             message="invalid value encountered in",
             category=RuntimeWarning,
         )
-        _, _, table, _ = fit_isophotes(
-            band.original,
-            band.mask,
-            band.pixscale_arcsec,
-            band.band,
-        )
+        table = None
+        cache_key = _isophote_cache_key(band) if isophote_cache is not None else None
+        if cache_key is not None:
+            table = isophote_cache.get(cache_key)
+        if table is None:
+            _, _, table, _ = fit_isophotes(
+                band.original,
+                band.mask,
+                band.pixscale_arcsec,
+                band.band,
+            )
+            if cache_key is not None:
+                isophote_cache[cache_key] = table
     if len(table) < 5:
         unavailable = _measurement(status="UNAVAILABLE", quality_flags=("other",))
         return unavailable, unavailable
@@ -626,6 +646,7 @@ def derive_rule_features(
     *,
     fit_components: Sequence[Mapping[str, Any]] = (),
     candidate_match_arcsec: float = 0.1,
+    isophote_cache: MutableMapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append all v1 rule-facing numeric facts to primitive evidence."""
 
@@ -654,7 +675,11 @@ def derive_rule_features(
         if psf["status"] != "AVAILABLE":
             continue
         psf_fwhm = float(psf["value"]["fwhm_geometric_pix"])
-        isophote, m1 = _isophote_measurements(band, psf_fwhm)
+        isophote, m1 = _isophote_measurements(
+            band,
+            psf_fwhm,
+            isophote_cache=isophote_cache,
+        )
         isophote_values.append((band.band, isophote))
         if m1["status"] == "AVAILABLE" and band.band in passed_bands:
             m1_values.append(float(m1["value"]))

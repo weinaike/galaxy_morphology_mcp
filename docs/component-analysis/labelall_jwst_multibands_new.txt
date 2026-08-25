@@ -1,0 +1,33 @@
+104	disk(lop)+nucleus
+170	disk(lop)+bulge
+205	disk(lop)+bulge+companion
+216	single sersic
+287	disk(lop)+nucleus+companion
+317	disk+bulge+bar
+365	bulge+disk
+1071	disk(lop)+bar
+1803	disk(lop)+bulge
+1118	disk(lop)+nucleus+bar
+1182	disk(lop)+bulge+companion
+133	edge-on disk
+1398	disk+bulge
+1429	bulge+disk
+1446	edge-on disk
+1502	disk+bulge
+1525	edge-on disk
+1574	disk(lop)+bar
+1639	nucleus+ disk (lop)
+163	disk(lop)+bulge
+1825	disk(lop)+companion
+1831	disk+bulge+companion
+1833	disk(lop)+bar+companion
+1845	single sersic (lop)
+186	edge-on disk
+2185	single sersic
+2758	single sersic
+28	edge-on disk
+314	disk(lop)+bulge
+324	去掉，F277W波段里星系被mask区域太大
+331	disk+bulge+bar
+345	disk(lop)+bar
+350	edge-on disk

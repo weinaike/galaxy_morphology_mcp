@@ -4,7 +4,7 @@
 
 ## 会议目的
 
-这份摘要是与科学家讨论 JWST0716 成分分析重构的单一入口。建议先阅读下面的改造进展和当前证据边界，再讨论已裁定事项、待裁定问题和评测方案。
+这份摘要是与科学家讨论 JWST0716 成分分析重构的单一入口。建议先阅读下面的改造进展和当前证据边界，再讨论待裁定问题和评测方案。
 
 本次会议不需要裁定“新方案已经优于旧方案”。建议形成三个可执行结论：
 
@@ -14,7 +14,7 @@
 
 Edge-on Disk 暂时继续排除在优化和评价范围之外。
 
-这份摘要是和科学家讨论时的单一入口。历史 116 轮 shadow 结果仍保存在原始 artifact 中；本文件记录已裁定的实现、尚待科学裁定的问题，以及需要时再打开的详细文件。
+这份摘要是和科学家讨论时的单一入口。历史 116 轮 shadow 结果仍保存在原始 artifact 中；本文件记录当前实现边界、尚待科学裁定的问题，以及需要时再打开的详细文件。
 
 ## 一、改造进展
 
@@ -104,34 +104,17 @@ VLM 和契约层目前完成：
 - 新增成分不在专家终态就一定错误；专家标签是对象终态，不是每轮唯一正确的下一步动作。
 - 116 个轮次可以作为 116 个独立样本；相同 object_id 的多个轮次必须按对象聚合。
 
-## 二、已裁定并已实现
+## 二、需科学家裁定的问题
 
-### 中心语义采用方案 B
+### `diffraction_psf` 的含义与科学作用
 
-`spheroid_like` 不是 GALFIT 成分，也不在八类成分白名单中。它原本只是 VLM 的视觉描述标签，用来描述“整个主体看起来像平滑光球”。历史运行中这个标签被放在 `target_id=central` 下，可能与 `disk_like` 同时出现，无法区分“外盘＋中心 Bulge”和“整个主体到底是盘还是光球”。
+`diffraction_psf` 表示点扩散函数（PSF）产生的衍射结构或衍射芒。PSF 是成像系统对点源的响应，`diffraction_psf` 是该响应中可能出现在图像或残差中的衍射图样；它不是 GALFIT 成分，也不应直接作为新增成分。它主要用于判断中心紧致过量、Bar 或候选源是否可能只是 PSF 伪影，避免把衍射结构当作真实成分。
 
-现在采用方案 B：
+“Bar 衍射冲突”是指：数值层的 Bar 证据通过，但 VLM 同时观察到 `diffraction_psf`，当前规则把后者作为冲突信号并阻止 `PROPOSE_ADD Bar`。衍射标签定位不清时，可能误杀真实 Bar；完全忽略它，则可能把衍射芒误建模为 Bar。
 
-- 新 VLM prompt 不再提供 `spheroid_like`。
-- Bulge、单 Sérsic 光球和 Disk 的分流只使用数值证据：外延尺度、外层等照度几何、系统性外层残差、单 Sérsic n、中心过量、PSF 分辨尺度和 SNR。
-- VLM 仍可提供 `disk_like`、`bar_like`、`dust_lane`、`diffraction_psf`、`independent_source` 等形态或混淆证据，但不能直接产生 Bulge 动作。
-- 冻结的 v1 schema 仍保留 `spheroid_like`，仅为读取历史 JSON；新 v1.2 parser 会拒绝新的该标签输出，新 prompt 和新规则也不会把它作为决策证据。
+这里的 `band` 是具体滤镜波段，`panel` 是 comparison PNG 中的子图类别（如 original、model、residual），`region` 是子图中的空间或径向证据区域。要求统一 panel、region，意思是衍射证据和被否决结构应在同一波段、同一类子图、同一局部区域或相近尺度上对应，而不是凭“图中存在衍射”就否决整个结构。
 
-新 prompt 版本为 `component-analysis-vlm@v1.2`。这项修改不会重写历史 116 轮结果；历史结果中的 `spheroid_like` 只按旧契约解释。
-
-### 候选位置采用数值层 overlay
-
-VLM 不接收像素坐标、天球坐标或自由文本坐标。shadow runner 会读取数值层的候选坐标，在每个波段的 original/residual 面板上绘制同一 `candidate_N` 标记，并写出：
-
-```text
-candidate_overlay.png
-```
-
-VLM 接收这个 overlay，prompt 只列出允许观察的 `candidate_N`。原始 `all_bands_comparison.png` 不会被覆盖。overlay 中的 marker 位置和 ID 由数值层生成，不由 VLM 生成。
-
-## 三、仍需科学家裁定的问题
-
-### `diffraction_psf` 的定位与证据优先级
+### 定位与证据优先级
 
 当前规则会把任意位置的高置信 `diffraction_psf` 当作全局冲突信号。需要确定：
 
@@ -142,7 +125,7 @@ VLM 接收这个 overlay，prompt 只列出允许观察的 `candidate_N`。原�
 
 建议起点：只有在 band、panel、region 和结构尺度均匹配时，`diffraction_psf` 才能否决局部数值证据；跨波段或无法定位的全局标签只能作为冲突提示，不能直接否决。
 
-## 四、建议对照的三个案例
+## 三、建议对照的三个案例
 
 | 案例 | 用途 | 关键事实 | 详细 artifact |
 |---|---|---|---|
@@ -152,7 +135,7 @@ VLM 接收这个 overlay，prompt 只列出允许观察的 `candidate_N`。原�
 
 每个目录重点看 `numeric_evidence.json`、`vlm_evidence.json`、`decision_artifact.json`、`vlm_prompt.txt`；对应的原始比较图路径记录在该目录的 `manifest.json` 的 `comparison_png` 字段。`/tmp` 为临时 artifact 目录，若被清理，以 `docs/component-analysis/shadow-dev-manual-review-jwst0716-vlm.json` 中的案例说明和 `shadow-dev-evaluation-report-jwst0716-vlm.md` 中的统计为准。
 
-## 五、建议的新旧方案评价框架
+## 四、建议的新旧方案评价框架
 
 当前资料只能说明新旧方案分别做了什么，不能可靠证明哪个方案更好。原因有三点：
 
@@ -211,7 +194,7 @@ BIC 不能单独决定胜负。建议先判断参数是否崩溃、残差结构�
 
 推荐主指标是明确错误或有害动作率，第二指标是必要动作覆盖率，第三指标才是受控 refit 胜率。对自动化拟合而言，漏掉一个仍可在下一轮补救的候选，通常比提出错误成分并造成参数简并、错误删除或错误模型替换的代价低。
 
-## 六、建议会议形成的结论
+## 五、建议会议形成的结论
 
 建议会议至少形成以下三项可执行结论：
 
@@ -219,7 +202,7 @@ BIC 不能单独决定胜负。建议先判断参数是否崩溃、残差结构�
 2. 逐轮人工评审是否采用“必要／可接受／拒绝动作集合”，而不是要求唯一正确动作。
 3. 选择哪些 20～30 个新旧分歧轮次进入盲审和 A/B refit，以及接受什么样的 WIN／TIE／LOSS 判定。
 
-## 七、参考文件
+## 六、参考文件
 
 - 方案规范与已裁定边界：[redesign.md](redesign.md)，重点是 VLM 契约状态和第六节逐成分规则。
 - 本轮完整统计：[shadow-dev-evaluation-report-jwst0716-vlm.md](shadow-dev-evaluation-report-jwst0716-vlm.md)。
@@ -229,7 +212,7 @@ BIC 不能单独决定胜负。建议先判断参数是否崩溃、残差结构�
 - overlay 实现：[src/component_analysis/candidate_overlay.py](../../src/component_analysis/candidate_overlay.py)。
 - shadow runner：[src/component_analysis/shadow.py](../../src/component_analysis/shadow.py)。
 
-## 八、讨论结论记录
+## 七、讨论结论记录
 
 科学家确认后，只需回填本节：
 

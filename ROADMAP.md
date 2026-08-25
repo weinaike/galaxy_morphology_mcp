@@ -86,3 +86,4 @@
 
 - 2026-08-24：修正 `docs/component-analysis/shadow-dev-action-direction-comparison-jwst0716.md` 的旧方案口径：旧方案改为 116 个历史轮次中 residual_analysis.py 原始流程写入的 `all_bands_comparison_component_analysis_*.md` 最终调整决策，而不是 numeric-only shadow baseline。报告逐轮并列旧决策原文摘要、辅助动作标签、新 VLM shadow 最终动作、当前成分和专家终态；原始来源覆盖为 108 轮可解析、6 轮缺失、2 轮多文件冲突、0 轮决策段无法解析，均明确标注而不以其他 artifact 替代。
 - 2026-08-25：扩充 `docs/component-analysis/jwst0716-vlm-scientist-discussion-brief.md`，将成分分析从开始改造到 JWST0716 116 轮 shadow 的进展、当前可确认与不可确认的结论、旧新方案比较边界、盲法动作审查和 A/B refit 评价框架统一整理到科学家讨论入口；保留已裁定的中心语义方案 B、candidate overlay、diffraction_psf 三个案例和 Edge-on Disk 暂缓范围。未修改正式 workflow、规则阈值或科学裁决。
+- 2026-08-25：按讨论入口精简 `jwst0716-vlm-scientist-discussion-brief.md`，删除独立的“已裁定并已实现”章节，将 `diffraction_psf` 的定义、Bar 衍射冲突以及 band、panel、region 的含义并入科学家裁定问题；后续章节编号顺延。未修改代码、正式 workflow、规则阈值或科学裁决。

@@ -14,6 +14,7 @@ from astropy.wcs import WCS
 
 from .parse_feedme import parse_feedme
 from .parse_lyric import parse_image_infos_from_lyric, parse_region_info_from_lyric
+from .sb_profile import component_color
 
 # expdisk param-4 is the exponential SCALE LENGTH h, not the effective radius; for a
 # pure exponential the half-light (effective) radius Re = 1.678·h ≈ 1.68·h. sersic
@@ -40,22 +41,28 @@ def draw_re_ellipses(ax, components, edgecolor: str = "cyan",
     Shared by the model panel (all components) and the residual panel (disk only) so
     the two are directly comparable. Components' (x, y) are in full-image space, which
     matches the panels' extent, so no coordinate transform is needed.
+
+    ``edgecolor=None`` colors each ellipse by component identity via the shared
+    semantic palette (same colors as the 1D SB-profile curves), so contour↔component
+    attribution no longer relies on size heuristics; any fixed string colors all
+    ellipses alike (legacy cyan behavior).
     """
     if not components:
         return
-    for comp in components:
+    for i, comp in enumerate(components):
         cx, cy = comp["x"], comp["y"]
         ba = comp["ba"]
         # GALFIT PA: from +Y axis, CCW (Up=0, Left=90); matplotlib: from +X axis, CCW.
         pa_mpl = comp["pa"] + 90.0
         re = effective_re(comp)
+        ec = component_color(comp.get("name"), i) if edgecolor is None else edgecolor
         # 2·Re contour: full major-axis diameter = 4·Re, minor = 4·Re·(b/a).
         ax.add_patch(Ellipse(
             xy=(cx, cy),
             width=4 * re,
             height=4 * re * ba,
             angle=pa_mpl,
-            edgecolor=edgecolor,
+            edgecolor=ec,
             facecolor="none",
             linewidth=linewidth,
             alpha=0.9,
@@ -193,7 +200,8 @@ def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
         ax.imshow(mask_overlay, origin="lower", extent=ext)
 
     # Draw component 2·Re ellipses (model panel). expdisk Re = 1.68·scale length.
-    draw_re_ellipses(ax, components)
+    # edgecolor=None → semantic per-component colors, matching the 1D curves.
+    draw_re_ellipses(ax, components, edgecolor=None)
 
     ax.tick_params(axis="both", which="major", direction="out", top=True, right=True,
                    labelsize=8, length=4, width=0.5)

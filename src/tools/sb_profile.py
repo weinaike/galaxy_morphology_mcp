@@ -21,6 +21,30 @@ except ImportError:
 DEFAULT_COLORS = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728',
                   '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
 
+# Stable semantic color->identity mapping, shared by the model-panel 2·Re ellipses
+# and the 1D component curves so panels (and successive fitting rounds) can be
+# cross-referenced by color: disk=blue, bulge=green, bar=orange, lens=red,
+# companion=purple, agn/nucleus=brown.
+SEMANTIC_COLORS = {
+    'disk': '#1f77b4',
+    'bulge': '#2ca02c',
+    'bar': '#ff7f0e',
+    'lens': '#d62728',
+    'companion': '#9467bd',
+    'agn': '#8c564b',
+    'nucleus': '#8c564b',
+}
+
+
+def component_color(name, index: int = 0) -> str:
+    """Color for a component: semantic identity first (name substring match),
+    positional DEFAULT_COLORS fallback for unrecognized names."""
+    key = str(name).lower() if name else ''
+    for token, color in SEMANTIC_COLORS.items():
+        if token in key:
+            return color
+    return DEFAULT_COLORS[index % len(DEFAULT_COLORS)]
+
 integrmode = 'nearest_neighbor'
 def parse_photometry_params(param_file: str) -> tuple[float, float]:
     """Parse zeropoint (J) and plate scale (K) from a GALFIT parameter file."""
@@ -445,12 +469,14 @@ def render_sb_profile(ax_main, ax_resid, original_data, sigma_data, model_data,
                 continue
             mu_c = intensity_to_sb(intens_c, zeropoint, pltscale)
 
-            color = DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
+            comp_name = components[i].get('name') if (components and i < len(components)) else None
+            color = component_color(comp_name, i)
+            name_prefix = f'{comp_name} ' if comp_name else ''
             if comp_type.lower() in ['sersic', 'sersic_f'] and components and i < len(components):
                 n_val = components[i].get('n')
-                label = f'{comp_type.lower()}(n={n_val:.2f}) {comp_fractions[i]:.3f}' if n_val is not None else f'{comp_type.lower()} {comp_fractions[i]:.3f}'
+                label = f'{name_prefix}{comp_type.lower()}(n={n_val:.2f}) {comp_fractions[i]:.3f}' if n_val is not None else f'{name_prefix}{comp_type.lower()} {comp_fractions[i]:.3f}'
             else:
-                label = f'{comp_type} {comp_fractions[i]:.3f}'
+                label = f'{name_prefix}{comp_type} {comp_fractions[i]:.3f}'
             ax_main.plot(sma_c, mu_c, '-', color=color, linewidth=1.2,
                          zorder=3, label=label)
     if auto_sky:

@@ -491,10 +491,12 @@ def extract_component_attributes(
 
         # 尺寸参数
         re_pix = None
+        re_arcsec = None
         size_key = _SIZE_PARAM_MAP.get(ptype)
         if size_key is not None:
             size_arcsec = p(size_key)
             if size_arcsec is not None:
+                re_arcsec = float(size_arcsec)
                 re_pix = size_arcsec / pixsc
 
         # Sersic 指数
@@ -508,6 +510,9 @@ def extract_component_attributes(
             if rs is not None and hs is not None and rs > 0:
                 ba = hs / rs
         pa = p('ang')
+        # GalfitS 的 ang 本身就是 sky-PA（正北 0°，逆时针向东，与 .lyric Pa7 同帧），
+        # 转成图像系之前先保留原值，供图例直接显示/写回 Pa7。
+        sky_pa = pa
         # 注意：Galfit 的 PA 定义为从 +y 逆时针到 +x 的角度，Galfits的PA是相对于正北方向逆时针旋转到半长轴的角度，而天文中通常定义为从北向东的角度。因此需要转换：
         pa = ((pa + _delta_ang + 90 + 180) % 360 - 180) if pa is not None else None
         
@@ -518,9 +523,11 @@ def extract_component_attributes(
             'y': float(y_pix),
             'mag': float(mag) if mag is not None else None,
             're': float(re_pix) if re_pix is not None else None,
+            're_arcsec': re_arcsec,
             'n': float(n_val) if n_val is not None else None,
             'ba': float(ba) if ba is not None else None,
             'pa': float(pa) if pa is not None else None,
+            'sky_pa': float(sky_pa) if sky_pa is not None else None,
         }
         if ptype == 'sersic_f':
             if p('r_in') is not None:

@@ -13,13 +13,14 @@ import matplotlib
 matplotlib.use('Agg')  
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from matplotlib.lines import Line2D
 from astropy.io import fits
 from astropy.wcs import WCS
 from typing import Any, Annotated, List, Dict, Tuple
 
 from .pix2radec import suppress_stdout_stderr
 from .render_original import render_asinh_panel, draw_compass, sky_direction_vectors
-from .sb_profile import render_sb_profile
+from .sb_profile import render_sb_profile, component_color
 from .parse_lyric import (
     parse_image_infos_from_lyric,
     parse_region_info_from_lyric,
@@ -563,10 +564,29 @@ def create_multiband_comparison_png(
         else:
             ax2.text(0.5, 0.5, 'No Model',
                      ha='center', va='center', transform=ax2.transAxes)
+        # Color-coded parameter legend: one dashed line per component in the same
+        # semantic color as its 2·Re ellipse and its 1D SB-profile curve, so the
+        # VLM can attribute every contour and read off fitted parameters directly.
+        if model_data is not None and components_sorted:
+            legend_handles = []
+            for i, comp in enumerate(components_sorted):
+                parts = [f"{comp.get('name', '?')}[{comp.get('type', '?')}]"]
+                for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
+                                              ('re_arcsec', 'Re', '.2f', '"'),
+                                              ('n', 'n', '.2f', ''),
+                                              ('ba', 'q', '.2f', ''),
+                                              ('sky_pa', 'PA(sky)', '.0f', '°')):
+                    v = comp.get(key)
+                    parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
+                legend_handles.append(Line2D(
+                    [0], [0], color=component_color(comp.get('name'), i),
+                    lw=2, ls='--', label=' '.join(parts)))
+            ax2.legend(handles=legend_handles, loc='upper left', fontsize=9,
+                       frameon=True, fancybox=True, framealpha=0.8)
         ax2.set_title(
             f"GALFITS Model\n"
             f"Same asinh stretch as original (99.5th pctl)\n"
-            f"2*$R_e$ contours of component [cyan]",
+            f"2*$R_e$ contours [color per component, see legend]",
             fontsize=9, pad=8)
         ax2.set_xlabel('X (pixels)', fontsize=10)
         ax2.tick_params(labelleft=False)

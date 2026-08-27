@@ -178,6 +178,16 @@ def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
 
     if region is not None:
         xmin_r, xmax_r, ymin_r, ymax_r = region
+        ny_a, nx_a = sci.shape
+        # Guard against silent stretching: imshow maps the array linearly onto
+        # the extent, so a shape/extent mismatch (e.g. the lyric-reconstructed
+        # fitting region disagreeing with what GalfitS actually cut) would
+        # distort the morphology the VLM reads q/PA from. The array is ground
+        # truth for what was fitted — anchor its native shape at the region's
+        # lower-left corner so the pixel grid stays 1:1.
+        if abs((xmax_r - xmin_r) - nx_a) > 1 or abs((ymax_r - ymin_r) - ny_a) > 1:
+            xmax_r = xmin_r + nx_a
+            ymax_r = ymin_r + ny_a
         ext = [xmin_r - 0.5, xmax_r + 0.5, ymin_r - 0.5, ymax_r + 0.5]
     else:
         ext = None

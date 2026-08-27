@@ -478,14 +478,24 @@ def create_multiband_comparison_png(
 
     fig_height = 8 * n_bands
     fig = plt.figure(figsize=(40, fig_height))
-    gs = GridSpec(n_rows, 5, figure=fig,
-                  wspace=0.18, hspace=0.30,
-                  width_ratios=[1, 1, 1, 1, 0.8],
+    # 9-column layout: the 5 content panels are separated by dedicated spacer
+    # columns so each gap is sized for what actually lives in it. The three
+    # interior gaps only separate tick labels (interior panels hide their y tick
+    # labels), while the Residual→SB-profile gap must additionally fit the
+    # residual colorbar (5% of panel width + ticks + label ≈ 80 px) and the SB
+    # profile's own y-axis labels (≈55 px), so it is ~2.5× wider. Tight outer
+    # margins + narrow gaps put more of the fixed 4096 px width into the panels,
+    # keeping the model-panel legend legible after VLM-side downscaling.
+    gap, gap_wide = 0.08, 0.26
+    gs = GridSpec(n_rows, 9, figure=fig,
+                  wspace=0.0, hspace=0.30,
+                  width_ratios=[1, gap, 1, gap, 1, gap, 1, gap_wide, 0.8],
                   height_ratios=height_ratios)
-    fig.subplots_adjust(left=0.03, right=0.97, top=0.97, bottom=0.03)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.97, bottom=0.03)
 
     # --- Render each band ---
     current_row = 0
+    model_legends = []  # per-band model-panel legends, font-guarded after resize
     for band_idx, bdata in enumerate(band_data):
         image_info = bdata['image_info']
         original_data = bdata['original_data']
@@ -532,7 +542,7 @@ def create_multiband_comparison_png(
         ax1.set_ylabel('Y (pixels)', fontsize=10)
 
         # ---- Col 1: Original (99.99th percentile) ----
-        ax1b = fig.add_subplot(gs[r0, 1])
+        ax1b = fig.add_subplot(gs[r0, 2])
         orig_info_9999 = render_asinh_panel(
             ax1b, original_data, mask, region=region,
             show_isophotes=True, vmax_percentile=99.99)
@@ -560,7 +570,7 @@ def create_multiband_comparison_png(
             draw_compass(ax1b, *vEVN, color='lime')
 
         # ---- Col 2: Model ----
-        ax2 = fig.add_subplot(gs[r0, 2])
+        ax2 = fig.add_subplot(gs[r0, 4])
         if model_data is not None:
             render_asinh_panel(
                 ax2, model_data, mask, region=region,
@@ -574,30 +584,27 @@ def create_multiband_comparison_png(
         # Color-coded parameter legend: one dashed line per component in the same
         # semantic color as its 2·Re ellipse and its 1D SB-profile curve, so the
         # VLM can attribute every contour and read off fitted parameters directly.
+        # Entries are kept compact (no [type] — P-block profiles are sersic-family
+        # in practice; Re in this band's px only, no arcsec — the band header
+        # carries the pixscale for conversion) so the legend stays inside the
+        # panel and legible after VLM-side downscaling.
         if model_data is not None and components_sorted:
             legend_handles = []
             for i, comp in enumerate(components_sorted):
-                parts = [f"{comp.get('name', '?')}[{comp.get('type', '?')}]"]
+                parts = [f"{comp.get('name', '?')}"]
                 for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
-                                              ('re_arcsec', 'Re', '.2f', '"'),
+                                              ('re', 'Re', '.1f', 'px'),
                                               ('n', 'n', '.2f', ''),
                                               ('ba', 'q', '.2f', ''),
                                               ('sky_pa', 'PA(sky)', '.0f', '°')):
                     v = comp.get(key)
-                    piece = f"{disp}={format(v, spec) if v is not None else '--'}{unit}"
-                    if key == 're_arcsec' and v is not None and comp.get('re') is not None:
-                        # Dual unit: panel axes and all VLM measurements are in
-                        # pixels, so also print this band's Re in px (comp['re']
-                        # is re_arcsec divided by this band's WCS pixscale) —
-                        # no mental arithmetic needed to compare Re with Δr,
-                        # ellipse sizes, or feature radii read off the panels.
-                        piece += f" ({comp['re']:.1f}px)"
-                    parts.append(piece)
+                    parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
                 legend_handles.append(Line2D(
                     [0], [0], color=component_color(comp.get('name'), i),
                     lw=2, ls='--', label=' '.join(parts)))
-            ax2.legend(handles=legend_handles, loc='upper left', fontsize=9,
-                       frameon=True, fancybox=True, framealpha=0.8)
+            leg = ax2.legend(handles=legend_handles, loc='upper left', fontsize=11,
+                             frameon=True, fancybox=True, framealpha=0.8)
+            model_legends.append(leg)
         ax2.set_title(
             f"GALFITS Model\n"
             f"Same asinh stretch as original (99.5th pctl)\n"
@@ -607,7 +614,7 @@ def create_multiband_comparison_png(
         ax2.tick_params(labelleft=False)
 
         # ---- Col 3: Residual / sigma ----
-        ax3 = fig.add_subplot(gs[r0, 3])
+        ax3 = fig.add_subplot(gs[r0, 6])
         im3 = None
         if residual_data is not None:
             resid_display = residual_data.copy()
@@ -620,6 +627,12 @@ def create_multiband_comparison_png(
             plot_extent = None
             if region is not None:
                 xmin, xmax, ymin, ymax = region
+                ny_a, nx_a = resid_display.shape
+                # Same anti-stretch guard as render_asinh_panel: anchor the
+                # extent to the array's native shape at the region's origin.
+                if abs((xmax - xmin) - nx_a) > 1 or abs((ymax - ymin) - ny_a) > 1:
+                    xmax = xmin + nx_a
+                    ymax = ymin + ny_a
                 plot_extent = [xmin - 0.5, xmax + 0.5, ymin - 0.5, ymax + 0.5]
 
             im3 = ax3.imshow(
@@ -654,7 +667,7 @@ def create_multiband_comparison_png(
 
         # ---- Col 4: 1D SB Profile ----
         gs_sb = GridSpecFromSubplotSpec(
-            2, 1, subplot_spec=gs[r0, 4],
+            2, 1, subplot_spec=gs[r0, 8],
             height_ratios=[3, 1], hspace=0.05)
         ax_sb = fig.add_subplot(gs_sb[0])
         ax_sb_resid = fig.add_subplot(gs_sb[1], sharex=ax_sb)
@@ -675,6 +688,63 @@ def create_multiband_comparison_png(
             ax_sep.set_axis_off()
             ax_sep.axhline(y=0.5, color='gray', linewidth=2)
             current_row += 1
+
+    # --- Match image-panel cell aspect to the cutout aspect ---
+    # The science cutouts are drawn with equal aspect (imshow), so a cell whose
+    # w/h ratio differs from the cutout's is letterboxed with white bars inside
+    # the cell — bars that read as inter-column gaps and waste width budget
+    # (square cutouts in the old 1.19:1 cells wasted ~60 px per side). Instead
+    # of measuring the aspect-adjusted axes box (its value depends on whether
+    # matplotlib has applied the aspect yet), derive the target deterministically:
+    # size the 1.0-ratio cells to the cutout's own aspect, so
+    #   cell_width = cell_height * (nx / ny)
+    #   fig_width  = cell_width * sum(width_ratios) / usable_width_fraction.
+    # Square regions (the common case) reduce to square cells. Fonts and markers keep
+    # their pixel sizes, so the model-panel legend also grows relative to the
+    # image width, staying legible after VLM-side downscaling.
+    #   - aspect <= 1 (square or tall cutouts): shrink the figure width to fit.
+    #   - aspect >  1 (wide cutouts, e.g. 4:3): growing past the 40in width cap
+    #     would eat the fixed 4096px budget, so shrink the figure HEIGHT by the
+    #     same ratio instead — the cells still end up exactly at the cutout
+    #     aspect, panels just get proportionally shorter.
+    # The aspect is that of what the panels actually DRAW: the lyric's fitting
+    # region when it matches the array (imshow extent), else the array's own
+    # shape (the anti-stretch guard in render_asinh_panel anchors the extent to
+    # the array in that case). calculate_fitting_region builds square regions
+    # by construction, so the common case remains square cells.
+    region0 = band_data[0]['image_info'].fitting_region
+    ny0, nx0 = band_data[0]['original_data'].shape
+    if (region0 is not None
+            and abs((region0[1] - region0[0]) - nx0) <= 1
+            and abs((region0[3] - region0[2]) - ny0) <= 1):
+        data_aspect = (region0[1] - region0[0]) / (region0[3] - region0[2])
+    else:
+        data_aspect = nx0 / ny0
+    fig_w_in, fig_h_in = fig.get_size_inches()
+    bottoms, tops, _, _ = gs.get_grid_positions(fig)
+    cell_h_in = (tops[1] - bottoms[1]) * fig_h_in  # row 1 = first band's plot row
+    ratios_sum = 4 * 1.0 + 0.8 + 3 * gap + gap_wide
+    target_w_in = cell_h_in * data_aspect * ratios_sum / (0.98 - 0.02)
+    if 0 < target_w_in < fig_w_in:
+        fig.set_size_inches(target_w_in, fig_h_in)
+    elif target_w_in > fig_w_in > 0:
+        fig.set_size_inches(fig_w_in, fig_h_in * fig_w_in / target_w_in)
+
+    # --- Legend overflow guard ---
+    # Tall cutouts shrink the figure width, and an 11pt legend can end up wider
+    # than its (narrowed) Model panel, spilling into the Residual panel — the
+    # exact overflow mode seen before. Estimate each legend's widest line at
+    # 11pt (~0.55 em average glyph width in DejaVu Sans, plus handle/padding)
+    # and step the font down proportionally (floor 7pt) until it fits the panel.
+    if model_legends:
+        unit_in_final = (0.98 - 0.02) * fig.get_size_inches()[0] / ratios_sum
+        for leg in model_legends:
+            maxlen = max((len(t.get_text()) for t in leg.get_texts()), default=0)
+            est_in = maxlen * 0.55 * 11.0 / 72.0 + 0.55
+            if est_in > 0.92 * unit_in_final:
+                fs = max(7.0, 11.0 * 0.92 * unit_in_final / est_in)
+                for t in leg.get_texts():
+                    t.set_fontsize(fs)
 
     # --- Save ---
     output_dir = os.path.dirname(band_data[0]['result_fits_file'])

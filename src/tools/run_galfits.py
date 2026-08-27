@@ -498,11 +498,18 @@ def create_multiband_comparison_png(
         comp_types = bdata['comp_types']
         region = image_info.fitting_region
 
-        # ---- Header row (band name) ----
+        # ---- Header row (band name + per-band pixel scale) ----
+        # Each band's FITS may be drizzle-resampled independently, so the
+        # arcsec-per-pixel scale differs between rows; annotate it per band so
+        # the VLM can convert its pixel measurements to arcsec (and is reminded
+        # not to reuse one band's scale for another).
+        band_label = f"Band: {bdata['band']}"
+        if image_info.pixscale:
+            band_label += f"  (pixscale = {image_info.pixscale:.4f}\"/px)"
         ax_header = fig.add_subplot(gs[current_row, :])
         ax_header.set_axis_off()
         ax_header.text(
-            0.5, 0.3, f"Band: {bdata['band']}",
+            0.5, 0.3, band_label,
             transform=ax_header.transAxes,
             fontsize=14, fontweight='bold',
             ha='center', va='center',
@@ -577,7 +584,15 @@ def create_multiband_comparison_png(
                                               ('ba', 'q', '.2f', ''),
                                               ('sky_pa', 'PA(sky)', '.0f', '°')):
                     v = comp.get(key)
-                    parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
+                    piece = f"{disp}={format(v, spec) if v is not None else '--'}{unit}"
+                    if key == 're_arcsec' and v is not None and comp.get('re') is not None:
+                        # Dual unit: panel axes and all VLM measurements are in
+                        # pixels, so also print this band's Re in px (comp['re']
+                        # is re_arcsec divided by this band's WCS pixscale) —
+                        # no mental arithmetic needed to compare Re with Δr,
+                        # ellipse sizes, or feature radii read off the panels.
+                        piece += f" ({comp['re']:.1f}px)"
+                    parts.append(piece)
                 legend_handles.append(Line2D(
                     [0], [0], color=component_color(comp.get('name'), i),
                     lw=2, ls='--', label=' '.join(parts)))

@@ -201,7 +201,9 @@ def render_asinh_panel(ax, sci, mask, region=None, nmin=1, show_isophotes=True,
 
     # Draw component 2·Re ellipses (model panel). expdisk Re = 1.68·scale length.
     # edgecolor=None → semantic per-component colors, matching the 1D curves.
-    draw_re_ellipses(ax, components, edgecolor=None)
+    # linewidth=2.0 matches the legend's Line2D sample width so on-panel contours
+    # and legend swatches read as the same stroke.
+    draw_re_ellipses(ax, components, edgecolor=None, linewidth=2.0)
 
     ax.tick_params(axis="both", which="major", direction="out", top=True, right=True,
                    labelsize=8, length=4, width=0.5)
@@ -247,14 +249,20 @@ def render_original(
                                        vmax_percentile=99.5)
             info2 = render_asinh_panel(ax2, sci_full, mask_full, region=None,
                                        vmax_percentile=99.99)
+            # Pixel scale (WCS-derived, per band): the VLM measures positions and
+            # sizes in pixels on these panels, so state the arcsec/px conversion.
+            pix_note = (f"\n1 px = {image_info.pixscale:.4f}\""
+                        if image_info.pixscale else "")
             ax1.set_title(
                 f"band: {image_info.band} vmax=99.5th pctl"
+                f"{pix_note}"
                 f"\nasinh_a={info1['asinh_a']:.4f}; vmin={info1['vmin_sigma']:.1f}$\\sigma$"
                 f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red]"
                 f"\nShaded: Masked; Focus: Central Galaxy",
                 fontsize=6, pad=3)
             ax2.set_title(
                 f"band: {image_info.band} vmax=99.99th pctl"
+                f"{pix_note}"
                 f"\nasinh_a={info2['asinh_a']:.4f}; vmin={info2['vmin_sigma']:.1f}$\\sigma$"
                 f"\nIsophotes: 5.0$\\sigma$ [lime]; vmax[red]"
                 f"\nShaded: Masked; Focus: Central Galaxy",

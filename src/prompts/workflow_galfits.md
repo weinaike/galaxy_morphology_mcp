@@ -32,7 +32,7 @@
 ### 形式化定义（精简版，便于智能体维护一致的状态语义）
 - **状态** s = (C, P, R, reduced_χ², BIC, depth)，其中 C 为成分清单、P 为对应参数（`.lyric` 中的 `P*` 五元组）、R 为残差诊断（`all_bands_comparison.png` + 1D 残差特征）、reduced_χ² 与 BIC 取自 `.gssummary`、depth 为该状态在搜索树中的深度（s₁ 的 depth=1）。
 - **动作** a = 复合动作，由 1–2 个语义内聚的原子操作组成。原子操作有三类：`add(type, params)` 新增成分、`remove(component)` 删除成分、`tune(component, param_delta)` 调参（含释放/固定 vary、收紧/放宽边界、修改 .constrain）。禁止捆绑无关联的原子操作。
-- **转移** T(s, a) = s'：拷贝父状态的 `.lyric` → 按 a 修改 → 写 `_iter{n}.lyric` → `check_lyric_file` → `run_galfits_image_fitting --fit_method ES` → 读 `.gssummary` 抽取 reduced_χ²/BIC → 调用 `generate_beam_actions` 获取下一层候选。s'.depth = s.depth + 1。
+- **转移** T(s, a) = s'：以父状态的 `.lyric` 为结构模板、父状态 `.gssummary` 的收敛值热启动回填（见步骤 1.b.1 热启动规则）→ 按 a 修改 → 写 `_iter{n}.lyric` → `check_lyric_file` → `run_galfits_image_fitting --fit_method ES` → 读 `.gssummary` 抽取 reduced_χ²/BIC → 调用 `generate_beam_actions` 获取下一层候选。s'.depth = s.depth + 1。
 - **初始状态** s₀：从输入 `.lyric` 解析得到（C={sersic}, P={输入参数}, R=原图诊断, reduced_χ²=⊥, BIC=⊥, depth=0）。s₀ 不是拟合产物，而是输入；首次拟合（步骤 0.4）对 `_iter1.lyric` 跑一次 `run_galfits_image_fitting` 直接得到 s₁，**不经过候选生成**。
 - **当前最优** s\*：按主模型综合评分最高者（评分维度见 §去重与排序），**不是**单纯按 reduced_χ² 最低。
 
@@ -45,7 +45,7 @@
     2) 调用 `check_lyric_file(_iter1.lyric)` 校验；失败按提示修复。
     3) 调用 `run_galfits_image_fitting(config_file=<_iter1.lyric 绝对路径>, extra_args=["--fit_method", "ES"])`。`n += 1`（→ 1）。
     4) 失败处置：若工具异常或未产出 summary/对比图，说明输入 `.lyric` 本身有问题——这是退化情形，不进入主循环，改为人工介入修复输入后重新执行步骤 0。
-    5) 构造 s₁：`C₁`、`P₁` 取自输入 `.lyric`（首次拟合不修改成分与参数）；从产出的 `.gssummary` 读 reduced_χ² 与 BIC；`R₁` 取 `all_bands_comparison.png`。`s\* = s₁`（目前唯一状态）。在 `working_note.md` 分支 A 下追加 A.1 小节（fit #1，.lyric = `_iter1.lyric`）。
+    5) 构造 s₁：`C₁`、`P₁` 取自输入 `.lyric`（首次拟合不修改成分与参数）；从产出的 `.gssummary` 读 reduced_χ² 与 BIC；`R₁` 取 `all_bands_comparison.png`。`s\* = s₁`（首次拟合是唯一状态，无条件设为 s\*；若步骤 0.5 返回的 Physicality Verdict 为 FAIL，不回溯撤销 s₁——后续主循环中任何 PASS 状态可直接取代它）。在 `working_note.md` 分支 A 下追加 A.1 小节（fit #1，.lyric = `_iter1.lyric`）。
 5. **首候选生成（depth=1）**：以 s₁ 的对比图为 `comparison_file`、`_iter1.lyric` 为 `lyric_file`、s₁ 的 `.gssummary` 为 `summary_file`，调用：
     ```
     generate_beam_actions(
@@ -59,7 +59,7 @@
         custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一 bar/lop 结论 + s₁ 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
     )
     ```
-    工具会按 depth=1 规则返回 1–2 个候选（lop 检出 → 1 个 sersic_f 切换候选；bar 检出 → 1–2 个 Bulge/Bar 候选；都未检出 → 1 个标准 add(Bulge) 候选）。
+    工具会按 depth=1 规则返回 1–2 个候选（lop 检出 → 1 个 sersic_f 切换候选；bar 检出 → 1–2 个 Bulge/Bar 候选；都未检出 → 1 个标准 add(Bulge) 候选），**同时返回 s₁ 的 `## Physicality Verdict` 块——解析并记入 A.1 小节（主循环中的 s\* 更新守门从 A.2 起严格执行）**。
 6. 对每个返回的候选，主模型按 §去重与排序 打分得到 g ∈ [0,1]；按 g 降序截断到 W=5 入队 Q。每个队列元素记录 `(s_parent=s₁, a, σ_from_vlm, g, branch_id, depth=2)`——注意：从这些候选执行转移得到的下一状态深度为 2。
 7. 更新 `working_note.md` 的 Beam 状态快照。
 
@@ -69,7 +69,7 @@ while Q 非空 and n < 15 and stagnation < 15:
 ```
 a. **出队**：从 Q 取出 g 最高的 (s, a, σ, g, branch, depth)。把它从 Q 中移除。
 b. **执行转移 T(s, a)**：
-    1) `global_iter_id += 1`；拷贝 s 对应的 `.lyric`，按 a 的 primitives 修改成分与参数，写入星系主目录的 `_iter{global_iter_id}.lyric`。**转写时必须严格遵守 §候选动作忠实执行原则**——候选声明中的语义核心字段（成分类型、n/vary 状态、量级约束、增删/中心约束策略、Fourier 阶数等）不得擅自修改；若主模型认为某候选有缺陷，应整条丢弃（记入"跨分支决策日志"），而不是修改后执行。
+    1) `global_iter_id += 1`；以 s 对应的 `.lyric` 为**结构模板**，按 a 的 primitives 修改成分与参数，写入星系主目录的 `_iter{global_iter_id}.lyric`。**热启动规则（硬约束）**：VLM 的诊断以父状态的**收敛解**为条件——模型图上的成分椭圆与图例的 Mag/Re/n/q/PA 画的就是 `.gssummary` 收敛值，VLM 未提议 tune 的参数隐含"该成分当前形态可接受"。因此子轮次必须让被声明的动作成为**父收敛解之上的干净增量**：所有**未被** primitives 声明的参数，五元组 `initial_value` 一律回填父状态 `.gssummary` 的收敛值（min/max/step/vary 保持父轮设定；含 Fourier 模式参数、N 块参数等全部可回填项），**禁止直接沿用父 `.lyric` 的旧输入值**——那是上一轮的初始猜测，不是 VLM 评估过的解；从旧猜测重启会让未提及参数重新游走，既污染"候选 → 结果"的归因，又浪费收敛预算。被 primitives 声明修改的参数按候选声明值写入；`add` 的新成分无父收敛值，按候选声明参数初始化。回填必须手动从 `.gssummary` 提取，**严禁使用 `--readsummary`**（它只解析自由参数段，会静默丢弃 vary=0 参数，见 CLAUDE.md Core Principles #6）。**转写时必须严格遵守 §候选动作忠实执行原则**——候选声明中的语义核心字段（成分类型、n/vary 状态、量级约束、增删/中心约束策略、Fourier 阶数等）不得擅自修改；若主模型认为某候选有缺陷，应整条丢弃（记入"跨分支决策日志"），而不是修改后执行。
     2) **主星系同心约束检查（硬约束，无论 a 是否声明约束都必须执行）**：统计本轮 `_iter{global_iter_id}.lyric` 中主星系中心成分（Disk/Bulge/Bar/Lens，即 P 块且 label 不含 `comp`/`companion`/`secondary`/`satellite`）的数量 K：
        - **K ≥ 2**：**必须**写 `iter{global_iter_id}.constrain`（命名遵循 `Update_Constraints` 规范），把所有主星系中心成分的 xcen/ycen 绑定到 Disk（`pardictlc['bulge_xcen'] = 1 * pardictlc['disk_xcen']` 等成对出现，严禁仅绑定一个变量）。在 lyric 中把 Bulge/Bar/Lens 的 `P*3`/`P*4` 设为 `vary=0`（Disk 的 `Pa3`/`Pa4` 保持 `vary=1` 作为同心锚点）。AGN/N 块若共存则用 `xcen_agn`/`ycen_agn`（不是 `agn_xcen`）同样绑定到 disk。**伴星系（label 含 comp/companion/secondary/satellite）的中心严禁参与此约束**——伴星系中心必须保持 `vary=1` 自由拟合。调用 `run_galfits_image_fitting` 时必带 `--parconstrain iter{global_iter_id}.constrain`。
        - **K ≤ 1**（仅单 Disk 或起手单 sersic）：不写约束文件，正常拟合。
@@ -78,16 +78,8 @@ b. **执行转移 T(s, a)**：
     4) 调用 `run_galfits_image_fitting`，必带 `--fit_method ES`；若步骤 2) 产出了 `.constrain` 则必带 `--parconstrain iter{global_iter_id}.constrain`。`n += 1`。
     5) **失败处置**：若工具异常或未产出 summary/对比图，把该 (s, a) 记入 `working_note.md` 的"分支: 失败归档"小节，把 a 加入 s 的禁忌集，`stagnation += 1`，回到循环开头。
 c. **构造新状态 s'**：从新生成的 `.gssummary` 读 reduced_χ² 与 BIC；`R'` 取新生成的 `all_bands_comparison.png`；`C'`、`P'` 取自新的 `.lyric` 与 `.gssummary`。轮次命名：在所属分支内取 `branch.local_round`（如 A.2、A.3、B.1…，A.1 已被首次拟合占用），与 global_iter_id 解耦。s' 的深度 = `depth + 1`。
-c.1 **Re 全序程序化校验**（Re-ordering gate）：调用 `check_re_ordering(summary_file=<新.gssummary 绝对路径>, lyric_file=<新_iter{n}.lyric 绝对路径>)`。该工具在 arcsec 域按基准链 `Re_disk > Re_lens > Re_bar > Re_bulge` 的子序列规则做严格数值比对，把 AGN(N 块) 与伴星系自动排除。
-   - **status="pass"**：正常进入 d。
-   - **status="fail"**：
-     1. **该轮次直接失去 s\* 候选资格**（Re 反置视为拟合失败，即使 χ²/BIC 更优也不参与 beam 评分）；在 `working_note.md` 该轮小节标注"Re 反置否决"，并粘贴工具返回的 `violations` 清单作为证据。
-     2. 若 `swappable_overall=True`（反置仅涉及 {Disk, Bulge}）：主 agent **直接生成**交换 disk ↔ bulge 标签后的 `_iter{n+1}.lyric`（复用 s' 的其他参数；经 `check_lyric_file` 校验后进入下一轮拟合），**跳过** generate_beam_actions 调用。
-     3. 若 `swappable_overall=False`：把返回的 `custom_instructions_hint` 字段**原样拼接**到下一步 `generate_beam_actions` 的 `custom_instructions` 末尾；并在步骤 e.ii 中按 **§非物理结果恢复协议** 生成受保护的恢复候选（与 VLM 候选一同入队竞争）。正常走候选生成流程。
-   - **status="error"**：记录 `error_message` 到 `working_note.md`，**不阻断**（沿用现状，由落锁前 verifier 兜底）；进入 d。
-d. **登记 s' 评分并更新 s\***：按 §去重与排序 中的 score 函数给 s' 打分；若 score(s') > score(s\*)，s\* ← s'，`stagnation = 0`；否则 `stagnation += 1`。覆写 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节。**注意：stagnation 仅用于终止判定，不构成跳过步骤 e 的理由——s' 的后继可能优于 s\*（详见 §候选生成的诊断式原则）**。
-e. **候选生成（无条件硬约束——见 §候选生成的诊断式原则；两个正交来源合并后统一进入步骤 f 打分入队）**：本步骤只要步骤 b 拟合成功就**必须**执行（失败处置分支 b.5 除外），无论 s' 是否更新 s\*、BIC 是否反升、参数是否触界、队列是否仍有未消费候选、拟合预算是否紧张。每轮主循环的候选由两个触发条件正交的来源并行生成——e.i 由 VLM 基于残差图像的视觉分析驱动，e.ii 由主模型基于 `.gssummary` 的客观阈值驱动。两类候选合并后走完全相同的去重 / 打分 / 截断规则（步骤 f），彼此平等竞争入队。
-    - **e.i VLM 视觉驱动候选**：以新对比图为 `comparison_file`、新 `.lyric` 为 `lyric_file`、新 `.gssummary` 为 `summary_file`，调用：
+d. **候选生成 + 拟合结果物理性判定（无条件硬约束——见 §候选生成的诊断式原则；两个正交来源合并后统一进入步骤 f 打分入队）**：本步骤只要步骤 b 拟合成功就**必须**执行（失败处置分支 b.5 除外），无论 s' 的物理性判定结果如何、BIC 是否反升、参数是否触界、队列是否仍有未消费候选、拟合预算是否紧张。每轮主循环的候选由两个触发条件正交的来源并行生成——d.i 由 VLM 基于残差图像的视觉分析与**物理性判定**驱动，d.ii 由主模型基于 `.gssummary` 的客观阈值驱动。两类候选合并后走完全相同的去重 / 打分 / 截断规则（步骤 f），彼此平等竞争入队。
+    - **d.i VLM 视觉驱动候选 + 物理性判定**：以新对比图为 `comparison_file`、新 `.lyric` 为 `lyric_file`、新 `.gssummary` 为 `summary_file`，调用：
         ```
         generate_beam_actions(
             ...,
@@ -95,11 +87,15 @@ e. **候选生成（无条件硬约束——见 §候选生成的诊断式原则
             parent_label      = <branch>.<local_round>,
             depth             = depth + 1,   # 新候选应用到的父状态深度
             working_note_file = <abs path>,
-            custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一结论 + 父轮次已尝试动作清单 + s' 拟合结果的具体问题（触界参数/Re 全序校验 violations/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
+            custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一结论 + 父轮次已尝试动作清单 + s' 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
         )
         ```
-        工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个）。
-    - **e.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查，向 VLM 委托需视觉验证的候选。这类候选针对"视觉上可见但数值上可疑的成分"——VLM 从图像上看到该成分存在会倾向于保留，但数值上若可疑（如通量极低、或基础成分 Re 偏小被延展成分代偿），主模型把客观观数据交给 VLM，由 VLM 结合原图视觉验证决定是否生成调整候选（移除或参数调整）。当前定义的触发规则：
+        工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个），**且返回 Markdown 的顶部包含 `## Physicality Verdict` 块（verdict / failed_checks / swap_hint）——这是 VLM 对 s' 拟合结果的物理性判定（核心为 Model 面板上各成分 2·Re 椭圆的同心嵌套包含性：disk ⊃ lens ⊃ bar ⊃ bulge、内层面积明显小于紧邻外层、整体"洋葱"结构无瑕疵、最外围成分 2·Re 不越出拟合区域），取代旧版 `check_re_ordering` 程序化校验，主模型不再调用该工具**。主模型解析该块并**原样**记录到 working_note（不得改写判定内容）：
+        - `verdict: PASS` → s' 获得步骤 e 的 s\* 比较资格。
+        - `verdict: FAIL` → s' **失去 s\* 候选资格**（即使 χ²/BIC 更优）；在 working_note 该轮小节标注"物理性 FAIL 否决"并粘贴 failed_checks 证据；按 **§非物理结果恢复协议** 生成受保护恢复候选（与 VLM 候选一同进入步骤 f 竞争）。VLM 按 prompt 约定本轮至少给出一个针对 failed_checks 的修复候选。
+        - **Verdict 块缺失或不可解析**（VLM 未按格式输出）：主模型做最小兜底——直接从 `.gssummary` 的成分 Re 数值比对主星系全序链（纯数值比较，不调用任何工具；这只是 VLM 嵌套包含性判定的最小数值子集，无法覆盖椭圆穿出/交叉等形态违例），结果记入 working_note 并标注"[verdict 兜底]"。正常情况应依赖 VLM 判定，此兜底仅防格式缺失导致守门失效。
+        - `swap_hint: disk_bulge_swap`：确认 VLM 候选中含交换 disk ↔ bulge 标签方向的修复候选；若 VLM 漏给，主模型按 §候选动作忠实执行原则 的 B 类填空保底生成该候选（g ≥ 0.5，强制保留条款），追溯标记"[主模型 swap 补充]"。
+    - **d.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查，向 VLM 委托需视觉验证的候选。这类候选针对"视觉上可见但数值上可疑的成分"——VLM 从图像上看到该成分存在会倾向于保留，但数值上若可疑（如通量极低、或基础成分 Re 偏小被延展成分代偿），主模型把客观观数据交给 VLM，由 VLM 结合原图视觉验证决定是否生成调整候选（移除或参数调整）。当前定义的触发规则：
         - **伴星系必要性检查（数值 + 视觉双轴判据）**：若 s' 含 Companion，读取 `.gssummary` 中 companion 与 disk 的 `logNorm_<component>_<band>` / `Mag_<component>_<band>`，计算通量比 `f_companion/f_disk = 10^(−0.4·ΔMag)`（其中 `ΔMag = Mag_companion − Mag_disk`）。
           - 若通量比 > 1%：companion 通量显著，不触发移除检查。
           - 若通量比 ≤ 1%（**条件 A 命中**）：主模型**不直接生成 remove 候选**，而是把三项数值（通量比、ΔMag、`ΔlogNorm = logNorm_companion − logNorm_disk`）写入当轮 `generate_beam_actions` 的 `custom_instructions`，格式为："伴星系条件 A 命中：companion 通量比 = 0.4%, ΔMag = 5.91, ΔlogNorm = -2.37。请 VLM 做条件 B 视觉验证：查看原图面板 companion 位置是否有肉眼可见亮斑，无可见源才生成 remove(Companion)。" 由 VLM 在候选生成阶段执行条件 B 视觉验证（见 `beam_action_generation_prompt.md` §伴星系移除验证）：仅当 A（数值暗）AND B（原图无可见源）同时成立时，VLM 才生成 `remove(Companion)` 候选。若原图有可见亮斑（B 不命中），VLM 不生成 remove 候选，companion 保留。
@@ -113,19 +109,20 @@ e. **候选生成（无条件硬约束——见 §候选生成的诊断式原则
         - **lens Re 膨胀检查（参数状态触发，生成三条竞争式候选）**：若 s' 含 lens，读取 lens 的 `Re` 拟合值、lyric 中 lens 的 `re_max`、以及 disk 的 `Re` 与 `Mag`。
           - **触发条件（任一命中）**：
             - **触上限**：`lens_Re ≥ 0.98 × re_max`。
-            - **Re 反置**：`lens_Re ≥ disk_Re`（Re-ordering FAIL 时由 `check_re_ordering` 报告，或主模型直接比对）。
+            - **Re 反置**：`lens_Re ≥ disk_Re`（VLM 物理性判定会命中此项，或主模型从 `.gssummary` 直接比对）。
           - **生成动作**（主模型把信号写入 `custom_instructions`，**不直接生成候选**——由 VLM 按 `beam_action_generation_prompt.md` §Lens Re 膨胀触发规则 生成三条竞争路径 A/B/C，主模型打分入队）：格式为："Lens Re 膨胀命中：lens_Re=X 触上限（re_max=Y）[和/或] lens_Re=X ≥ disk_Re=Z（Re 全序反置）。lens_Mag=W，disk_Mag=V。请 VLM 按 §Lens Re 膨胀触发规则 生成候选 A（收紧 lens Re，re_max=0.9×disk_Re）/ B（增大 disk Re，re_init=1.3–1.5×disk_Re；若 disk 已触 re_max 则跳过 B 并说明）/ C（移除 lens）三条竞争路径。"
           - **主模型保底**：若 VLM 在已触发情况下漏掉了候选 A/B/C 中的某条且未在 physical_motivation 中说明放弃理由，主模型应**主动生成**缺失的候选（保底分 g ≥ 0.5，强制保留条款），追溯标记"[主模型 lens 膨胀补充]"。候选 A 的 re_max 取 `0.9 × disk_Re`；候选 B 的 disk re_init 取 `1.3 × disk_Re`（仅当 disk 未触界）；候选 C 为 `remove(lens)`。
           - **原理**：lens 膨胀是 lens 被添加后最常见的退化模式，有三种互斥的物理假设（lens 越界 / disk 骨架偏小 / lens 寄生），单一方向探索会错过最优修复。强制三路径竞争让 beam search 并行探索能力完整发挥。
           - 若 s' 不含 lens，不触发。
         - 未来若需扩展其他客观数值触发（如 sky 背景异常、某成分 Mag 异常暗等），按同样模式在此子项追加规则。
-    - **追溯标记**：e.ii 触发的数值检查（无论 VLM 最终是否生成对应候选）在 `working_note.md` 的相应分支小节标注"[主模型数值规则委托]"，记录实测数值（伴星系：通量比/ΔMag/ΔlogNorm；disk Re 瓶颈：lens/bar Re 与 re_max、disk Re 与 re_max、Re 比值、通量比、命中子条件 A/B；lens Re 膨胀：lens Re 与 re_max、disk Re、是否触上限/反置、lens_Mag、disk_Mag、命中的竞争路径 A/B/C）与 VLM 的视觉验证结论。便于后续审计成分保留/移除/参数调整决策的依据。
-f. **去重 + 打分 + 入队**：主模型对每个新候选（e.i VLM 候选与 e.ii 主模型数值规则候选合并后的完整集合）：
+    - **追溯标记**：d.ii 触发的数值检查（无论 VLM 最终是否生成对应候选）在 `working_note.md` 的相应分支小节标注"[主模型数值规则委托]"，记录实测数值（伴星系：通量比/ΔMag/ΔlogNorm；disk Re 瓶颈：lens/bar Re 与 re_max、disk Re 与 re_max、Re 比值、通量比、命中子条件 A/B；lens Re 膨胀：lens Re 与 re_max、disk Re、是否触上限/反置、lens_Mag、disk_Mag、命中的竞争路径 A/B/C）与 VLM 的视觉验证结论。便于后续审计成分保留/移除/参数调整决策的依据。
+e. **登记 s' 评分并更新 s\*（物理性守门）**：按 §去重与排序 中的 score 函数给 s' 打分；**仅当 d.i 的 Physicality Verdict 为 PASS（或 verdict 兜底判定通过）时**，s' 才与之前的最佳模型比较——若 score(s') > score(s\*)，s\* ← s'，`stagnation = 0`；否则 `stagnation += 1`。verdict=FAIL 的 s' **不参与 s\* 比较**（记 `stagnation += 1`），但其修复候选照常在步骤 f 入队——修复回路是 beam search 的核心路径，FAIL 状态的后继可能快速恢复到 PASS。覆写 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节。**注意：stagnation 仅用于终止判定，不构成跳过步骤 d 的理由——s' 的后继可能优于 s\*（详见 §候选生成的诊断式原则）**。
+f. **去重 + 打分 + 入队**：主模型对每个新候选（d.i VLM 候选与 d.ii 主模型数值规则候选合并后的完整集合）：
     - 与 Q 中已有 (s_j, a_j) 做 §去重与排序 的语义去重；若等价则保留 g 较高者。
     - 对保留者按六维打分得到 g。
     - **g_min 阈值**：若 g < 0.3，直接丢弃，不入队（记入 `working_note.md` 的"跨分支决策日志"，标注 action_id 与丢弃原因）。这避免低质量候选堆积导致队列永不空。
     - 把 (s', a_new, σ_new, g, branch, depth=depth+1) 加入 Q；按 g 降序重新排序；截断到 W=5。被截掉的元素同样记入"跨分支决策日志"。
-g. **持久化**：在 `working_note.md` 的相应分支小节追加本轮记录（配置/工具调用/成分/C、P 摘要/reduced_χ²/BIC/VLM 残差特征/入队的 action_id 列表）；覆写 Beam 状态快照（含 Q 的当前 5 项与 n 计数）。
+g. **持久化**：在 `working_note.md` 的相应分支小节追加本轮记录（配置/工具调用/成分/C、P 摘要/reduced_χ²/BIC/**VLM 物理性判定（verdict 与 failed_checks 摘要）**/VLM 残差特征/入队的 action_id 列表）；覆写 Beam 状态快照（含 Q 的当前 5 项与 n 计数）。
 h. **派生新分支（可选）**：当主模型发现某候选与当前束内主流方向显著不同、且 g ≥ 0.5 时，可标记新分支字母（branch_counter += 1，如 "B"），并在 working_note.md 新建 "分支 B" 小节。新分支共享全局 n 与 global_iter_id，避免预算失控。
 
 ### 步骤 2. 终止条件（任一满足即停）
@@ -141,9 +138,9 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 ### §候选生成的诊断式原则（主模型硬约束）
 
-**核心命题**：步骤 e（候选生成）是 beam search 的诊断回路，不是"拟合改善时的奖励"。只要步骤 b 拟合成功产出 summary/对比图（即未进入 b.5 失败处置分支），**必须**无条件执行步骤 e——无论 s' 是否更新 s\*、BIC 是否反升、参数是否触界、队列是否仍有未消费候选、拟合预算是否紧张。此规则无例外——VLM 的视觉诊断是 beam search 的核心回路，跳过它会让主模型退化为"看数字猜方向"的贪心搜索，丧失多模态诊断能力。
+**核心命题**：步骤 d（候选生成 + 物理性判定）是 beam search 的诊断回路，不是"拟合改善时的奖励"。只要步骤 b 拟合成功产出 summary/对比图（即未进入 b.5 失败处置分支），**必须**无条件执行步骤 d——无论 s' 的物理性判定结果、BIC 是否反升、参数是否触界、队列是否仍有未消费候选、拟合预算是否紧张。此规则无例外——VLM 的视觉诊断是 beam search 的核心回路，跳过它会让主模型退化为"看数字猜方向"的贪心搜索，丧失多模态诊断能力。
 
-**原理**：s' 的 BIC 反升不等于物理假设错误——常见情况是候选的物理方向正确，但某个次级参数（中心位置 / PA / Re 量级 / n / q）初始化不当，拟合器收敛到次优解。此时 s' 的残差携带"哪个参数需要修正"的诊断信息，只有调用 `generate_beam_actions` 才能把残差转译为修正候选。跳过步骤 e 会令 beam search 退化为贪心搜索，错过"同方向、修正参数"的后继——这正是 beam search 相对贪心搜索的核心价值所在。
+**原理**：s' 的 BIC 反升不等于物理假设错误——常见情况是候选的物理方向正确，但某个次级参数（中心位置 / PA / Re 量级 / n / q）初始化不当，拟合器收敛到次优解。此时 s' 的残差携带"哪个参数需要修正"的诊断信息，只有调用 `generate_beam_actions` 才能把残差转译为修正候选。跳过步骤 d 会令 beam search 退化为贪心搜索，错过"同方向、修正参数"的后继——这正是 beam search 相对贪心搜索的核心价值所在。
 
 **通用失败→修正模式**（由 VLM 在候选生成阶段自主识别；主模型不得在 `custom_instructions` 中预先指定这些方向，见 §custom_instructions 内容规范）：
 - 成分中心位置初始估计有误 → s' 残差在"模型位置"与"真实位置"之间呈偶极 → `tune(component, x_real, y_real)`
@@ -151,19 +148,21 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 - 新增成分 Re 量级偏小 → s' 残差呈中心环状正残差 → `tune(component, Re_init≈...)`
 - 新增成分与父状态成分简并 → s' 中某成分身份坍缩（n/Re 触界）→ 释放/固定 n，或加同心约束打破简并
 
-**执行校验**：下一轮迭代出队前，确认 working_note 相应分支小节已有"本轮 generate_beam_actions 返回的候选 action_id 列表"记录；若缺失，视为漏执行——禁止出队，回到步骤 e 补做。
+**执行校验**：下一轮迭代出队前，确认 working_note 相应分支小节已有"本轮 generate_beam_actions 返回的候选 action_id 列表"记录；若缺失，视为漏执行——禁止出队，回到步骤 d 补做。
 
-### §非物理结果恢复协议（Re-ordering FAIL 的受保护恢复候选）
+### §非物理结果恢复协议（物理性 FAIL 的受保护恢复候选）
 
-**核心命题**：Re-ordering FAIL 时，VLM 基于残差图生成的修正候选往往关注视觉可见的问题（PA 偏移、中心偏移等），而不太关注"收紧 Re 边界"这类程序化诊断驱动的机械修正——因为 Re-ordering 违规是 `check_re_ordering` 工具用精确数值诊断的（如 `re_lens=13" > re_disk=7"`），不是视觉判读的。如果恢复候选和其他候选一样走 g_min=0.3 的截断，往往会因评分偏低（残差改善不直观）被丢弃，导致 Re-ordering FAIL 的路径被过早放弃。
+**核心命题**：物理性 FAIL（VLM Physicality Verdict = FAIL）时，VLM 基于残差图生成的修正候选往往关注视觉可见的问题（PA 偏移、中心偏移等），而不太关注"收紧 Re 边界"这类数值诊断驱动的机械修正——因为 Re 全序违规是图例/`.gssummary` 精确数值诊断的（如 `re_lens=13" > re_disk=7"`），残差图上不一定有直观对应。如果恢复候选和其他候选一样走 g_min=0.3 的截断，往往会因评分偏低（残差改善不直观）被丢弃，导致物理性 FAIL 的路径被过早放弃。
 
-本协议的解决方案是：**不绕过 VLM**（VLM 照常在步骤 e.i 调用），而是由主模型在步骤 e.ii 生成**受保护的恢复候选**，通过 §去重与排序 的"强制保留条款"机制保证其入队（g ≥ 0.5 保底），与 VLM 候选一同公平竞争。当恢复候选被出队并拟合后，照常走 b→c→d→e 全流程（包括 VLM 候选生成），恢复链通过 beam search 的自然迭代逐步推进。
+本协议的解决方案是：**不绕过 VLM**（VLM 照常在步骤 d.i 调用，且其自身已按 prompt 约定给出针对 failed_checks 的修复候选），由主模型在步骤 d.ii 生成**受保护的恢复候选**，通过 §去重与排序 的"强制保留条款"机制保证其入队（g ≥ 0.5 保底），与 VLM 候选一同公平竞争。当恢复候选被出队并拟合后，照常走 b→c→d→e→f 全流程（包括下一轮 VLM 判定与候选生成），恢复链通过 beam search 的自然迭代逐步推进。
 
-**触发条件**：步骤 c.1 中 `swappable_overall=False` 的 Re-ordering FAIL。
+**触发条件**：步骤 d.i 中 VLM Physicality Verdict = FAIL。
 
-**恢复候选的生成规则**（主模型在步骤 e.ii 执行，与伴星系检查并列）：
+**swap 分支（disk ↔ bulge 标签互换）**：若 `swap_hint=disk_bulge_swap`（FAIL 仅由 {disk, bulge} Re 反置构成），修复路径就是交换标签——VLM 应已给出该候选；若漏给，主模型按 B 类填空保底生成（g ≥ 0.5）。此分支**不生成**下述恢复候选 A/B（交换标签候选本身即修复路径）。
 
-若 s' FAIL Re-ordering（swappable=False），从 `violations` 中识别**膨胀成分**（Re 超过链中上方成分的那一个），生成以下 1-2 个恢复候选：
+**恢复候选的生成规则**（主模型在步骤 d.ii 执行，与伴星系检查并列；适用于 swap 之外的 FAIL）：
+
+从 failed_checks 中识别**膨胀成分**（Re 超过链中上方成分的那一个），生成以下 1-2 个恢复候选：
 
 **恢复候选 A（Re-bound 收紧 + 热启动）**：
 - `action_id`: `<branch>-<parent>-recovery-rebound`
@@ -174,17 +173,17 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 **恢复候选 B（路径最近 PASS 态热启动 + 收紧）**：
 - `action_id`: `<branch>-<parent>-recovery-warmstart`
-- `primitives`: 以当前 beam search 路径上**最近的 Re-ordering PASS 状态**的全部成分拟合值为初始值，叠加候选 A 的 Re 边界收紧。
+- `primitives`: 以当前 beam search 路径上**最近的物理性 PASS 状态**的全部成分拟合值为初始值，叠加候选 A 的 Re 边界收紧。
 - `expected_C'`: 同 s'
 - `expected_behavior_tag`: `warmstart_rebound`
 - **保底分 g ≥ 0.5**（强制保留条款）
-- 仅在候选 A 生成后的下一轮（如果 A 的拟合仍 FAIL）才生成——因为 A 和 B 是顺序链的两步，A 先探索，A FAIL 后 B 才有"路径最近 PASS 态"作为热启动源。
+- 仅在候选 A 生成后的下一轮（如果 A 拟合后仍 FAIL）才生成——因为 A 和 B 是顺序链的两步，A 先探索，A FAIL 后 B 才有"路径最近 PASS 态"作为热启动源。
 
 **渐进放宽（等级 3，自然融入 beam search）**：若候选 A 或 B 拟合后 PASS 但某些成分触收紧后的上限，后续轮次的 VLM 或主模型可在正常候选生成中提议 `tune(component, re_max += 2")`——这是标准的 `tune` 动作，不需要特殊机制。
 
-**追溯标记**：恢复候选在 `working_note.md` 的相应分支小节标注"[恢复候选 A/B]"，记录 violations 清单、设置的 re_max 值、热启动来源。VLM 候选与恢复候选平等竞争，被截断的也照常记录。
+**追溯标记**：恢复候选在 `working_note.md` 的相应分支小节标注"[恢复候选 A/B]"，记录 failed_checks 清单、设置的 re_max 值、热启动来源。VLM 候选与恢复候选平等竞争，被截断的也照常记录。
 
-**与 VLM 的关系**：本协议不替代 VLM——VLM 仍在步骤 e.i 照常生成视觉驱动候选（可能包括 PA 修正、成分增删等）。恢复候选只是 e.ii 多了一条规则，与伴星系检查等现有 e.ii 规则并列。两类候选在步骤 f 统一打分入队，beam search 的并行探索能力完好保留。
+**与 VLM 的关系**：本协议不替代 VLM——VLM 仍在步骤 d.i 照常生成视觉驱动候选与物理性 FAIL 修复候选（可能包括 PA 修正、成分增删等）。恢复候选只是 d.ii 多了一条规则，与伴星系检查等现有 d.ii 规则并列。两类候选在步骤 f 统一打分入队，beam search 的并行探索能力完好保留。
 
 ### §去重与排序（主模型职责，禁用规则去重）
 
@@ -210,8 +209,8 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 - **扁 Bulge → Bar 候选**：当父状态含 Bulge 且满足联合触发条件（`bulge_axrat < 0.5` AND `|bulge_ang − disk_ang| > 20°` AND `0.5 < bulge_n < 2.5`（若 free）AND `disk_axrat > 0.5`）时，主模型必须把 VLM 返回的 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增，至少一个）以 g 不低于 0.5 的保底分入队，**不得因"阶段一未检出 bar"在物理合理性维度（维度 2）压分**。主模型在 custom_instructions 中须客观写出四条触发数值（见 §custom_instructions），让 VLM 知道触发条件已成立。若 VLM 在已触发情况下未返回任何 Bar 候选，主模型应**主动生成**一个 `add(Bar, n=0.5 fixed, PA≈bulge_ang)` 候选（参照 §候选动作忠实执行原则 的"B 类填空"规则初始化参数），追溯标记"[主模型扁-bulge 触发补充]"，走同样的打分入队流程。
 - **Lens 候选**：父状态含 Bar 且 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5` 时，Lens 候选同上保底入队。
-- **Re-ordering FAIL 恢复候选**（见 §非物理结果恢复协议）：当 s' FAIL Re-ordering（swappable=False）时，主模型在 e.ii 生成的恢复候选 A（Re-bound 收紧）和 B（热启动+收紧）以 g ≥ 0.5 保底入队。这类候选针对的是程序化诊断（`check_re_ordering` 精确数值违规）驱动的机械修复，VLM 从残差图不容易直觉判断其改善潜力，故需保底保护。
-- **disk Re 瓶颈候选**（见 e.ii 主模型数值规则）：当 lens/bar Re 触上限且满足 Re 简并（≥0.85）或通量接近（≥83% disk）任一子条件时，主模型在 e.ii 生成的 `tune(disk, Re 更大)` 候选以 g ≥ 0.5 保底入队。这类候选针对"基础骨架成分 Re 偏小被延展成分代偿"的退化模式——VLM 因注意力被中心强残差吸引、且在 lens 已代偿外缘通量时 1D 曲线变平导致视觉判读不稳定，对"调大基础成分 Re"方向不敏感，故需客观信号保底保护。
+- **物理性 FAIL 恢复候选**（见 §非物理结果恢复协议）：当 s' 被 VLM Physicality Verdict 判为 FAIL 时，主模型在 d.ii 生成的恢复候选 A（Re-bound 收紧）和 B（热启动+收紧）以 g ≥ 0.5 保底入队；`swap_hint=disk_bulge_swap` 时的交换标签候选（VLM 给出或主模型保底）同样 g ≥ 0.5 保底。这类候选针对的是数值诊断（图例/`.gssummary` 精确数值违规）驱动的机械修复，VLM 从残差图不容易直觉判断其改善潜力，故需保底保护。
+- **disk Re 瓶颈候选**（见 d.ii 主模型数值规则）：当 lens/bar Re 触上限且满足 Re 简并（≥0.85）或通量接近（≥83% disk）任一子条件时，主模型在 d.ii 生成的 `tune(disk, Re 更大)` 候选以 g ≥ 0.5 保底入队。这类候选针对"基础骨架成分 Re 偏小被延展成分代偿"的退化模式——VLM 因注意力被中心强残差吸引、且在 lens 已代偿外缘通量时 1D 曲线变平导致视觉判读不稳定，对"调大基础成分 Re"方向不敏感，故需客观信号保底保护。
 - **持续候选保护条款（VLM 跨轮次重复提议）**：若 VLM 在最近 **≥2 次 `generate_beam_actions` 调用**中（无论父轮次是否相邻、是否同分支）都返回了**同方向**候选，且每次 σ ≥ 0.7，则该方向候选**必须**入队并至少被执行一次，主模型不得以"历史路径失败"、"认知一致性"、"路径多样性"等理由将其 g 压到 g_min=0.3 以下。
   - **"同方向"判据**：`expected_behavior_tag` 相同，且 `expected_C'` 在物理身份上等价（允许参数微调，如 PA=90° vs PA=85°、Re_init=1.5" vs 2.0" 均视为同方向）。
   - **触发后处理**：把该候选的 g 强制设为 **≥0.6**（保底分），在 working_note 标注"[持续候选保护触发]"，记录触发的 2 次（或更多）`generate_beam_actions` 调用的 session_id 与 σ 值。
@@ -227,7 +226,6 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 2. 父状态的成分清单 C、关键参数 P 摘要；
 3. **当前拟合结果存在的具体问题**（如有；这是最重要的部分，必须客观详尽）：
    - 哪些参数触及上下界（标注 ⚠️ 与具体数值，如 `bar_Re=12" ⚠️触上限`、`bulge_axrat=0.1 ⚠️触下界`）；
-   - Re 全序校验是否通过（若 FAIL，粘贴 `check_re_ordering` 返回的 `violations` 清单）；
    - 残差图上观察到的未拟合特征（位置 / 对称性 / 强度，引用阶段一视觉特征的客观描述）；
    - 成分身份是否混淆（如 disk 与 bulge 标签互换、bar 丧失棒形态变圆变胖、bulge 坍缩成致密点源）；
    - **扁 Bulge → Bar 触发数值（若父状态含 Bulge）**：客观列出 `bulge_axrat=...`、`|bulge_ang − disk_ang|=...°`、`bulge_n=...`、`disk_axrat=...` 四个值，并标注联合触发条件是否成立（成立 / 不成立 + 缺哪条）。这是让 VLM 判断是否该生成 Bar 候选的客观依据，主模型只报数值，**不**暗示方向（不写"建议加 bar"或"应该转换"）。
@@ -244,7 +242,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 **正确做法**：把问题客观摆出来（如"bar_Re=12" 触上限，q_bar=0.6 触上限，Re_bar > Re_disk 全序反置，bar 丧失棒形态"），让 VLM 自己根据 prompt 规则生成候选。
 
-**check_re_ordering hint 的处理**：当 Re 全序校验 FAIL 时，`check_re_ordering` 返回的 `custom_instructions_hint` 可原样拼入 custom_instructions（它是客观的违规清单），但主模型不得在此基础上追加自己的修复方向建议。
+**Physicality Verdict 的处理**：物理性判定权在 VLM——verdict / failed_checks / swap_hint 由 VLM 在 `generate_beam_actions` 返回中输出，主模型只解析、记录与执行守门，不得改写判定内容；主模型亦**不得**在 custom_instructions 中预告自己预判的物理性结论（如"本轮应判 FAIL"），避免引导 VLM 的判定。
 
 ### §候选动作忠实执行原则（主模型职责，硬约束）
 
@@ -260,7 +258,8 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 - 原子操作的捆绑关系（候选声明的 1–2 个 primitive 必须作为一个整体执行，不得拆分）
 
 **B 类：允许主模型填空的字段（VLM 未给精确值时）**
-- 五元组的具体初始值数字（从父状态对应参数的拟合值附近起步，如父状态 Re=4.6" 则子候选 Re_init 取 4–5" 区间，不可数量级偏离）
+- **未被 primitives 声明的参数（默认热启动，见步骤 1.b.1 热启动规则）**：`initial_value` 一律取父状态 `.gssummary` 的收敛值（min/max/step/vary 沿父轮设定），不得沿用父 `.lyric` 的旧输入值——VLM 的诊断以父收敛解为条件，未提及即"可接受"，子轮次从收敛解起步才是完整执行 VLM 的判断。
+- 被 primitives 声明但未给精确值的参数：五元组的具体初始值数字从父状态对应参数的**拟合值**（而非旧输入值）附近起步，如父状态拟合 Re=4.6" 则子候选 Re_init 取 4–5" 区间，不可数量级偏离
 - 五元组的 min/max/step 数字（仅用于满足格式要求：`vary=0` 时也要 `min != max`、初始值落在 `[min, max]` 区间内）
 - **成分命名（必须语义化）**：Pa1/Pb1/Pc1... 的值必须使用物理类型名（`disk`/`bulge`/`bar`/`companion`/`agn` 等），**不得使用 `obj0`/`obj1` 之类无意义命名**——lmfit 参数名由 Pa1 构建（如 `bulge_xcen`、`bar_Re`），语义命名让 `.gssummary` 输出与 `.constrain` 文件直接可读。首次拷贝输入 `.lyric` 为 `_iter1.lyric` 时，若起手成分为 `obj0` 之类，应同步重命名（sersic 起手成分通常 → `disk`）；后续新增成分按其物理类型命名。
 - **伴星系 / 成分中心坐标的像素→arcsec 转换（重要）**：VLM 候选里给出的伴星系坐标（如 `tune(obj2, x=115, y=130)`）是 `comparison.png` 上的**像素坐标**；而 `.lyric` 的 `Pc3` / `Pc4` 五元组要求的是**相对 R2 中心的 arcsec offset**。主模型必须调用 `mcp__galmcp__pixel2arcsec_offset(pix_x, pix_y, lyric_file, band, origin=1)` 把 VLM 给的像素坐标转换成 arcsec offset 后，再填入五元组。**禁止**把像素数字直接塞进五元组（会引发数量级错误的拟合发散），**也禁止**手动按"0.396 px/" 之类的硬编码像素比例换算（不同波段的 drizzle 采样可能导致像素比例不同，必须走 WCS）。同一伴星系在不同波段如果像素位置不同，要分别按各自波段的 WCS 转换。**转换后的 arcsec offset 仅为初始估计值**——VLM 像素判读可能有 ±10-20 px 误差（父模型残差越脏，误差越大）。Pc3/Pc4 必须设为 `[init, init-2, init+2, 0.1, 1]`（`vary=1`），让拟合器在 ±2 arcsec（≈±5px）窗口内校准真实质心，**不得直接 `vary=0` 锁死**。仅在位置已校准后的后续轮次中才可考虑固定。
@@ -292,6 +291,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 - 分支 / 轮次: <branch>.<local_round>   例: A.3
 - 成分清单 C*: {...}
 - reduced_χ² / BIC: ... / ...
+- VLM 物理性判定: PASS
 - 对应 output 目录: output/<timestamp>_<lyric_stem>/
 - 对应 .lyric: _iter{global_iter_id}.lyric
 
@@ -310,6 +310,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 ## 分支 A: <分支主题，如 "Disk+Bulge 主线">
 ### A.1 (对应 fit #1, .lyric: _iter1.lyric)
 - 配置 / 工具调用（含 --parconstrain 等）/ 成分 C / 参数 P 摘要 / reduced_χ² / BIC
+- VLM 物理性判定: PASS/FAIL（failed_checks 摘要；FAIL 时粘贴证据）
 - VLM 残差特征摘要（来自 generate_beam_actions 的阶段一）
 - generate_beam_actions 返回的候选 action_id 列表与入队情况（被截掉的也记）
 ### A.2 ...
@@ -344,7 +345,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 - 物理意义分析：严格遵循 `<星系成分分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA（**sky-PA**，对齐原图 N 箭头）与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_beam_actions` 的 `custom_instructions`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 N 块 AGN 两条路径进行竞争对比——只有 AGN 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。
 - 奥卡姆剃刀原则：
   - **Nucleus/AGN 成分**：若 s\* 含 Nucleus 且 ΔBIC < 10，把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
-  - **伴星系（Companion）**：若 s\* 含 Companion 且通量比 ≤ 1%（条件 A，计算方式同 e.ii），把该数值结论作为强上下文写入 `generate_beam_actions` 的 `custom_instructions`（格式同 e.ii），由 VLM 执行条件 B 视觉验证（原图面板 companion 位置是否有肉眼可见亮斑）。仅当 A∧B 同时成立（数值暗 AND 原图无可见源）时，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证（删除后 BIC 反升则保留 Companion）。若原图有可见亮斑（条件 B 不命中），不触发移除——该 companion 是真实致密源，通量低是因宿主太大而非源不存在。
+  - **伴星系（Companion）**：若 s\* 含 Companion 且通量比 ≤ 1%（条件 A，计算方式同 d.ii），把该数值结论作为强上下文写入 `generate_beam_actions` 的 `custom_instructions`（格式同 d.ii），由 VLM 执行条件 B 视觉验证（原图面板 companion 位置是否有肉眼可见亮斑）。仅当 A∧B 同时成立（数值暗 AND 原图无可见源）时，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证（删除后 BIC 反升则保留 Companion）。若原图有可见亮斑（条件 B 不命中），不触发移除——该 companion 是真实致密源，通量低是因宿主太大而非源不存在。
 - 上述两类重启 beam search 的累计 n 仍受 N_max = 15 总预算约束；若预算已耗尽，进入阶段三由阶段三判定是否可接受。
 
 阶段三. 结果分析与报告撰写

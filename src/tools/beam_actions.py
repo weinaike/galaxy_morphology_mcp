@@ -205,6 +205,10 @@ def generate_beam_actions(
     handoff = (
         "\n\n---\n"
         "# 候选入队守则（主模型职责）\n"
+        "- 先解析返回 Markdown 顶部的 `## Physicality Verdict` 块（verdict / failed_checks / "
+        "swap_hint）：verdict=FAIL 的父状态不得参与 s* 更新（workflow_galfits.md §步骤 e 物理性守门），"
+        "且需按 §非物理结果恢复协议 生成受保护恢复候选；swap_hint=disk_bulge_swap 时确认候选中含交换"
+        " disk ↔ bulge 标签方向的修复候选。verdict 块原样记录到 working_note，不得改写。\n"
         "- 对每个候选执行语义去重（与当前 Q 中已有 (s_j, a_j) 比对；等价则保留 g 较高者）。\n"
         "- 去重判据（同时满足视为等价）：\n"
         "  1) expected_C' 在物理身份上等价（允许 bulge/bar 命名互换等）；\n"

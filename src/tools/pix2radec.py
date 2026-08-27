@@ -104,6 +104,47 @@ def re_arcsec2pix(
         ordered matching the input `fits_file_list`.
     """
     from .parse_lyric import extract_fits_metadata
-    
+
     pixscales = [extract_fits_metadata(fits_file)[1] for fits_file in fits_file_list]
-    return [re_as / pixscale for pixscale in pixscales]    
+    return [re_as / pixscale for pixscale in pixscales]
+
+
+def re_pix2arcsec(
+    re_pix: Annotated[float, "Effective radius ($R_e$) in pixels, measured on the comparison panel of ONE specific band"],
+    fits_file: Annotated[str, "FITS file of the band whose panel the pixel value was measured on (e.g., '/data/sloan_r.fits')"]
+) -> Annotated[float, "Effective radius $R_e$ in arcseconds — the single band-agnostic value to write into the .lyric five-tuple"]:
+    """
+    Convert a pixel effective radius (Re) measured on ONE band's comparison panel
+    into arcseconds, using that band's WCS pixel scale.
+
+    Rationale:
+        A component's Re in a ``.lyric`` config is a single angular (arcsec)
+        value shared by ALL bands — GalfitS stores it once and projects it onto
+        each band's pixel grid internally. Bands may have different pixel scales
+        (drizzle resampling), so the same Re corresponds to different pixel
+        values in different bands. When a VLM reads a size off a comparison
+        panel it is reading pixels of THAT band's panel only; this tool divides
+        by that band's WCS pixel scale to recover the unique arcsec value.
+
+        ``re_pix`` MUST be measured on the panel of the band whose FITS is
+        passed as ``fits_file``; mixing panels/FITS pairs silently rescales the
+        result (e.g., measuring on the F444W panel but dividing by F115W's
+        pixscale).
+
+    This is the inverse of :func:`re_arcsec2pix` and the mandatory conversion
+    path for any VLM-provided pixel size (Re, scale lengths) before writing it
+    into a `.lyric` five-tuple. Never hand-compute with a hardcoded pixscale.
+
+    Args:
+        re_pix: Effective radius in pixels, as measured on one band's panel.
+        fits_file: Absolute path to that band's science FITS (WCS metadata
+            must be valid).
+
+    Returns:
+        float: Re in arcseconds, band-agnostic — write directly into the
+        ``P*5`` slot of the component's block.
+    """
+    from .parse_lyric import extract_fits_metadata
+
+    pixscale = extract_fits_metadata(fits_file)[1]
+    return re_pix * pixscale

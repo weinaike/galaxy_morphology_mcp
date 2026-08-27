@@ -30,7 +30,7 @@ from tools.bar_lopsidedness_detection import (
 )
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
-from tools.pix2radec import pix2radec, re_arcsec2pix
+from tools.pix2radec import pix2radec, re_arcsec2pix, re_pix2arcsec
 from tools.prompt import workflow_galfit, workflow_galfits
 from starlette.responses import Response, JSONResponse
 from dotenv import load_dotenv
@@ -67,6 +67,7 @@ def _register_tools_and_prompts():
         app.add_tool(check_lyric_file)
         app.add_tool(pix2radec)
         app.add_tool(re_arcsec2pix)
+        app.add_tool(re_pix2arcsec)
         app.add_tool(check_re_ordering)
         app.add_tool(pixel2arcsec_offset)
         app.add_prompt(workflow_galfits)

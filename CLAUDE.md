@@ -5,7 +5,7 @@
 2. **NEVER modify the original .lyric file** — write new configs with `_iter{n}` suffix in the galaxy's main directory
 3. **Use `/skill galfits-manual`** to access complete GalfitS parameter documentation before editing configs
 4. **Only use `--fit_method ES`** to run GalfitS
-5. **NEVER assume pixel scales** — always use `mcp__galmcp__re_arcsec2pix` to convert arcsec to pixels via FITS WCS headers. Do not use hardcoded values like 0.031"/px or 0.063"/px, as images may be drizzle-resampled at different scales.
+5. **NEVER assume pixel scales** — always use `mcp__galmcp__re_arcsec2pix` to convert arcsec to pixels via FITS WCS headers. Do not use hardcoded values like 0.031"/px or 0.063"/px, as images may be drizzle-resampled at different scales. The reverse direction has `mcp__galmcp__re_pix2arcsec(re_pix, fits_file)`: whenever a VLM candidate reports a size (Re etc.) in pixels from a comparison panel, it MUST go through this tool (with the FITS of that panel's band) before being written into a `P*` five-tuple — a component's Re is a single band-agnostic arcsec value in the lyric, shared by all bands. Never paste pixel numbers into the five-tuple as arcsec.
 6. **NEVER use `--readsummary`** to carry parameters between rounds. It uses `astropy.ascii.read` which only parses the `# free parameters:` section, silently missing any parameter that was `vary=0` in the previous round — even if you flip it to `vary=1` in the new config. Instead, manually extract the fitted values from the previous round's `.gssummary` and write them as the `initial_value` of the corresponding parameters in the new `.lyric` file. This keeps each config self-contained and the fit reproducible from the lyric alone.
 
 ---

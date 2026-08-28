@@ -14,7 +14,6 @@ from typing import Annotated, Any
 import dotenv
 
 from . import prompt
-from .analyze_image import read_summary_file
 from .parse_lyric import (
     extract_component_attributes,
     parse_image_infos_from_lyric,
@@ -55,11 +54,11 @@ def generate_beam_actions(
     lyric_file: Annotated[str, "Absolute path to the parent state's .lyric config file"],
     summary_file: Annotated[str, "Absolute path to the parent state's .gssummary file"],
     comparison_file: Annotated[str, "Absolute path to all_bands_comparison.png produced by the parent state's fitting"],
-    working_note_file: Annotated[str, "Absolute path to the multi-branch working_note.md so the VLM can see full beam history"] = "",
+    global_state_description: Annotated[str, "Cross-round stable facts for the stateless VLM, distilled by the orchestrator from working_note.md (NOT the raw note). Fixed schema per workflow_galfits.md §global_state_description 生成规范: [阶段一结论] bar/lop + PA(sky); [已验证盆] fit-verified parameter basins (component + param + value + round); [被否定假设] refuted directions with quantitative evidence (ΔBIC / bound hits + round); [已尝试动作] action ledger (action + one-line outcome); [预算] n/N_max. Keep ≤ ~40 lines."] = "",
+    local_state_description: Annotated[str, "Current-round objective description: parent component inventory C + key params, bound-hit parameters (⚠️ + values), residual features, identity anomalies, phase-1 conclusions, and orchestrator numeric-rule delegations (companion flux check / disk-Re bottleneck / lens inflation / flat-bulge trigger values). Must NOT suggest candidate directions."] = "",
     branch_id: Annotated[str, "Current beam branch identifier (e.g. 'A', 'B'). Used in candidate action_ids."] = "A",
     parent_label: Annotated[str, "Parent round label inside the branch (e.g. 'A.3'). Used in candidate action_ids."] = "",
     depth: Annotated[int, "Depth of the parent state in the search tree. 1 = after the first fit on the input lyric. Controls candidate count via the prompt: depth=1 → 1-2 candidates (phase-one driven), depth=2 → 2-3, depth>=3 → 2-4."] = 1,
-    custom_instructions: Annotated[str, "Extra context for the VLM: forbidden actions, phase-one bar/lop findings, etc."] = "",
 ) -> dict[str, Any]:
     """Generate depth-aware candidate composite actions for Beam Search.
 
@@ -67,6 +66,12 @@ def generate_beam_actions(
     structured Markdown list of candidates; the agent then performs semantic
     deduplication and global heuristic ranking (per workflow_galfits.md §去重与排序)
     before enqueuing into the priority queue of width W=5.
+
+    History for the stateless VLM is supplied via ``global_state_description``
+    (distilled by the orchestrator: verified basins / refuted hypotheses /
+    tried actions / budget). The full working_note.md is intentionally NOT
+    injected anymore — the distilled global state supersedes it and avoids
+    attention dilution.
 
     Candidate count is driven by ``depth`` via the prompt template:
     - depth=1 -> 1-2 candidates (phase-one bar/lop driven; usually deterministic)
@@ -97,16 +102,6 @@ def generate_beam_actions(
         return {"status": "failure",
                 "error": f"Failed to parse components from summary: {summary_file}"}
 
-    # ── Inject working_note history into custom_instructions ──────────
-    if working_note_file and os.path.exists(working_note_file):
-        wn_content = read_summary_file(working_note_file) or ""
-        if wn_content:
-            custom_instructions = (
-                (custom_instructions + "\n\n" if custom_instructions else "")
-                + "历史轮次与跨分支决策摘要（working_note.md）：\n"
-                + wn_content
-            )
-
     # ── Build system message (reuse residual analysis system message +
     #    GalfitS component specification so the VLM obeys the same rules)
     system_message = prompt.RESIDUAL_ANALYSIS_SYSTEM_MESSAGE
@@ -115,10 +110,15 @@ def generate_beam_actions(
         system_message = system_message + "\n\n" + component_spec
 
     # ── Build two-turn prompts from the beam_action_generation phases ─
-    turn1 = prompt.get_beam_visual_extraction()
+    #    turn1 gets the global state as a cross-checking anchor for the
+    #    (noisy) absolute pixel readings made during visual extraction.
+    turn1 = prompt.get_beam_visual_extraction(
+        global_state_description=global_state_description,
+    )
     turn2 = prompt.get_beam_candidate_generation(
         summary_content=summary_content,
-        custom_instructions=custom_instructions,
+        global_state_description=global_state_description,
+        local_state_description=local_state_description,
         branch_id=branch_id,
         parent_label=parent_label,
         depth=depth,

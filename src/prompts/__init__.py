@@ -114,14 +114,20 @@ class Prompts(metaclass=SingletonMeta):
     def _bag_phases(self):
         return self._read_phases("beam_action_generation_prompt.md")
 
-    def get_beam_visual_extraction(self):
-        return self._bag_phases()["_first"]
+    def get_beam_visual_extraction(self, global_state_description=""):
+        template = self._bag_phases()["_first"]
+        for key, value in [("global_state_description", global_state_description)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
 
-    def get_beam_candidate_generation(self, summary_content, custom_instructions="",
+    def get_beam_candidate_generation(self, summary_content,
+                                      global_state_description="",
+                                      local_state_description="",
                                       branch_id="", parent_label="", depth=1):
         template = self._bag_phases()["candidate_generation"]
         for key, value in [("summary_content", summary_content),
-                            ("custom_instructions", custom_instructions),
+                            ("global_state_description", global_state_description),
+                            ("local_state_description", local_state_description),
                             ("branch_id", branch_id),
                             ("parent_label", parent_label),
                             ("depth", depth)]:

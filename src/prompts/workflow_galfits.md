@@ -18,8 +18,8 @@
       - **金标准**：判定成分存在性的最终依据是残差驱动的拟合验证（add → refit → 残差改善 + 参数物理），不是阶段一检测。
     - **跨波段 OR-logic**：任一波段 `bar.detected=True` → bar 先验概率升高，作为阶段二积极生成 Bar 候选的提示；任一波段 `lopsidedness.detected=True` → lop 先验概率升高，作为阶段二高优先级添加 Fourier m=1 的提示。
     - **PA 取值规则**：Bar 的 PA 优先取蓝端波段（如 F115W）的返回值；红端（F200W/F444W）作参考。`detect_galfits_bar_lopsidedness` 返回的 `pa_deg` 已经是 **sky-PA**（正北 0° 逆时针），可直接写入 `.lyric` 的 `Pa7`，无需任何换算。
-    - **偏心添加决策**：任一波段 `lopsidedness.detected=True` → 在 `working_note.md` 头部标记 "m=1 Fourier 高优先级"，阶段二每次调用 `generate_beam_actions` 时需把该标签写入 `custom_instructions`，确保 VLM 在 Disk 已建立后第一时间给出"把 Disk 的 `Pa2) sersic` 改为 `sersic_f`"的候选动作。
-    - **写入 working_note.md 头部**：将每波段 bar/lop 检测结论、PA、b/a、A1、phi1 固化到 `working_note.md`，供后续所有迭代轮次的 `generate_beam_actions` 读取（工具会自动把 `working_note.md` 内容注入 VLM 上下文）。**措辞告诫**：未检出的成分必须写成"未检出（零证据，非判定性）"或类似明确标注其非判定性质，不得写成裸的"NOT detected / 不存在"，避免 VLM 与主模型在打分阶段把提示性零证据误解为判定性负证据。
+    - **偏心添加决策**：任一波段 `lopsidedness.detected=True` → 在 `working_note.md` 头部标记 "m=1 Fourier 高优先级"，阶段二每次调用 `generate_beam_actions` 时需把该标签写入 `global_state_description` 的 [阶段一结论] 字段，确保 VLM 在 Disk 已建立后第一时间给出"把 Disk 的 `Pa2) sersic` 改为 `sersic_f`"的候选动作。
+    - **写入 working_note.md 头部**：将每波段 bar/lop 检测结论、PA、b/a、A1、phi1 固化到 `working_note.md`，供后续所有迭代轮次蒸馏为 `global_state_description`（工具不再自动注入 working_note 全文，避免注意力稀释——主模型按 §global_state_description / local_state_description 生成规范 蒸馏）。**措辞告诫**：未检出的成分必须写成"未检出（零证据，非判定性）"或类似明确标注其非判定性质，不得写成裸的"NOT detected / 不存在"，避免 VLM 与主模型在打分阶段把提示性零证据误解为判定性负证据。
 
 阶段二. 结构搜索与动态校验 (Beam Search 模式)
 *目标：通过束宽 W=5 的 beam search 在结构空间中并行搜索最优的物理成分组合，避免贪心单路径在退化轮次（如约束失效、参数坍缩）处陷入局部最优。每个束内分支仍遵循"自下而上、完成一个成分拟合后再考虑新增"的渐进式理念；beam search 只是把"单一下一步"扩展为"多条并行候选路径"。*
@@ -52,11 +52,11 @@
         lyric_file        = <_iter1.lyric 绝对路径>,
         summary_file      = <s₁ 的 .gssummary 绝对路径>,
         comparison_file   = <s₁ 的 all_bands_comparison.png 绝对路径>,
-        working_note_file = <working_note.md 绝对路径>,
+        global_state_description = "<按 §global_state_description / local_state_description 生成规范 蒸馏：此时 [已验证盆]/[被否定假设]/[已尝试动作] 均为空或仅有输入先验，主要写 [阶段一结论] 与 [预算]>",
+        local_state_description  = "<按 §global_state_description / local_state_description 生成规范 填写：s₁ 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
         branch_id         = "A",
         parent_label      = "A.1",
         depth             = 1,
-        custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一 bar/lop 结论 + s₁ 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
     )
     ```
     工具会按 depth=1 规则返回 1–2 个候选（lop 检出 → 1 个 sersic_f 切换候选；bar 检出 → 1–2 个 Bulge/Bar 候选；都未检出 → 1 个标准 add(Bulge) 候选），**同时返回 s₁ 的 `## Physicality Verdict` 块——解析并记入 A.1 小节（主循环中的 s\* 更新守门从 A.2 起严格执行）**。
@@ -83,11 +83,11 @@ d. **候选生成 + 拟合结果物理性判定（无条件硬约束——见 §
         ```
         generate_beam_actions(
             ...,
+            global_state_description = "<按 §global_state_description / local_state_description 生成规范 从 working_note 蒸馏并随步骤 g 同步更新：[阶段一结论]/[已验证盆]/[被否定假设（带 ΔBIC 数值）]/[已尝试动作]/[预算]>",
+            local_state_description  = "<按 §global_state_description / local_state_description 生成规范 填写：s' 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）+ 数值规则委托内容；严禁给出具体候选方向建议>",
             branch_id         = branch,
             parent_label      = <branch>.<local_round>,
             depth             = depth + 1,   # 新候选应用到的父状态深度
-            working_note_file = <abs path>,
-            custom_instructions = "<按 §custom_instructions 内容规范 填写：阶段一结论 + 父轮次已尝试动作清单 + s' 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
         )
         ```
         工具按 `depth+1` 的分段规则返回候选（depth+1=2 → 2–3 个；depth+1≥3 → 2–4 个），**且返回 Markdown 的顶部包含 `## Physicality Verdict` 块（verdict / failed_checks / swap_hint）——这是 VLM 对 s' 拟合结果的物理性判定（核心为 Model 面板上各成分 2·Re 椭圆的同心嵌套包含性：disk ⊃ lens ⊃ bar ⊃ bulge、内层面积明显小于紧邻外层、整体"洋葱"结构无瑕疵、最外围成分 2·Re 不越出拟合区域），取代旧版 `check_re_ordering` 程序化校验，主模型不再调用该工具**。主模型解析该块并**原样**记录到 working_note（不得改写判定内容）：
@@ -98,19 +98,19 @@ d. **候选生成 + 拟合结果物理性判定（无条件硬约束——见 §
     - **d.ii 主模型数值规则驱动候选**：主模型基于 s' 的 `.gssummary` 客观数值检查，向 VLM 委托需视觉验证的候选。这类候选针对"视觉上可见但数值上可疑的成分"——VLM 从图像上看到该成分存在会倾向于保留，但数值上若可疑（如通量极低、或基础成分 Re 偏小被延展成分代偿），主模型把客观观数据交给 VLM，由 VLM 结合原图视觉验证决定是否生成调整候选（移除或参数调整）。当前定义的触发规则：
         - **伴星系必要性检查（数值 + 视觉双轴判据）**：若 s' 含 Companion，读取 `.gssummary` 中 companion 与 disk 的 `logNorm_<component>_<band>` / `Mag_<component>_<band>`，计算通量比 `f_companion/f_disk = 10^(−0.4·ΔMag)`（其中 `ΔMag = Mag_companion − Mag_disk`）。
           - 若通量比 > 1%：companion 通量显著，不触发移除检查。
-          - 若通量比 ≤ 1%（**条件 A 命中**）：主模型**不直接生成 remove 候选**，而是把三项数值（通量比、ΔMag、`ΔlogNorm = logNorm_companion − logNorm_disk`）写入当轮 `generate_beam_actions` 的 `custom_instructions`，格式为："伴星系条件 A 命中：companion 通量比 = 0.4%, ΔMag = 5.91, ΔlogNorm = -2.37。请 VLM 做条件 B 视觉验证：查看原图面板 companion 位置是否有肉眼可见亮斑，无可见源才生成 remove(Companion)。" 由 VLM 在候选生成阶段执行条件 B 视觉验证（见 `beam_action_generation_prompt.md` §伴星系移除验证）：仅当 A（数值暗）AND B（原图无可见源）同时成立时，VLM 才生成 `remove(Companion)` 候选。若原图有可见亮斑（B 不命中），VLM 不生成 remove 候选，companion 保留。
+          - 若通量比 ≤ 1%（**条件 A 命中**）：主模型**不直接生成 remove 候选**，而是把三项数值（通量比、ΔMag、`ΔlogNorm = logNorm_companion − logNorm_disk`）写入当轮 `generate_beam_actions` 的 `local_state_description`，格式为："伴星系条件 A 命中：companion 通量比 = 0.4%, ΔMag = 5.91, ΔlogNorm = -2.37。请 VLM 做条件 B 视觉验证：查看原图面板 companion 位置是否有肉眼可见亮斑，无可见源才生成 remove(Companion)。" 由 VLM 在候选生成阶段执行条件 B 视觉验证（见 `beam_action_generation_prompt.md` §伴星系移除验证）：仅当 A（数值暗）AND B（原图无可见源）同时成立时，VLM 才生成 `remove(Companion)` 候选。若原图有可见亮斑（B 不命中），VLM 不生成 remove 候选，companion 保留。
           - 若 s' 不含 Companion，不触发。
         - **disk Re 瓶颈检查（延展成分触界 + Re/通量简并判据）**：若 s' 含 lens 或 bar（P 块 label 含 `lens`/`bar`），读取其 `Re` 拟合值与 lyric 中对应的 `re_max`，以及 disk 的 `Re` 与 `Mag`。当 lens/bar 的 `Re` 触上限（拟合值 == re_max，或在 re_max 的 2% 范围内）且满足下列**任一**子条件时，判定为"disk Re 瓶颈命中"——延展成分想更大但被 disk Re 拖住，是 disk Re 偏小的客观信号：
           - **子条件 A（Re 简并）**：`Re_lens/bar / Re_disk ≥ 0.85`（两者在 Re 维度高度简并，lens/bar 几乎追上 disk）。
           - **子条件 B（通量接近或超过）**：`Mag_lens/bar ≤ Mag_disk + 0.2`（即 lens/bar 通量 ≥ disk 的 ~83%，甚至超过 disk）。此条件捕捉 lens/bar 被迫接管 disk 外缘通量的退化模式。
-          - **生成动作**（任一子条件命中后）：若 disk Re 未触界（disk Re < disk 的 re_max），主模型生成 `tune(disk, re_init = 1.3–1.5 × current_disk_Re)` 候选（保底分 g ≥ 0.5，强制保留条款），并把瓶颈信号写入 `custom_instructions`，格式为："disk Re 瓶颈命中（触界+简并）：lens_Re=5.0 触上限（re_max=5.0），Re_lens/Re_disk=0.93 ≥ 0.85（Re 简并命中）/ lens_Mag=16.86 ≤ disk_Mag+0.2=17.28（通量 125% ≥ 83%，通量超过 disk 命中）。延展成分想更大但被 disk 拖住，是 disk Re 偏小的客观信号。请 VLM 做视觉验证：查看 1D 亮度曲线 r > 2×Re_disk 区域是否系统性 Data 亮于 Model，若是则确认生成 tune(disk, Re 更大) 候选。" 由 VLM 在候选生成阶段结合 1D 曲线视觉确认。若 disk Re 也触上限，不触发（disk 已无空间）。
+          - **生成动作**（任一子条件命中后）：若 disk Re 未触界（disk Re < disk 的 re_max），主模型生成 `tune(disk, re_init = 1.3–1.5 × current_disk_Re)` 候选（保底分 g ≥ 0.5，强制保留条款），并把瓶颈信号写入 `local_state_description`，格式为："disk Re 瓶颈命中（触界+简并）：lens_Re=5.0 触上限（re_max=5.0），Re_lens/Re_disk=0.93 ≥ 0.85（Re 简并命中）/ lens_Mag=16.86 ≤ disk_Mag+0.2=17.28（通量 125% ≥ 83%，通量超过 disk 命中）。延展成分想更大但被 disk 拖住，是 disk Re 偏小的客观信号。请 VLM 做视觉验证：查看 1D 亮度曲线 r > 2×Re_disk 区域是否系统性 Data 亮于 Model，若是则确认生成 tune(disk, Re 更大) 候选。" 由 VLM 在候选生成阶段结合 1D 曲线视觉确认。若 disk Re 也触上限，不触发（disk 已无空间）。
           - **原理**：该规则针对的是"lens/bar 膨胀去代偿 disk 外缘通量"的退化模式——当 lens/bar Re 触上限且与 disk 在 Re 或通量维度简并时，根因往往是 disk Re 本身偏小，而非 lens/bar 真的需要那么大。此信号完全客观（来自 `.gssummary` 数值），不依赖 VLM 在低信噪比外围区域的视觉判读（后者已证实不稳定——当 lens 已代偿外缘通量时，1D 曲线变平，视觉检查难以触发）。典型场景：lens_Re=5.0 触上限且 lens_Mag=16.86 比 disk_Mag=17.08 还亮（lens 通量 125% disk），配合 disk_Re=6.1 时几乎必然指向 disk Re 被低估。
           - 若 s' 不含 lens/bar，不触发。
         - **lens Re 膨胀检查（参数状态触发，生成三条竞争式候选）**：若 s' 含 lens，读取 lens 的 `Re` 拟合值、lyric 中 lens 的 `re_max`、以及 disk 的 `Re` 与 `Mag`。
           - **触发条件（任一命中）**：
             - **触上限**：`lens_Re ≥ 0.98 × re_max`。
             - **Re 反置**：`lens_Re ≥ disk_Re`（VLM 物理性判定会命中此项，或主模型从 `.gssummary` 直接比对）。
-          - **生成动作**（主模型把信号写入 `custom_instructions`，**不直接生成候选**——由 VLM 按 `beam_action_generation_prompt.md` §Lens Re 膨胀触发规则 生成三条竞争路径 A/B/C，主模型打分入队）：格式为："Lens Re 膨胀命中：lens_Re=X 触上限（re_max=Y）[和/或] lens_Re=X ≥ disk_Re=Z（Re 全序反置）。lens_Mag=W，disk_Mag=V。请 VLM 按 §Lens Re 膨胀触发规则 生成候选 A（收紧 lens Re，re_max=0.9×disk_Re）/ B（增大 disk Re，re_init=1.3–1.5×disk_Re；若 disk 已触 re_max 则跳过 B 并说明）/ C（移除 lens）三条竞争路径。"
+          - **生成动作**（主模型把信号写入 `local_state_description`，**不直接生成候选**——由 VLM 按 `beam_action_generation_prompt.md` §Lens Re 膨胀触发规则 生成三条竞争路径 A/B/C，主模型打分入队）：格式为："Lens Re 膨胀命中：lens_Re=X 触上限（re_max=Y）[和/或] lens_Re=X ≥ disk_Re=Z（Re 全序反置）。lens_Mag=W，disk_Mag=V。请 VLM 按 §Lens Re 膨胀触发规则 生成候选 A（收紧 lens Re，re_max=0.9×disk_Re）/ B（增大 disk Re，re_init=1.3–1.5×disk_Re；若 disk 已触 re_max 则跳过 B 并说明）/ C（移除 lens）三条竞争路径。"
           - **主模型保底**：若 VLM 在已触发情况下漏掉了候选 A/B/C 中的某条且未在 physical_motivation 中说明放弃理由，主模型应**主动生成**缺失的候选（保底分 g ≥ 0.5，强制保留条款），追溯标记"[主模型 lens 膨胀补充]"。候选 A 的 re_max 取 `0.9 × disk_Re`；候选 B 的 disk re_init 取 `1.3 × disk_Re`（仅当 disk 未触界）；候选 C 为 `remove(lens)`。
           - **原理**：lens 膨胀是 lens 被添加后最常见的退化模式，有三种互斥的物理假设（lens 越界 / disk 骨架偏小 / lens 寄生），单一方向探索会错过最优修复。强制三路径竞争让 beam search 并行探索能力完整发挥。
           - 若 s' 不含 lens，不触发。
@@ -122,7 +122,7 @@ f. **去重 + 打分 + 入队**：主模型对每个新候选（d.i VLM 候选�
     - 对保留者按六维打分得到 g。
     - **g_min 阈值**：若 g < 0.3，直接丢弃，不入队（记入 `working_note.md` 的"跨分支决策日志"，标注 action_id 与丢弃原因）。这避免低质量候选堆积导致队列永不空。
     - 把 (s', a_new, σ_new, g, branch, depth=depth+1) 加入 Q；按 g 降序重新排序；截断到 W=5。被截掉的元素同样记入"跨分支决策日志"。
-g. **持久化**：在 `working_note.md` 的相应分支小节追加本轮记录（配置/工具调用/成分/C、P 摘要/reduced_χ²/BIC/**VLM 物理性判定（verdict 与 failed_checks 摘要）**/VLM 残差特征/入队的 action_id 列表）；覆写 Beam 状态快照（含 Q 的当前 5 项与 n 计数）。
+g. **持久化**：在 `working_note.md` 的相应分支小节追加本轮记录（配置/工具调用/成分/C、P 摘要/reduced_χ²/BIC/**VLM 物理性判定（verdict 与 failed_checks 摘要）**/VLM 残差特征/入队的 action_id 列表）；覆写 Beam 状态快照（含 Q 的当前 5 项与 n 计数）；**同步更新 `global_state_description` 蒸馏**（按 §global_state_description / local_state_description 生成规范：新增本轮的已验证盆 / 被否定假设（带 ΔBIC 数值）/ 已尝试动作，刷新预算——下一次 d.i 调用即使用更新后的版本）。
 h. **派生新分支（可选）**：当主模型发现某候选与当前束内主流方向显著不同、且 g ≥ 0.5 时，可标记新分支字母（branch_counter += 1，如 "B"），并在 working_note.md 新建 "分支 B" 小节。新分支共享全局 n 与 global_iter_id，避免预算失控。
 
 ### 步骤 2. 终止条件（任一满足即停）
@@ -134,7 +134,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 1. 在 `working_note.md` 的"跨分支决策日志"写下：终止条件、累计拟合次数 n、被探索过的分支数、被截掉的候选 action_id 列表。
 2. 锁定 s\*：在 `working_note.md` 头部的"Beam 状态快照 / 当前最优 s\*"小节确认其对应的 `output/<timestamp>_<lyric_stem>/` 目录与 `_iter{global_iter_id}.lyric` 文件路径——这两个路径将作为阶段三、四、五的输入。
 3. **同心约束合规性回查（硬约束）**：若 s\* 的主星系成分数 K ≥ 2（Disk/Bulge/Bar/Lens），但其对应的 `_iter{n}.lyric` 与 `run_galfits_image_fitting` 调用未附带 `.constrain` 文件与 `--parconstrain`，视为流程违规——回退到步骤 1.b.2 补齐 `.constrain` 后重跑该轮拟合，再进入阶段三。
-4. 若 s\* 是退化状态（如成分参数碰边界、bulge/disk 通量完全相同），不要强行进入阶段三；改为：把"修复退化"作为强约束写入 `generate_beam_actions` 的 `custom_instructions`，重启一轮 beam search（重置 Q 与 stagnation，但保留 n 与 global_iter_id 计数）。
+4. 若 s\* 是退化状态（如成分参数碰边界、bulge/disk 通量完全相同），不要强行进入阶段三；改为：把"修复退化"作为强约束写入 `generate_beam_actions` 的 `local_state_description`，重启一轮 beam search（重置 Q 与 stagnation，但保留 n 与 global_iter_id 计数）。
 
 ### §候选生成的诊断式原则（主模型硬约束）
 
@@ -142,7 +142,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 **原理**：s' 的 BIC 反升不等于物理假设错误——常见情况是候选的物理方向正确，但某个次级参数（中心位置 / PA / Re 量级 / n / q）初始化不当，拟合器收敛到次优解。此时 s' 的残差携带"哪个参数需要修正"的诊断信息，只有调用 `generate_beam_actions` 才能把残差转译为修正候选。跳过步骤 d 会令 beam search 退化为贪心搜索，错过"同方向、修正参数"的后继——这正是 beam search 相对贪心搜索的核心价值所在。
 
-**通用失败→修正模式**（由 VLM 在候选生成阶段自主识别；主模型不得在 `custom_instructions` 中预先指定这些方向，见 §custom_instructions 内容规范）：
+**通用失败→修正模式**（由 VLM 在候选生成阶段自主识别；主模型不得在 `global_state_description` / `local_state_description` 中预先指定这些方向，见 §global_state_description / local_state_description 生成规范）：
 - 成分中心位置初始估计有误 → s' 残差在"模型位置"与"真实位置"之间呈偶极 → `tune(component, x_real, y_real)`
 - 成分 PA 与真实主轴斜交 → s' 残差呈四极矩 → `tune(component, pa)`
 - 新增成分 Re 量级偏小 → s' 残差呈中心环状正残差 → `tune(component, Re_init≈...)`
@@ -207,7 +207,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 **强制保留条款（豁免 g 截断）**：以下候选即便 g 较低也必须入队（至少保留一个变体），因为它们测试的是无法靠残差直觉判断的物理假设或程序化诊断驱动的修复，不探索就永远拿不到证据：
 
-- **扁 Bulge → Bar 候选**：当父状态含 Bulge 且满足联合触发条件（`bulge_axrat < 0.5` AND `|bulge_ang − disk_ang| > 20°` AND `0.5 < bulge_n < 2.5`（若 free）AND `disk_axrat > 0.5`）时，主模型必须把 VLM 返回的 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增，至少一个）以 g 不低于 0.5 的保底分入队，**不得因"阶段一未检出 bar"在物理合理性维度（维度 2）压分**。主模型在 custom_instructions 中须客观写出四条触发数值（见 §custom_instructions），让 VLM 知道触发条件已成立。若 VLM 在已触发情况下未返回任何 Bar 候选，主模型应**主动生成**一个 `add(Bar, n=0.5 fixed, PA≈bulge_ang)` 候选（参照 §候选动作忠实执行原则 的"B 类填空"规则初始化参数），追溯标记"[主模型扁-bulge 触发补充]"，走同样的打分入队流程。
+- **扁 Bulge → Bar 候选**：当父状态含 Bulge 且满足联合触发条件（`bulge_axrat < 0.5` AND `|bulge_ang − disk_ang| > 20°` AND `0.5 < bulge_n < 2.5`（若 free）AND `disk_axrat > 0.5`）时，主模型必须把 VLM 返回的 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增，至少一个）以 g 不低于 0.5 的保底分入队，**不得因"阶段一未检出 bar"在物理合理性维度（维度 2）压分**。主模型在 local_state_description 中须客观写出四条触发数值（见 §global_state_description / local_state_description 生成规范），让 VLM 知道触发条件已成立。若 VLM 在已触发情况下未返回任何 Bar 候选，主模型应**主动生成**一个 `add(Bar, n=0.5 fixed, PA≈bulge_ang)` 候选（参照 §候选动作忠实执行原则 的"B 类填空"规则初始化参数），追溯标记"[主模型扁-bulge 触发补充]"，走同样的打分入队流程。
 - **Lens 候选**：父状态含 Bar 且 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5` 时，Lens 候选同上保底入队。
 - **物理性 FAIL 恢复候选**（见 §非物理结果恢复协议）：当 s' 被 VLM Physicality Verdict 判为 FAIL 时，主模型在 d.ii 生成的恢复候选 A（Re-bound 收紧）和 B（热启动+收紧）以 g ≥ 0.5 保底入队；`swap_hint=disk_bulge_swap` 时的交换标签候选（VLM 给出或主模型保底）同样 g ≥ 0.5 保底。这类候选针对的是数值诊断（图例/`.gssummary` 精确数值违规）驱动的机械修复，VLM 从残差图不容易直觉判断其改善潜力，故需保底保护。
 - **disk Re 瓶颈候选**（见 d.ii 主模型数值规则）：当 lens/bar Re 触上限且满足 Re 简并（≥0.85）或通量接近（≥83% disk）任一子条件时，主模型在 d.ii 生成的 `tune(disk, Re 更大)` 候选以 g ≥ 0.5 保底入队。这类候选针对"基础骨架成分 Re 偏小被延展成分代偿"的退化模式——VLM 因注意力被中心强残差吸引、且在 lens 已代偿外缘通量时 1D 曲线变平导致视觉判读不稳定，对"调大基础成分 Re"方向不敏感，故需客观信号保底保护。
@@ -217,32 +217,41 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
   - **执行后的失效边界**：若该候选被执行后拟合失败（BIC 反升、参数触界逃离约束区等），主模型可在**同一成分 context** 内对后续同方向候选给出书面否决理由（写入"跨分支决策日志"，标注触界参数 / BIC 变化 / 简并证据），该否决**仅在相同 C' 下有效**。一旦成分 context 变化（新增或删除任一成分），本保护条款对新出现的同方向候选重新生效。
   - **原理**：VLM 跨多次 `generate_beam_actions` 调用持续给出同方向高 σ 候选，是比单次 σ 更强的证据——单次可能是 VLM 误判，多次跨 context 重复出现则说明残差特征稳定存在。主模型连续压分相当于把主模型的先验凌驾于 VLM 的视觉证据之上，违反 beam search 并行探索的设计初衷。典型场景：VLM 在 {disk, bulge, lens} 父状态连续两轮给出 add Bar（σ=0.75-0.80），即使更早的 {disk, bulge, bar} 无 lens context 下 bar 曾失败，本条款要求至少执行一次 {disk, bulge, lens, bar} 的拟合验证。
 
-### §custom_instructions 内容规范（主模型职责，硬约束）
+### §global_state_description / local_state_description 生成规范（主模型职责，硬约束）
 
-主模型传给 `generate_beam_actions` 的 `custom_instructions` 是 VLM 生成候选时的关键上下文。主模型在其中扮演的是**客观信息提供者**，不是**候选方向建议者**。主模型对候选方向的筛选发生在入队打分阶段（§去重与排序），而不是在 custom_instructions 阶段。
+`generate_beam_actions` 的 VLM 是**无状态**的：每次调用只看到当轮残差图。跨轮次记忆由两个参数承载，均由主模型生成——
 
-**必须包含**（客观描述性信息）：
-1. 阶段一 bar/lop 跨波段 OR-logic 结论、PA（**sky-PA**，正北 0° 逆时针；与 `Pa7` 同帧，VLM 与主模型禁止套用 GALFIT 的 +Y 轴约定）、b/a；
-2. 父状态的成分清单 C、关键参数 P 摘要；
-3. **当前拟合结果存在的具体问题**（如有；这是最重要的部分，必须客观详尽）：
-   - 哪些参数触及上下界（标注 ⚠️ 与具体数值，如 `bar_Re=12" ⚠️触上限`、`bulge_axrat=0.1 ⚠️触下界`）；
-   - 残差图上观察到的未拟合特征（位置 / 对称性 / 强度，引用阶段一视觉特征的客观描述）；
-   - 成分身份是否混淆（如 disk 与 bulge 标签互换、bar 丧失棒形态变圆变胖、bulge 坍缩成致密点源）；
-   - **扁 Bulge → Bar 触发数值（若父状态含 Bulge）**：客观列出 `bulge_axrat=...`、`|bulge_ang − disk_ang|=...°`、`bulge_n=...`、`disk_axrat=...` 四个值，并标注联合触发条件是否成立（成立 / 不成立 + 缺哪条）。这是让 VLM 判断是否该生成 Bar 候选的客观依据，主模型只报数值，**不**暗示方向（不写"建议加 bar"或"应该转换"）。
-   - **disk Re 瓶颈信号（若父状态含 lens/bar）**：客观列出 lens/bar 的 `Re` 拟合值、`re_max`、是否触上限；以及 disk 的 `Re` 与 `re_max`、是否触界。若 lens/bar 触上限且 disk 未触界，标注"disk Re 瓶颈命中"。这是让 VLM 判断是否该生成 `tune(disk, Re 更大)` 候选的客观依据，主模型只报数值，**不**暗示方向。
-   - **外围残差符号（1D 曲线 r > 2×Re_disk 区域）**：客观描述 1D 残差曲线在该区域的系统性符号——"Data 亮于 Model"（正残差，disk Re 可能偏小）/ "Model 亮于 Data"（负残差，disk Re 可能偏大）/ "平坦"（拟合良好）。引用 VLM 阶段一视觉特征的原文描述，不做主观推断。
-4. 父轮次已尝试动作清单（避免 VLM 重复提出）。
+- **`global_state_description`（全局状态）**：跨轮次稳定事实的**蒸馏**（不是 working_note 全文！工具不再自动注入 working_note）。主模型从 working_note 蒸馏，固定 schema、固定字段顺序，总量 ≤ ~40 行：
+  ```
+  [阶段一结论] bar/lop 跨波段 OR-logic；PA（sky-PA，正北 0° 逆时针，可直接进 Pa7）；b/a
+  [已验证盆] 经拟合验证的参数取值（成分 + 参数 + 验证值 + 来源轮次）。
+      例：companion 中心 ≈ 像素(130,115) = offset(-4.93,+1.02)"，A.5/A.7 两轮锚定（Mag≈18.6，无触界）
+  [被否定假设] 已被拟合证据否定的方向（方向 + 定量证据 + 轮次）。必须带数值。
+      例：E-W bar(PA≈90°)：BIC +402，bar 自由转回 180°（A.11）；bulge n=4 fixed：劣于 n free 350–800 BIC（A.8/A.9）
+  [已尝试动作] 动作流水账（动作 + 参数化 + 一行结局），机器可比对（成分 + 参数增量），与 tag 命名无关
+  [预算] n = X / N_max，剩 Y
+  ```
+  维护规则：每轮主循环结束（步骤 g 持久化时）同步更新；`[已验证盆]` 新增条件 = 拟合产出物理值且无触界（坍缩/触界/漂移的不算）；`[被否定假设]` 新增条件 = 同 context 下 BIC 反升 ≥ 10 或物理性 FAIL，**必须写 ΔBIC/触界数值**（VLM 重视数字甚于形容词）。
+- **`local_state_description`（本轮状态补充）**：当轮客观描述，包含：
+  1. 父状态成分清单 C、关键参数 P 摘要；
+  2. **当前拟合结果的具体问题**（最重要的部分，客观详尽）：
+     - 触界参数（标注 ⚠️ 与具体数值，如 `bar_Re=12" ⚠️触上限`）；
+     - 残差图未拟合特征（位置 / 对称性 / 强度，引用阶段一视觉特征原文）；
+     - 成分身份混淆（disk/bulge 标签互换、bar 变圆变胖、bulge 坍缩成点源）；
+     - **扁 Bulge → Bar 触发数值**（若父状态含 Bulge）：客观列出 `bulge_axrat`、`|bulge_ang − disk_ang|`、`bulge_n`、`disk_axrat` 四值并标注联合条件是否成立——只报数值，不暗示方向；
+     - **disk Re 瓶颈信号**（若父状态含 lens/bar）：lens/bar 的 `Re`/`re_max`/是否触界 + disk 的 `Re`/`re_max`/是否触界，命中时标注"disk Re 瓶颈命中"——只报数值；
+     - **外围残差符号**（1D 曲线 r > 2×Re_disk 区域）："Data 亮于 Model" / "Model 亮于 Data" / "平坦"，引用阶段一原文；
+  3. 主模型数值规则委托内容（伴星系条件 A 三项数值 / lens Re 膨胀信号 / 其他 d.ii 触发的定量信号）。
 
-**严禁包含**（候选方向建议）：
-- ❌ 不得列出"优先修复方向：(1)...(2)...(3)..."这类具体候选方向清单；
-- ❌ 不得暗示或推荐特定的动作类型（如"建议释放 disk n""建议加 Lens""建议回退到 A.2""建议收紧 bar Re 上限"）；
-- ❌ 不得预先做方向收敛或筛选——这是 VLM 的职责。
+**两者共同的严禁条款（候选方向建议）**：
+- ❌ 不得列出"优先修复方向：(1)...(2)...(3)..."这类方向清单；
+- ❌ 不得暗示或推荐特定动作类型（"建议释放 disk n""建议加 Lens""建议回退到 A.2""建议收紧 bar Re 上限"）；
+- ❌ 不得预先做方向收敛或筛选——这是 VLM 的职责（发生在 prompt 规则 + 打分阶段）。
+- ⚠️ `global_state_description` 的 `[被否定假设]` 是**事实记录**不是方向建议——记录"X 方向已被否定（ΔBIC=+402）"是合法的，它恰恰是防止 VLM 重复无效方向的记忆；但不得借记录之夹带"因此应该走 Y 方向"。
 
-**为什么**：主模型一旦在 custom_instructions 中给出具体方向，VLM 会倾向于直接跟随这些现成方向，而不再自主回忆 prompt 中的规则（如 Lens 触发条件、方向多样性示例、禁用动作清单）来生成多样化候选。这等于主模型替 VLM 做了一轮方向筛选，压制了 beam search 的并行探索能力（典型反例：父状态 bar 膨胀时主模型给了"收紧约束/释放 disk/回退"三个方向，导致 VLM 未产出本应由 Lens 规则触发的"拆 Bar→Bar+Lens"候选）。
+**为什么**：主模型一旦给出具体方向，VLM 会直接跟随而不再自主回忆 prompt 规则（Lens 触发条件、方向多样性等），等于主模型替 VLM 做了一轮方向筛选，压制并行探索。而全局状态解决的是另一半问题：VLM 无状态导致的重复候选与已被否定方向的循环（典型事故：companion 位置在 4 个略异的"真实位置"读数间反复，浪费 4 次拟合——若 VLM 能看到"[已验证盆] companion 中心≈(130,115)"并按锚定-验证协议引用而非重测，全部可避免）。
 
-**正确做法**：把问题客观摆出来（如"bar_Re=12" 触上限，q_bar=0.6 触上限，Re_bar > Re_disk 全序反置，bar 丧失棒形态"），让 VLM 自己根据 prompt 规则生成候选。
-
-**Physicality Verdict 的处理**：物理性判定权在 VLM——verdict / failed_checks / swap_hint 由 VLM 在 `generate_beam_actions` 返回中输出，主模型只解析、记录与执行守门，不得改写判定内容；主模型亦**不得**在 custom_instructions 中预告自己预判的物理性结论（如"本轮应判 FAIL"），避免引导 VLM 的判定。
+**Physicality Verdict 的处理**：物理性判定权在 VLM——verdict / failed_checks / swap_hint 由 VLM 在返回中输出，主模型只解析、记录与执行守门，不得改写；主模型亦**不得**在 local_state_description 中预告自己预判的物理性结论（如"本轮应判 FAIL"），避免引导 VLM 的判定。
 
 ### §候选动作忠实执行原则（主模型职责，硬约束）
 
@@ -343,17 +352,17 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 3. **覆写优于追加**：Beam 状态快照每次覆写；分支小节与跨分支日志才追加。
 
 ### 步骤 4. 物理意义分析 与 奥卡姆剃刀原则（beam search 终止后执行）
-- 物理意义分析：严格遵循 `<星系成分分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA（**sky-PA**，对齐原图 N 箭头）与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_beam_actions` 的 `custom_instructions`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 N 块 AGN 两条路径进行竞争对比——只有 AGN 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。
+- 物理意义分析：严格遵循 `<星系成分分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA（**sky-PA**，对齐原图 N 箭头）与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_beam_actions` 的 `local_state_description`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 N 块 AGN 两条路径进行竞争对比——只有 AGN 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。
 - 奥卡姆剃刀原则：
   - **Nucleus/AGN 成分**：若 s\* 含 Nucleus 且 ΔBIC < 10，把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
-  - **伴星系（Companion）**：若 s\* 含 Companion 且通量比 ≤ 1%（条件 A，计算方式同 d.ii），把该数值结论作为强上下文写入 `generate_beam_actions` 的 `custom_instructions`（格式同 d.ii），由 VLM 执行条件 B 视觉验证（原图面板 companion 位置是否有肉眼可见亮斑）。仅当 A∧B 同时成立（数值暗 AND 原图无可见源）时，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证（删除后 BIC 反升则保留 Companion）。若原图有可见亮斑（条件 B 不命中），不触发移除——该 companion 是真实致密源，通量低是因宿主太大而非源不存在。
+  - **伴星系（Companion）**：若 s\* 含 Companion 且通量比 ≤ 1%（条件 A，计算方式同 d.ii），把该数值结论作为强上下文写入 `generate_beam_actions` 的 `local_state_description`（格式同 d.ii），由 VLM 执行条件 B 视觉验证（原图面板 companion 位置是否有肉眼可见亮斑）。仅当 A∧B 同时成立（数值暗 AND 原图无可见源）时，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证（删除后 BIC 反升则保留 Companion）。若原图有可见亮斑（条件 B 不命中），不触发移除——该 companion 是真实致密源，通量低是因宿主太大而非源不存在。
 - 上述两类重启 beam search 的累计 n 仍受 N_max = 15 总预算约束；若预算已耗尽，进入阶段三由阶段三判定是否可接受。
 
 阶段三. 结果分析与报告撰写
 * **锁定最佳结果**：从 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节读取最优轮次对应的 `output/` 子目录与 `_iter{n}.lyric`，作为本阶段所有分析对象的唯一来源。给出其对应的形态学物理意义（如：成分 A 代表经典的盘结构，成分 B 代表致密的核心星团）。
 * **偏心成分（Fourier m=1）评估**：科学目标关心偏心的影响。
     - 如果最佳结果的 Disk 成分已经是 `sersic_f`（阶段一 lop 检出后于阶段二已添加），跳过本步。
-    - 如果阶段一 lop 未检出但仍有疑虑：调用 `fourier_mode_analysis`，输入图为最佳轮次 **F200W 波段**的对比 PNG（原图/模型/残差），分析是否存在 m=1 傅里叶模式可修正的偏心非对称残差。工具返回 recommend_fourier=yes → 回到阶段二重启一轮 beam search：把"把 Disk 的 `Pa2) sersic` 改为 `sersic_f` 并设置 `Pa21) 1` 等参数（详见 component_specification_galfits.md）"作为强约束注入 `generate_beam_actions` 的 `custom_instructions`（reset Q 与 stagnation，保留 n 与 global_iter_id 计数）。
+    - 如果阶段一 lop 未检出但仍有疑虑：调用 `fourier_mode_analysis`，输入图为最佳轮次 **F200W 波段**的对比 PNG（原图/模型/残差），分析是否存在 m=1 傅里叶模式可修正的偏心非对称残差。工具返回 recommend_fourier=yes → 回到阶段二重启一轮 beam search：把"把 Disk 的 `Pa2) sersic` 改为 `sersic_f` 并设置 `Pa21) 1` 等参数（详见 component_specification_galfits.md）"作为强约束注入 `generate_beam_actions` 的 `local_state_description`（reset Q 与 stagnation，保留 n 与 global_iter_id 计数）。
     - m=1 Fourier 成分的保留/移除判据：只有证明 Fourier 成分导致拟合不合理（参数发散、物理不成立）时才删除；删除也通过重启 beam search 验证。
 * 使用 `write_file` 工具将分析结论写入当前星系目录：`analysis_report_xxx.md`。
 * **报告内容包含：**

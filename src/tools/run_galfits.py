@@ -658,9 +658,19 @@ def create_multiband_comparison_png(
         ax3.tick_params(labelleft=False)
 
         if im3 is not None:
-            from mpl_toolkits.axes_grid1 import make_axes_locatable
-            divider = make_axes_locatable(ax3)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
+            # Colorbar lives in the dedicated gap_wide column (gs col 7) that the
+            # width_ratios reserved for it — NOT inside ax3's own box. The previous
+            # make_axes_locatable().append_axes("right") carved the colorbar out of
+            # ax3's bounding box (~5% width + pad ≈ 35 px), shrinking the residual
+            # panel to 598×598 vs 632×632 for original/model, so VLM pixel readings
+            # carried across panels were systematically off by ~5.5%.
+            # Subdivide the column: the bar occupies the left sub-cell; its ticks +
+            # σ-label render into the empty right sub-cell, clear of the SB
+            # profile's own y-axis labels.
+            gs_cbar = GridSpecFromSubplotSpec(
+                1, 2, subplot_spec=gs[r0, 7],
+                width_ratios=[0.25, 0.75], wspace=0.0)
+            cax = fig.add_subplot(gs_cbar[0, 0])
             cbar = plt.colorbar(im3, cax=cax, orientation='vertical')
             cbar.ax.tick_params(labelsize=8)
             cbar.set_label('Residual (σ)', fontsize=8)

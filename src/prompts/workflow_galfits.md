@@ -30,11 +30,14 @@
 - 早停阈值 S_max = N_max = 15（连续无改进次数上限，当前设为与 N_max 相同，即早停实际上不生效，仅由拟合预算 N_max 控制终止）
 
 ### 形式化定义（精简版，便于智能体维护一致的状态语义）
-- **状态** s = (C, P, R, reduced_χ², BIC, depth)，其中 C 为成分清单、P 为对应参数（`.lyric` 中的 `P*` 五元组）、R 为残差诊断（`all_bands_comparison.png` + 1D 残差特征）、reduced_χ² 与 BIC 取自 `.gssummary`、depth 为该状态在搜索树中的深度（s₁ 的 depth=1）。
+- **状态** s = (C, P, R, reduced_χ², BIC, depth)，其中 C 为成分清单、P 为对应参数（`.lyric` 中的 `P*` 五元组）、R 为残差诊断（`all_bands_comparison.png` + 1D 残差特征）、reduced_χ² 与 BIC 取自 `.gssummary`、depth 为该状态在搜索图中的深度（s₁ 的 depth=1）。
 - **动作** a = 复合动作，由 1–2 个语义内聚的原子操作组成。原子操作有三类：`add(type, params)` 新增成分、`remove(component)` 删除成分、`tune(component, param_delta)` 调参（含释放/固定 vary、收紧/放宽边界、修改 .constrain）。禁止捆绑无关联的原子操作。
 - **转移** T(s, a) = s'：以父状态的 `.lyric` 为结构模板、父状态 `.gssummary` 的收敛值热启动回填（见步骤 1.b.1 热启动规则）→ 按 a 修改 → 写 `_iter{n}.lyric` → `check_lyric_file` → `run_galfits_image_fitting --fit_method ES` → 读 `.gssummary` 抽取 reduced_χ²/BIC → 调用 `generate_beam_actions` 获取下一层候选。s'.depth = s.depth + 1。
 - **初始状态** s₀：从输入 `.lyric` 解析得到（C={sersic}, P={输入参数}, R=原图诊断, reduced_χ²=⊥, BIC=⊥, depth=0）。s₀ 不是拟合产物，而是输入；首次拟合（步骤 0.4）对 `_iter1.lyric` 跑一次 `run_galfits_image_fitting` 直接得到 s₁，**不经过候选生成**。
 - **当前最优** s\*：按主模型综合评分最高者（评分维度见 §去重与排序），**不是**单纯按 reduced_χ² 最低。
+- **状态签名** sig(s)：状态的规范形式 = 排序后的成分清单 × 每成分 `(类型, n状态, Re(px), Mag, q, PA)` × 中心约束配置，px 值附波段标签。签名是图搜索去重的唯一载体（VLM 侧生成前比对、主模型侧执行前比对，共用同一把尺子）。
+- **搜索图（图搜索，非树搜索）**：状态空间是**图**——不同动作序列可到达同一状态（如"加 X 后删 X"回到祖先结构）。为防重访，维护两本账作为 visited set：**输入账本**（历次已执行 `_iter{n}.lyric` 的规范形式：结构 × vary 配置 × 边界带 × 初始值带）与**结果账本**（历次已拟合状态的 sig + BIC + verdict + 僵尸标记）。转移分两类：**闭式转移**（产出状态可不经拟合精确投影：remove-only、参数 revert、边界还原）与**黑箱转移**（add、tune 等——结果不可预知，必须实跑拟合）。环检测规则见步骤 1.b.0。
+- **僵尸成分 [zombie]**：拟合后通量占最亮成分之比 < 0.5% 的成分（**相对判据，禁止用绝对星等**——不同巡天深度差异数个量级）。仅相差僵尸成分的两个状态在结果账本中视为等价（零通量成分不改变模型可表达的像）。
 
 ### 步骤 0. 初始化（每个星系只执行一次）
 1. 在星系主目录创建（或重置）`working_note.md`，按本节末尾的 §多分支 working_note 模板初始化空壳；把阶段一的 VLM 形态判断、bar/lop 跨波段 OR-logic 结论、PA 取值、b/a 全部写入头部。
@@ -52,7 +55,7 @@
         lyric_file        = <_iter1.lyric 绝对路径>,
         summary_file      = <s₁ 的 .gssummary 绝对路径>,
         comparison_file   = <s₁ 的 all_bands_comparison.png 绝对路径>,
-        global_state_description = "<按 §global_state_description / local_state_description 生成规范 蒸馏：此时 [已验证盆]/[被否定假设]/[已尝试动作] 均为空或仅有输入先验，主要写 [阶段一结论] 与 [预算]>",
+        global_state_description = "<按 §global_state_description / local_state_description 生成规范 蒸馏：此时 [状态账本]/[已验证盆]/[被否定假设] 均为空或仅有输入先验，主要写 [元信息（像素契约）]/[阶段一结论] 与 [预算]>",
         local_state_description  = "<按 §global_state_description / local_state_description 生成规范 填写：s₁ 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）；严禁给出具体候选方向建议>",
         branch_id         = "A",
         parent_label      = "A.1",
@@ -69,6 +72,13 @@ while Q 非空 and n < 15 and stagnation < 15:
 ```
 a. **出队**：从 Q 取出 g 最高的 (s, a, σ, g, branch, depth)。把它从 Q 中移除。
 b. **执行转移 T(s, a)**：
+    0) **图搜索环检测（硬约束，先于写 lyric 与 global_iter_id 递增）**：
+       - **R1 输入账本比对（所有动作）**：把 a 按 §候选动作忠实执行原则 转写为假想 lyric 的规范形式（结构 × vary 配置 × 边界带 × 初始值带；Re/位置一律 px），与**输入账本**逐条比对（容忍带同 §去重与排序）。带内等价 → 同一输入对（近）确定性优化器无新信息，**整条丢弃**（记入"跨分支决策日志"，标注 action_id 与命中的账本行），`stagnation += 1`，回到循环开头。
+       - **R2 闭式转移投影比对（仅 remove-only / 参数 revert / 边界还原类动作）**：这类动作的产出状态可**不经拟合精确投影**（父状态签名去掉被删成分 / 还原被 revert 的参数，幸存成分的 vary/边界配置按热启动规则继承）。拿投影签名与**结果账本**逐行比对（僵尸感知：仅相差 [zombie] 成分的状态等价）：
+         - **严格命中**（结构 × vary/边界配置均一致，僵尸等价亦算命中）→ **零成本回滚**：不写 lyric、不调 run_galfits、**不计 n**；在 working_note 记一条回滚边（`<branch>.<round> --a--> ≡<命中轮次>`），`stagnation += 1`，回到循环开头。**不重跑步骤 d**——回滚目标状态的候选生成在其原始轮次已完成，其后继要么已入队要么已执行，重新生成只会得到重复候选。
+         - **仅结构一致、vary/边界配置有差** → 不回滚（如 bulge n free vs fixed 是不同的科学问题），但把该候选标记"[疑似近重复]"带入步骤 f：六维打分中"退化惩罚"维度记 0（满惩罚），除非候选的 novelty 声明能指出该配置差异承载独立假设。
+         - 无命中 → 正常继续 1)。
+       - add / tune 等黑箱转移只做 R1（结果不可预知，R2 不适用）。
     1) `global_iter_id += 1`；以 s 对应的 `.lyric` 为**结构模板**，按 a 的 primitives 修改成分与参数，写入星系主目录的 `_iter{global_iter_id}.lyric`。**热启动规则（硬约束）**：VLM 的诊断以父状态的**收敛解**为条件——模型图上的成分椭圆与图例的 Mag/Re/n/q/PA 画的就是 `.gssummary` 收敛值，VLM 未提议 tune 的参数隐含"该成分当前形态可接受"。因此子轮次必须让被声明的动作成为**父收敛解之上的干净增量**：所有**未被** primitives 声明的参数，五元组 `initial_value` 一律回填父状态 `.gssummary` 的收敛值（min/max/step/vary 保持父轮设定；含 Fourier 模式参数、N 块参数等全部可回填项），**禁止直接沿用父 `.lyric` 的旧输入值**——那是上一轮的初始猜测，不是 VLM 评估过的解；从旧猜测重启会让未提及参数重新游走，既污染"候选 → 结果"的归因，又浪费收敛预算。被 primitives 声明修改的参数按候选声明值写入；`add` 的新成分无父收敛值，按候选声明参数初始化。回填必须手动从 `.gssummary` 提取，**严禁使用 `--readsummary`**（它只解析自由参数段，会静默丢弃 vary=0 参数，见 CLAUDE.md Core Principles #6）。**转写时必须严格遵守 §候选动作忠实执行原则**——候选声明中的语义核心字段（成分类型、n/vary 状态、量级约束、增删/中心约束策略、Fourier 阶数等）不得擅自修改；若主模型认为某候选有缺陷，应整条丢弃（记入"跨分支决策日志"），而不是修改后执行。
     2) **主星系同心约束检查（硬约束，无论 a 是否声明约束都必须执行）**：统计本轮 `_iter{global_iter_id}.lyric` 中主星系中心成分（Disk/Bulge/Bar/Lens，即 P 块且 label 不含 `comp`/`companion`/`secondary`/`satellite`）的数量 K：
        - **K ≥ 2**：**必须**写 `iter{global_iter_id}.constrain`（命名遵循 `Update_Constraints` 规范），把所有主星系中心成分的 xcen/ycen 绑定到 Disk（`pardictlc['bulge_xcen'] = 1 * pardictlc['disk_xcen']` 等成对出现，严禁仅绑定一个变量）。在 lyric 中把 Bulge/Bar/Lens 的 `P*3`/`P*4` 设为 `vary=0`（Disk 的 `Pa3`/`Pa4` 保持 `vary=1` 作为同心锚点）。AGN/N 块若共存则用 `xcen_agn`/`ycen_agn`（不是 `agn_xcen`）同样绑定到 disk。**伴星系（label 含 comp/companion/secondary/satellite）的中心严禁参与此约束**——伴星系中心必须保持 `vary=1` 自由拟合。调用 `run_galfits_image_fitting` 时必带 `--parconstrain iter{global_iter_id}.constrain`。
@@ -83,7 +93,7 @@ d. **候选生成 + 拟合结果物理性判定（无条件硬约束——见 §
         ```
         generate_beam_actions(
             ...,
-            global_state_description = "<按 §global_state_description / local_state_description 生成规范 从 working_note 蒸馏并随步骤 g 同步更新：[阶段一结论]/[已验证盆]/[被否定假设（带 ΔBIC 数值）]/[已尝试动作]/[预算]>",
+            global_state_description = "<按 §global_state_description / local_state_description 生成规范 从 working_note 蒸馏并随步骤 g 同步更新：[元信息（像素契约）]/[阶段一结论]/[状态账本]/[回滚边]/[已验证盆]/[被否定假设（带 ΔBIC 数值 + 失败原因 + 重开条件）]/[预算]>",
             local_state_description  = "<按 §global_state_description / local_state_description 生成规范 填写：s' 拟合结果的具体问题（触界参数/残差特征/成分身份异常等）+ 数值规则委托内容；严禁给出具体候选方向建议>",
             branch_id         = branch,
             parent_label      = <branch>.<local_round>,
@@ -119,10 +129,11 @@ d. **候选生成 + 拟合结果物理性判定（无条件硬约束——见 §
 e. **登记 s' 评分并更新 s\*（物理性守门）**：按 §去重与排序 中的 score 函数给 s' 打分；**仅当 d.i 的 Physicality Verdict 为 PASS（或 verdict 兜底判定通过）时**，s' 才与之前的最佳模型比较——若 score(s') > score(s\*)，s\* ← s'，`stagnation = 0`；否则 `stagnation += 1`。verdict=FAIL 的 s' **不参与 s\* 比较**（记 `stagnation += 1`），但其修复候选照常在步骤 f 入队——修复回路是 beam search 的核心路径，FAIL 状态的后继可能快速恢复到 PASS。覆写 `working_note.md` 的"Beam 状态快照 / 当前最优 s\*"小节。**注意：stagnation 仅用于终止判定，不构成跳过步骤 d 的理由——s' 的后继可能优于 s\*（详见 §候选生成的诊断式原则）**。
 f. **去重 + 打分 + 入队**：主模型对每个新候选（d.i VLM 候选与 d.ii 主模型数值规则候选合并后的完整集合）：
     - 与 Q 中已有 (s_j, a_j) 做 §去重与排序 的语义去重；若等价则保留 g 较高者。
-    - 对保留者按六维打分得到 g。
+    - **与执行历史比对（图搜索 visited set，与 Q 内去重共用同一套签名判据）**：按步骤 1.b.0 的 R1/R2 规范，把候选的假想输入规范形式 / 闭式转移投影签名与**输入账本、结果账本**比对——R1 命中 → 丢弃；R2 严格命中 → 不入队（它被执行时会被零成本回滚，入队只是浪费 Q 名额，记入决策日志）；仅结构一致 → 标"[疑似近重复]"（维度 4 记 0）。
+    - 对保留者按六维打分得到 g（带"[疑似近重复]"标记者的退化惩罚维度按 b.0 规则处理）。
     - **g_min 阈值**：若 g < 0.3，直接丢弃，不入队（记入 `working_note.md` 的"跨分支决策日志"，标注 action_id 与丢弃原因）。这避免低质量候选堆积导致队列永不空。
     - 把 (s', a_new, σ_new, g, branch, depth=depth+1) 加入 Q；按 g 降序重新排序；截断到 W=5。被截掉的元素同样记入"跨分支决策日志"。
-g. **持久化**：在 `working_note.md` 的相应分支小节追加本轮记录（配置/工具调用/成分/C、P 摘要/reduced_χ²/BIC/**VLM 物理性判定（verdict 与 failed_checks 摘要）**/VLM 残差特征/入队的 action_id 列表）；覆写 Beam 状态快照（含 Q 的当前 5 项与 n 计数）；**同步更新 `global_state_description` 蒸馏**（按 §global_state_description / local_state_description 生成规范：新增本轮的已验证盆 / 被否定假设（带 ΔBIC 数值）/ 已尝试动作，刷新预算——下一次 d.i 调用即使用更新后的版本）。
+g. **持久化**：在 `working_note.md` 的相应分支小节追加本轮记录（配置/工具调用/成分/C、P 摘要/reduced_χ²/BIC/**VLM 物理性判定（verdict 与 failed_checks 摘要）**/VLM 残差特征/入队的 action_id 列表）；覆写 Beam 状态快照（含 Q 的当前 5 项与 n 计数）；**维护两本账（图搜索 visited set，硬约束）**——本轮成功拟合后：输入账本追加 `_iter{n}.lyric` 的规范形式；结果账本追加状态签名 + BIC + verdict（通量占最亮成分 < 0.5% 的成分标 [zombie]；若结果与账本某行僵尸等价，追加回滚边）；**同步更新 `global_state_description` 蒸馏**（按 §global_state_description / local_state_description 生成规范：[状态账本] 追加本轮行、[回滚边]/[已验证盆]/[被否定假设（含失败原因与重开条件）] 增量、刷新预算——下一次 d.i 调用即使用更新后的版本）。
 h. **派生新分支（可选）**：当主模型发现某候选与当前束内主流方向显著不同、且 g ≥ 0.5 时，可标记新分支字母（branch_counter += 1，如 "B"），并在 working_note.md 新建 "分支 B" 小节。新分支共享全局 n 与 global_iter_id，避免预算失控。
 
 ### 步骤 2. 终止条件（任一满足即停）
@@ -192,6 +203,10 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 2. 预期参数取值在容忍带内一致：Re ±20%、Sersic n ±0.5、q (b/a) ±0.1、PA ±10°（**sky-PA**，正北 0° 逆时针；与 `.lyric Pa7` 同帧，禁止按 +Y 轴约定比较）、mag ±0.5。
 3. `expected_behavior_tag` 一致。
 
+**历史状态去重（图搜索环检测，先于语义去重与六维打分执行）**——语义去重只比对 Q 内候选是不够的：Q 是"待探索"，执行历史是"已探索"，两者必须共用同一套签名判据。每个新候选在打分前先做两级比对（规范见步骤 1.b.0）：
+1. **vs 输入账本（R1，所有动作）**：候选转写为假想 lyric 的规范形式（结构 × vary 配置 × 边界带 × 初始值带，Re/位置 px），与历次已执行输入比对；带内等价 → 丢弃（同一输入重跑无新信息，记入决策日志）。
+2. **vs 结果账本（R2，闭式转移专用）**：remove-only / 参数 revert / 边界还原类候选的产出状态可精确投影，投影签名与已拟合结果签名比对（**僵尸感知**：仅相差 [zombie] 成分的状态等价）；严格命中 → 该候选不执行、不入队（零成本回滚由 1.b.0 处理）；仅结构一致 → 标"[疑似近重复]"，维度 4 记 0 分。
+
 **优先级分数 g ∈ [0,1]**——主模型对每个候选按以下六个维度各打 0–1 分，等权平均得到 g：
 1. **残差改善潜力**：结合 VLM 给的 σ 与主模型独立判断的残差可解释比例。
 2. **物理合理性先验**：是否符合"Disk → (F1/Companion 若检出) → Bulge → Bar → Other"的成分添加次序；是否符合 Bar/Bulge/Lens/Nucleus 的认定条件（见 `<星系成分分析的总体流程>`）。**阶段一 detect_galfits_bar_lopsidedness 的检测结果在此维度仅作为弱先验**：检出可适度加分（提示性正证据），但**未检出不得扣分**——未检出是零证据而非负证据（详见阶段一"检测性质"条款）。一个基于残差证据（如中心四极矩、高扁率内部结构、bar 状残差等）的 Bar/Lens/Fourier 候选，即使阶段一未检出，其物理合理性得分应基于**残差证据的强度**评判，不得因阶段一未检出而压低。判定成分存在性的金标准是残差驱动的拟合验证，不是阶段一检测。
@@ -221,21 +236,35 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 
 `generate_beam_actions` 的 VLM 是**无状态**的：每次调用只看到当轮残差图。跨轮次记忆由两个参数承载，均由主模型生成——
 
-- **`global_state_description`（全局状态）**：跨轮次稳定事实的**蒸馏**（不是 working_note 全文！工具不再自动注入 working_note）。主模型从 working_note 蒸馏，固定 schema、固定字段顺序，总量 ≤ ~40 行：
+- **`global_state_description`（全局状态）**：跨轮次稳定事实的**蒸馏**（不是 working_note 全文！工具不再自动注入 working_note）。主模型从 working_note 蒸馏，固定 schema、固定字段顺序，总量 ≤ ~50 行：
   ```
+  [元信息] 像素契约：本文件所有 Re/位置一律 px（标注所属波段；多波段逐 band 标注），与 VLM 读图面板同一参考系，
+      可直接 diff。禁止出现 arcsec——VLM 无单位换算能力，任何需要 VLM 做换算的设计都是缺陷；
+      px→arcsec 转换由主模型在写 lyric 时经 re_pix2arcsec / pixel2arcsec_offset 完成，与本文件无关
   [阶段一结论] bar/lop 跨波段 OR-logic；PA（sky-PA，正北 0° 逆时针，可直接进 Pa7）；b/a
-  [已验证盆] 经拟合验证的参数取值（成分 + 参数 + 验证值 + 来源轮次）。
-      例：companion 中心 ≈ 像素(130,115) = offset(-4.93,+1.02)"，A.5/A.7 两轮锚定（Mag≈18.6，无触界）
-  [被否定假设] 已被拟合证据否定的方向（方向 + 定量证据 + 轮次）。必须带数值。
-      例：E-W bar(PA≈90°)：BIC +402，bar 自由转回 180°（A.11）；bulge n=4 fixed：劣于 n free 350–800 BIC（A.8/A.9）
-  [已尝试动作] 动作流水账（动作 + 参数化 + 一行结局），机器可比对（成分 + 参数增量），与 tag 命名无关
+  [状态账本] 每个已拟合状态一行（VLM 生成每个候选前必须逐行比对 expected_C' 落地签名）：
+      | 轮次 | 状态签名(px) | BIC | verdict | 备注 |
+      | A.4 | {disk:n1f,Re11px,M16.2; bulge:n4f,Re1.2px,M18.7; comp:px(95,128),Re0.5px} | 23499 | PASS | comp Re触下界 |
+      签名规范：成分:类型,n状态(f/free+值),Re(px),Mag,q,PA；坍缩成分（通量占比<0.5%）标 [zombie]
+  [回滚边] 闭式转移的已确认等价关系，命中即零信息：
+      例：A.5 --remove(bar)--> ≡A.4；A.11 ≡A.10+[zombie bulge]（bulge 坍缩，真实内容与 A.10 相同）
+  [已验证盆] px 值 + 来源轮次 + 证据级（[数据验证]/[待核验]，复核信号 a–d 见 prompt §全局状态使用规则）。
+      例：companion ≈ px(95,128)，r≈33px，1D尖峰r≈33px 共位，A.4/A.6/A.8 三轮锚定 [数据验证]
+  [被否定假设] 五字段缺一不可：方向 | context签名 | 定量证据 | 失败原因 | 重开条件（写明 context 如何变化后旧证据失效）。
+      例：bar+bulge 共存 | {disk,bulge,bar,comp} | ΔBIC +15.5/+67.5（A.5/A.11）| 两成分 Re≈1.7px 简并互抢通量 | 简并对消失（bulge Re 明显更小或 q 差异被约束拉开）
+      例：E-W bar(PA≈90°) | {disk,bar} | BIC +402，bar 自由转回 180°（A.11）| PA 初始化与真棒斜交 | PA 有独立新证据（阶段一检出 PA 或四极矩 PA 量测）
   [预算] n = X / N_max，剩 Y
   ```
-  维护规则：每轮主循环结束（步骤 g 持久化时）同步更新；`[已验证盆]` 新增条件 = 拟合产出物理值且无触界（坍缩/触界/漂移的不算）；`[被否定假设]` 新增条件 = 同 context 下 BIC 反升 ≥ 10 或物理性 FAIL，**必须写 ΔBIC/触界数值**（VLM 重视数字甚于形容词）。
+  维护规则：每轮主循环结束（步骤 g 持久化时）同步更新——
+  - `[状态账本]`：每次成功拟合追加一行；通量占最亮成分 < 0.5% 的成分标 `[zombie]`（**相对通量判据，禁止绝对星等**——不同巡天深度差异数个量级）。
+  - `[回滚边]`：R2 严格命中、或拟合结果与账本某行僵尸等价时追加。
+  - `[已验证盆]`：新增条件 = 拟合产出物理值且无触界（坍缩/触界/漂移的不算）。
+  - `[被否定假设]`：新增条件 = 同 context 下 BIC 反升 ≥ 10 或物理性 FAIL，**必须带 ΔBIC/触界数值 + 失败原因 + 重开条件**（VLM 重视数字甚于形容词；无重开条件的否定记录会在 context 变化后误杀合法重开）。
+  - `[已尝试动作]` 字段**取消**，由 `[状态账本]`+`[回滚边]` 完全覆盖——去重的正确对象是动作的**落地状态**，不是动作的命名与描述（remove(X) 从 A.5 执行与"回到 A.4"是同一状态，但动作流水账看不出来）。
 - **`local_state_description`（本轮状态补充）**：当轮客观描述，包含：
   1. 父状态成分清单 C、关键参数 P 摘要；
   2. **当前拟合结果的具体问题**（最重要的部分，客观详尽）：
-     - 触界参数（标注 ⚠️ 与具体数值，如 `bar_Re=12" ⚠️触上限`）；
+     - 触界参数（标注 ⚠️ 与具体数值，**px 单位**（与 global_state_description 同一像素契约），如 `bar_Re=30px ⚠️触上限`）；
      - 残差图未拟合特征（位置 / 对称性 / 强度，引用阶段一视觉特征原文）；
      - 成分身份混淆（disk/bulge 标签互换、bar 变圆变胖、bulge 坍缩成点源）；
      - **扁 Bulge → Bar 触发数值**（若父状态含 Bulge）：客观列出 `bulge_axrat`、`|bulge_ang − disk_ang|`、`bulge_n`、`disk_axrat` 四值并标注联合条件是否成立——只报数值，不暗示方向；
@@ -316,6 +345,22 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 - n = X / 15
 - stagnation = Y / 15
 - global_iter_id = Z (下一个 .lyric 后缀)
+
+## 状态账本（图搜索 visited set；每次成功拟合追加行，不覆写）
+### 输入账本（已执行的 .lyric 规范形式）
+| 轮次 | 输入签名（结构 × vary × 边界带 × 初始值带，px） | _iter{n}.lyric |
+|---|---|---|
+| A.4 | {disk:n1f,Re~11px; bulge:n4f,Re~1.2px; comp:px(95,128) 窗±5px} | _iter4.lyric |
+
+### 结果账本（已拟合状态签名 + 结局）
+| 轮次 | 状态签名(px) | BIC | verdict | 僵尸/触界 |
+|---|---|---|---|---|
+| A.4 | {disk:n1f,Re11px,M16.2; bulge:n4f,Re1.2px,M18.7; comp:px(95,128),Re0.5px} | 23499.2 | PASS | comp Re触下界 |
+| A.11 | {disk,bar,comp, bulge:[zombie]} | 23527.2 | FAIL | bulge M24 坍缩 |
+
+### 回滚边（闭式转移等价关系，命中即零信息）
+- A.5 --remove(bar)--> ≡A.4
+- A.11 ≡A.10+[zombie bulge]
 
 ## 分支 A: <分支主题，如 "Disk+Bulge 主线">
 ### A.1 (对应 fit #1, .lyric: _iter1.lyric)

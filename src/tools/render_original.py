@@ -55,7 +55,12 @@ def draw_re_ellipses(ax, components, edgecolor: str = "cyan",
         # GALFIT PA: from +Y axis, CCW (Up=0, Left=90); matplotlib: from +X axis, CCW.
         pa_mpl = comp["pa"] + 90.0
         re = effective_re(comp)
-        ec = component_color(comp.get("name"), i) if edgecolor is None else edgecolor
+        if edgecolor is None:
+            # Precomputed per-instance color (repeated types get variant hues),
+            # falling back to the plain semantic color when none was injected.
+            ec = comp.get("color") or component_color(comp.get("name"), i)
+        else:
+            ec = edgecolor
         # 2·Re contour: full major-axis diameter = 4·Re, minor = 4·Re·(b/a).
         ax.add_patch(Ellipse(
             xy=(cx, cy),

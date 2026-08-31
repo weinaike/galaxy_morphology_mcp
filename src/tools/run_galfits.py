@@ -20,7 +20,7 @@ from typing import Any, Annotated, List, Dict, Tuple
 
 from .pix2radec import suppress_stdout_stderr
 from .render_original import render_asinh_panel, draw_compass, sky_direction_vectors
-from .sb_profile import render_sb_profile, component_color
+from .sb_profile import render_sb_profile, component_color, assign_component_colors
 from .parse_lyric import (
     parse_image_infos_from_lyric,
     parse_region_info_from_lyric,
@@ -209,6 +209,13 @@ def create_perband_comparison_png(
         comp_types = [name2type[name] for name in comp_names]
         components_dict = {comp["name"]: comp for comp in components}
         components_sorted = [components_dict[name] for name in comp_names]
+        # Per-instance colors shared by every palette consumer of this band
+        # (model-panel 2·Re ellipses, legend, 1D SB-profile curves): repeated
+        # types — companion2/companion3 — get distinct variant hues instead of
+        # collapsing onto the same semantic color.
+        for comp, color in zip(components_sorted,
+                               assign_component_colors([c["name"] for c in components_sorted])):
+            comp["color"] = color
 
         band_data.append({
             'band': band,
@@ -382,7 +389,7 @@ def create_perband_comparison_png(
                 line = '  '.join(
                     f"{k}:{f'{v:.4f}' if isinstance(v, float) else v}"
                     for k, v in comp.items()
-                    if k != 'name'
+                    if k not in ('name', 'color')  # 'color' is plot-only
                 )
                 f.write(f"        {line}\n")
             f.write("\n")
@@ -446,6 +453,13 @@ def create_multiband_comparison_png(
         comp_types = [name2type[name] for name in comp_names]
         components_dict = {comp["name"]: comp for comp in components}
         components_sorted = [components_dict[name] for name in comp_names]
+        # Per-instance colors shared by every palette consumer of this band
+        # (model-panel 2·Re ellipses, legend, 1D SB-profile curves): repeated
+        # types — companion2/companion3 — get distinct variant hues instead of
+        # collapsing onto the same semantic color.
+        for comp, color in zip(components_sorted,
+                               assign_component_colors([c["name"] for c in components_sorted])):
+            comp["color"] = color
 
         band_data.append({
             'band': band,
@@ -600,7 +614,7 @@ def create_multiband_comparison_png(
                     v = comp.get(key)
                     parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
                 legend_handles.append(Line2D(
-                    [0], [0], color=component_color(comp.get('name'), i),
+                    [0], [0], color=comp.get('color') or component_color(comp.get('name'), i),
                     lw=2, ls='--', label=' '.join(parts)))
             leg = ax2.legend(handles=legend_handles, loc='upper left', fontsize=11,
                              frameon=True, fancybox=True, framealpha=0.8)
@@ -774,7 +788,7 @@ def create_multiband_comparison_png(
                 line = '  '.join(
                     f"{k}:{f'{v:.4f}' if isinstance(v, float) else v}"
                     for k, v in comp.items()
-                    if k != 'name'
+                    if k not in ('name', 'color')  # 'color' is plot-only
                 )
                 f.write(f"        {line}\n")
             f.write("\n")

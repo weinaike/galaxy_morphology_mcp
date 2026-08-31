@@ -24,7 +24,9 @@ DEFAULT_COLORS = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728',
 # Stable semantic color->identity mapping, shared by the model-panel 2·Re ellipses
 # and the 1D component curves so panels (and successive fitting rounds) can be
 # cross-referenced by color: disk=blue, bulge=green, bar=orange, lens=red,
-# companion=purple, agn/nucleus=brown.
+# companion=purple, agn/nucleus=brown. Repeated instances of the same type
+# (companion2/companion3/...) get distinct variant hues via
+# assign_component_colors — see REPEAT_VARIANT_COLORS below.
 SEMANTIC_COLORS = {
     'disk': '#1f77b4',
     'bulge': '#2ca02c',
@@ -35,15 +37,66 @@ SEMANTIC_COLORS = {
     'nucleus': '#8c564b',
 }
 
+# Name tokens mapping to the same physical family. Companions are labeled
+# variously across configs (comp/compS/companion/secondary/satellite); all
+# must share ONE color family AND one occurrence counter, otherwise e.g. a
+# component named "comp" misses the 'companion' token, falls into the
+# positional DEFAULT_COLORS fallback, and can collide with another type's
+# color (observed: comp → DEFAULT_COLORS[3] = lens red) or change color
+# between rounds when list positions shift.
+SEMANTIC_TOKENS = {
+    'disk': 'disk', 'bulge': 'bulge', 'bar': 'bar', 'lens': 'lens',
+    'companion': 'companion', 'comp': 'companion', 'secondary': 'companion',
+    'satellite': 'companion', 'agn': 'agn', 'nucleus': 'nucleus',
+}
+
+
+def semantic_family(name):
+    """Family key for a component name (name-substring match), None if
+    unrecognized. All companion-style tokens resolve to 'companion'."""
+    key = str(name).lower() if name else ''
+    for token, family in SEMANTIC_TOKENS.items():
+        if token in key:
+            return family
+    return None
+
+# tab10 hues no semantic type claims (blue/orange/green/red/purple/brown are
+# taken, gray is reserved for the sky line). Assigned to the 2nd+ instance of a
+# repeated type — in practice companion2/companion3, which would otherwise all
+# collapse onto the same purple in the ellipses, legend and SB-profile curves.
+REPEAT_VARIANT_COLORS = ['#17becf', '#bcbd22', '#e377c2']  # cyan, olive, pink
+
 
 def component_color(name, index: int = 0) -> str:
-    """Color for a component: semantic identity first (name substring match),
+    """Color for a component: semantic identity first (family substring match,
+    so comp/compS/companion/secondary/satellite all read as companions),
     positional DEFAULT_COLORS fallback for unrecognized names."""
-    key = str(name).lower() if name else ''
-    for token, color in SEMANTIC_COLORS.items():
-        if token in key:
-            return color
+    family = semantic_family(name)
+    if family is not None:
+        return SEMANTIC_COLORS[family]
     return DEFAULT_COLORS[index % len(DEFAULT_COLORS)]
+
+
+def assign_component_colors(names) -> list:
+    """Color list for a full component-name list: the first instance of each
+    semantic type keeps its type color; repeats (companion2, companion3, ...)
+    take distinct variant hues so same-type components stay distinguishable
+    everywhere the palette is drawn (model-panel 2·Re ellipses, legend, 1D
+    SB-profile curves). Occurrence order follows the list order (the lyric's
+    P-block order, stable across hot-start rounds), so colors are consistent
+    across bands and rounds."""
+    seen = {}
+    colors = []
+    for i, name in enumerate(names):
+        family = semantic_family(name)
+        if family is None:
+            colors.append(DEFAULT_COLORS[i % len(DEFAULT_COLORS)])
+            continue
+        k = seen.get(family, 0)
+        seen[family] = k + 1
+        colors.append(SEMANTIC_COLORS[family] if k == 0
+                      else REPEAT_VARIANT_COLORS[(k - 1) % len(REPEAT_VARIANT_COLORS)])
+    return colors
 
 integrmode = 'nearest_neighbor'
 def parse_photometry_params(param_file: str) -> tuple[float, float]:
@@ -469,8 +522,9 @@ def render_sb_profile(ax_main, ax_resid, original_data, sigma_data, model_data,
                 continue
             mu_c = intensity_to_sb(intens_c, zeropoint, pltscale)
 
-            comp_name = components[i].get('name') if (components and i < len(components)) else None
-            color = component_color(comp_name, i)
+            comp_entry = components[i] if (components and i < len(components)) else {}
+            comp_name = comp_entry.get('name')
+            color = comp_entry.get('color') or component_color(comp_name, i)
             name_prefix = f'{comp_name} ' if comp_name else ''
             if comp_type.lower() in ['sersic', 'sersic_f'] and components and i < len(components):
                 n_val = components[i].get('n')

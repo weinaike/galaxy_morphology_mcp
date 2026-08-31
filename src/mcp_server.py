@@ -21,6 +21,7 @@ from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfit
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
 from tools.beam_actions import generate_beam_actions
+from tools.beam_actions_galfit import generate_galfit_beam_actions, check_feedme_file
 from tools.re_ordering_check import check_re_ordering
 from tools.fourier_mode_analysis import fourier_mode_analysis
 from tools.bar_lopsidedness_detection import (
@@ -55,6 +56,8 @@ def _register_tools_and_prompts():
         app.add_prompt(workflow_galfit)
         app.add_prompt(workflow_galfit_s1)
         app.add_tool(detect_bar_lopsidedness)
+        app.add_tool(generate_galfit_beam_actions)
+        app.add_tool(check_feedme_file)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 
     if has_galfits:

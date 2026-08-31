@@ -134,6 +134,33 @@ class Prompts(metaclass=SingletonMeta):
             template = template.replace("{" + key + "}", str(value) if value is not None else "")
         return template
 
+    # --- Beam Search candidate generation phases (GALFIT single-band) ---
+    # Stored in beam_action_generation_prompt_galfit.md with the same markers:
+    # _first = visual extraction, candidate_generation = candidate output spec
+
+    def _bag_galfit_phases(self):
+        return self._read_phases("beam_action_generation_prompt_galfit.md")
+
+    def get_galfit_beam_visual_extraction(self, global_state_description=""):
+        template = self._bag_galfit_phases()["_first"]
+        for key, value in [("global_state_description", global_state_description)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
+
+    def get_galfit_beam_candidate_generation(self, summary_content,
+                                             global_state_description="",
+                                             local_state_description="",
+                                             branch_id="", parent_label="", depth=1):
+        template = self._bag_galfit_phases()["candidate_generation"]
+        for key, value in [("summary_content", summary_content),
+                            ("global_state_description", global_state_description),
+                            ("local_state_description", local_state_description),
+                            ("branch_id", branch_id),
+                            ("parent_label", parent_label),
+                            ("depth", depth)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
+
     # --- Best-round comparison prompt (visual-residual primary, metrics reference) ---
 
     def get_round_comparison_prompt(self, best_round_label, current_round_label,

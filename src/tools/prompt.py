@@ -33,6 +33,10 @@ get_round_comparison_prompt = prompts.get_round_comparison_prompt
 get_beam_visual_extraction = prompts.get_beam_visual_extraction
 get_beam_candidate_generation = prompts.get_beam_candidate_generation
 
+# Beam Search candidate-generation phases (GALFIT single-band)
+get_galfit_beam_visual_extraction = prompts.get_galfit_beam_visual_extraction
+get_galfit_beam_candidate_generation = prompts.get_galfit_beam_candidate_generation
+
 
 
 # ── MCP Prompt definitions (exposed for mcp_server.add_prompt) ─────

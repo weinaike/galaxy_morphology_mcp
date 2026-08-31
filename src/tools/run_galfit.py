@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.io import fits
@@ -21,7 +22,7 @@ import glob
 from .extract_summary_galfit import extract_summary_from_galfit
 from .parse_feedme import parse_feedme, parse_components
 from .render_original import render_asinh_panel, draw_re_ellipses, effective_re
-from .sb_profile import render_sb_profile
+from .sb_profile import render_sb_profile, component_color, assign_component_colors
 from .fit_event_publisher import existing_artifacts, publish_fit_round
 
 
@@ -167,6 +168,7 @@ def create_comparison_png(
     param_file: str | None = None,
     comp_images: list | None = None,
     comp_types: list | None = None,
+    name_file: str | None = None,
 ) -> tuple[str | None, dict | None]:
     """Create a scientific comparison plot (2×3 layout).
 
@@ -247,7 +249,16 @@ def create_comparison_png(
 
         components = None
         if param_file and os.path.exists(param_file):
-            components = parse_components(param_file)
+            # name_file = paired input feedme: galfit.NN files drop the
+            # "# STRUCTURE:" naming comments, names are recovered by block order.
+            components = parse_components(param_file, name_file=name_file)
+            # Per-instance semantic colors shared by every palette consumer
+            # (model-panel 2·Re ellipses, legend, 1D SB-profile curves) so the
+            # VLM can attribute each contour and read fitted parameters off
+            # the model panel directly — mirrors the GalfitS comparison layout.
+            for comp, color in zip(components,
+                                   assign_component_colors([c["name"] for c in components])):
+                comp["color"] = color
 
         # Layout 2×3:
         # Row 0 = DATA LOW DR | DATA HIGH DR | MODEL
@@ -296,10 +307,35 @@ def create_comparison_png(
                                fit_region=fit_region)
         else:
             ax2.text(0.5, 0.5, 'No Model', ha='center', va='center', transform=ax2.transAxes)
+        # Color-coded parameter legend (mirrors the GalfitS model panel): one
+        # dashed line per component in the same semantic color as its 2·Re
+        # ellipse and 1D SB-profile curve, listing name Mag Re(px) n q PA so
+        # the VLM can attribute every contour and read off fitted parameters.
+        # Re is the true effective radius (expdisk: 1.68·Rs) matching the
+        # ellipse geometry; PA follows the feedme convention (Y axis = 0° CCW,
+        # treated as sky-PA under this workflow's N=+Y contract).
+        if model_data is not None and components:
+            legend_handles = []
+            for i, comp in enumerate(components):
+                parts = [f"{comp.get('name', '?')}"]
+                for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
+                                              ('re', 'Re', '.1f', 'px'),
+                                              ('n', 'n', '.2f', ''),
+                                              ('ba', 'q', '.2f', ''),
+                                              ('pa', 'PA', '.0f', '°')):
+                    v = comp.get(key)
+                    if key == 're' and v is not None:
+                        v = effective_re(comp)
+                    parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
+                legend_handles.append(Line2D(
+                    [0], [0], color=comp.get('color') or component_color(comp.get('name'), i),
+                    lw=2, ls='--', label=' '.join(parts)))
+            ax2.legend(handles=legend_handles, loc='upper left', fontsize=11,
+                       frameon=True, fancybox=True, framealpha=0.8)
         ax2.set_title(
             "GALFIT Model\n"
             "Same asinh stretch as original (99.5th pctl)\n"
-            "2*$R_e$ contours of component [cyan]", fontsize=10, pad=10)
+            "2*$R_e$ contours [color per component, see legend]", fontsize=10, pad=10)
         stamp(ax2, 'MODEL')
         ax2.set_xlabel('X (pixels)', fontsize=12)
         ax2.tick_params(labelleft=False)
@@ -571,10 +607,12 @@ async def run_galfit(
     comp_images = comp_data[0] if comp_data else None
     comp_types = comp_data[1] if comp_data else None
 
-    # Use latest_galfit (fitted parameters) for component parameters in plot
+    # Use latest_galfit (fitted parameters) for component parameters in plot;
+    # config_file doubles as the name source (galfit.NN drops "# STRUCTURE:")
     comparison_png_path, statistics_1d = create_comparison_png(output_file, sigma_file, mask_file, fit_region,
                                                 param_file=param_file_for_plot,
-                                                comp_images=comp_images, comp_types=comp_types)
+                                                comp_images=comp_images, comp_types=comp_types,
+                                                name_file=config_file)
 
     # Identify constraint file
     constraint_file = config_paths.get("constraint") or None

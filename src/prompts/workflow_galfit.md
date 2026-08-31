@@ -33,8 +33,11 @@
 - 全局拟合预算 N_max = 15（每次 `run_galfit` 调用，无论成功失败，都计数一次）
 - 早停阈值 S_max = N_max = 15（连续无改进次数上限，当前设为与 N_max 相同，即早停实际上不生效，仅由拟合预算 N_max 控制终止）
 
+### BIC 口径（全局约定，硬约束）
+本工作流中所有模型优劣比较、状态账本记录与 ΔBIC 阈值判断，**一律使用 BIC_eff**（`fit_statistics.bic_eff`，= χ²/A_psf + k·ln(N/A_psf)：2D χ² 除以 PSF 面积 A_psf=π·(FWHM/2)²，k=N_free，N=N_dof+k 为拟合数据像素数）——它是按独立分辨元数归一化的有效 BIC，可比性强于逐像素 BIC。BIC_eff 缺失时（如 PSF 文件缺失）退回 1D BIC（`bic1d`）。**下文一切未加注明的 "BIC" / "ΔBIC" / "BIC 反升" 均指此口径**；参数摘要表中若同时出现 1D BIC 行，仅作参考。
+
 ### 形式化定义（精简版，便于智能体维护一致的状态语义）
-- **状态** s = (C, P, R, reduced_χ², BIC, depth)，其中 C 为成分清单（以 feedme `# STRUCTURE:` 名标识）、P 为对应参数（feedme 参数行的值 + free/fixed toggle；Re/位置一律 px）、R 为残差诊断（对比 PNG + 1D 残差特征）、reduced_χ² 与 BIC 取自该轮 `run_galfit` 返回的 `fit_statistics`（优先 1D：`chisq1d_nu` 与 `bic1d`；缺失时退回 2D `chi2_nu`）、depth 为该状态在搜索图中的深度（s₁ 的 depth=1）。
+- **状态** s = (C, P, R, reduced_χ², BIC, depth)，其中 C 为成分清单（以 feedme `# STRUCTURE:` 名标识）、P 为对应参数（feedme 参数行的值 + free/fixed toggle；Re/位置一律 px）、R 为残差诊断（对比 PNG + 1D 残差特征）、reduced_χ² 与 BIC 取自该轮 `run_galfit` 返回的 `fit_statistics`（reduced_χ² 优先 1D `chisq1d_nu`，缺失时退回 2D `chi2_nu`；BIC 一律取 **BIC_eff**（见 §BIC 口径），缺失时退回 `bic1d`）、depth 为该状态在搜索图中的深度（s₁ 的 depth=1）。
 - **动作** a = 复合动作，由 1–2 个语义内聚的原子操作组成。原子操作有三类：`add(type, params)` 新增成分（须同时声明其 `# STRUCTURE:` 名）、`remove(component)` 删除成分、`tune(component, param_delta)` 调参（含释放/固定 toggle、收紧/放宽 `.cons` 边界）。禁止捆绑无关联的原子操作。
 - **转移** T(s, a) = s'：以父状态的 `_iter{n}.feedme` 为**结构模板**（含 `# STRUCTURE:` 注释与 free/fixed toggle）、父状态 galfit.NN 的收敛值热启动回填（见步骤 1.b.1 热启动规则）→ 按 a 修改 → 写 `_iter{n}.feedme` → `check_feedme_file` → `run_galfit` → 读归档产物（`output_param_file` = galfit.NN 收敛值、`image_file` = 对比 PNG、`summary_file` = 统计）→ 调用 `generate_galfit_beam_actions` 获取下一层候选。s'.depth = s.depth + 1。
 - **初始状态** s₀：从输入 feedme 解析得到（C、P 取输入结构，R=原图诊断, reduced_χ²=⊥, BIC=⊥, depth=0）。输入 feedme 通常是单 sersic 起手；若已含多个成分，直接以其为 s₀ 结构（不强拆）。s₀ 不是拟合产物，而是输入；首次拟合（步骤 0.4）对 `_iter1.feedme` 跑一次 `run_galfit` 直接得到 s₁，**不经过候选生成**。
@@ -93,7 +96,7 @@ b. **执行转移 T(s, a)**：
     3) **必须调用 `check_feedme_file`** 校验结构；失败（或出现"成分缺 `# STRUCTURE:` 名"警告）按提示修复后再次校验，不得跳过。
     4) 调用 `run_galfit(config_file=<_iter{global_iter_id}.feedme 绝对路径>)`。`n += 1`。
     5) **失败处置**：若工具异常或未产出对比图/summary，把该 (s, a) 记入 `working_note.md` 的"分支: 失败归档"小节，把 a 加入 s 的禁忌集，`stagnation += 1`，回到循环开头。
-c. **构造新状态 s'**：从 `run_galfit` 返回值读 reduced_χ² 与 BIC（`fit_statistics` 的 `chisq1d_nu`/`bic1d`，缺失时退回 `chi2_nu`）；`R'` 取归档对比 PNG；`C'`、`P'` 取自新 feedme 与归档 `output_param_file`（galfit.NN 收敛值）。轮次命名：在所属分支内取 `branch.local_round`（如 A.2、A.3、B.1…，A.1 已被首次拟合占用），与 global_iter_id 解耦。s' 的深度 = `depth + 1`。
+c. **构造新状态 s'**：从 `run_galfit` 返回值读 reduced_χ² 与 BIC（`fit_statistics` 的 `chisq1d_nu` 与 **`bic_eff`**，缺失时分别退回 `chi2_nu` / `bic1d`，见 §BIC 口径）；`R'` 取归档对比 PNG；`C'`、`P'` 取自新 feedme 与归档 `output_param_file`（galfit.NN 收敛值）。轮次命名：在所属分支内取 `branch.local_round`（如 A.2、A.3、B.1…，A.1 已被首次拟合占用），与 global_iter_id 解耦。s' 的深度 = `depth + 1`。
 d. **候选生成 + 拟合结果物理性判定（无条件硬约束——见 §候选生成的诊断式原则；两个正交来源合并后统一进入步骤 f 打分入队）**：本步骤只要步骤 b 拟合成功就**必须**执行（失败处置分支 b.5 除外），无论 s' 的物理性判定结果如何、BIC 是否反升、参数是否触界、队列是否仍有未消费候选、拟合预算是否紧张。每轮主循环的候选由两个触发条件正交的来源并行生成——d.i 由 VLM 基于残差图像的视觉分析与**物理性判定**驱动，d.ii 由主模型基于拟合数值的客观阈值驱动。两类候选合并后走完全相同的去重 / 打分 / 截断规则（步骤 f），彼此平等竞争入队。
     - **d.i VLM 视觉驱动候选 + 物理性判定**：以新对比图为 `comparison_file`、新 feedme 为 `feedme_file`、归档 galfit.NN 为 `fitted_param_file`、归档 summary 为 `summary_file`，调用：
         ```
@@ -221,7 +224,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 3. **路径多样性（权重 ×2）**：候选方向与**全局已使用过的候选**（已执行历史，即输入账本/结果账本中的动作族谱）及当前 Q 内已有元素的方向差异越大越加分。方向判据：expected_C' 的成分集合差异为主，expected_behavior_tag / 主要 tune 轴为辅。
 4. **退化惩罚**：父状态是否已退化（如 `.cons` 失效、bulge/disk 通量相同）；本动作是否可能继承退化。**此维度评估的是"候选本身是否继承父状态退化"**——一个 BIC 反升的 s'（如某成分参数初始化不当）其后继修正候选（位置修正 / PA 修正 / Re 修正）正在修复退化，应得**低**退化惩罚。
 5. **历史一致性**：是否与 `working_note.md` 前序目标连贯，避免反复横跳。
-6. **BIC 门槛**：仅当动作涉及 Nucleus/AGN 的增删时启用；预估 ΔBIC 能否跨过 +10 门槛（BIC 取 `fit_statistics` 的 `bic1d`）。
+6. **BIC 门槛**：仅当动作涉及 Nucleus/AGN 的增删时启用；预估 ΔBIC 能否跨过 +10 门槛（BIC 取 `fit_statistics` 的 `bic_eff`，见 §BIC 口径；缺失时退回 `bic1d`）。
 
 `score(s)` 用于判定 s\*，与 g 共用同一套维度与同一套权重（维度 3 权重 ×2），区别只在于它评估的是"已完成的拟合状态"而非"待入队的候选"。
 
@@ -249,7 +252,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
   [元信息] 像素契约：本文件所有 Re/位置一律 px，与 VLM 读图面板、feedme 参数行同一参考系，可直接 diff、可直接写入（主模型原样填入，无任何单位换算）；禁止出现 arcsec
   [阶段一结论] bar/lop 检测结论；PA（N=+Y 契约：Y 轴正上 0° 逆时针，可直接进 feedme 10) 行）；b/a
   [状态账本] 每个已拟合状态一行（VLM 生成每个候选前必须逐行比对 expected_C' 落地签名）：
-      | 轮次 | 状态签名(px) | BIC | verdict | 备注 |
+      | 轮次 | 状态签名(px) | BIC_eff | verdict | 备注 |
       | A.4 | {disk:Rs6.5(Re10.9),M16.2; bulge:n4f,Re1.2px,M18.7; comp:px(95,128),Re0.5px} | 23499 | PASS | comp Re触下界 |
       签名规范：成分:类型,n状态(f/free+值),Re(px),Mag,q,PA；坍缩成分（通量占比<0.5%）标 [zombie]
   [回滚边] 闭式转移的已确认等价关系，命中即零信息：
@@ -257,7 +260,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
   [已验证盆] px 值 + 来源轮次 + 证据级（[数据验证]/[待核验]）。
       例：companion ≈ px(95,128)，r≈33px，1D尖峰r≈33px 共位，A.4/A.6/A.8 三轮锚定 [数据验证]
   [被否定假设] 五字段缺一不可：方向 | context签名 | 定量证据 | 失败原因 | 重开条件。
-      例：bar+bulge 共存 | {disk,bulge,bar,comp} | ΔBIC +15.5/+67.5（A.5/A.11）| 两成分 Re≈1.7px 简并互抢通量 | 简并对消失
+      例：bar+bulge 共存 | {disk,bulge,bar,comp} | ΔBIC_eff +15.5/+67.5（A.5/A.11）| 两成分 Re≈1.7px 简并互抢通量 | 简并对消失
   [预算] n = X / N_max，剩 Y
   ```
   维护规则：每轮主循环结束（步骤 g 持久化时）同步更新——
@@ -333,7 +336,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 ### 当前最优 s*
 - 分支 / 轮次: <branch>.<local_round>   例: A.3
 - 成分清单 C*: {...}（# STRUCTURE 名清单）
-- reduced_χ² / BIC: ... / ...（chisq1d_nu / bic1d）
+- reduced_χ² / BIC: ... / ...（chisq1d_nu / BIC_eff，见 §BIC 口径）
 - VLM 物理性判定: PASS
 - 对应 archives 目录: archives/<timestamp>.<hash>/
 - 对应 feedme: _iter{global_iter_id}.feedme
@@ -357,7 +360,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 | A.4 | {disk:Rs6.5(Re10.9); bulge:n4f,Re~1.2px; comp:px(95,128) 窗±5px} | _iter4.feedme |
 
 ### 结果账本（已拟合状态签名 + 结局）
-| 轮次 | 状态签名(px) | BIC | verdict | 僵尸/触界 |
+| 轮次 | 状态签名(px) | BIC_eff | verdict | 僵尸/触界 |
 |---|---|---|---|---|
 | A.4 | {disk:Rs6.5(Re10.9),M16.2; bulge:n4f,Re1.2px,M18.7; comp:px(95,128),Re0.5px} | 23499.2 | PASS | comp Re触下界 |
 | A.11 | {disk,bar,comp, bulge:[zombie]} | 23527.2 | FAIL | bulge M24 坍缩 |
@@ -403,7 +406,7 @@ h. **派生新分支（可选）**：当主模型发现某候选与当前束内�
 ### 步骤 4. 物理意义分析 与 奥卡姆剃刀原则（beam search 终止后执行）
 - 物理意义分析：严格遵循 `<星系成分物理意义分析与策略>` 章节，对 s\* 的每个成分逐条复核参数物理意义。如出现不物理情况（如 Bulge Re < 0.2 px 但被强加为 Sersic、Bar 的 PA（N=+Y 契约）与图像明显冲突），**重启一轮 beam search**：把"修复该不物理成分"作为强约束注入 `generate_galfit_beam_actions` 的 `local_state_description`（reset Q 与 stagnation，保留 n 与 global_iter_id）。对于 Bulge Re 处于 0.2–0.5 px 边界区域的情况，应在 beam search 中同时探索 Sersic 和 psf 两条路径进行竞争对比——只有 psf 路径的 2D 残差明显更优时才采纳，否则保留 Sersic。Bulge Re < 0.2 px（坍缩为点源）时必须替换为 psf 类型（AGN 代偿 Bulge 的物理意义优先）。
 - 奥卡姆剃刀原则：
-  - **Nucleus/AGN 成分**：若 s\* 含 Nucleus 且 ΔBIC < 10（bic1d 口径），把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
+  - **Nucleus/AGN 成分**：若 s\* 含 Nucleus 且 ΔBIC < 10（BIC_eff 口径，见 §BIC 口径），把 `remove(Nucleus)` 作为最高优先级候选重启 beam search 验证；删除后 BIC 反升则保留 Nucleus。
   - **伴星系（Companion）**：若 s\* 含 Companion 且通量比 ≤ 1%（条件 A，计算方式同 d.ii），把该数值结论作为强上下文写入 `generate_galfit_beam_actions` 的 `local_state_description`（格式同 d.ii），由 VLM 执行条件 B 视觉验证（原图面板 companion 位置是否有肉眼可见亮斑）。仅当 A∧B 同时成立时，把 `remove(Companion)` 作为最高优先级候选重启 beam search 验证。若原图有可见亮斑（条件 B 不命中），不触发移除。
   - **F1 成分**：F1 的 amplitude > 0.02 即物理意义成立，禁止因 BIC 变化移除；仅当拟合发散/参数不物理时才通过重启 beam search 验证删除。
 - 上述重启 beam search 的累计 n 仍受 N_max = 15 总预算约束；若预算已耗尽，进入阶段三由阶段三判定是否可接受。

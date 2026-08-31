@@ -72,6 +72,7 @@
 - **branch_id**: `{branch_id}`
 - **parent_label**: `{parent_label}`（父轮次标识，如 `A.1`）
 - **depth**: `{depth}`（父状态在搜索树中的深度；1 = 输入 feedme 首次拟合后的状态；2 = 第二次拟合后；以此类推）
+- **BIC 口径（硬约束）**：本工作流的模型优劣比较与一切 ΔBIC 阈值判断（含 `[状态账本]`/`[被否定假设]` 中的 BIC 数值）一律使用 **BIC_eff**（= χ²/A_psf + k·ln(N/A_psf)：2D χ² 除以 PSF 面积 A_psf=π·(FWHM/2)²，k=N_free，N=N_dof+k 为拟合数据像素数）。参数摘要统计表中若同时出现 1D BIC 行与 BIC_eff 行，**1D BIC 仅作参考，禁止用它做模型比较**；引用数值时注明 BIC_eff。
 
 ## 阶段 1.5：拟合结果物理性判定（先于候选生成，必须输出）
 

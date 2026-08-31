@@ -617,10 +617,14 @@ async def run_galfit(
     # Identify constraint file
     constraint_file = config_paths.get("constraint") or None
 
+    # PSF file for A_psf / BIC_eff computation
+    psf_file = config_paths.get("psf") or None
+
     # Extract summary information
     summary, fit_stats = extract_summary_from_galfit(output_file, config_file,
                                                      statistics_1d=statistics_1d,
-                                                     constraint_file=constraint_file)
+                                                     constraint_file=constraint_file,
+                                                     psf_file=psf_file)
 
     # Cleanup the workspace
     ws_dir = os.path.dirname(output_file)
@@ -694,6 +698,9 @@ async def run_galfit(
     chi2_nu = fit_stats.get("chi2_nu")
     bic = fit_stats.get("bic")
     sky_value = fit_stats.get("sky_value")
+    bic_eff = fit_stats.get("bic_eff")
+    a_psf = fit_stats.get("a_psf")
+    psf_fwhm = fit_stats.get("psf_fwhm")
 
     if chisq1d_nu is not None:
         stats_lines += f"-2D χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
@@ -702,6 +709,9 @@ async def run_galfit(
         stats_lines += f"-1D BIC: {bic1d:.4f}\n"
     if sky_value is not None:
         stats_lines += f"-1D Sky Background: {sky_value:.6f}\n"
+    if bic_eff is not None:
+        stats_lines += f"-PSF FWHM: {psf_fwhm:.4f} px; A_psf: {a_psf:.4f} px²\n"
+        stats_lines += f"-BIC_eff (χ²/A_psf + k·ln(N/A_psf)): {bic_eff:.4f}\n"
 
     message = (
         "GALFIT completed successfully.\n"

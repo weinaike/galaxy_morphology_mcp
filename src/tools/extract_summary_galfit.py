@@ -236,6 +236,49 @@ def extract_fits_metadata(fits_file: str) -> dict[str, Any]:
 
     return metadata
 
+def compute_psf_area(psf_file: str) -> tuple[float, float] | None:
+    """Fit a 2D Gaussian to the PSF image and return (fwhm_avg_px, A_psf_px2).
+
+    Mirrors /home/jiangbo/jwst_single_band/331/cal_A_fwhm.py: NaN-cleaned and
+    non-negative PSF data, Gaussian2D + LevMarLSQFitter seeded at the peak,
+    FWHM = stddev * 2.35482 averaged over both axes, and the geometric PSF
+    area A_psf = pi * (FWHM / 2)^2. Returns None on any failure (missing
+    file, degenerate fit) so callers can degrade gracefully.
+    """
+    try:
+        import numpy as np
+        from astropy.io import fits
+        from astropy.modeling import models
+        from astropy.modeling.fitting import LevMarLSQFitter
+
+        with fits.open(psf_file) as hdul:
+            psf_data = hdul[0].data
+
+        psf_clean = np.nan_to_num(psf_data)
+        psf_clean = np.maximum(psf_clean, 0)
+
+        y_max, x_max = np.unravel_index(np.argmax(psf_clean), psf_clean.shape)
+        y_grid, x_grid = np.mgrid[: psf_clean.shape[0], : psf_clean.shape[1]]
+
+        g_init = models.Gaussian2D(
+            amplitude=psf_clean.max(), x_mean=x_max, y_mean=y_max
+        )
+        fitter = LevMarLSQFitter()
+        g_fit = fitter(g_init, x_grid, y_grid, psf_clean)
+
+        fwhm_x = g_fit.x_stddev.value * 2.35482
+        fwhm_y = g_fit.y_stddev.value * 2.35482
+        fwhm_avg = (fwhm_x + fwhm_y) / 2.0
+        a_psf = np.pi * (fwhm_avg / 2.0) ** 2
+
+        if not (np.isfinite(fwhm_avg) and np.isfinite(a_psf) and a_psf > 0):
+            return None
+        return float(fwhm_avg), float(a_psf)
+    except Exception as e:
+        print(f"[compute_psf_area] failed for {psf_file}: {e}")
+        return None
+
+
 def parse_model_hdu_header(header) -> dict[str, Any]:
     """Parse GALFIT model HDU header to extract components and statistics.
 
@@ -393,7 +436,8 @@ def parse_model_hdu_header(header) -> dict[str, Any]:
 
 def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
                                 statistics_1d: dict | None = None,
-                                constraint_file: str | None = None) -> tuple[str | None, dict[str, Any]]:
+                                constraint_file: str | None = None,
+                                psf_file: str | None = None) -> tuple[str | None, dict[str, Any]]:
     """Extract comprehensive summary information from GALFIT FITS output file.
 
     Reads all information from the FITS file header (model HDU):
@@ -403,6 +447,13 @@ def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
 
     If statistics_1d is provided (with chisq1d, n1d, sky_value), computes 1D
     reduced chi-squared (χ²/ν) and 1D BIC, adding them to the returned statistics dict.
+
+    If psf_file is provided, fits a 2D Gaussian to the PSF (per
+    cal_A_fwhm.py) to get FWHM and A_psf = π·(FWHM/2)², and adds the
+    PSF-area-normalized effective BIC:
+        BIC_eff = χ²/A_psf + k·ln(N/A_psf)
+    where k = number of free parameters (NFREE) and N = number of fitted
+    data pixels (= NDOF + NFREE).
 
     Returns a tuple of (summary markdown file path or None, statistics dict with chi2/bic/chi2_nu).
     """
@@ -514,6 +565,25 @@ def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
             stats["chisq1d_nu"] = chisq1d / (n1d - model_freedom)
             stats["bic1d"] = chisq1d + model_freedom * math.log(n1d) if n1d > 0 else None
 
+        # PSF-area-normalized effective BIC: chisq/A_psf + k·ln(N/A_psf),
+        # with k = N_free, N = N_dof + N_free (number of fitted data pixels)
+        # and A_psf = π·(FWHM/2)² from a 2D Gaussian fit to the PSF image.
+        if psf_file and os.path.exists(psf_file):
+            psf_result = compute_psf_area(psf_file)
+            if psf_result is not None:
+                fwhm_avg, a_psf = psf_result
+                chi2_val = stats.get("chi2")
+                k_free = stats.get("nfree")
+                ndof_val = stats.get("ndof")
+                if chi2_val is not None and k_free is not None and ndof_val is not None \
+                        and a_psf > 0:
+                    n_data = ndof_val + k_free
+                    if n_data > a_psf:
+                        stats["psf_fwhm"] = fwhm_avg
+                        stats["a_psf"] = a_psf
+                        stats["n_data"] = n_data
+                        stats["bic_eff"] = chi2_val / a_psf + k_free * math.log(n_data / a_psf)
+
         if stats:
             md_lines.append("---")
             md_lines.append("")
@@ -545,6 +615,12 @@ def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
                 md_lines.append(f"| BIC | {stats['bic1d']:.4f} |")
                 md_lines.append(f"\n*Note: 1D statistics are computed from the 1D surface brightness profile fit, and may differ from the 2D fit statistics.*")
                 md_lines.append(f"\n*BIC is calculated using the 1D fit.*")
+            if "psf_fwhm" in stats:
+                md_lines.append(f"| PSF FWHM (2D Gaussian fit) | {stats['psf_fwhm']:.4f} px |")
+                md_lines.append(f"| A_psf (PSF area, π·(FWHM/2)²) | {stats['a_psf']:.4f} px² |")
+                md_lines.append(f"| N (fitted data pixels, N_dof + k) | {stats['n_data']} |")
+                md_lines.append(f"| BIC_eff (χ²/A_psf + k·ln(N/A_psf)) | {stats['bic_eff']:.4f} |")
+                md_lines.append(f"\n*BIC_eff uses the 2D χ², k = N_free, and N = N_dof + N_free; A_psf comes from a 2D Gaussian fit to the PSF image.*")
             md_lines.append("")
 
         # Observation metadata section

@@ -174,7 +174,7 @@ D_K1_K2_K3   y   offset
   - 其他参数如 Re, mag 等没有过多的约束，允许合理范围内的调整。
 - 校验条件：最优轮次一定是经过 `generate_galfit_beam_actions` 分析的轮次（该轮 archives 目录下存在 `*_beam_actions_*.md` 候选产物，且 working_note 中记录了该轮的 Physicality Verdict）。疑似最优的轮次如果缺少 beam_actions 产物或 verdict 记录，需要补调一次 `generate_galfit_beam_actions`（以其 feedme / galfit.NN / 对比图为输入）生成，以辅助验证是否符合最优条件。
 - 指标条件：以上成分、拟合、物理、尝试、校验五个维度的条件都满足的情况下，基于残差质量选择
-  - `generate_galfit_beam_actions` 每次调用都会输出 Physicality Verdict（残差视觉判断）与候选清单，配合 `run_galfit` 返回的 χ²/BIC 统计，是残差质量的重要参考
+  - `generate_galfit_beam_actions` 每次调用都会输出 Physicality Verdict（残差视觉判断）与候选清单，配合 `run_galfit` 返回的 χ²/BIC 统计，是残差质量的重要参考（模型比较所用 BIC 一律为 **BIC_eff** = χ²/A_psf + k·ln(N/A_psf)，见 summary 统计表；1D BIC 仅作参考）
   - 两个轮次的差异仅在 F1时，F1 成分的 amplitude 大于 阈值 0.02 就可以保留,选择包含 F1 成分的轮次。
 
 ### 落锁强制审计（enforcement）

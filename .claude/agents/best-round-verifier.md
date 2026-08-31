@@ -45,7 +45,7 @@ tools: Read, Grep, Glob, Bash
    - `*comparison*.png` / `*galfit*.png` → 残差对比图
    - `*.cons` / `iterN.constrain` → 约束文件
 3. 读懂 summary 结构：
-   - **single-band** `*_summary.md`：含 `## Init. par. file Content`（即 feedme 原文，参数行 `值 toggle`，toggle 0=fixed/1=free）与 `## Fitting Statistics` 表（χ²/ν、χ²₁D/ν、BIC₁D、Sky Background）。成分收敛值亦可从同目录 `galfit.NN` 读取（`sersic : ( x, y) mag Re n b/a PA` 行）。
+   - **single-band** `*_summary.md`：含 `## Init. par. file Content`（即 feedme 原文，参数行 `值 toggle`，toggle 0=fixed/1=free）与 `## Fitting Statistics` 表（χ²/ν、χ²₁D/ν、BIC₁D、Sky Background、PSF FWHM / A_psf / BIC_eff——**single-band 的模型比较一律用 BIC_eff = χ²/A_psf + k·ln(N/A_psf)，k=N_free，N=N_dof+k**；1D BIC 仅参考）。成分收敛值亦可从同目录 `galfit.NN` 读取（`sersic : ( x, y) mag Re n b/a PA` 行）。
    - **multi-band** `*.gssummary`：头部含 `# reduced chisq:`、`# BIC:`；`# free parameters:` 段：`<参数名>\t<值>`；`# fixed parameters:` 段同格式。命名约定：`disk_Re`/`disk_n`/`disk_ang`/`disk_axrat`/`bar_Re`/`bar_n`/`bulge_Re`/`_xcen`/`_ycen`/`_mag`。
 4. 读懂配置文件中各成分 profile 类型与参数 fixed/free 状态：
    - **feedme**：`0)` 行为 profile 类型；各参数行末列为 0（fixed）/1（free）；Bar n 固定表现为 `5) 0.5000 0`；`# STRUCTURE:` 注释行给出成分语义名（disk/bulge/bar/lens/companion/agn）。
@@ -128,7 +128,7 @@ tools: Read, Grep, Glob, Bash
 
 1. **落锁依据与指标分级**：从 `working_note.md` 中找到主 agent 宣布落锁的段落，确认选择依据：
    - 依据为"残差更优/结构改善更好"（首要依据） → PASS
-   - 依据**仅为** "BIC 更低/卡方更小"（二级指标）而未提及残差与拟合优度的对比 → **WARN**（BIC/卡方仅作参考，不能作为唯一落锁依据）
+   - 依据**仅为** "BIC 更低/卡方更小"（二级指标）而未提及残差与拟合优度的对比 → **WARN**（BIC/卡方仅作参考，不能作为唯一落锁依据；single-band 的 BIC 指 BIC_eff）
 
 2. **F1 专项**（仅当本次决策是"含 F1 轮"vs"不含 F1 轮"的二选一时作为二级指标适用）：
 

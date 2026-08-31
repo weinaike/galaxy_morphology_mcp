@@ -22,7 +22,6 @@ from typing import Any, Annotated, List, Dict, Tuple
 from .pix2radec import suppress_stdout_stderr
 from .render_original import render_asinh_panel, draw_compass, sky_direction_vectors
 from .sb_profile import render_sb_profile, component_color, assign_component_colors
-from .fit_callback import existing_artifacts, notify_fit_round
 from .fit_event_publisher import existing_artifacts, publish_fit_round
 from .parse_lyric import (
     parse_image_infos_from_lyric,

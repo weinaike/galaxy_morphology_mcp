@@ -11,6 +11,58 @@ The referenced `residual_analysis_message.md` targets the multi-band GalfitS flo
 ## Unit contract (galfit mode only)
 All Re / positions / sizes in this mode are **pixels (px)**: a px value read by the VLM off a comparison panel shares the unit and reference frame of the feedme parameter rows and is **written verbatim — any conversion is forbidden** (the expdisk conversion Rs = Re/1.68 is the sole exception: Re values given by the VLM always mean the effective radius, converted by the orchestrator when writing the `4)` row). Arcsec must never appear anywhere in the flow, and calling any unit-conversion tool is forbidden.
 
+## Solution space definition (single source of truth)
+
+This section is the authoritative definition of the solution space for the single-band GALFIT flow: which components a fitted model may contain, the multiplicity rules, and the hard limits on component parameters. The workflow (`workflow_galfit.md`), the VLM candidate prompt (`beam_action_generation_prompt_galfit.md`) and the best-round verifier all reference this section; on any wording conflict, this section wins.
+
+### 1. Allowed component inventory and multiplicity
+
+| Slot | feedme type | Multiplicity | Admission condition |
+|---|---|---|---|
+| Disk | `expdisk` | ≤ 1 | any disk galaxy (the default assumption) |
+| Edge-on Disk | `edgedisk` | ≤ 1; mutually exclusive with Disk (replaces it, and takes over its slot in the concentric anchor and the Re chain) | galaxy is edge-on (single-sersic b/a ≲ 0.17 with a dust lane / disk thickness) |
+| Bulge | `sersic` | ≤ 1 | central compact round component |
+| Bar | `sersic` (n = 0.5 fixed) | ≤ 1 | bar signatures (linear / X-shaped quadrupole residuals) |
+| Lens | `sersic` (n < 0.5, q > 0.5) | ≤ 1 | 1D-profile bump path or bar-anomaly path |
+| OuterDisk (envelope) | 2nd `expdisk` or `sersic` (n < 1) | ≤ 1 | outskirts still unfitted after the Disk is established (broad positive 1D residual at r > 2·Re_disk); must satisfy Re_outer > Re_disk; sits **above** the central Re chain, it does not displace it |
+| AGN / Nucleus | `psf` | ≤ 1 | Bulge Re collapsed < 0.2 px (mandatory replacement); 0.2–0.5 px border zone as a competing variant |
+| F1 (m=1 Fourier) | appended `F1)` row | ≤ 1 | lopsidedness; only on the Disk / edgedisk (or the single Sersic when no Disk exists); amplitude > 0.02 to retain |
+| Companion | `sersic` or `psf` | 0..N | compact positive-residual blob with an original-image counterpart; \|ΔMag\| ≤ 5 vs the main galaxy; centre always free (never in the concentric chain, never in the Re chain). **Profile-type selection** (beam prompt C3, area rule): `psf` when the blob is unresolved (A_blob ≤ 1.5·A_psf, not elongated), `sersic` when resolved (A_blob ≥ 2.3·A_psf or elongated major/minor ≳ 1.3); border 1.5–2.3 → `psf` default. A `sersic` companion collapsing to Re < 0.2 px switches to `psf` |
+| Sky | `sky` | exactly 1 | **never fitted, never a search dimension**: the sky block (value + toggle) is the manually provided setting of the input feedme and is carried **verbatim** into every `_iter{n}.feedme` — never backfilled from converged values, never freed or re-tuned (candidates touching the sky are invalid) |
+| Single Sersic | `sersic` (n free) | exactly 1 and nothing else | elliptical terminal state; if it fits q < 0.5, the classification must be revisited (a disk is implied) |
+
+### 2. Per-component hard parameter limits
+
+| Parameter | Rule |
+|---|---|
+| Re total order | `re_disk > re_lens > re_bar > re_bulge` (existing central components only, strict decrease; OuterDisk sits above re_disk; edgedisk plays the Disk slot) |
+| n (Sérsic) | Disk: none (expdisk, n ≡ 1 by type). Bulge: fixed 4 at depth ≤ 2, free within 0.5–8 at depth ≥ 3. Bar: fixed 0.5, never released. Lens: free, prior < 0.5 (default bounds 0.1–0.6). OuterDisk (sersic variant): free, < 1. Single Sersic: free (overall-concentration observable) |
+| q (b/a) | Disk/edgedisk: free — oblique disk configurations are legal search directions (the expdisk template's default q/PA toggles `0` are NOT used in this workflow; always set `1`). Bulge: prior > 0.5. Bar: prior < 0.4. Lens: prior > 0.5. Every shaped component: default bounds 0.05–1.0 |
+| PA | free for every shaped component; N=+Y convention; bar/lens/disk initial values must come from measured feature directions |
+| Mag | no default bounds (flux reallocation is part of the search); companions within 5 mag of the main galaxy; the zombie threshold (flux < 0.5% of the brightest component) is a dedup criterion only, never a removal ground by itself |
+| Centre (x, y) | K ≥ 2 main-galaxy central components (Disk/edgedisk/Bulge/Bar/Lens/AGN): chained `x,y offset` constraint (anchor toggle `1 1`; GALFIT rewrites subordinates to `2 2`). K ≤ 1: free with a ±2 px default window. Companions: always free with a ±5 px soft window at insertion |
+| Re floors | Bulge Re < 0.2 px → must become `psf`; 0.2–0.5 px → psf competing variant; every shaped component's Re lower bound defaults to `max(0.1, 0.5 × PSF FWHM)` px |
+| F1 | only on the Disk / edgedisk / single Sersic; keep when amplitude > 0.02 and the fit does not degrade |
+
+### 3. Mandatory default bound set (every round, merged into `iter{n}.cons`)
+
+GALFIT feedme parameter rows carry no bounds — without a `.cons` the solution space is open and the bound-hit diagnostics are blind (unlike the GalfitS five-tuple, which bounds every parameter by construction). The orchestrator therefore writes the following default bounds for **every non-sky component, every round**, merged into the same `iter{n}.cons` as the concentric chain (GALFIT loads exactly one constraint file):
+
+```text
+# Default bounds for component <N> (every non-sky component, every round)
+  <N>   re   max(0.1, 0.5*FWHM_PSF)   <half the fit-region side length>   # expdisk: the row bounds Rs
+  <N>   n    0.1   8                  # sersic components only
+  <N>   q    0.05  1.0                # shaped components only
+# centres: K>=2 central components -> offset chain (no separate window);
+#          K<=1 -> <N> x <init-2> <init+2> and <N> y <init-2> <init+2>
+#          companions -> <N> x <init-5> <init+5> and <N> y <init-5> <init+5>
+```
+
+- FWHM_PSF comes from `fit_statistics.psf_fwhm` (fall back to 1 px when unavailable); expdisk rows are written in Rs (= declared Re / 1.68).
+- **Provenance convention**: these default bounds count as **original** in the bound-hit provenance reporting; candidate-driven tightenings count as **self-imposed**.
+- Candidate Re triplets may tighten `re` beyond the defaults; they may not widen past the default cap unless the candidate explicitly declares that intent.
+- Standing exemptions (consistent with the bound-relaxation rule): the q upper bound (1.0 is the domain edge) and hard physical priors (Bar n = 0.5) are not relaxable bound-hits.
+
 ## Adding constraints
 GALFIT's parameter-constraint file (usually suffixed `.cons`) is the central tool for curing unbalanced component flux allocation and runaway parameters.
 

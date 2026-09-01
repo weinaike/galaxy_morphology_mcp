@@ -74,6 +74,8 @@ Z) 0                      #  Skip this model?
 Key parameter: R_s (disk scale length)
 - R_s (scale length): the distance over which the surface brightness falls by a factor of e (about 2.718). Its relation to the effective radius is R_e ≈ 1.678 R_s. Initialisation: if you know the disk's half-light radius (from photometry or a visual estimate of the disk's extent), divide by 1.678 to get the initial R_s. By eye, R_s is roughly 1/3 to 1/4 of the disk's overall visible radius.
 
+Note (this workflow): the template's `9) b/a` and `10) PA` toggles shown as `0` above are **not** used here — in this workflow the Disk's q and PA are **free** (`1`); oblique disk configurations are legal search directions (see the solution-space definition in CLAUDE.md).
+
 ---
 1. psf — (commonly used for an AGN / a star / an extremely compact nucleus)
 
@@ -88,6 +90,8 @@ Key parameters: only the x, y position and the integrated magnitude; all shape p
 - x, y (centre position): must be extremely precise. Usually lock onto the brightest pixel of the image.
 - mag (magnitude): if there is an obvious compact bright core (e.g. an AGN), estimate the point source's magnitude; a small-aperture photometry measurement is a reasonable initial value.
 
+Note (companions, this workflow): choose the companion's type by the **area rule** (beam prompt C3): `psf` when the blob is unresolved (A_blob ≤ 1.5·A_psf with A_psf = π·(FWHM_PSF/2)², and not visibly elongated), `sersic` when resolved (A_blob ≥ 2.3·A_psf or elongated major/minor ≳ 1.3); the border zone defaults to `psf`. A `sersic` companion collapsing to Re < 0.2 px has become a point source and switches to `psf`.
+
 
 ---
 1. sky — used to model the background
@@ -100,6 +104,8 @@ Key parameters: only the x, y position and the integrated magnitude; all shape p
 Z) 0                  #  Skip this model in output image?  (yes=1, no=0)
 ```
 The <sky> value must reference the sky-background data shown on the 1D SB profile; before fitting, <sky> must be fixed to the sky-background value.
+
+Note (this workflow): the sky is **never fitted** — the sky block (value + toggle) is the manually provided setting of the input feedme and is carried verbatim into every `_iter{n}.feedme`; it is never backfilled from converged values and never freed or re-tuned (the sky is not a search dimension; see the solution-space definition in CLAUDE.md).
 
 ## Higher-order component parameters — used only when fitting higher-order structural features.
 The parameters C0, B1, B2, F1, F2, etc. listed below are hidden from the user unless explicitly requested. These can be tagged on to the end of any previous component except, of course, the PSF and the sky — If a Fourier or Bending amplitude is set to 0 initially, GALFIT will reset it to a value of 0.01. To prevent GALFIT from doing so, one can set it to any other value.
@@ -126,6 +132,8 @@ Constraints are the safety net that stops the optimiser from "running away", but
   - Effective radius R_e: minimum 0.1 pixel (or half the PSF size), maximum 1/2 or 1/3 of the image side length, preventing the model from inflating without bound while trying to fit a flat background.
   - Sérsic index n: the parameter most prone to running away. For genuine galaxy structure, physically sensible n lies roughly in 0.1–8.0; enforce that range.
   - Axis ratio b/a: constrain to 0.05–1.0 so a low-SNR disk cannot be crushed into a physically meaningless infinitely thin line.
+
+Note (this workflow): in the single-band beam flow these recommended bounds are not optional — the orchestrator writes them as the **mandatory default bound set** every round, merged into `iter{n}.cons`; see the solution-space definition in CLAUDE.md (which also fixes the Re floor at `max(0.1, 0.5 × PSF FWHM)` px and the Re cap at half the fit-region side).
 
 ```text
 # Component/    parameter   constraint    Comment

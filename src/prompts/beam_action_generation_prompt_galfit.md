@@ -159,6 +159,12 @@ remove-only candidates are **not banned for being formally plain** — their leg
 ### 4. Zombie equivalence
 Components tagged `[zombie]` in the ledger (post-fit flux fraction < 0.5%) do not constitute a state difference: `{A + [zombie]}` ≡ `{A}`. Adding components to a state that already contains [zombie] components, or removing [zombie] components from one, is equivalent to the ledger line without them — such candidates likewise need a novelty_claim to stand.
 
+### 5. Per-combination attempt cap ([combo-exhausted]) — diversity rule
+Any single component combination (the same physical-identity inventory C — naming swaps allowed; parameter values and tune axes do **not** distinguish attempts) may be fitted at most **4 times**. Ledger lines marked `[combo-exhausted]` in the notes column have reached that cap.
+- **Generating a candidate whose `expected_C'` is physically identical to a [combo-exhausted] combination is forbidden** — a pure `tune` on the exhausted inventory is exactly such a candidate; the orchestrator discards them unread.
+- **Diversify instead**: change the inventory (add a different component, or remove one — the resulting combination differs and stays legal), or direct the repair toward another live combination. Four attempts have already tested that structure thoroughly; further re-testing starves unexplored combinations of budget.
+- There is no novelty_claim route around this cap — it caps the combination itself, not the parameter axis.
+
 ## Atomic operations of candidate actions
 
 Each candidate composite action consists of at most **2** atomic operations, which must be semantically cohesive (serving one physical goal):
@@ -234,10 +240,23 @@ The final component set of the main galaxy (companions excluded) belongs to one 
 | Component | Key prior | One-line recognition cue |
 |------|---------|---------------|
 | Disk | `expdisk` component (n≡1 guaranteed by type, no n parameter; **switching to sersic with released n to play the Disk is forbidden**) | essential for disk galaxies; extended outline |
+| Edge-on Disk | `edgedisk` (replaces the Disk when the galaxy is edge-on: b/a ≲ 0.17 with a dust lane / disk thickness; takes over the Disk slot in the concentric anchor and the Re chain) | thin blade + dust lane |
 | Bulge | `sersic`, n≈4 (depth≤2 fixes n=4; **depth≥3 must release n for existing bulges and forbids fixing n for new ones**, see the Bulge-n operating rules) | compact round central component |
 | Bar | `sersic` with n=0.5 **fixed**, q<0.4 elongated | "linear"/"X-shaped" residuals |
 | Lens | `sersic`, n<0.5 free, q>0.5 | **low-frequency but important** — see the [Lens reminder] below |
+| OuterDisk (envelope) | 2nd `expdisk`/`sersic` with n<1 and Re > Re_disk; added **only** after the Disk is established and the outskirts remain unfitted (broad positive 1D residual at r > 2·Re_disk) | extended outer envelope |
 | AGN / Nucleus | `psf` component (no physical Re) | enabled only when the Bulge Re collapses below 0.2 px (a psf competing variant may be built in the 0.2–0.5px border zone) |
+
+**Multiplicity rules (hard; per the CLAUDE.md solution-space definition)**: at most **one each** of Disk/edgedisk (mutually exclusive; edgedisk replaces the Disk and takes over its slot in the concentric anchor and the Re chain), Bulge, Bar, Lens, OuterDisk and AGN; **one** F1 at most, only on the Disk/edgedisk (or the single Sersic when no Disk exists); companions may be multiple (`companion`, `companion2`, …); exactly one sky (fixed after the first fit). The single Sersic (free n) is an elliptical terminal state that excludes all other luminous components.
+
+**Hard parameter limits (candidates outside these are invalid)**:
+- Re total order `re_disk > re_lens > re_bar > re_bulge` (existing central components only, strict decrease; OuterDisk sits above re_disk; edgedisk plays the Disk slot);
+- n: Bar 0.5 fixed; Bulge fixed 4 at depth≤2 or free 0.5–8 at depth≥3; Lens free < 0.5 (default bounds 0.1–0.6); OuterDisk (sersic variant) free < 1; the Disk is expdisk (no n);
+- q: priors Bar < 0.4, Lens > 0.5, Bulge > 0.5; Disk/edgedisk q and PA are **free** parameters (oblique disk configurations are legal directions; the expdisk template's default q/PA toggles 0 are not used in this workflow); every shaped component bounded 0.05–1.0;
+- Re lower bound `max(0.1, 0.5 × PSF FWHM)` px; upper bound half the fit-region side length; Bulge Re < 0.2 px → `psf` (0.2–0.5 px: psf competing variant);
+- companion |ΔMag| ≤ 5 vs the main galaxy;
+- the sky is **fixed** to the manually provided ADU setting of the input feedme (carried verbatim every round) — it is not a search dimension: **never generate candidates that free, tune or re-fit the sky**;
+- The orchestrator enforces these as a **default `.cons` bound set every round** (re / n / q rows; expdisk rows in Rs) — bound-hit reports in local_state_description therefore cover re/n/q/x,y for every component; the defaults count as "original" bounds and candidate-driven tightenings as "self-imposed" in the provenance reporting.
 
 ### B. Orthogonal decoration dimensions (orthogonal to component type; combinable with any set)
 
@@ -265,6 +284,20 @@ By distance from the main-galaxy centre, companions fall into two classes with *
 - **Hard timing rule**: an embedded companion may be added only after the parent state **has established a Bulge or Bar**. If the parent has neither, generating `add(Companion)` is **forbidden**; generate `add(Bulge)` or `add(Bar)` first.
 - The position must stay free (feedme `1) x y 1 1`); the coordinate initial value is the VLM's measured pixel value, and the fitter calibrates the centroid on the data; locking it `0 0` is forbidden.
 - When the position has drifted > 2 px and the parent state has Bulge/Bar, generate the `tune(companion, x_real, y_real)` position-correction candidate (see §Companion position verification).
+
+**C3. Companion profile-type selection (`psf` vs `sersic`) — hard rule**: decide the companion's component type by comparing the blob's **area against the PSF area A_psf**. `FWHM_PSF` (px) and `A_psf` (px²) are given in the `[Meta]` line of the global state (and in the parameter summary's statistics table); they were measured once from the PSF image **before the first fit**.
+- **Measurement**: on the original-image (high-DR) panel, measure the blob's major and minor extents (FWHM-like, px) and approximate the blob area as an ellipse, `A_blob ≈ π·(major/2)·(minor/2)`; the ratio is `R = A_blob / A_psf` (equivalently `R = (FWHM_blob/FWHM_PSF)²` when you measure a single characteristic diameter).
+
+| R = A_blob / A_psf | Type | Rationale |
+|---|---|---|
+| R ≤ 1.5 | `psf` | unresolved point source (foreground star / distant compact galaxy): only x, y, mag are fitted — the most robust parametrisation |
+| R ≥ 2.3 | `sersic` | resolved companion galaxy: n free (typical 0.5–4, default bounds), q from the visual ellipticity, PA from the visual orientation (N=+Y), Re triplet from the measured extent (Re_init ≈ half the visible major extent) |
+| 1.5 < R < 2.3 (border) | `psf` (default — Occam for companions) | if the psf leaves a compact undershoot residual at that position, propose switching to sersic in a later round |
+
+- **Elongation override**: a visibly elongated or structured blob (major/minor ≳ 1.3, spiral or irregular structure) is `sersic` regardless of R — the PSF is round, so an elongated source is resolved by definition.
+- `psf` companion: lock the position initial value onto the blob's brightest pixel (still free with the ±5 px window); estimate the mag initial value from the blob's peak brightness (small-aperture style).
+- **Switching rules**: a fitted `sersic` companion collapsing to Re < 0.2 px has become a point source → a `tune(companion, sersic→psf)` switch candidate is expected; a `psf` companion leaving a compact ring/halo positive residual at its position → a `sersic` upgrade candidate is expected.
+- The declared type is a Class-A field (the orchestrator never changes it): state the measured major/minor extents, R, and the comparison in `physical_motivation`.
 
 ### [Lens reminder — a high-frequency VLM omission]
 
@@ -582,7 +615,7 @@ When this round's supplement reports a companion flux ratio ≤ 1% (labelled "co
 - **Bulge-n staging review (hard requirement, depth≥3)**: at depth≥3 check — (a) if the parent inventory contains a bulge with fixed n, the output must include `tune(bulge, n_free)` (alone or bundled with a cohesive primitive); if absent, the waiver reason must be **explicitly stated** in a Candidate's physical_motivation; silent skipping is forbidden. (b) If this round generates an `add(Bulge)`, its n must be free (toggle=1) — the wording `n=4 fixed` / `n fixed` in the primitives violates this rule (see the Bulge-n operating rules).
 - Every feature cited in physical_motivation appeared in Phase 1
 - **Global-state review (hard requirement)**: check item by item — (a) no candidate shares component and parameter direction with any `[Refuted hypotheses]` entry (unless citing evidence absent at refutation time and declared in the motivation); (b) no candidate duplicates `[Tried actions]` (renaming a tag is not a difference); (c) for parameters covered by a `[Verified basins]` entry, the candidate cites the basin value or has completed the anchor-and-verify override (relative judgement vs the model ellipse + a reason the basin failed); companion-position basins must first be checked for provenance tier — `[unverified]` (or untagged) basins get no "cite the basin value" protection and must carry an independently re-read x_real from this round's Original panel; when any re-verification signal (a)–(d) appears, re-verify before fixing the value (§Global-State Usage Rules clause 1); (d) for components Phase 1 judged "position consistent (Δr ≤ 2 px)", no candidate may be motivated by position drift (§Global-State Usage Rules clause 5) — except where Phase 1 flagged "model companion has no original-image counterpart" or "companion radius mismatch" (fake-basin signals; a position fix is then legitimate).
-- **State-ledger review (hard requirement, graph-search cycle detection)**: check candidate by candidate — (a) candidates whose `expected_C'` landed signature is band-equivalent to any `[State ledger]` line without a legal novelty_claim are deleted (structure + parameter axis equivalent = zero new information); (b) remove-only / revert candidates have completed the projection comparison, and those hitting `[State ledger]` or `[Rollback edges]` are deleted; (c) every candidate's novelty_claim is filled in and cites the ledger round number; (d) candidates differing from a ledger line only by `[zombie]` components are handled by zombie equivalence (a novelty_claim is required to keep them).
+- **State-ledger review (hard requirement, graph-search cycle detection)**: check candidate by candidate — (a) candidates whose `expected_C'` landed signature is band-equivalent to any `[State ledger]` line without a legal novelty_claim are deleted (structure + parameter axis equivalent = zero new information); (b) remove-only / revert candidates have completed the projection comparison, and those hitting `[State ledger]` or `[Rollback edges]` are deleted; (c) every candidate's novelty_claim is filled in and cites the ledger round number; (d) candidates differing from a ledger line only by `[zombie]` components are handled by zombie equivalence (a novelty_claim is required to keep them); (e) **no candidate's `expected_C'` is physically identical to a `[combo-exhausted]` combination** (the per-combination attempt cap, §State-Ledger Usage Rules clause 5) — if one slipped through, delete it and fill the slot with a candidate on a different inventory.
 - Every candidate's expected_C' differs from the current parent C' explainably
 - **Disk outer-flux trigger review (hard requirement; takes priority over the central-component rules)**: confirm you checked the r > 2×Re_disk outskirts for systematic positive residuals on the 1D residual curve (the three trigger conditions of the Disk Outer-Flux-Deficit Trigger Rule: location + width/amplitude + disk Re not bound-hit). When all hold, this output **must** include at least one `tune(disk, larger Re)` candidate, ranked near the top; if absent, the waiver reason must be **explicitly stated** in a Candidate's physical_motivation (e.g. "outer positive residual amplitude only −0.03 mag, below the −0.05 mag threshold" or "the positive residual appears only in the red-triangle zone beyond the background limit"); silent skipping is forbidden.
 - **Lens trigger review (hard requirement)**: when the parent has a Bar or Bulge, confirm you actively recalled **both** Lens trigger paths:

@@ -84,7 +84,8 @@ def _parse_stats_from_summary(summary_file: str) -> str:
     for line in content.splitlines():
         s = line.strip()
         if s.startswith("|") and any(
-            token in s for token in ("χ²", "BIC", "Sky Background", "N_dof", "N_free")
+            token in s for token in ("χ²", "BIC", "Sky Background", "N_dof", "N_free",
+                                     "PSF FWHM", "A_psf")
         ):
             lines.append(s)
         elif re.search(r"Chi\^?2", s) and "=" in s:
@@ -387,6 +388,23 @@ def check_feedme_file(
     if "sky" not in content.lower():
         warnings.append("No sky component found - GALFIT will not fit the background")
 
+    # Sky policy: the sky ADU is never fitted in this workflow — the sky block
+    # (value + toggle) must be carried verbatim from the input feedme's manually
+    # provided setting. Surface a warning when the sky's `1)` toggle is free so
+    # the orchestrator notices a misconfigured input (the tool never edits it).
+    sky_m = re.search(
+        r"(?im)^\s*0\)\s*sky\b.*\n\s*1\)\s*([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s+([01])",
+        content,
+    )
+    if sky_m:
+        sky_value, sky_toggle = sky_m.group(1), sky_m.group(2)
+        if sky_toggle == "1":
+            warnings.append(
+                "The sky `1)` toggle is 1 (free) — this workflow never fits the sky; "
+                "it must stay fixed (toggle 0) at the manually provided ADU setting "
+                f"(current value {sky_value}). Fix the input feedme and re-validate."
+            )
+
     # Semantic names: recover which blocks carry a '# STRUCTURE:' comment.
     structure_names = re.findall(r"(?im)^\s*#\s*STRUCTURE:\s*(\S+)", content)
     components = parse_components(feedme_file)
@@ -424,16 +442,37 @@ def check_feedme_file(
             "constraint": paths.get("constraint") or None,
         }
 
+    # PSF characterisation (available from the FIRST check, before any fit): a 2D
+    # Gaussian fit to the feedme's D) PSF image gives FWHM and A_psf = pi*(FWHM/2)^2.
+    # The VLM uses the blob-area / A_psf ratio to decide companion psf-vs-sersic
+    # (see the beam prompt's companion profile-type selection rule); the workflow
+    # also uses FWHM_PSF for the default Re lower bound.
+    psf_info: dict[str, Any] = {}
+    psf_file = paths.get("psf") or None
+    if psf_file and os.path.exists(psf_file):
+        from .extract_summary_galfit import compute_psf_area
+        psf_result = compute_psf_area(psf_file)
+        if psf_result is not None:
+            psf_info = {"psf_fwhm_px": psf_result[0], "a_psf_px2": psf_result[1]}
+        else:
+            warnings.append("Failed to fit the PSF (D) image); psf_fwhm/a_psf unavailable")
+    else:
+        warnings.append("No usable PSF file (feedme D) item); psf_fwhm/a_psf unavailable")
+
     return {
         "status": "success",
         "components": inventory,
         "n_components": len(inventory),
         "fit_region": paths.get("fit_region"),
         "constraint": paths.get("constraint") or None,
+        **psf_info,
         "warnings": warnings,
         "message": (
             "Feedme structure check passed. 'components' is the canonical component "
             "inventory (px units, PA in the N=+Y contract); use it directly as the source for "
-            "beam-state signatures and warm-start backfill."
+            "beam-state signatures and warm-start backfill. psf_fwhm_px / a_psf_px2 "
+            "(when present) characterise the PSF: record them in the working_note header "
+            "and the [Meta] line of global_state_description — the VLM needs A_psf for the "
+            "companion psf-vs-sersic selection rule."
         ),
     }

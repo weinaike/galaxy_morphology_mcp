@@ -65,6 +65,22 @@ def test_bounded_margin_cannot_reverse_binary_order():
     assert positive["shaped_reward"] > negative["shaped_reward"]
 
 
+def test_zero_margin_weight_uses_classification_only():
+    positive = shape_grpo_reward(
+        {"reward": V11_THRESHOLD + 100.0},
+        margin_weight=0.0,
+    )
+    negative = shape_grpo_reward(
+        {"reward": V11_THRESHOLD - 100.0},
+        margin_weight=0.0,
+    )
+
+    assert positive["margin"] == 1.0
+    assert negative["margin"] == -1.0
+    assert positive["shaped_reward"] == positive["coarse_reward"] == 1.0
+    assert negative["shaped_reward"] == negative["coarse_reward"] == 0.0
+
+
 def test_homogeneous_group_is_masked():
     results = [
         shape_grpo_reward({"reward": V11_THRESHOLD + 0.1}),
@@ -97,4 +113,3 @@ def test_mixed_group_is_trainable_and_ignores_evaluator_failure():
 def test_margin_scale_calibration():
     assert calibrate_margin_scale([0.0, 1.0, 2.0, 3.0], method="iqr") == 1.5
     assert calibrate_margin_scale([1.0, 1.0, 1.0], method="mad") == 1e-6
-

@@ -1,562 +1,548 @@
-请查看以下图像（包含原图、模型图、2D残差图及1D表面亮度轮廓图），进行客观的多模态视觉特征提取。
+Please examine the following image (containing the original image, the model image, the 2D residual map and the 1D surface-brightness profile) and carry out objective multimodal visual feature extraction.
 
-**全局状态锚（跨轮次已确证事实，供交叉核对；不得替代图像判读、不得抄进描述里当观测结果）**：
+**Global-state anchor (cross-round established facts, for cross-checking; must not replace image reading, and must not be copied into your description as if it were an observation)**:
 {global_state_description}
 
-**单位契约**：全局状态锚中的所有 Re/位置一律为**像素值**（px），与本轮图像面板和 feedme 参数文件**同一参考系**——可直接 diff（如盆记录 px(95,128) vs 你本轮读数 px(111,126)，Δ=16px 一目了然），也可直接作为候选取值写出（主模型会把 px 值**原样写入** feedme，不存在任何单位换算）。若锚中出现 arcsec 数值（历史遗留格式），**忽略其数值、仅参考其语义**。
+**Unit contract**: every Re/position in the global-state anchor is a **pixel value** (px), in **the same reference frame** as this round's image panels and the feedme parameter file — direct diffing is possible (e.g. a basin entry px(95,128) vs your reading this round of px(111,126), Δ=16px at a glance), and the values can be used directly as candidate values (the orchestrator writes the px values **verbatim** into the feedme; no unit conversion exists anywhere). If arcsec values appear in the anchor (legacy format), **ignore their numerical value and keep only their semantics**.
 
-使用方式：你在上一轮及更早轮次中量测过的位置/参数读数、已验证的参数盆、已被拟合否定的假设都记录在此。当你本轮从图像上读出一个与全局状态冲突的新读数（尤其是**绝对像素坐标**类读数——它们天然带 ±10px 噪声），必须先做相对判断交叉核对（如"残差热点是否落在模型成分 2·Re 椭圆内"、"本轮 Δr 是否与全局记录的已验证盆矛盾"），只有图像证据明确压倒全局记录时才报告新读数，并在描述中注明与全局记录的分歧。
+How to use it: the position/parameter readings you measured in previous and earlier rounds, the verified parameter basins, and the refuted hypotheses are all recorded here. When you read a new reading from the image this round that conflicts with the global state (especially **absolute pixel coordinates**, which naturally carry ±10px noise), you must first cross-check via a relative judgement (e.g. "does the residual hot spot fall inside the model component's 2·Re ellipse?", "is this round's Δr inconsistent with the verified basin recorded globally?"); only report the new reading when the image evidence clearly outweighs the global record, and note the disagreement with the global record in your description.
 
-**阶段一：多模态视觉特征提取（仅客观描述）**
-1. 高/低动态范围的原图的特征描述
-    - 具体描述原图 X轴和 Y 轴的坐标范围，坐标轴单位，标题中描述的内容
-    - 描述不同动态范围原图的中心星系的特征， 并推测高概率存在的星系成分（要提供强特征证据支持）
-    - 描述未被mask掉的伴星系位置区域（明显独立的点源或者展源，即白色亮区，黑色为 mask 区）提供具体的坐标。注意伴星系不仅出现在外围，也可能紧贴主星系中心亮区（嵌入式伴星系，落在 bulge/bar 的等照度线 contour 上或以内），仔细观察高动态范围原图，有利于发现嵌入式伴星系。
-    - **伴星系候选的局部极大判据**：报告坐标前先确认该位置是**局部亮度极大点**（描述其与周围 ~5px 邻域的对比，如"亮点明显高出邻域背景"）。延展晕上的渐变特征、等照度线的不对称凸起不是伴星系——它们没有离散峰值，其上的坐标读数必然是噪声。
-    - **掩膜判读规则（防"已被Mask"误判）**：掩膜多边形只在**原图面板**上判读（黑色区域）。**禁止**根据残差面板的白色区域推断"某源已被掩膜"——残差面板上掩膜区域同样渲染为白色，与未掩膜的正残差热点无法区分。若无法确定某亮斑是否落在掩膜多边形内，报告"掩膜状态不确定"，不得据此排除该源或忽略该坐标。
-    - **嵌入式伴星系位置可靠性警告**：在中心成分（Bulge/Bar）建立**之前**，残差被未拟合的中心通量污染，此时从残差图或原图高动态范围读出的嵌入式伴星系位置**不可靠**（易把 Bulge 残差伪特征误判为伴星系位置）。中心成分建立之后读出的位置才可作为强证据。
-2. 2D 原图与模型的特征描述：评估两者的总体骨架轮廓是否一致，差异点在哪里？
-    - **模型图成分轮廓与参数图例（必读）**：Model 图上每个成分的 2·Re 椭圆按成分着色（disk=蓝、bulge=绿、bar=橙、lens=红、companion=紫、AGN/nucleus=棕；颜色与 1D 曲线图例一致），面板左上角图例逐行列出每个成分的 `name Mag Re(px) n q PA°` 拟合值。**Re 给的是真实有效半径的像素值**（expdisk 已按 Re=1.68·Rs 换算，`Re=35.0px` 形式），与本面板坐标轴、椭圆尺寸、Δr 等像素量测直接可比，无需换算；这些 px 值与你写进候选的 Re 取值**同单位同参考系**，主模型会原样写入 feedme。**PA 采用本工作流的 N=+Y 契约**（见 🔑 PA 约定）：图像 Y 轴正上方为 0°、逆时针增大，与 feedme `10)` 参数行同一约定，生成含 PA 的候选时可直接取用图例值，无需换算。禁止再用"内小外大"的尺寸启发式猜测轮廓归属——直接按颜色与图例读。须在特征描述中逐成分报告图例参数，并检查 Re 全序 `Re_disk > Re_lens > Re_bar > Re_bulge`（仅比较实际存在的成分）：若图例数值显示某对相邻成分 Re 反置（如 re_bar ≤ re_bulge），必须显式标注"Re 全序反置"并列出反置对，这是强退化信号。
-    - **伴星系位置核验（仅当参数摘要中已存在 Companion 成分时执行）**：分别从原图与 Model 图上读出伴星系的像素中心 `(x_real, y_real)` 与 `(x_model, y_model)`——`x_model/y_model` 直接读紫色（companion 色）2·Re 椭圆的中心，不要猜；**`x_real/y_real` 只能从原图（Original）面板读取**，且原图上必须存在肉眼可辨的独立亮斑作为锚点——**禁止**把模型面板紫色椭圆的中心、或残差热点的位置当作 x_real。报告两者偏差 `Δx = x_model − x_real`、`Δy = y_model − y_real` 与 `Δr = √(Δx² + Δy²)`。若 `Δr > 2 px`，视为显著偏差。若**原图上模型 companion 对应位置无可见源**，必须在报告中显式标注"模型 companion 无原图对应源"——这是假盆/位置漂移的最高优先级信号，此时以原图上实际可见亮斑（或残差热点）的坐标生成位置修正，Δr 再小也不得判"位置吻合"（假盆的 Δr 可以很小——成分被初始化在那里，读数若取自模型椭圆则必然"吻合"）。**但在生成位置修正候选前，先检查父状态是否已建立中心成分（Bulge 或 Bar）**：
-        - 父状态**已含** Bulge/Bar → 生成 `tune(companion, x_real, y_real)` 位置修正候选（坐标直接写像素值，主模型原样填入 feedme）。
-        - 父状态**不含** Bulge/Bar 且伴星系出现参数触界（Re/xcen/ycen 撞边界）→ 这是"伴星系被借调去代偿中心通量"的退化信号，**位置修正是治标不治本**；此时应生成 `add(Bulge)` 或 `add(Bar)` 候选先把中心骨架建起来，伴星系位置待中心稳定后再修正。
-        - 若 `Δr ≤ 2 px`，视为位置吻合，不需要生成位置修正候选（但仍可基于残差给出形态修正候选）。
-    - **伴星系坐标表（结构化输出，硬约束）**：凡报告任何 companion（已存在或候选）的位置，必须附带一行坐标表，逐列**独立读取后填写**、不得留空、不得互相抄写：
+**Phase 1: multimodal visual feature extraction (objective description only)**
+1. Features of the original image at high/low dynamic range
+    - Concretely describe the X- and Y-axis ranges of the original image, the axis units, and what the title says
+    - Describe the central galaxy in the different dynamic ranges, and infer the components most likely present (support them with strong feature evidence)
+    - Describe the unmasked companion regions (obviously independent point sources or extended sources, i.e. white bright areas; black = masked), giving concrete coordinates. Note that companions occur not only in the outskirts but also right against the central bright region of the main galaxy (embedded companions, on or inside the bulge/bar isophotal contours) — inspect the high-dynamic-range original image carefully to find embedded companions.
+    - **Local-maximum criterion for companion candidates**: before reporting a coordinate, confirm the position is a **local brightness maximum** (describe its contrast against the surrounding ~5px neighbourhood, e.g. "the bright spot clearly stands above the neighbourhood background"). Gradients on an extended halo and asymmetric bulges of isophotes are not companions — they have no discrete peak, and any coordinate read off them is noise.
+    - **Mask reading rules (against misjudging "already masked")**: read mask polygons only on the **original-image panel** (black regions). **It is forbidden** to infer "some source is masked" from white regions on the residual panel — masked areas on the residual panel are also rendered white, indistinguishable from unmasked positive-residual hot spots. If you cannot decide whether a blob falls inside a mask polygon, report "mask status uncertain"; do not use that to exclude the source or ignore the coordinate.
+    - **Reliability warning for embedded-companion positions**: **before** the central components (Bulge/Bar) are established, the residuals are contaminated by unfitted central flux; positions of embedded companions read off the residual map or the high-dynamic-range original image in that regime are **unreliable** (bulge-residual artefacts are easily misread as companion positions). Only positions read after the central components are established count as strong evidence.
+2. 2D original vs model features: assess whether the overall skeletons agree, and where they differ:
+    - **Model-panel component contours and parameter legend (must read)**: each component's 2·Re ellipse on the Model panel is coloured by component identity (disk=blue, bulge=green, bar=orange, lens=red, companion=purple, AGN/nucleus=brown; colours match the 1D-curve legend), and the legend in the panel's upper-left lists each component's fitted `name Mag Re(px) n q PA°` on one line. **Re is the true effective radius in pixels** (expdisk already converted via Re=1.68·Rs, in the form `Re=35.0px`), directly comparable with this panel's axes, the ellipse sizes, Δr and other pixel measurements — no conversion needed; these px values are **in the same unit and reference frame** as the Re values you put into candidates, and the orchestrator writes them verbatim into the feedme. **PA follows this workflow's N=+Y contract** (see the 🔑 PA Convention): the image's +Y axis (up) is 0°, increasing counterclockwise — the same convention as the feedme `10)` parameter row; when generating PA-bearing candidates you can take the legend value directly, with no conversion. Do not guess contour attribution by the "small inside large" size heuristic any more — read it directly by colour and legend. You must report the legend parameters component by component in the feature description, and check the Re total order `Re_disk > Re_lens > Re_bar > Re_bulge` (compare only the components that actually exist): if the legend values show an inverted adjacent pair (e.g. re_bar ≤ re_bulge), you must explicitly flag "Re total-order inversion" and list the inverted pair — a strong degeneracy signal.
+    - **Companion position verification (execute only when the parameter summary already contains a Companion)**: read the companion's pixel centre from both the original image and the Model panel — `(x_real, y_real)` and `(x_model, y_model)` — read `x_model/y_model` directly from the centre of the purple (companion-coloured) 2·Re ellipse, do not guess; **`x_real/y_real` may only be read from the Original panel**, and the original image must show a discernible independent bright blob as the anchor — it is **forbidden** to take the model panel's purple-ellipse centre, or the residual hot spot's position, as x_real. Report the offsets `Δx = x_model − x_real`, `Δy = y_model − y_real` and `Δr = √(Δx² + Δy²)`. If `Δr > 2 px`, treat it as a significant offset. If **the model companion's position shows no corresponding source in the original image**, you must explicitly flag "model companion has no original-image counterpart" in the report — the highest-priority signature of a fake basin / position drift; in that case generate the position correction from the coordinates of the actually visible blob (or the residual hot spot), and however small Δr is you must not judge "position consistent" (a fake basin can have tiny Δr — the component was initialised there, and a reading taken from the model ellipse is necessarily "consistent"). **But before generating a position-correction candidate, first check whether the parent state has established central components (Bulge or Bar)**:
+        - Parent state **already has** Bulge/Bar → generate the `tune(companion, x_real, y_real)` position-correction candidate (write pixel coordinates directly; the orchestrator fills them verbatim into the feedme).
+        - Parent state **has no** Bulge/Bar and the companion shows bound-hitting parameters (Re/xcen/ycen at bounds) → this is the degeneracy signature of "the companion is being borrowed to compensate central flux"; a **position correction treats the symptom, not the cause**. Generate `add(Bulge)` or `add(Bar)` candidates to build the central skeleton first; correct the companion position after the centre stabilises.
+        - If `Δr ≤ 2 px`, the position is consistent: no position-correction candidate is needed (morphological-correction candidates may still be given based on the residuals).
+    - **Companion coordinate table (structured output, hard requirement)**: whenever you report the position of any companion (existing or candidate), append one row of the coordinate table, each column **read independently then filled in** — no blanks, no copying between columns:
       ```
-      | id | x_orig,y_orig | 原图可见(Y/N) | 掩膜内(Y/N/不确定) | x_res,y_res(热点) | 1D尖峰半径(px) | x_model,y_model |
+      | id | x_orig,y_orig | visible in original (Y/N) | inside mask (Y/N/uncertain) | x_res,y_res (hot spot) | 1D spike radius (px) | x_model,y_model |
       ```
-      `原图可见=N` 的 companion 无论 Δr 多小都不得判"位置吻合"；`掩膜内` 列按上文掩膜判读规则在原图面板判读；`1D尖峰半径` 取 1D 残差窄尖峰的半径（无尖峰写 无，见阶段一"伴星系半径尖峰核对"）。各列读数互相矛盾（如 x_orig 与 x_res 热点差 > 5 px、或尖峰半径与 companion 半径差 > 5 px）时必须在描述中**指出矛盾**并给出你的裁断依据，不得取平均搪塞、不得静默丢弃某一列。
-3. 2D 残差图-核心区（中心星系延展区域范围内）：
-    - 描述中心区域的正负残差分布对称性、残差强度、残差形态的空间分布（预测是否有尚未添加的成分特征）
-    - **嵌入式伴星系检查（重要）**：核心区内是否存在位置固定、形态紧凑（接近 PSF 尺度到几像素）、单侧偏置的局部红色正残差热点？它与 bar/bulge PA 错位产生的"延展、中心对称四极矩"模式不同。若存在此类热点且原图对应位置可见次级亮峰（双峰结构），视为嵌入式伴星系残差特征，需准确报告其像素坐标。
-    - 描述延展区域的残差的空间分布特征（如同心环、同心弧、条带、随机分布等）
-    - 描述延展区域内是否存在独立伴星系的残差特征（独立的、非弥散的局部亮斑），对于该区域的伴星系，需要准确描述其中心位置坐标
-    - 描述延展区域内是否存在偏心（lopsidedness）残差特征（通常表现为一边正残差一边负残差；伴星系也容易引起残差不对称的偏心特征，注意区分）
-    - **新增成分特征的径向量测（必做，为阶段二 Re 三元组供数）**：凡在核心区或延展区识别出疑似新增成分的特征（棒状/四极矩、致密核、环状亮带、独立亮斑），除定性描述外**必须**报告其**内径与外径**（px，注明量测自哪个面板）——阶段二 `add(...)` 候选的 `[Re_min, Re_init, Re_max]` 直接由这些量测换算（见 🔑 Re 约定的残差几何换算法与 Bar 特别条款）；缺此量测，候选将无法给出合格的 Re 三元组，属无效候选。
-4. 2D 残差图-外围区（中心星系延展区域20px之外）：
-    - 描述外围是否存在伴星系或者独立的点源（外围伴星系对中心拟合影响较小，可以选择不拟合；但若已识别出嵌入式伴星系，外围的可暂时忽略以集中处理中心结构）
-5. 1D 亮度曲线与残差
-    - 描述图表的坐标、标注、标题等所包含的内容，
-    - 如果 sky 成分存在， 描述 sky 成分星等线与 sky background 虚线的关系（齐平、偏高或者偏低）
-    - 描述 Data 与 Model 之间明显差异的区域（如中心过亮或过暗，某个半径范围内的系统偏亮或偏暗等）
-    - 描述各成分的星等差异、以及残差曲线与各成分 Re 的对应关系（如残差的峰值位置是否与某个成分的 Re 对应等）
-    - **Disk 外围光度不足检查（优先于中心成分残差分析）**：先确认 disk 骨架是否正确——检查 1D 残差曲线（Δμ = Data − Model）在距中心 r > 2×Re_disk 的外围区域是否**系统性为正**（Data 亮于 Model，Δμ < 0）。若该外围区域存在宽阔的系统性正残差（非噪声波动，跨度 > 15 px，幅度 Δμ ≲ −0.05 mag），说明 disk 的 Re 偏小、外缘光度未覆盖，是 disk 骨架不准的信号。**此时中心成分的残差分析（Lens 隆起、Bulge 参数等）可能建立在错误的 disk 基线上**——若 disk Re 偏小，disk 会把本应属于自己的外缘通量"让"给中心成分（或迫使 lens/bar 膨胀去代偿），导致中心成分参数看似需要调整、实则只是 disk 骨架错的连带效应。因此应**优先修正 disk Re**，再看中心成分残差。发现此外围光度不足特征时，须在特征描述中明确标注正残差的起始半径、跨度与幅度，供阶段二生成 `tune(disk, Re 更大)` 候选（见 §Disk 外围光度不足触发规则）。注意：若外围区域数据点已变为红色三角形（达到背景噪声极限、低信噪比），判读需谨慎——只有当正残差在进入背景极限前就已系统性出现才视为命中。
-    - **伴星系半径尖峰核对（companion 位置的客观交叉证据）**：1D 残差曲线（Δμ = Data − Model）上**窄而深的正尖峰**（跨度 ≲ 5 px、幅度 Δμ ≲ −0.3 mag）是未拟合致密源经方位平均后的签名，其半径应等于该源到星系中心的距离——这是不依赖 2D 读图精度的客观数值证据。凡模型已含 companion（或报告了伴星系候选），必须核对：1D 尖峰半径（若存在）与 companion 中心半径（由参数摘要 xcen/ycen 换算到像素）是否一致（差 > 5 px 即失配）。失配 = companion 未锚定真实源，须在特征描述中报告"伴星系半径失配：尖峰在 r≈XX px，companion 在 r≈YY px"，并在伴星系坐标表的 `1D尖峰半径` 列如实填写。
-    - **Lens 隆起的伴星系污染前置检查（先于 Lens 隆起诊断执行）**：1D 曲线是方位平均的产物——落在半径 r 处的致密源（伴星系、亮结）经方位平均后，同样会在该半径产生宽阔正向隆起，与 Lens 签名在 1D 上不可区分。发现中半径隆起时必须核对：隆起径向区间是否覆盖任一 companion 的中心半径（由参数摘要 xcen/ycen 换算）或原图可见伴星系候选的半径。若覆盖，须在特征描述中报告"隆起与伴星系半径共位"，并在 2D 残差图上区分两种形态：**局部紧凑亮斑**（方位覆盖 ≲90°，伴星系漏光签名）vs **方位连续环状正残差**（覆盖 ≳180°，Lens 签名）。同时报告 companion 的数值状态（Re 贴下界 / axrat 或 xcen 触界 / Mag 远暗于盘，均为未锚定真实源的信号）。
-    - **Lens 隆起诊断（父状态已含 Bar 或 Bulge 时执行）**：检查 1D 残差曲线（Δμ = Data − Model）在距中心 ~1.5–2.5·Re_bar（无 Bar 时取 ~2–4·Re_bulge）处是否存在**宽阔的正向隆起**（Data 亮于 Model，Δμ < 0，跨度 ~10–30 px）。该隆起是 Lens（低 n 延展成分）的径向通量签名，与旋臂残差不同——旋臂在 2D 残差图上呈螺旋条带，经方位平均后在 1D 上幅度被压制；而 Lens 隆起在 2D 上呈近圆对称环状，1D 上幅度显著。发现此类宽阔隆起时，须在特征描述中明确标注位置、宽度与幅度，供阶段二生成 `add(Lens)` 候选（见 §Lens 1D 轮廓隆起触发规则）。**前置依赖**：若 Disk 外围光度不足检查已命中，Lens 隆起诊断的判读可能被 disk Re 偏小污染，应在 physical_motivation 中同时说明两者的相对贡献；若伴星系污染前置检查报告"隆起与伴星系半径共位"，Lens 隆起诊断的结论必须附带 2D 形态判别结果（局部亮斑 vs 环状）。
-    - **1D 残差隆起的定量量测（必做，为阶段二 Re 三元组供数）**：凡报告 1D 残差曲线上的显著隆起或系统性偏移，除定性描述外**必须**报告其**峰值半径、跨度与幅度**（px / mag）——缺失成分的 Re_init ≈ 隆起峰值半径 / 2（见 🔑 Re 约定的残差几何换算法），Lens / Bar / Companion 候选的 Re 三元组直接由此换算。
+      A companion with `visible in original=N` must never be judged "position consistent" however small Δr is; the `inside mask` column is read on the Original panel per the mask-reading rules above; the `1D spike radius` is the radius of the narrow 1D-residual spike (write "none" if absent; see Phase 1 "companion radius-spike cross-check"). When columns contradict each other (e.g. x_orig vs the x_res hot spot differ by > 5 px, or the spike radius differs from the companion radius by > 5 px), you must **point out the contradiction** in the description and give your adjudication; do not average things away or silently drop a column.
+3. 2D residual map — central region (within the central galaxy's extended area):
+    - Describe the symmetry, strength and spatial distribution of positive/negative residuals in the central region (and infer whether features of not-yet-added components are present)
+    - **Embedded-companion check (important)**: does the central region contain a fixed-position, compact (about PSF scale to a few pixels), one-sided-offset local red positive-residual hot spot? It differs from the "extended, centre-symmetric quadrupole" pattern produced by bar/bulge PA misalignment. If such a hot spot exists and the corresponding position in the original image shows a secondary bright peak (a two-peaked structure), treat it as an embedded-companion residual signature and report its pixel coordinates accurately.
+    - Describe the spatial distribution of the residuals in the extended region (e.g. concentric rings, concentric arcs, bands, random distribution)
+    - Describe whether independent companion residual features exist in the extended region (isolated, non-diffuse local bright blobs); for companions there, describe their central position coordinates accurately
+    - Describe whether lopsidedness residual features exist in the extended region (typically positive residuals on one side and negative on the other; companions also easily induce asymmetric lopsided residuals — distinguish carefully)
+    - **Radial measurement of new-component features (mandatory; feeds the Phase-2 Re triplet)**: for every suspected new-component feature identified in the central or extended region (bar-like/quadrupole, compact core, ring-like bright band, isolated bright blob), besides the qualitative description you **must** report its **inner and outer radii** (px, noting which panel the measurement came from) — the `[Re_min, Re_init, Re_max]` of Phase-2 `add(...)` candidates is derived directly from these measurements (see the 🔑 Re Convention's residual-geometry conversion and the Bar special clause); without this measurement the candidate cannot carry a valid Re triplet and is invalid.
+4. 2D residual map — outskirts (beyond 20 px from the central galaxy's extended area):
+    - Describe whether the outskirts contain companions or isolated point sources (outskirts companions affect the central fit little and may be left unfitted; but if an embedded companion has been identified, the outskirts may be ignored for now to concentrate on the central structure)
+5. 1D brightness curve and residuals
+    - Describe the chart's axes, annotations, titles and other content
+    - If the sky component exists, describe the relation between the sky-component magnitude line and the sky-background dashed line (flush, high or low)
+    - Describe the regions of obvious Data-vs-Model difference (e.g. centre too bright or too dim, systematic over- or under-brightness in some radial range)
+    - Describe the magnitude differences between components and the correspondence between the residual curve and each component's Re (e.g. whether the residual peak position matches some component's Re)
+    - **Disk outer-flux-deficit check (takes priority over central-component residual analysis)**: first confirm the disk skeleton is correct — check whether the 1D residual curve (Δμ = Data − Model) is **systematically positive** (Data brighter than Model, Δμ < 0) in the outskirts at r > 2×Re_disk. If a broad systematic positive residual exists there (not noise fluctuation; span > 15 px, amplitude Δμ ≲ −0.05 mag), the disk Re is too small and the outer flux is not covered — a signature of a wrong disk skeleton. **Residual analysis of the central components (lens bump, bulge parameters, etc.) may then rest on a wrong disk baseline** — if the disk Re is too small, the disk "gives away" outer flux that belongs to itself (or forces lens/bar to inflate in compensation), so the central components seem to need adjustment when in fact that is just a knock-on effect of the wrong disk skeleton. Therefore correct the disk Re **first**, then look at the central-component residuals. When this outer-flux-deficit feature is found, state clearly in the feature description the onset radius, span and amplitude of the positive residual, to feed the Phase-2 `tune(disk, larger Re)` candidate (see the Disk Outer-Flux-Deficit Trigger Rule). Note: if the outer data points have turned into red triangles (reaching the background-noise limit, low SNR), be cautious — the positive residual counts only if it appears systematically **before** entering the background limit.
+    - **Companion radius-spike cross-check (objective evidence independent of 2D reading accuracy)**: a **narrow, deep positive spike** on the 1D residual curve (Δμ = Data − Model; span ≲ 5 px, amplitude Δμ ≲ −0.3 mag) is the azimuthally averaged signature of an unfitted compact source, and its radius should equal that source's distance from the galaxy centre — objective numerical evidence that does not rely on 2D reading precision. Whenever the model already contains a companion (or a companion candidate has been reported), you must cross-check: does the 1D spike radius (if any) match the companion's central radius (converted to pixels from the summary's xcen/ycen) (a mismatch > 5 px fails)? A mismatch = the companion is not anchored on a real source; report in the feature description "companion radius mismatch: spike at r≈XX px, companion at r≈YY px", and fill the `1D spike radius` column of the coordinate table accordingly.
+    - **Pre-check for companion contamination of the lens bump (run before the lens-bump diagnosis)**: the 1D curve is an azimuthal average — a compact source at radius r (companion, bright knot) also produces a broad positive bump at that radius after azimuthal averaging, indistinguishable from a Lens signature in 1D. When a mid-radius bump is found you must check: does the bump's radial interval cover any companion's central radius (converted from the summary's xcen/ycen) or the radius of a companion candidate visible in the original image? If it does, report "bump co-located with companion radius" in the feature description, and distinguish the two morphologies on the 2D residual map: a **local compact bright blob** (azimuthal coverage ≲90°, companion-leakage signature) vs an **azimuthally continuous ring-like positive residual** (coverage ≳180°, Lens signature). Also report the companion's numerical state (Re at the lower bound / axrat or xcen bound-hit / Mag far fainter than the disk — all signatures of a source not anchored on a real one).
+    - **Lens-bump diagnosis (execute when the parent state already has a Bar or Bulge)**: check whether the 1D residual curve (Δμ = Data − Model) shows a **broad positive bump** about 1.5–2.5·Re_bar from the centre (about 2–4·Re_bulge when there is no Bar). This bump is the radial flux signature of a Lens (a low-n extended component), unlike spiral-arm residuals — spiral arms appear as spiral bands on the 2D residual map and are suppressed in 1D amplitude by azimuthal averaging, whereas a lens bump is near-circularly symmetric in 2D and significant in 1D. When such a broad bump is found, state clearly in the feature description its position, width and amplitude, to feed the Phase-2 `add(Lens)` candidate (see the Lens 1D Profile Bump Trigger Rule). **Precondition**: if the Disk outer-flux-deficit check hit, the lens-bump reading may be contaminated by a too-small disk Re — state the relative contributions of both in physical_motivation; if the pre-check reported "bump co-located with companion radius", the lens-bump conclusion must carry the 2D morphology discrimination (local blob vs ring).
+    - **Quantitative measurement of 1D residual bumps (mandatory; feeds the Phase-2 Re triplet)**: for every significant bump or systematic offset on the 1D residual curve, besides the qualitative description you **must** report its **peak radius, span and amplitude** (px / mag) — Re_init ≈ bump peak radius / 2 for a missing component (see the 🔑 Re Convention's residual-geometry conversion); the Re triplets of Lens / Bar / Companion candidates are derived directly from it.
 
-要求：所有描述必须基于图片内容，不能主观臆测。
+Requirement: every description must be grounded in the image content; no subjective speculation.
 
 <!-- phase:candidate_generation -->
 
-基于你刚才的视觉特征分析，结合以下拟合参数摘要，作为 Beam Search 候选动作生成器，先输出对当前拟合结果的**物理性判定**（阶段 1.5），再输出 **2–4 个** 互不同质化的候选复合动作。
+Building on your visual feature analysis just now, together with the fitted-parameter summary below, act as the Beam Search candidate generator: first output the **physicality verdict** of the current fit (Phase 1.5), then output **2–4** mutually differentiated candidate composite actions.
 
-参数摘要内容：
+Parameter summary content:
 {summary_content}
 
-**全局状态（跨轮次稳定事实，硬约束——使用规则见 §全局状态使用规则）**：
+**Global state (cross-round stable facts, hard constraint — usage rules in §Global-State Usage Rules)**:
 {global_state_description}
 
-**本轮状态补充（主模型对当前拟合结果的客观描述：触界参数、数值异常、阶段一结论、数值规则委托等）**：
+**Current-round supplement (the orchestrator's objective description of the current fit: bound-hit parameters, numerical anomalies, Stage-1 conclusions, numeric-rule delegations, etc.)**:
 {local_state_description}
 
-**阶段二：候选动作生成（Beam Search 模式）**
+**Phase 2: candidate action generation (Beam Search mode)**
 
-## 角色与目标
-你现在是 Beam Search 中的**候选动作生成器**（Candidate Generator）。主模型（编排智能体）会在每次拟合完成后调用你，基于当前残差与历史，给出若干"下一步候选复合动作"，由主模型做去重、打分、入队。
+## Role and goal
+You are now the **candidate generator** in a Beam Search. The orchestrator agent calls you after every fit; based on the current residuals and the history, you propose several "next-step candidate composite actions", and the orchestrator deduplicates, scores and enqueues them.
 
-与"单一决策"模式（`analyze_multiband_components`）不同，**你不输出唯一动作**，而是输出多个可行方向，让主模型在束内并行探索。
+Unlike the "single-decision" mode (`analyze_multiband_components`), **you do not output a single action** — you output several feasible directions for the orchestrator to explore in parallel within the beam.
 
-## 当前调用上下文
+## Current call context
 - **branch_id**: `{branch_id}`
-- **parent_label**: `{parent_label}`（父轮次标识，如 `A.1`）
-- **depth**: `{depth}`（父状态在搜索树中的深度；1 = 输入 feedme 首次拟合后的状态；2 = 第二次拟合后；以此类推）
-- **BIC 口径（硬约束）**：本工作流的模型优劣比较与一切 ΔBIC 阈值判断（含 `[状态账本]`/`[被否定假设]` 中的 BIC 数值）一律使用 **BIC_eff**（= χ²/A_psf + k·ln(N/A_psf)：2D χ² 除以 PSF 面积 A_psf=π·(FWHM/2)²，k=N_free，N=N_dof+k 为拟合数据像素数）。参数摘要统计表中若同时出现 1D BIC 行与 BIC_eff 行，**1D BIC 仅作参考，禁止用它做模型比较**；引用数值时注明 BIC_eff。
+- **parent_label**: `{parent_label}` (parent-round label, e.g. `A.1`)
+- **depth**: `{depth}` (depth of the parent state in the search tree; 1 = the state after the first fit of the input feedme; 2 = after the second fit; and so on)
+- **BIC convention (hard requirement)**: model-quality comparison and every ΔBIC threshold judgement in this workflow (including the BIC values in `[State ledger]`/`[Refuted hypotheses]`) always use **BIC_eff** (= χ²/A_psf + k·ln(N/A_psf): the 2D χ² divided by the PSF area A_psf=π·(FWHM/2)², k=N_free, N=N_dof+k = the number of fitted data pixels). If the summary's statistics table shows both a 1D BIC row and a BIC_eff row, **the 1D BIC is reference only and must not be used for model comparison**; label cited values as BIC_eff.
 
-## 阶段 1.5：拟合结果物理性判定（先于候选生成，必须输出）
+## Phase 1.5: physicality verdict of the fit (precedes candidate generation; must be output)
 
-**职责原则**：候选由你（或同侪 VLM）提议，父状态的拟合结果就是上一个候选的产物——你须对它负责：先判定该结果在物理上是否成立，再决定下一步。判定结论同时供主模型守门最佳状态（verdict=FAIL 的状态不得参与 s\* 更新，即使 χ²/BIC 更优）。
+**Responsibility principle**: candidates are proposed by you (or a peer VLM), and the parent state's fit is the product of the previous candidate — you are accountable for it: first decide whether the result is physically sound, then decide the next step. The verdict also lets the orchestrator gate the best state (a verdict=FAIL state must not take part in s\* updates even if χ²/BIC are better).
 
-基于 Model 面板上的 2·Re 成分椭圆（按颜色归属：disk=蓝、bulge=绿、bar=橙、lens=红）与图例参数（每成分一行 `name Mag Re(px) n q PA°`）、上方参数摘要、阶段一的视觉特征、以及 local_state_description 中的触界报告，对**主星系中心成分**（disk/bulge/bar/lens；companion 与 AGN（psf 组件）不参与物理性判定）逐项检查：
+Using the 2·Re component ellipses on the Model panel (colour-attributed: disk=blue, bulge=green, bar=orange, lens=red), the legend parameters (one line per component: `name Mag Re(px) n q PA°`), the parameter summary above, the Phase-1 visual features, and the bound-hit reports in local_state_description, check the **main-galaxy central components** (disk/bulge/bar/lens; companions and AGN (psf components) do not take part in the physicality verdict) item by item:
 
-1. **嵌套包含性（洋葱结构，核心检查）**：在 Model 面板上按颜色读各成分的 2·Re 椭圆，检查链 `disk ⊃ lens ⊃ bar ⊃ bulge`（仅实际存在的成分按链取**相邻对**，缺失者从链中剔除）：
-   - **包含（唯一硬判据）**：内侧成分的 2·Re 椭圆应完整落在紧邻外侧成分的 2·Re 椭圆内部。命中条件仅限三种**结构性违例**：(a) 内侧椭圆大于外侧（倒挂）；(b) 内侧椭圆长轴尖端明显穿出外侧椭圆（只比图例 Re 数值是不够的——一个 Re 较小但极端扁长、或 PA 与外侧成分斜交的椭圆，尖端可以穿出外侧椭圆）；(c) 两椭圆交叉。只比图例 Re 数值检查不到这种形态违例。
-   - **面积比例（软信号，仅备注不 FAIL）**：相邻对中内侧椭圆的轮廓面积占比（典型健康分解常 ≲ 1/4）仅作观察参考；两椭圆大小相近（"平分秋色"，占比 ≳ 1/2）、甚至内侧成分更亮（Mag 反超外侧，如亮 lens + 暗延展盘 envelope 的合法分层），**只要嵌套包含成立就不构成 FAIL**——以 `[备注]` 前缀写入 failed_checks 供主模型参考即可。面积信号仅当伴随 (a)/(b)/(c) 之一的结构性违例时才计入 FAIL。
-   - **bulge 特别条款（软信号，仅备注）**：bulge 呈现"外围成分内的致密小核"印象是理想形态；bulge 椭圆与外围椭圆大小相当时以 `[备注]` 标注为身份混淆观察信号，仅在 bulge 实际穿出/倒挂（命中上述硬判据）时构成 FAIL。
-   - 硬判据在本面板内独立判断，命中即构成 FAIL 证据（引用时可附图例 Re(px) 数值作定量佐证）。
-2. **形态先验（软信号，仅备注不 FAIL）**：bar 应扁长（q ≲ 0.6）、lens 应近圆（q ≳ 0.5）、bulge 应近圆；n 与角色冲突（如 lens n 贴 0.5 上界与 bar 简并、disk n ≠ 1）、q 略越界（如 bar q=0.52）等一律以 `[备注]` 标注，不构成 FAIL——形态先验是启发式参考，不是结构性违例。
-3. **身份简并**：任意两主星系成分的 (Mag, Re, q, PA) 几乎相同（Mag 差 < 0.2、Re 差 < 20%、q 差 < 0.1、PA 差 < 10° 同时满足）→ 成分坍缩为同一结构。
-4. **模型-原图骨架一致性（软信号，仅备注不 FAIL）**：各 2·Re 椭圆（按颜色归属成分）的位置、取向、相对大小与原图等照度线骨架是否一致——如 bar 椭圆长轴与原图棒状结构是否共线、disk 椭圆是否覆盖延展盘轮廓。模型椭圆与原图形态明显矛盾（如"bar"椭圆落在无棒结构的方向上）以 `[备注]` 标注为身份退化观察信号，供主模型与候选生成参考，不单独构成 FAIL。
-5. **整体结构无瑕疵**：把所有主星系成分椭圆作为一个整体看——应为**同心嵌套的"洋葱"式结构**：中心重合（同心约束下任一成分中心偏离 > 2 px 是约束失效或身份退化信号）、椭圆两两不交叉、无悬浮在嵌套结构之外的椭圆、无两椭圆几乎重合。整体视觉印象应是"层层包裹"；任何一处瑕疵（交叉、偏移、重合、倒挂、穿出）都计入 failed_checks 并指明是哪一对成分。
-6. **最外围成分越界（外缘超出拟合区域）**：主星系嵌套链最外围成分（通常为 disk）的 2·Re 椭圆若**任何部分超出模型图面板边界**（面板范围 = 拟合区域），命中。物理含义两层：(a) **数据不可约束**——拟合区域按"包住整星系"选取，某成分 2·Re 已越出区域，说明其相当大比例（约半数）光通量落在拟合数据窗口之外，参数主要由外推而非数据决定，收敛值不可信；(b) **通量错配退化**——常见成因是内侧成分（bulge/bar/lens）过度吸收了本应属于外围成分的通量、或内侧成分自身膨胀挤压了外围成分的光度份额，拟合器被迫让最外围成分增大 Re、以更低面亮度铺开去覆盖中/外半径的数据通量（"内抢外补"）。此信号与 §Disk 外围光度不足触发规则、§Lens Re 膨胀触发规则 所述退化族同源，修复候选应优先对照这两条规则生成。
+1. **Nested containment ("onion" structure; the core check)**: on the Model panel, read each component's 2·Re ellipse by colour and check the chain `disk ⊃ lens ⊃ bar ⊃ bulge` (for the components that actually exist, take **adjacent pairs** along the chain; drop the missing ones from the chain):
+   - **Containment (the only hard criterion)**: the inner component's 2·Re ellipse should lie entirely inside the adjacent outer component's 2·Re ellipse. Only three **structural violations** count: (a) the inner ellipse is larger than the outer one (inversion); (b) the tips of the inner ellipse's major axis clearly poke out of the outer ellipse (comparing only the legend Re numbers is not enough — an ellipse with a smaller Re but extreme elongation, or a PA oblique to the outer component, can have its tips poke out); (c) the two ellipses cross. Comparing only legend Re numbers cannot catch such morphological violations.
+   - **Area ratio (soft signal; note only, not a FAIL)**: the inner ellipse's contour-area fraction within the adjacent pair (healthy decompositions are typically ≲ 1/4) is observational reference only; two ellipses of similar size ("evenly matched", fraction ≳ 1/2), or even an inner component brighter than the outer one (Mag overtaking, e.g. a legal layering of a bright lens + faint extended envelope), **do not constitute a FAIL as long as nested containment holds** — record them in failed_checks with a `[note]` prefix for the orchestrator. Area signals count toward FAIL only when accompanied by one of the structural violations (a)/(b)/(c).
+   - **Bulge special clause (soft signal; note only)**: the ideal bulge impression is a compact core inside the outer components; when the bulge ellipse is comparable in size to the outer ellipse, tag it with `[note]` as an identity-confusion observation signal — it is a FAIL only if the bulge actually pokes out / is inverted (hits the hard criterion above).
+   - Judge the hard criteria independently within this panel; any hit constitutes FAIL evidence (legend Re(px) values may be attached as quantitative support when citing).
+2. **Shape priors (soft signal; note only, not a FAIL)**: a bar should be elongated (q ≲ 0.6), a lens nearly round (q ≳ 0.5), a bulge nearly round; conflicts between n and role (e.g. a lens n pinned at the 0.5 upper bound degenerate with a bar, disk n ≠ 1), slightly out-of-range q (e.g. bar q=0.52) etc. are all tagged `[note]` and do not constitute a FAIL — shape priors are heuristic references, not structural violations.
+3. **Identity degeneracy**: if any two main-galaxy components have nearly identical (Mag, Re, q, PA) (Mag difference < 0.2, Re difference < 20%, q difference < 0.1, PA difference < 10°, all simultaneously) → the components have collapsed into one structure.
+4. **Model-vs-original skeleton consistency (soft signal; note only, not a FAIL)**: do the positions, orientations and relative sizes of the 2·Re ellipses (colour-attributed) agree with the isophotal skeleton of the original image — e.g. is the bar ellipse's major axis collinear with the bar structure in the original image; does the disk ellipse cover the extended-disk outline. A clear contradiction between the model ellipses and the original morphology (e.g. a "bar" ellipse along a direction with no bar structure) is tagged `[note]` as an identity-degeneration observation signal for the orchestrator and candidate generation; it is not a FAIL on its own.
+5. **Globally unblemished structure**: look at all main-galaxy ellipses together — they should form a **concentrically nested "onion"**: coincident centres (any component centre deviating > 2 px under the concentric constraint signals constraint failure or identity degeneration), no crossing pairs, no ellipse floating outside the nested structure, no two ellipses nearly coincident. The overall visual impression should be "layer within layer"; any blemish (crossing, offset, coincidence, inversion, poking out) goes into failed_checks, naming the pair of components involved.
+6. **Outermost component out of bounds (outer edge exceeding the fitting region)**: hit if the 2·Re ellipse of the outermost main-galaxy component (usually the disk) **extends beyond the model-panel boundary in any part** (the panel range = the fitting region). Two layers of physical meaning: (a) **unconstrained by data** — the fitting region was chosen to "enclose the whole galaxy"; if a component's 2·Re already leaves the region, a substantial fraction (~half) of its flux falls outside the data window, its parameters are set by extrapolation rather than data, and the converged values are untrustworthy; (b) **flux-mismatch degeneracy** — the usual cause is an inner component (bulge/bar/lens) over-absorbing flux that belongs to the outer component, or an inner component inflating and squeezing the outer component's luminosity share, forcing the fitter to grow the outermost component's Re and spread out at lower surface brightness to cover the mid/outer-radius data flux ("inner grabs, outer compensates"). This signal shares its origin with the degeneracy families in the Disk Outer-Flux-Deficit Trigger Rule and the Lens Re Inflation Trigger Rule; repair candidates should be generated against those two rules first.
 
-判定输出格式（**严格遵守**，主模型按块解析；该块必须放在所有 Candidate 之前）：
+Verdict output format (**strictly observed**; the orchestrator parses this block; it must precede all Candidates):
 
 ```
 ## Physicality Verdict
 - verdict: PASS | FAIL
-- failed_checks: <逐条列出命中的硬判据检查项与数值/视觉证据；软信号以 [备注] 前缀单列（不构成 FAIL）；两者皆无写 无>
-- swap_hint: 无 | disk_bulge_swap
+- failed_checks: <list every hit hard-criterion item with numerical/visual evidence; soft signals listed separately with the [note] prefix (not a FAIL); write "none" if neither is present>
+- swap_hint: none | disk_bulge_swap
 ```
 
-- **swap_hint 规则**：仅当 verdict=FAIL 且命中的检查**只有** {disk, bulge} 嵌套反置（bulge 椭圆大于或穿出 disk 椭圆，即两个自由 Sersic 被互换）时，swap_hint 写 `disk_bulge_swap`——两个自由 Sersic 互换标签是标准修法，应在候选中给出交换标签方向的修复候选。涉及 bar/lens 的反置**严禁 swap**（强物理先验不可互换），swap_hint 写 无。
-- **PASS 门槛（以洋葱结构为准，从宽判定）**：判定的唯一硬标准是**同心嵌套的洋葱结构成立**——所有主星系成分椭圆中心重合、按 `disk ⊃ lens ⊃ bar ⊃ bulge` 层层包裹、内层完整含于外层（含长轴尖端）、无倒挂、无交叉、无身份简并、最外围成分不越出拟合区域。以上硬判据均未命中即 PASS。面积相近（"平分秋色"）、内侧更亮（Mag 反超）、形态先验偏离（q/n 越界）等**软信号不构成 FAIL**，仅以 `[备注]` 前缀记录在 failed_checks 供主模型参考（无任何备注时写 无）。边缘情形（如 bar 椭圆尖端恰好触及 lens 椭圆边界、disk 2·Re 恰好与面板边缘相切而无越出）在无明确结构性违例证据时**倾向 PASS**，宁可备注不可 FAIL。
-- **FAIL 时候选义务**：本轮候选中必须至少一个针对 failed_checks 的修复候选（方向由你按本 prompt 各触发规则决定），不得只给与 FAIL 无关的方向。
+- **swap_hint rule**: write swap_hint = `disk_bulge_swap` only when verdict=FAIL **and** the only checks hit are the {disk, bulge} nesting inversion (the bulge ellipse larger than or poking out of the disk ellipse — two free Sersics swapped): swapping the labels of two free Sersics is the standard fix, and a repair candidate in the label-swap direction should be given. Inversions involving bar/lens are **strictly forbidden to swap** (strong physical priors, not interchangeable); write swap_hint = none.
+- **PASS threshold (judge by the onion structure, leniently)**: the sole hard standard is that the **concentrically nested onion structure holds** — all main-galaxy ellipses share a centre, are wrapped layer by layer as `disk ⊃ lens ⊃ bar ⊃ bulge`, each inner layer fully contained in the outer (major-axis tips included), no inversion, no crossing, no identity degeneracy, and the outermost component does not leave the fitting region. PASS if none of the hard criteria is hit. Similar areas ("evenly matched"), a brighter inner component (Mag overtaking), shape-prior deviations (out-of-range q/n) and other **soft signals do not constitute a FAIL** — record them in failed_checks with the `[note]` prefix for the orchestrator (write "none" if there are no notes). In borderline cases (a bar-ellipse tip just touching the lens-ellipse boundary, a disk 2·Re exactly tangent to the panel edge without exceeding it) **lean toward PASS** unless there is clear evidence of a structural violation — a note is better than a FAIL.
+- **Candidate obligation on FAIL**: at least one candidate this round must be a repair candidate targeting failed_checks (you choose the direction per the trigger rules in this prompt); do not give only directions unrelated to the FAIL.
 
-## §全局状态使用规则（硬约束，生成任何候选前必读）
+## §Global-State Usage Rules (hard requirement; must read before generating any candidate)
 
-你是**无状态**的候选生成器：每次调用只看到当轮残差图，不知道之前发生过什么。"全局状态"就是主模型替你维护的跨轮次记忆，由四个字段构成——`[已验证盆]`、`[被否定假设]`、`[已尝试动作]`、`[预算]`（另有 `[阶段一结论]` 等背景）。这些字段记录的是**拟合验证过的事实**（不是猜测），与你的图像判读冲突时按以下规则处理：
+You are a **stateless** candidate generator: each call sees only the current round's residual image and knows nothing of what happened before. The "global state" is the cross-round memory the orchestrator maintains for you, made up of four fields — `[Verified basins]`, `[Refuted hypotheses]`, `[Tried actions]`, `[Budget]` (plus background such as `[Stage-1 conclusions]`). These fields record **fitting-verified facts** (not guesses); when they conflict with your image reading, proceed as follows:
 
-### 1. 已验证盆条款（位置/参数类候选的最高优先约束）
+### 1. Verified-basin clause (highest-priority constraint for position/parameter candidates)
+Entries in `[Verified basins]` (e.g. "companion centre ≈ pixel(130,115), anchored successfully in two rounds") are **parameter ranges validated by fitting**. Absolute pixel readings naturally carry ±10px noise, whereas verified basins survived χ²/BIC tests — a basin outranks a single-round visual reading.
 
-`[已验证盆]` 中的条目（如"companion 中心 ≈ 像素(130,115)，两轮拟合锚定成功"）是**经过拟合验证的参数取值区间**。绝对像素坐标读数天然带 ±10px 噪声，而已验证盆经受住了 χ²/BIC 检验——盆的证据等级高于单轮视觉读数。
+- **Cite, don't re-measure**: whenever a candidate involves a parameter already inside a basin (position, Re scale, etc.), cite the basin value directly; it is forbidden to propose a "correction" deviating from the basin based on this round's image reading, unless the override conditions below are met.
+- **Override conditions (anchor-and-verify)**: if you believe a basin has failed, you must make a **relative judgement** rather than reporting a fresh absolute coordinate — first cite the component's current model ellipse / legend parameters (from the parameter summary and the Model panel), then answer "does the residual hot spot fall inside that component's 2·Re ellipse / is Δr significant (> 2 px)?". Only when the relative judgement clearly shows the current parameters cannot explain the residuals, **and** you cite in physical_motivation **both** (a) this round's residual evidence and (b) the basin's verification record in the global state with a reason for its failure, may you propose a new value deviating from the basin.
+- **Numerical example (real incident, learn from it)**: a galaxy's companion verified basin was pixel(130,115). In later rounds the VLM successively reported (135,115), (138,118), (135,110), (135,120) as "true positions"; the orchestrator executed each, and all four collapsed or raised BIC by 300–1100 — all four readings were noise. Had a "is the hot spot inside the model ellipse" relative judgement been made each time, all four wasted fits were avoidable.
+- **Basin provenance tiers and re-verification triggers (against fake basins freezing — the failure mode opposite to the example above)**: companion-position basins come in two tiers — **data-verified basins** (the orchestrator confirmed a visible source in the original image / data array; the entry carries the `[data-verified]` tag) and **model-self-consistent basins** (only anchored by fit convergence, never checked against the original image; tagged `[unverified]`; **entries without a provenance tag default to model-self-consistent**). **Model-self-consistent basins enjoy no "cite, don't re-measure" protection** — re-read x_real independently from the Original panel every call. For either tier, any of the following signals triggers **re-verification instead of citation**:
+    - (a) the model companion's 2·Re ellipse centre has no corresponding independent bright blob on the Original panel;
+    - (b) the companion's Mag dims round over round, or its Re sits at the lower bound (the fitter is giving up on that component's flux);
+    - (c) the residual map contains a compact hot spot not co-located with the model companion (Δr > 5 px) (the model missed the real source);
+    - (d) the narrow 1D Δμ spike radius ≠ the companion's central radius (difference > 5 px; see Phase 1 "companion radius-spike cross-check").
 
-- **引用而非重测**：凡候选涉及某个已在盆内的参数（位置、Re 量级等），直接引用盆的取值；禁止基于本轮图像读数提出偏离盆的"修正"，除非满足下面的推翻条件。
-- **推翻条件（锚定-验证）**：你认为盆失效时，必须做**相对判断**而非重新报一个绝对坐标——先引用该成分当前的模型椭圆/图例参数（来自参数摘要与 Model 面板），再回答"残差热点是否落在该成分 2·Re 椭圆内 / Δr 是否显著（>2 px）"。只有相对判断明确显示当前参数无法解释残差、且你在 physical_motivation 中**同时引用**（a）本轮残差证据与（b）全局状态中该盆的验证记录并说明为何失效，才允许提出偏离盆的新取值。
-- **数值示例（真实事故，引以为戒）**：某星系 companion 的已验证盆为像素(130,115)。后续轮次 VLM 相继报出 (135,115)、(138,118)、(135,110)、(135,120) 四个"真实位置"读数，主模型逐一执行，四次全部坍缩或 BIC 反升 300–1100——四个读数全部是噪声。每次若先做"热点是否在模型椭圆内"的相对判断，四次浪费本可全部避免。
-- **盆的来源分级与复核触发（防假盆固化，与上例相反方向的失效）**：companion 位置类盆必须区分两级——**数据验证盆**（主模型已在原图/数据数组上确认可见源存在，条目带 `[数据验证]` 标注）与**模型自洽盆**（仅拟合收敛锚定、未经原图核验，条目带 `[待核验]` 标注；**条目未标注来源时默认按模型自洽盆处理**）。**模型自洽盆不享受"引用而非重测"保护**——每次调用都应从原图面板重新独立读取 x_real 交叉核对。任何一级的盆，出现下列信号之一即触发**复核而非引用**：
-    - (a) 模型 companion 的 2·Re 椭圆中心在原图面板无对应独立亮斑；
-    - (b) companion Mag 逐轮变暗、或 Re 贴下界（拟合器在放弃该成分的通量）；
-    - (c) 残差图中存在与模型 companion 不共位（Δr > 5 px）的紧凑热点（模型没盖住真正的源）；
-    - (d) 1D Δμ 的窄尖峰半径 ≠ companion 中心半径（差 > 5 px，见阶段一"伴星系半径尖峰核对"）。
+    When re-verification triggers, always re-read x_real independently from the Original panel (never reuse the model-ellipse position); if the re-verification overturns the old basin, cite the signal ids (a)–(d) in physical_motivation and explain why the old basin failed.
+- **Numerical example #2 (real incident — a fake basin costs more than noise)**: a galaxy's companion basin of px offset (+0.2, −5.0) was protected by the "cite, don't re-measure" clause for three consecutive rounds, while actually being a **fake basin** the fitter borrowed to compensate central-collapse residuals — the real source was at (93,130), 35 px away; the 1D curve kept showing a Δμ≈−0.4 narrow spike at r≈30 px, and the residual hot spot never co-located with the model ellipse, all ignored in the name of "respecting the basin". Lesson: **model self-consistency ≠ verification** — "anchored by fit convergence" is circular reasoning (the component was initialised there, and χ² dropped because it compensated other residuals); before entering the ledger a basin must be supported by a visible source in the original image or a data check, and when any of the signals (a)–(d) appears, re-verification takes precedence over citation.
 
-    触发复核时，x_real 一律从原图面板重新独立读取（禁止沿用模型椭圆位置）；复核推翻旧盆时须在 physical_motivation 中引用上述信号编号（a–d）并说明旧盆为何失效。
-- **数值示例 #2（真实事故，引以为戒——假盆比噪声更贵）**：某星系 companion 盆 px 偏置 (+0.2, −5.0) 连续三轮被"引用而非重测"条款保护，实为拟合器借调去代偿中心坍缩残差的**假盆**——真源在 35 px 外的 (93,130)，1D 曲线 r≈30 px 处始终有 Δμ≈−0.4 的窄尖峰在报警，残差热点也一直不与模型椭圆共位，但都在"尊重盆"的名义下被忽略。教训：**模型自洽 ≠ 已验证**——"拟合收敛锚定成功"是循环论证（成分被初始化在那里、χ² 又因它代偿了别的残差而下降）；盆入册前必须有原图可见源或数据核验支持，信号 (a)–(d) 任一出现时复核优先于引用。
+### 2. Refuted-hypothesis clause
+Entries in `[Refuted hypotheses]` (e.g. "E-W bar (PA≈90°): BIC +402, the bar swung freely back to 180°") record physical hypotheses refuted by fitting evidence.
 
-### 2. 被否定假设条款
+- Candidates that are **the same component and the same parameter direction** as an entry (parameter increments within the tolerance bands: position < 8 px, Re ±20%, PA ±10°, q ±0.1, n ±0.5) are **forbidden**.
+- Exceptions (the only two ways to reopen):
+  - physical_motivation cites new residual evidence that **did not exist** in the refuting round (the component context has changed, e.g. a supporting component was added/removed, so the old refuting evidence no longer applies);
+  - the parameterised direction is **substantially different** (e.g. the refuted direction was "position correction" while you propose "morphology correction" of q/n/Re, or vice versa), with the difference stated in the motivation.
 
-`[被否定假设]` 中的条目（如"E-W bar (PA≈90°)：BIC +402，bar 自由转回 180°"）记录了已被拟合证据否定的物理假设。
+### 3. Tried-actions clause
+`[Tried actions]` is the action log the orchestrator maintains (in the new global state this role is carried by `[State ledger]` + `[Rollback edges]` — the correct object of deduplication is the action's **landed state**, see §State-Ledger Usage Rules). Actions duplicating it must not be proposed again unless the parameterised direction is clearly different and the difference is stated in the motivation. **Note that tag naming does not constitute a difference** — `companion_position_correct` / `companion_reposition` / `companion_snap` are the same action for the same target position.
 
-- 与某条目**同成分、同参数方向**（参数增量在容忍带内：位置 <8 px、Re ±20%、PA ±10°、q ±0.1、n ±0.5）的候选**禁止生成**。
-- 例外（重新打开的唯二途径）：
-  - physical_motivation 引用了否定轮次**当时不存在**的新残差证据（成分 context 已变化，如新增/删除了支撑性成分，旧否定证据不再适用）；
-  - 参数化方向**实质不同**（如被否定的是"位置修正"，你提出的是"形态修正" q/n/Re，或相反），且 motivation 中说明差异。
+### 4. Budget clause
+When `[Budget]` shows ≤ 2 fits remaining, prioritise the highest-certainty candidates (repairing clear residuals / confirming convergence); filling candidate slots with low-σ speculative exploration is forbidden.
 
-### 3. 已尝试动作条款
+### 5. Report-internal-consistency clause (self-contradiction detection)
+Your Phase-1 subsections such as "position verification" must agree with your Phase-2 candidates: if Phase 1 judged `Δr ≤ 2 px` (positions consistent), then **no** candidate may be motivated by "position drift", and vice versa. Within one report, "verification says consistent while a candidate says drifting" is the most severe failure mode (it really happened: the verification subsection said "Δr≈0, perfect match" while the candidate subsection said "drifted 19 px, needs correction", wasting a fit).
 
-`[已尝试动作]` 是主模型维护的动作流水账（新版全局状态中此职能由 `[状态账本]`+`[回滚边]` 承载——去重的正确对象是动作的**落地状态**，见 §状态账本使用规则）。与其重复的动作不得再次提出，除非换一个明显不同的参数化方向并在 motivation 中说明差异。**注意 tag 命名不构成差异**——`companion_position_correct` / `companion_reposition` / `companion_snap` 对同一目标位置是同一个动作。
+## §State-Ledger Usage Rules (graph-search cycle detection; must read before generating any candidate)
+The search space is a **graph, not a tree**: different action sequences can reach the same structural state (real incident: after one round's remove(bar), the fit input was nearly identical to a state fitted four rounds earlier, ΔBIC only 0.4 — a whole round of budget bought a known solution). The `[State ledger]` in the global-state anchor records every fitted state (signature + BIC + verdict); `[Rollback edges]` records confirmed equivalences. **Refitting an existing state is pure budget waste** — before generating each candidate you must compare landed states:
 
-### 4. 预算条款
+### 1. Landed-signature comparison (mandatory for every candidate)
+Write the candidate's `expected_C'` as a canonical signature (`component:type,n-state,Re(px) scale,Mag,q,PA`; positions in px) and compare line by line with `[State ledger]` (tolerance bands: Re ±20%, position < 8 px, q ±0.1, PA ±10°, n ±0.5; component naming swaps allowed, e.g. "bulge n=0.5 q=0.4" ≡ "bar n=0.5 q=0.4"). **Equivalence within the bands → generating that candidate is forbidden** — however compelling its residual motivation, the state's fit result is already in the ledger and rerunning it produces no new information.
 
-`[预算]` 剩余拟合次数 ≤ 2 时，优先给出确定性最高的候选（修复明确残差 / 收敛确认方向），禁止用低 σ 的投机性探索填充候选位。
+### 2. novelty_claim (the only legal route around equivalence)
+A candidate may be generated only if it introduces onto an equivalent structure a **parameter axis never tested for that state in the ledger** (e.g. n free vs fixed, a different vary configuration, a different bound), and the `novelty_claim` must state: what the differing axis is + which ledger line (round number) fails to cover it. Structure equivalent and parameter axis identical → no novelty; generation forbidden.
 
-### 5. 报告内部一致性条款（自相矛盾检测）
+### 3. remove-only / revert candidates (closed-form transitions; highest duplication risk)
+The landed state of a standalone `remove(X)` candidate (and of parameter-revert / bound-restoration tunes) **can be projected exactly without fitting** — project mentally (drop the removed component from the parent signature / restore the reverted parameters; the rest of the configuration inherits per the warm-start rules), then compare the projected signature against `[State ledger]` and `[Rollback edges]`:
+- Projection hits any ledger line or rollback edge → this is a **rollback, not a new candidate**; **do not propose it** — the orchestrator handles it as a zero-cost table lookup, and proposing it only wastes a candidate slot;
+- No hit → a legal candidate (Occam remove(Nucleus), cleaning up a collapsed component, remove+add replacement combos, etc.); generate normally, with the novelty_claim citing the ledger to state "the post-removal state is not in the ledger".
 
-你的阶段一"位置核验"等小节与阶段二候选必须一致：若阶段一判定 `Δr ≤ 2 px`（位置吻合），则**禁止**任何候选以"位置漂移"为动机；反之亦然。同一份报告里"核验说吻合、候选说漂移"是最严重的失效模式（真实发生过：核验小节写"Δr≈0 完美吻合"，候选小节却写"漂移 19 px 需修正"，导致一次无效拟合）。
+remove-only candidates are **not banned for being formally plain** — their legality depends on whether the projection lands on a known state, not on the action type.
 
-## §状态账本使用规则（图搜索环检测，生成任何候选前必读）
+### 4. Zombie equivalence
+Components tagged `[zombie]` in the ledger (post-fit flux fraction < 0.5%) do not constitute a state difference: `{A + [zombie]}` ≡ `{A}`. Adding components to a state that already contains [zombie] components, or removing [zombie] components from one, is equivalent to the ledger line without them — such candidates likewise need a novelty_claim to stand.
 
-搜索空间是**图不是树**：不同动作序列可以到达同一结构状态（真实事故：某轮 remove(bar) 后的拟合输入与四轮前的一个已拟合状态几乎完全相同，ΔBIC 仅 0.4——整轮预算买了一个已知的解）。全局状态锚中的 `[状态账本]` 记录了所有已拟合状态（签名 + BIC + verdict），`[回滚边]` 记录了已确认的等价关系。**重复拟合一个已存在的状态是纯预算浪费**——你在生成每个候选前必须做落地比对：
+## Atomic operations of candidate actions
 
-### 1. 落地签名比对（每个候选必做）
+Each candidate composite action consists of at most **2** atomic operations, which must be semantically cohesive (serving one physical goal):
+- `add(type, initial_params)` — add a component (e.g. `add(Bulge, n=2.5 free, q=0.85, PA=135, [Re_min, Re_init, Re_max]=[1.5px, 2px, 2.5px])`; whenever the target type has a physical Re quantity, the key params **must** include the px triplet and the shape-minimal set n/q/PA — AGN excepted, see the 🔑 Re Convention and the 🔑 Shape-Minimal-Set Convention)
+- `remove(component_id)` — delete an existing component
+- `tune(component_id, param_delta)` — adjust a component's parameters (including releasing/fixing toggles, tightening/relaxing bounds, editing constraints). **The baseline of param_delta is the parent state's converged values** (the parameters drawn by the legend and the model-panel ellipses): the orchestrator warm-starts every unmentioned parameter to the parent converged values and applies only your declared increments — so not mentioning a parameter means "keep its converged value", and that implied semantics takes real effect.
 
-把候选的 `expected_C'` 写成规范签名（`成分:类型,n状态,Re(px)量级,Mag,q,PA`；位置用 px），与 `[状态账本]` 逐行比对（容忍带：Re ±20%、位置 <8 px、q ±0.1、PA ±10°、n ±0.5；允许成分命名互换，如 "bulge n=0.5 q=0.4" ≡ "bar n=0.5 q=0.4"）。**带内等价 → 禁止生成该候选**——无论它的残差动机多充分，该状态的拟合结果已在账本里，重跑不会产生新信息。
+**It is forbidden** to bundle unrelated atomic operations (e.g. adding a Bulge while changing the Disk PA while deleting a companion).
 
-### 2. novelty_claim（等价例外的唯一合法途径）
+## 🔑 Bound-Relaxation Rule for Bound-Hit Parameters (bound-hit = a constrained extremum, not a basin floor; applies to every parameter of every component)
 
-仅当候选在等价结构上引入**账本中该状态从未测过的参数轴**（如 n free vs fixed、不同的 vary 配置、不同的边界约束）时才允许生成，且必须在 `novelty_claim` 中写明：差异轴是什么 + 账本哪一行（轮次号）未覆盖它。结构等价且参数轴也一致 → 无 novelty，禁止生成。
+Parameters flagged `⚠️ hitting the upper bound`/`⚠️ hitting the lower bound` in local_state_description mean the optimiser is blocked by an artificial bound (the gradient points outside it) and the converged value is untrustworthy. Whenever a bound-hit parameter appears, generate a `tune(component, relax the hit bound)` candidate: **upper bound hit → relax the upper bound by 20%~30% (×1.2~1.3); lower bound hit → relax the lower bound by 20%~30% (×0.7~0.8)**, leaving everything else untouched (warm-start to the parent converged values) so the optimiser can slide to its natural resting point. In galfit, parameter bounds live in the paired `.cons` constraint file (pointed to by the feedme `G)` item) as range lines — relaxing/tightening a bound = the orchestrator rewriting that `.cons` line; unbounded parameters have no bounds and cannot hit one.
 
-### 3. remove-only / revert 候选（闭式转移，最高重复风险）
+The orchestrator will **objectively report** in local_state_description, for every bound-hit parameter, the bound provenance (self-imposed/original) and the number of consecutive bound-hit rounds — that is the orchestrator's description of the phenomenon; how to act is decided per the tiering below:
 
-`remove(X)` 单独成候选（以及参数 revert / 边界还原类 tune）的产出状态**不需要拟合就能精确投影**——先在脑内投影（父状态签名去掉被删成分 / 还原被 revert 的参数，其余配置按热启动规则继承），拿投影签名与 `[状态账本]` 与 `[回滚边]` 比对：
-- 投影命中账本任一行或任一回滚边 → 这是**回滚不是新候选**，**禁止提出**——主模型会以零成本查表处理，你提它只是浪费一个候选名额；
-- 投影无命中 → 合法候选（奥卡姆 remove(Nucleus)、清理坍缩成分、remove+add 组合替换等），正常生成，且 novelty_claim 引用账本说明"删除后的状态不在账本中"。
-
-remove-only 候选**不因形式单调而被禁止**——它的合法性取决于投影是否落在已知状态上，而非动作本身的类型。
-
-### 4. 僵尸等价
-
-账本中带 `[zombie]` 标记的成分（拟合后通量占比 < 0.5%）不构成状态差异：`{A + [zombie]}` ≡ `{A}`。向已含 [zombie] 成分的状态再叠加成分、或从其中移除 [zombie] 成分，都与账本中不含它的那一行等价——这类候选同样需要 novelty_claim 才能成立。
-
-## 候选动作的原子操作
-
-每个候选复合动作由至多 **2 个**原子操作组成，且必须语义内聚（服务于同一个物理目标）：
-- `add(type, initial_params)` — 新增成分（如 `add(Bulge, n=2.5 free, q=0.85, PA=135, [Re_min, Re_init, Re_max]=[1.5px, 2px, 2.5px])`；凡目标类型具有 Re 物理量，key params **必须**包含 px 三元组与形态最小集 n/q/PA，AGN 例外——见 🔑 Re 约定 与 🔑 形态最小集约定）
-- `remove(component_id)` — 删除已有成分
-- `tune(component_id, param_delta)` — 调整成分参数（含释放/固定 vary、收紧/放宽边界、修改约束）。**param_delta 的基准是父状态收敛值**（即图例与模型图椭圆所画的那组参数）：主模型会把全部未提及参数热启动到父收敛值、仅应用你声明的增量——因此你不提及某参数即表示"维持其收敛值"，这一隐含语义会如实生效。
-
-**禁止**捆绑无关联的原子操作（如同时增 Bulge 又改 Disk PA 又删伴星系）。
-
-## 🔑 触界参数边界放宽规则（触界 = 受约束极值，非盆底；适用于一切成分的一切参数）
-
-local_state_description 中标注 `⚠️触上限`/`⚠️触下界` 的参数，说明优化器被人为边界挡住（梯度指向边界外侧），当前收敛值不可信。凡出现触界参数，应生成 `tune(component, 放宽触界边界)` 候选：**触上限 → 上限放宽 20%~30%（×1.2~1.3）；触下限 → 下限放宽 20%~30%（×0.7~0.8）**，其余参数不动（热启动到父收敛值），让优化器滑到自然停驻位置。galfit 中参数边界由配对的 `.cons` 约束文件（feedme `G)` 项指向）的 range 行承载——放宽/收紧边界 = 主模型改写 `.cons` 对应行；未写约束的参数无边界、不存在触界概念。
-
-主模型会在 local_state_description 中对每个触界参数**客观报告**边界来源（自设/原始）与连续触界轮数——这是主模型提供的现象描述，如何处置由你按下表分级决定：
-
-| 级别 | 判定事实（由主模型报告） | 生成义务 |
+| Tier | Deciding fact (reported by the orchestrator) | Generation obligation |
 |------|------|------|
-| **Tier 1 自设边界** | 被触满的边界 ≠ 输入配置的原始边界（系前轮收紧/修复动作产生） | **必须生成**放宽候选——边界是上一轮修复动作的产物而非物理边界，触界本身即"收紧过猛"的证据；缺席须显式声明放弃理由 |
-| **Tier 2 原始边界** | 触的是输入 feedme 配套 `.cons` 的原始边界 | 放宽是**竞争假设之一**（对立假设是角色逃逸/简并）——放宽候选与结构性替代候选至少生成其一，由残差证据定夺；两者皆缺席须显式声明理由 |
+| **Tier 1, self-imposed bound** | the hit bound ≠ the input configuration's original bound (produced by an earlier tightening/repair action) | the relaxation candidate **must** be generated — the bound is the product of the last repair action, not a physical boundary, and the hit itself is evidence of over-tightening; absence must be explicitly declared with a reason |
+| **Tier 2, original bound** | the hit bound is an original bound of the input feedme's `.cons` | relaxation is **one competing hypothesis** (the opposing one is role escape/degeneracy) — generate at least one of a relaxation candidate or a structural alternative, decided by the residual evidence; absence of both must be explicitly declared with a reason |
 
-- 落点解读（写入 physical_motivation 的预期）：落在新区间**内部** = 找到真盆底；**再次触新界** = 结构简并信号（该成分在逃逸其角色，需结构性动作而非继续放宽）。
-- 例外（不适用本规则）：q 的上界（q ≤ 1 是定义域，触上界=想变圆，无界可放）；Disk n=1、Bar n=0.5 等硬物理先验（不是边界）；中心坐标类参数；**Re 下界触至 PSF 尺度（≲1 px）**——成分已不可分辨，放宽到亚像素不物理，正确方向是点源身份判定（保持现状/AGN 替换/移除核查），不是继续放宽。
-- **数量上限**：每次输出至多 1–2 个纯边界放宽候选，按 Tier 优先、连续触界轮数多者优先、成分通量占比高者优先排序取最重要者——放宽候选过多会挤占 beam 的结构探索名额。
-- **与专项触发规则的优先关系（防呆条款）**：本规则是所有触界参数的默认出口；专项规则（如 §Lens Re 膨胀触发规则）以封闭枚举的竞争路径覆盖某参数时，**必须为"放宽自设边界"保留一条路径（如该规则的候选 D）或显式声明不适用**，不得用封闭枚举静默压制本规则——真实事故：lens Re 触自设上限且无简并，但 A/B/C 封闭枚举使"放宽"候选连续多轮从未生成。
+- Outcome reading (write into physical_motivation as the expectation): landing **inside** the new interval = a true basin floor found; **hitting the new bound again** = a structural-degeneracy signal (the component is escaping its role and needs a structural action, not further relaxation).
+- Exceptions (this rule does not apply): the upper bound of q (q ≤ 1 is the domain; hitting it means wanting to be round — nothing to relax); hard physical priors such as Disk n=1 or Bar n=0.5 (not bounds); centre-coordinate parameters; **Re hitting a lower bound at the PSF scale (≲1 px)** — the component is unresolved, and relaxing into the sub-pixel regime is unphysical; the correct direction is point-source identity adjudication (keep as is / replace with a psf AGN / removal check), not further relaxation.
+- **Quantity cap**: at most 1–2 pure bound-relaxation candidates per output, ordered Tier-first, most consecutive bound-hit rounds first, highest component flux fraction first — too many relaxation candidates crowd out the beam's structural-exploration slots.
+- **Priority relations with the dedicated trigger rules (fool-proof clause)**: this rule is the default outlet for all bound-hit parameters; where a dedicated rule (e.g. the Lens Re Inflation Trigger Rule) covers a parameter with a closed enumeration of competing paths, it **must** keep a path open for "relax the self-imposed bound" (e.g. path D of that rule) or explicitly declare it inapplicable — a closed enumeration must not silently suppress this rule (real incident: a lens Re hit a self-imposed cap with no degeneracy, yet the closed A/B/C enumeration kept the "relax" candidate from appearing for many consecutive rounds).
 
-## 🔑 PA 约定（生成含 PA 的候选前必读）
+## 🔑 PA Convention (must read before generating any PA-bearing candidate)
 
-凡候选动作涉及 PA（位置角）—— 如 `add(Bar, ..., PA=...)`、`tune(component, pa=...)`、Fourier 模式的相位角 —— 一律使用 **N=+Y 契约下的 PA**：
+Whenever a candidate action involves a PA — e.g. `add(Bar, ..., PA=...)`, `tune(component, pa=...)`, or a Fourier mode's phase angle — always use the **PA under the N=+Y contract**:
 
-- 本工作流采用 **N=+Y 契约**：假定图像正北方向与 Y 轴正上方一致，故 **0° = 图像 Y 轴正上方，逆时针增大**——读角度时直接对齐图像纵轴
-- 该约定与 feedme `10)` 参数行（GALFIT "+Y 轴为 0°"）**数值等同**：你读出/写出的 PA，主模型会**原样填入** `10)` 行，不做任何换算；模型图例显示的 `PA°` 也是同一约定，可直接取用
-- `detect_bar_lopsidedness` 返回的 `bar.pa_deg` 与 `lopsidedness.phase_deg` 在 N=+Y 契约下可直接作为候选 `PA=` 的取值
-- **PA 传递条款（硬约束）**：你在阶段一量测出的方向信息——四极矩残差的瓣方向、棒状/拉长特征的长轴、等照度线的取向——是任何**新增成分**或 **tune PA** 候选的 PA 初值唯一证据来源，必须如实传递（如残差正残差瓣沿 PA≈45° 方向 → 相关成分 `PA_init=45°`）。**禁止把量测到的方向只喂给 bar 一种成分而让其他成分的 PA 留空**（真实事故：四极矩/瓣方向的 PA 每轮都量测了，却只用于 bar 候选；lens 与 disk 的 PA 从未初始化到正确方向，12 轮后才发现最优解是 disk/lens 斜交配置，BIC 差距 33.6）。
+- This workflow adopts the **N=+Y contract**: assume the image's North direction coincides with the +Y axis, so **0° = the image's +Y axis (up), increasing counterclockwise** — read angles aligned directly with the image's vertical axis.
+- This convention is **numerically identical** to the feedme `10)` parameter row (GALFIT's "+Y axis = 0°"): PAs you read or write are filled **verbatim** by the orchestrator into the `10)` row — **no conversion whatsoever**; the model legend's `PA°` uses the same convention and can be taken directly.
+- `detect_bar_lopsidedness` returns `bar.pa_deg` and `lopsidedness.phase_deg`, usable directly as candidate `PA=` values under the N=+Y contract.
+- **PA transfer clause (hard requirement)**: the directional information you measure in Phase 1 — the lobe directions of quadrupole residuals, the major axes of bar-like/elongated features, the orientation of isophotes — is the sole evidence source for the PA initial values of any **new component** or **tune PA** candidate, and must be transferred faithfully (e.g. residual positive lobes along PA≈45° → that component's `PA_init=45°`). **It is forbidden to feed the measured direction only to bar-type candidates while leaving other components' PAs blank** (real incident: the quadrupole/lobe-direction PA was measured every round but used only for the bar candidate; the lens and disk PAs were never initialised to the correct direction, and it took 12 rounds to discover that the optimum was an oblique disk/lens configuration, a BIC gap of 33.6).
 
-## 🔑 Re 约定（生成含 Re 的候选前必读）
+## 🔑 Re Convention (must read before generating any Re-bearing candidate)
 
-凡候选动作涉及 Re（有效半径）—— 如 `add(Bar, ..., Re=...)`、`tune(component, Re_init=...)` —— 一律遵守：
+Whenever a candidate action involves Re — e.g. `add(Bar, ..., Re=...)`, `tune(component, Re_init=...)` — always observe:
 
-- **显式 px 单位**：Re 一律写成像素值并带 `px` 后缀（如 `Re_init=12px`），并注明量测自哪个面板（原图 / 残差 / 1D 曲线）。**禁止**写裸数字，**禁止**写角秒——你看到的是像素网格；px 值与 feedme `4)` 参数行**同单位**，主模型会原样写入、不做任何换算（expdisk 的 Rs 换算 Re=1.68·Rs 由主模型处理，你给出的 Re 三元组一律指有效半径 Re）。
-- **必须给出窄三元组 `[Re_min, Re_init, Re_max]`**（区间宽度约 ±25–30%），**取值依据是残差图上该成分候选区域的实测径向范围**，不是先验比例（如 "0.3–0.5×Re_disk"）。Re 是成分径向通量预算的分配器：初值错一倍意味着该成分把光存到错误环带，引发相邻成分连锁退化——它是所有参数中对拟合结果影响最大的一个，必须从证据出发精确定值。
-- **残差几何换算法**：缺失成分在 1D 残差上的隆起峰值出现在其 **~2·Re** 处——`Re_init ≈ 隆起峰值半径 / 2`；2D 四极矩/棒状特征的半长也约对应 2·Re。从特征半径反推 Re，而不是把特征半径直接当 Re。
-- **全序链邻接约束（双证据定 Re，硬约束）**：`[Re_min, Re_init, Re_max]` 不能只看该成分自身的残差特征——还必须结合全序链 `Re_disk > Re_lens > Re_bar > Re_bulge` 中**紧邻内外成分的拟合 Re**（读 Model 面板图例的 `Re(px)` 收敛值，同一面板坐标系直接可比，无需换算）：把新增成分按其物理角色插入链中应有位置后，设紧邻内层成分 Re 为 R_in、紧邻外层成分 Re 为 R_out，则三元组**必须**满足 `Re_min > R_in` 且 `Re_max < R_out`。残差量测决定 Re_init 的中心位置，邻接约束决定区间的两端边界——两套证据冲突时（量测区间越过了邻接边界），以邻接约束截断区间（Re_init 随之向截断后区间内偏移），并在 physical_motivation 中声明"残差量测区间与全序链邻接约束冲突，已截断至 [a, b] px"。允许新成分的搜索区间侵入邻接成分的 Re 区间，是身份简并与 Re 反置退化的直接来源。
-  - **反例（真实事故，引以为戒）**：父状态 bulge Re=3.5px、disk Re=23px，给新增 bar 配 `[Re_min, Re_init, Re_max]=[2, 4, 8]px`——Re_min=2px < Re_bulge=3.5px，bar 被允许收敛进 bulge 内部，拟合后果是 Re 反置（bar 椭圆嵌在 bulge 里）+ bar q 触下界，物理性判定 FAIL，浪费两次拟合预算。正确做法：邻接约束要求 `Re_min > 3.5px` 且 `Re_max < 23px`，如 `[4.5, 6, 10]px`（Re_init 仍以四极矩/棒状特征量测反推为中心）。
-- **Bar 特别条款**：bar 处于成分链中间（bulge < bar < disk），其 Re 同时决定它从 bulge 侧与 disk 侧各分走多少通量，错一倍会引发两侧连锁角色互换（bar 挤压 bulge、或膨胀吞并 disk）。生成任何 add(Bar) / tune(bar, Re) 候选前，必须先在残差图上圈出棒状/四极矩特征区域的**内径与外径**，据此设定 `[Re_min, Re_init, Re_max]`，并满足全序链邻接约束（`Re_min > Re_bulge`、`Re_max < Re_disk`，见上条）。
-- `tune(component, Re)` 时优先直接引用图例给出的该成分 `Re(px)` 收敛值（同一面板坐标系，直接可比）。
-- **适用范围与 AGN 豁免**：本约定（含三元组要求）适用于所有**具有 Re 物理量**的成分——Bulge / Bar / Lens / Companion / Disk 等 sersic/expdisk 类组件。**AGN/Nucleus 用 `psf` 组件类型，没有 Re 参数**：`add(AGN, ...)` 候选不适用 Re 三元组要求，也**不得为 AGN 编造 Re**。
-- **add() 完整性（硬约束）**：凡 `add(<Type>)` 的目标类型具有 Re 物理量，候选 primitives 中**必须**显式写出 `[Re_min, Re_init, Re_max]`（px 单位，并注明量测来源面板）。**缺 Re 的 add() 候选视为无效**——Re 是成分径向通量预算的分配器，主模型无法替你补一个物理的 Re 初值；省略 Re 会迫使主模型自行猜值，可能引发相邻成分连锁退化（见上）。此要求同等适用于 Bulge / Bar / Lens / Companion，不因成分类型或 depth 而豁免（仅 AGN 豁免）。
-- **无法量测时的降级条款（禁止静默省略）**：若目标特征过于弥散或受污染、径向范围确实无法可靠量测，**不得静默省略 Re**——应改用 Re 全序链（`Re_disk > Re_lens > Re_bar > Re_bulge`，剔除缺失成分后取相邻对区间）设定一个偏宽的三元组，并在 physical_motivation 中**显式声明**"Re 未经残差量测，取全序链先验区间 [a, b] px"。正常情况下仍禁止以先验比例（如 "0.3–0.6×Re_disk"）替代量测（见上）；先验区间仅是量测失败时的显式降级，不是常规选项。
+- **Explicit px units**: always write Re as a pixel value with the `px` suffix (e.g. `Re_init=12px`), noting which panel the measurement came from (original / residual / 1D curve). **Never** bare numbers, **never** arcseconds — you are looking at a pixel grid; px values are **the same unit** as the feedme `4)` parameter row, and the orchestrator writes them verbatim with no conversion whatsoever (the expdisk Rs conversion Re=1.68·Rs is handled by the orchestrator; the Re triplets you give always refer to the effective radius Re).
+- **Always give the narrow triplet `[Re_min, Re_init, Re_max]`** (width about ±25–30%), with values grounded in the **measured radial extent of that component's candidate region in the residual map**, not in prior ratios (e.g. "0.3–0.5×Re_disk"). Re is the allocator of a component's radial flux budget: an initial value off by a factor of two puts that component's light into the wrong annulus and triggers chain degeneracies in its neighbours — of all parameters it has the largest effect on the fit and must be pinned precisely from evidence.
+- **Residual-geometry conversion**: a missing component's 1D-residual bump peaks at its **~2·Re** — `Re_init ≈ bump peak radius / 2`; the semi-length of a 2D quadrupole/bar-like feature also corresponds to about 2·Re. Infer Re from the feature radius instead of taking the feature radius itself as Re.
+- **Total-order adjacency constraint (two-evidence Re setting, hard requirement)**: the `[Re_min, Re_init, Re_max]` triplet must not be set from that component's own residual feature alone — it must also respect the fitted Re of the **adjacent inner/outer components** in the total order `Re_disk > Re_lens > Re_bar > Re_bulge` (read the converged `Re(px)` from the Model-panel legend, directly comparable in the same panel coordinates, no conversion): after inserting the new component at its proper place in the chain, let the adjacent inner component's Re be R_in and the adjacent outer component's Re be R_out; the triplet **must** satisfy `Re_min > R_in` and `Re_max < R_out`. The residual measurement fixes Re_init's centre; the adjacency constraint fixes the interval's two ends — when the two evidences conflict (the measured interval crosses an adjacency boundary), truncate the interval at the adjacency constraint (shifting Re_init into the truncated interval accordingly) and state in physical_motivation "the measured residual interval conflicted with the total-order adjacency constraint and was truncated to [a, b] px". Allowing a new component's search interval to invade a neighbour's Re interval is a direct source of identity degeneracy and Re-inversion degeneration.
+  - **Counter-example (a real incident; learn from it)**: with a parent bulge Re=3.5px and disk Re=23px, a new bar was given `[Re_min, Re_init, Re_max]=[2, 4, 8]px` — Re_min=2px < Re_bulge=3.5px, so the bar was allowed to converge inside the bulge; the result was Re inversion (the bar ellipse nested inside the bulge) + bar q hitting its lower bound, a physicality FAIL, wasting two rounds of budget. The correct move: the adjacency constraint requires `Re_min > 3.5px` and `Re_max < 23px`, e.g. `[4.5, 6, 10]px` (Re_init still centred on the quadrupole/bar-feature measurement).
+- **Bar special clause**: the bar sits mid-chain (bulge < bar < disk); its Re decides how much flux it takes from the bulge side and the disk side, and an error of a factor of two triggers chain role-swaps on both sides (the bar squeezing the bulge, or inflating to swallow the disk). Before generating any add(Bar) / tune(bar, Re) candidate, you must first bound the bar-like/quadrupole feature region's **inner and outer radii** in the residual map, set `[Re_min, Re_init, Re_max]` accordingly, and satisfy the total-order adjacency constraint (`Re_min > Re_bulge`, `Re_max < Re_disk`; see above).
+- For `tune(component, Re)`, prefer citing the component's legend `Re(px)` converged value directly (same panel coordinates, directly comparable).
+- **Scope and AGN exemption**: this convention (triplet requirement included) applies to all components **with a physical Re quantity** — Bulge / Bar / Lens / Companion / Disk and other sersic/expdisk components. **AGN/Nucleus use the `psf` component type and have no Re parameter**: `add(AGN, ...)` candidates are exempt from the Re-triplet requirement, and you **must not invent an Re for an AGN**.
+- **add() completeness (hard requirement)**: whenever the target type of an `add(<Type>)` has a physical Re quantity, the candidate's primitives **must** explicitly include the `[Re_min, Re_init, Re_max]` px triplet (noting the measurement-source panel). **An add() candidate without Re is invalid** — Re is the allocator of radial flux budget, and the orchestrator cannot invent a physical Re initial value for you; omitting it forces the orchestrator to guess, possibly triggering chain degeneracies in neighbouring components (see above). This applies equally to Bulge / Bar / Lens / Companion, regardless of component type or depth (AGN alone is exempt).
+- **Degradation clause when measurement is impossible (silent omission forbidden)**: if the target feature is too diffuse or contaminated and its radial extent genuinely cannot be measured reliably, **do not silently omit Re** — instead set a deliberately wider triplet from the Re total order (`Re_disk > Re_lens > Re_bar > Re_bulge`; drop missing components and take the adjacent-pair interval) and **explicitly state** in physical_motivation "Re was not measured from the residuals; taken from the total-order prior interval [a, b] px". Taking a prior ratio (e.g. "0.3–0.6×Re_disk") in place of a measurement remains forbidden in the normal case (see above); the prior interval is an explicit fallback for failed measurement, not a routine option.
 
-## 🔑 形态最小集约定（n / q / PA 初值，add() 硬约束）
+## 🔑 Shape-Minimal-Set Convention (n / q / PA initial values; hard requirement for add())
 
-**动机**：`tune` 未提及的参数可热启动继承父收敛值，但 **`add()` 的新成分没有父值可继承**——未写明的参数全部落回主模型的模板填充，而主模型没有残差图的视觉信息。初值不是小事：GALFIT 的 LM 优化器从初始猜测出发迭代，n/q/PA 的初值决定它落进哪个盆。**真实事故**：两次 add(Lens) 均未给 PA，主模型按 bulge PA 填 134°（后漂至 180°），而最优解的 lens PA 是 48°——该成分从未有机会以正确姿态初始化；disk 的 q/PA 更是 13 轮零候选，模型困在"圆盆"里 12 轮，最后由 disk(q0.66, PA−32°)+lens(q0.85, PA48°) 的斜交配置一次解开（BIC −33.6）。
+**Motivation**: parameters not mentioned by `tune` can inherit the parent converged values via warm start, but **an `add()`ed new component has no parent value** — unlisted parameters fall back to the orchestrator's template fill, and the orchestrator has no view of the residual image. Initial values matter: GALFIT's LM optimiser iterates from the initial guess, and the n/q/PA initial values decide which basin it falls into. **Real incident**: two add(Lens) candidates both omitted PA; the orchestrator filled the bulge PA of 134° (later drifting to 180°) while the optimum lens PA was 48° — that component never had a chance to be initialised in the right attitude; disk q/PA saw zero candidates for 13 rounds, the model was stuck in a "round basin" for 12 rounds, and finally one disk(q0.66, PA−32°)+lens(q0.85, PA48°) oblique configuration unlocked it (BIC −33.6).
 
-凡 `add(<Type>)` 目标类型为具有形态参数的成分（Bulge / Bar / Lens / Companion / Disk），primitives 中除 Re 三元组外，**必须**显式给出：
+Whenever the target type of an `add(<Type>)` is a component with shape parameters (Bulge / Bar / Lens / Companion / Disk), the primitives must, besides the Re triplet, **explicitly** give:
 
-1. **n 初值 + vary 状态**（如 `n=2.5 free`、`n=0.5 fixed`）——禁止只写 `n_free` 不给数值。物理先验：bulge 2–4、disk 1、bar 0.5、lens <0.5；n 的初值影响落盆（真实事故：n 从 4.0 起步释放收敛到 1.8，而 3.0 起步收敛到 3.0——同一自由参数，两个盆）；
-2. **q（初值或边界）**（如 `q=0.8 free`、`q_min=0.5`）——elongated 成分给初值，近圆成分给先验值；
-3. **PA 初值（N=+Y 契约）**——elongated 成分的 PA 必须取自阶段一量测的特征方向（见 🔑 PA 约定的 PA 传递条款）。
+1. **n initial value + free/fixed state** (e.g. `n=2.5 free`, `n=0.5 fixed`) — bare `n_free` without a value is forbidden. Physical priors: bulge 2–4, disk 1, bar 0.5, lens <0.5; the initial n affects basin choice (real incident: released from 4.0 it converged to 1.8, from 3.0 it converged to 3.0 — the same free parameter, two basins);
+2. **q (initial value or bound)** (e.g. `q=0.8 free`, `q_min=0.5`) — an initial value for elongated components, a prior value for near-round ones;
+3. **PA initial value (N=+Y contract)** — the PA of an elongated component must come from the feature direction measured in Phase 1 (see the PA transfer clause of the 🔑 PA Convention).
 
-**降级条款（与 Re 约定同构，禁止静默省略）**：若形态参数确实无法从残差量测（如近圆成分的 PA 无信息量），**必须**在 primitives 或 physical_motivation 中显式声明降级（如"PA 未经量测，取对齐 disk 长轴"、"q 取 0.9 近圆先验"），不得留空交给主模型猜。
+**Degradation clause (isomorphic to the Re Convention; silent omission forbidden)**: if a shape parameter genuinely cannot be measured from the residuals (e.g. the PA of a near-round component carries no information), you **must** declare the degradation explicitly in the primitives or physical_motivation (e.g. "PA not measured; taken aligned with the disk major axis", "q taken as the near-round prior 0.9"); leaving it blank for the orchestrator to guess is forbidden.
 
-（AGN（psf 组件）豁免：无 n/q/PA 几何参数，仅适用 Re 约定中的 AGN 豁免条款。）
+(The AGN (psf component) is exempt: it has no n/q/PA geometry parameters, only the AGN exemption of the Re Convention applies.)
 
-## 候选空间字母表（生成前必读）
+## Candidate Space Alphabet (must read before generating)
 
-在生成候选前，显式列出主星系与伴星系的合法成分类型空间。这是"菜单"不是"答案"——实际候选仍须基于阶段一的残差证据与下文各节的认定规则。**目的**：避免低频但合法的候选（特别是 Lens）因 VLM 训练分布稀疏而被系统性遗漏。
+Before generating candidates, explicitly enumerate the legal component-type space of the main galaxy and companions. This is a "menu", not "the answer" — actual candidates must still be based on Phase-1 residual evidence and the recognition rules below. **Purpose**: prevent low-frequency but legal candidates (especially Lens) from being systematically missed because of their sparsity in the VLM training distribution.
 
-### A. 主星系成分类型
+### A. Main-galaxy component types
+The final component set of the main galaxy (companions excluded) belongs to one of:
+- **Single Sersic**: a legal end state for ellipticals, or the starting form of the Round-0 first fit
+- **Multi-component combinations**: take the **actually present subset** from the table below (a subset, not everything):
 
-主星系（不含伴星系）的最终成分集合属于以下之一：
-
-- **单 Sersic**：椭圆星系的合法终态，或 Round 0 首次拟合的起步形态
-- **多成分组合**：从下表选取**实际存在的子集**（是子集，不是要全部添加）
-
-| 成分 | 关键先验 | 一句话识别线索 |
+| Component | Key prior | One-line recognition cue |
 |------|---------|---------------|
-| Disk | `expdisk` 组件（n≡1 由类型保证，无 n 参数；**禁止改用 sersic 释放 n 承担 Disk**） | 盘星系必备，延展轮廓 |
-| Bulge | `sersic`，n≈4（depth≤2 固定 n=4；**depth≥3 存量必须释放 n、新增禁止固定 n**，见 §Bulge n 操作规范） | 中心致密圆成分 |
-| Bar | `sersic`，n=0.5 **固定**，q<0.4 扁长 | "一字型"/"X 型"残差 |
-| Lens | `sersic`，n<0.5 自由，q>0.5 | **低频但重要**——见下方【Lens 特别提醒】 |
-| AGN / Nucleus | `psf` 组件（无 Re 物理量） | 仅当 Bulge Re<0.2 px 坍缩时启用（0.2–0.5px 边界区可作 psf 竞争方案） |
+| Disk | `expdisk` component (n≡1 guaranteed by type, no n parameter; **switching to sersic with released n to play the Disk is forbidden**) | essential for disk galaxies; extended outline |
+| Bulge | `sersic`, n≈4 (depth≤2 fixes n=4; **depth≥3 must release n for existing bulges and forbids fixing n for new ones**, see the Bulge-n operating rules) | compact round central component |
+| Bar | `sersic` with n=0.5 **fixed**, q<0.4 elongated | "linear"/"X-shaped" residuals |
+| Lens | `sersic`, n<0.5 free, q>0.5 | **low-frequency but important** — see the [Lens reminder] below |
+| AGN / Nucleus | `psf` component (no physical Re) | enabled only when the Bulge Re collapses below 0.2 px (a psf competing variant may be built in the 0.2–0.5px border zone) |
 
-### B. 附加修饰维度（正交于成分类型，可与任一组合叠加）
+### B. Orthogonal decoration dimensions (orthogonal to component type; combinable with any set)
 
-- **Lopsidedness（m=1 Fourier 模式）**：在 Disk 成分块的 `Z)` 行之前追加 Fourier 参数行 `F1) <amp> <phase> 1 1`（amp 初始 ~0.05，phase 为 N=+Y 契约下的相位角；GALFIT 会把 amp=0 重置为 0.01，故初值禁写 0）；当阶段一 `detect_bar_lopsidedness` 检出偏心残差时，Lopsidedness存在的可能性较高，是否启用需要进一步结合残差图分析；**只能作用于 Disk（或单 Sersic 起步成分）**，严禁加在 Bulge/Bar/Lens/AGN 上；拟合后 F1 的 amplitude > 0.02 即物理意义成立，禁止生成移除 F1 的候选（除非拟合发散）
+- **Lopsidedness (m=1 Fourier mode)**: append a Fourier parameter line `F1) <amp> <phase> 1 1` before the Disk component's `Z)` line (amp initially ~0.05, phase in the N=+Y contract; GALFIT resets amp=0 to 0.01, so the initial value must not be 0); when Stage-1 `detect_bar_lopsidedness` detects lopsided residuals, a Lopsidedness is fairly likely — whether to enable it needs further residual analysis; it may act **only on the Disk (or the starting single-Sersic component)** and is strictly forbidden on Bulge/Bar/Lens/AGN; after fitting, an F1 amplitude > 0.02 is physically meaningful, and generating candidates to remove F1 is forbidden (unless the fit diverges)
 
-### B'. 主星系同心约束（强制默认，非附加修饰——VLM 与主模型共享的硬约束）
+### B'. Concentric constraint for main-galaxy central components (mandatory default, not a decoration — a hard constraint shared by the VLM and the orchestrator)
 
-**触发条件**：只要本轮父状态的 `expected_C'` 包含 **≥ 2 个主星系中心成分**（Disk/Bulge/Bar/Lens 四类中的任意两个或以上），同心约束就**必须生效**——这是默认硬约束，不是"需要时才做"的可选项，与候选的具体方向（加成分/调参/修约束）无关。
+**Trigger**: whenever the parent state's `expected_C'` contains **≥ 2 main-galaxy central components** (any two or more of Disk/Bulge/Bar/Lens), the concentric constraint **must** be in effect — a default hard constraint, not an on-demand option, independent of the candidate's direction (add/tune/fix constraints).
 
-**实现载体（galfit `.cons` 语法）**：主模型会把所有主星系中心成分的 GALFIT 编号用 `_` 连成链，在配对的 `.cons` 约束文件写**成对**的两行（缺一不可）：`<编号链>  x  offset` 与 `<编号链>  y  offset`——GALFIT 据此把链内成分的相对位置锁定为输入文件中的初始相对位置（整组可平移、内部不漂移）。成分的识别以 feedme 中 `# STRUCTURE:` 注释名为准。
+**Implementation vehicle (galfit `.cons` syntax)**: the orchestrator links all main-galaxy central components' GALFIT numbers with `_` into a chain and writes **paired** lines in the `.cons` constraint file (both are indispensable): `<number-chain>  x  offset` and `<number-chain>  y  offset` — GALFIT thereby locks the chain members' relative positions to their initial relative positions in the input file (the group may translate as a whole; internally no drift). Components are identified by their `# STRUCTURE:` comment names in the feedme.
 
-**VLM 职责**：在生成 `add(Bulge)` / `add(Bar)` / `add(Lens)` / `add(AGN)` 等新增主星系中心成分的候选时，`physical_motivation` **必须显式提及**"新增成分与现有 Disk/Bulge/Bar/Lens 通过 `.cons` 的 x,y offset 绑定同一中心"；在 `expected_behavior_tag` 中可使用 `concentric_bound` 标识。生成 `tune(...)` 或 `remove(...)` 候选时，只要 `expected_C'` 仍含 ≥ 2 个主星系中心成分，同样默认继承同心约束（无需每轮重复声明，但不得遗忘）。
+**VLM duty**: when generating candidates that add main-galaxy central components (`add(Bulge)` / `add(Bar)` / `add(Lens)` / `add(AGN)` etc.), `physical_motivation` **must explicitly mention** "the new component is bound to the same centre as the existing Disk/Bulge/Bar/Lens via the `.cons` x,y offset"; you may use `concentric_bound` in `expected_behavior_tag`. For `tune(...)` or `remove(...)` candidates, as long as `expected_C'` still contains ≥ 2 main-galaxy central components, the concentric constraint is inherited by default (no need to restate every round, but never forget it).
 
-**伴星系豁免**：伴星系（`# STRUCTURE:` 名含 `comp`/`companion`/`secondary`/`satellite`）的编号**严禁写入**同心约束链——伴星系中心必须保持自由拟合。VLM 不得在 `physical_motivation` 中建议把伴星系中心绑定到主星系。
+**Companion exemption**: a companion's (`# STRUCTURE:` name containing comp/companion/secondary/satellite) number is **strictly forbidden** in the concentric chain — companion centres must stay freely fitted. The VLM must not suggest in `physical_motivation` binding a companion centre to the main galaxy.
 
-### C. 伴星系（独立成分块，与主星系正交）
+### C. Companions (independent component blocks, orthogonal to the main galaxy)
 
-按距主星系中心的远近，伴星系分两类，**添加时机不同**：
+By distance from the main-galaxy centre, companions fall into two classes with **different addition timing**:
 
-- **独立 Sersic/PSF 成分块**（`# STRUCTURE: COMPANION` 注释命名）：拟合独立伴源；不参与主星系的 Re 全序校验。
+- **Independent Sersic/PSF component blocks** (named via `# STRUCTURE: COMPANION`): fit independent sources; they do not take part in the main-galaxy Re total-order check.
 
-**C1. 外围伴星系（Outer Companion）**：位于主星系延展盘之外或外缘附近（距中心 ≳ 2·Re_disk），与中心成分通量几乎不退化。可在任意阶段添加，不强制等待 Bulge/Bar。
+**C1. Outer companion**: located outside or near the edge of the main galaxy's extended disk (≳ 2·Re_disk from the centre), nearly non-degenerate in flux with the central components. May be added at any stage without waiting for Bulge/Bar.
 
-**C2. 嵌入式伴星系（Embedded Companion）**：紧贴主星系中心亮区，落在 bulge/bar/disk 等照度线 contour 上或以内（距中心约 1–3·Re_bar）。与中心成分通量**强退化**——若在 Bulge/Bar 建立之前添加，伴星系会被拽向中心去代偿未拟合的中心通量，导致位置漂移、Re 膨胀、参数撞界发散。
-- **硬性时机规则**：嵌入式伴星系必须在父状态**已建立 Bulge 或 Bar** 之后才添加。若父状态既无 Bulge 也无 Bar，**禁止**生成 `add(Companion)` 候选；应先生成 `add(Bulge)` 或 `add(Bar)` 候选。
-- 位置必须保持自由（feedme `1) x y 1 1`），坐标初值直接写 VLM 量测的像素值，由拟合器在数据上校准质心；严禁 `0 0` 锁死。
-- 位置漂移 > 2 px 且父状态已含 Bulge/Bar 时，生成 `tune(companion, x_real, y_real)` 位置修正候选（详见 §伴星系位置核验）。
+**C2. Embedded companion**: right against the main galaxy's central bright region, on or inside the bulge/bar/disk isophotal contours (about 1–3·Re_bar from the centre). **Strongly flux-degenerate** with the central components — added before Bulge/Bar are established, it gets dragged toward the centre to compensate unfitted central flux, drifting in position, inflating in Re, and hitting bounds.
+- **Hard timing rule**: an embedded companion may be added only after the parent state **has established a Bulge or Bar**. If the parent has neither, generating `add(Companion)` is **forbidden**; generate `add(Bulge)` or `add(Bar)` first.
+- The position must stay free (feedme `1) x y 1 1`); the coordinate initial value is the VLM's measured pixel value, and the fitter calibrates the centroid on the data; locking it `0 0` is forbidden.
+- When the position has drifted > 2 px and the parent state has Bulge/Bar, generate the `tune(companion, x_real, y_real)` position-correction candidate (see §Companion position verification).
 
-### 【Lens 特别提醒 — VLM 高频遗漏项】
+### [Lens reminder — a high-frequency VLM omission]
 
-Lens 在训练数据中频率低、且**无易辨识的 2D 视觉签名**（其残差应为**方位连续的环状**分布，但容易被忽略；**单侧紧凑亮斑不是 Lens 签名，是伴星系/亮结签名**）——它的存在通过**两条独立路径**揭示，任一满足即应生成 Lens 候选：
+Lens is rare in training data and has **no easily read 2D visual signature** (its residual should be an **azimuthally continuous ring**, but is easily missed; a **one-sided compact bright blob is not a Lens signature, it is a companion/bright-knot signature**) — its presence is revealed through **two independent paths**, either of which should trigger a Lens candidate:
 
-1. **路径 A（Bar 异常反推）**：父状态的 Bar 出现 `Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`，意味着 Bar 被强行拉去拟合 Lens 结构，应拆分为 Bar + Lens。
-2. **路径 B（1D 轮廓隆起）**：1D 表面亮度残差曲线在距中心 ~1.5–2.5·Re_bar 处出现宽阔正向隆起（详见 §Lens 1D 轮廓隆起触发规则），意味着过渡区有独立于 Bar 和 Disk 的延展通量成分。**此路径不需要 Bar 异常**——即使 Bar 参数完全正常，1D 隆起仍可独立触发。
+1. **Path A (inferred from a Bar anomaly)**: the parent state's Bar shows `Re_bar ≳ Re_disk(=1.68·Rs_disk)` or `q_bar ≳ 0.5`, meaning the Bar is being forced to fit a Lens structure — split it into Bar + Lens.
+2. **Path B (1D-profile bump)**: the 1D surface-brightness residual curve shows a broad positive bump about 1.5–2.5·Re_bar from the centre (see the Lens 1D Profile Bump Trigger Rule), meaning the transition zone holds an extended flux component independent of the Bar and the Disk. **This path needs no Bar anomaly** — even with perfectly normal Bar parameters, the 1D bump can trigger independently.
 
-**父状态含 Bar 或 Bulge 时，VLM 必须主动回忆两条触发条件**，不得仅凭"Bar 是常见成分"或"Bar 参数正常"就跳过 Lens 候选。详细触发条款与参数模板见下文 §Lens 1D 轮廓隆起触发规则 与 §通用规则 / Lens 候选生成时机。
+**When the parent state has a Bar or Bulge, the VLM must actively recall both trigger conditions**; do not skip Lens candidates merely because "the Bar is a common component" or "the Bar parameters are normal". Detailed clauses and parameter templates follow in the Lens 1D Profile Bump Trigger Rule and the General Rules / Lens candidate timing.
 
-## 扁 Bulge → Bar 候选触发规则（联合诊断，VLM 必读）
+## Flat-Bulge → Bar Candidate Trigger Rule (joint diagnosis; VLM must read)
 
-**动机**：当面朝向（face-on）盘星系的 Bulge 出现显著扁平（b/a 偏小），最自然的物理解释不是"扁化的核球"，而是**被误标为 Bulge 的 Bar**——Bar 有独立的三轴结构，不随盘的倾角变圆。此判据用于在 beam search 中**强制探索 bar 假设**，避免因阶段一未检出 bar 就直接跳过 bar 方向。
+**Motivation**: when a face-on disk galaxy's Bulge is significantly flat (smallish b/a), the most natural physical interpretation is not "a flattened bulge" but a **Bar mislabelled as a Bulge** — a bar has an independent triaxial structure and does not round out with the disk's inclination. This criterion **forces the beam search to explore the bar hypothesis** so that the bar direction is not skipped just because Stage 1 detected none.
 
-### 触发条件（四条同时满足，缺一不可）
+### Trigger (all four conditions must hold; none may be missing)
 
-当父状态已含 Bulge（sersic 成分）时，读取参数摘要中 bulge 的拟合参数（来自父轮 galfit.NN 收敛值），按下表联合判定：
+When the parent state already has a Bulge (a sersic component), read the bulge's fitted parameters from the parameter summary (the parent round's galfit.NN converged values) and judge jointly:
 
-| 指标 | 阈值 | 物理依据 |
+| Indicator | Threshold | Physical basis |
 |------|------|---------|
-| `bulge_axrat` (b/a) | < 0.5 | Bar 经验上限约 0.4–0.5；圆核球通常 b/a > 0.6 |
-| `bulge_ang` 与 `disk_ang` 的 PA 夹角 | > 20° | Bar 通常与盘主轴显著斜交；若 PA 一致，扁更可能来自投影而非 Bar |
-| `bulge_n`（若 free） | 0.5 < n < 2.5 | Bar 的典型 Sérsic n 范围；n > 3.5 更像经典核球 |
-| `disk_axrat`（倾角代理） | > 0.5 | 星系非 edge-on；edge-on 星系所有成分都扁，此规则禁用 |
+| `bulge_axrat` (b/a) | < 0.5 | the empirical bar upper limit is about 0.4–0.5; a round bulge is usually b/a > 0.6 |
+| PA angle between `bulge_ang` and `disk_ang` | > 20° | bars are usually markedly oblique to the disk major axis; if the PAs agree, the flatness more likely comes from projection |
+| `bulge_n` (if free) | 0.5 < n < 2.5 | the typical bar Sérsic-n range; n > 3.5 looks more like a classical bulge |
+| `disk_axrat` (inclination proxy) | > 0.5 | the galaxy is not edge-on; in edge-on galaxies every component is flat and this rule is disabled |
 
-**关键**：单看 b/a 不够。face-on 盘（disk b/a > 0.8）的 bulge b/a < 0.5 是强 Bar 信号；但 edge-on 盘的 bulge 扁是投影效应，不触发。
+**Key**: b/a alone is not enough. A bulge b/a < 0.5 in a face-on disk (disk b/a > 0.8) is a strong bar signal; a flat bulge in an edge-on disk is a projection effect and does not trigger.
 
-### 触发后的候选生成（两种动作必出其一）
+### Candidate generation after the trigger (one of two actions must appear)
 
-触发条件成立时，**必须**在当轮候选里产出至少一个 Bar 方向候选，且不得因"阶段一未检出 bar"而自我审查跳过。两种候选测试不同物理假设，可择一或并存：
+When the trigger holds, the round's candidates **must** include at least one Bar-direction candidate, and it must not be self-censored away because "Stage 1 detected no bar". The two candidates test different physical hypotheses and may coexist or stand alone:
 
-1. **`tune(Bulge→Bar, n=0.5 fixed)`**（转换） — 测试假设："这个扁成分本身就是 Bar，没有独立 Bulge"。成分数不变；Re 继承 bulge 收敛值热启动（`tune` 不新增成分，无需三元组）。判据：ΔBIC < 0 即支持。
-2. **`add(Bar, n=0.5 fixed, q<0.4, PA≈bulge PA, [Re_min, Re_init, Re_max]=按残差四极矩/棒状特征内、外径量测) + tune(Bulge, q_min=0.7)`**（新增 + 圆化） — 测试假设："扁 Bulge 之外还有一个独立 Bar"。成分数 +1。判据：需 ΔBIC < −10 才算显著（跨过新增参数惩罚）。圆化 Bulge 是为了打破 Bar/Bulge 简并，避免拟合器把其中一个推到极端参数。**新增 Bar 必须带 Re 三元组**（量测方法见 🔑 Re 约定的 Bar 特别条款）。
+1. **`tune(Bulge→Bar, n=0.5 fixed)`** (conversion) — tests "this flat component is itself a Bar; there is no independent Bulge". The component count is unchanged; Re inherits the bulge converged value via warm start (`tune` adds no component, so no triplet needed). Decision: ΔBIC < 0 supports it.
+2. **`add(Bar, n=0.5 fixed, q<0.4, PA≈bulge PA, [Re_min, Re_init, Re_max]=measured from the inner/outer radii of the residual quadrupole/bar-like feature) + tune(Bulge, q_min=0.7)`** (addition + rounding) — tests "beyond the flat Bulge there is also an independent Bar". Component count +1. Decision: ΔBIC < −10 is required to be significant (clearing the added-parameter penalty). Rounding the Bulge breaks the Bar/Bulge degeneracy so the fitter does not push either to extreme parameters. **The added Bar must carry an Re triplet** (measurement per the Bar special clause of the 🔑 Re Convention).
 
-**PA 取值**：候选的 Bar PA 优先取父状态 `bulge_ang`（已对齐到扁成分的长轴方向）；或取阶段一 `detect_bar_lopsidedness` 的 `bar.pa_deg`（若检出）。两者都是 N=+Y 契约下的 PA，可直接写入。
+**PA choice**: the candidate Bar PA takes the parent `bulge_ang` first (already aligned to the flat component's major axis); or Stage-1 `detect_bar_lopsidedness`'s `bar.pa_deg` (if detected). Both are PAs under the N=+Y contract and can be written directly.
 
-### Bar 假设失败后的竞争分解（四极矩残差的替代解释，必读）
+### Competing decompositions after the bar hypothesis fails (alternative explanations of quadrupole residuals; must read)
 
-四极矩/蝴蝶形残差的标准解释是缺失扁长成分（bar），**但不是唯一解释**：两个**互相斜交的椭圆成分**（disk 与 lens/bar 各自带椭率、PA 错开约 60°–90°）叠加可以合成 boxy / 轻度拉长的非轴对称轮廓——这是 GALFIT 分解的经典替代方案。bar 在盘面内旋转，投影后可与盘长轴成任意夹角；同理，disk/lens 的椭率也可各自取独立方向。判别线索与动作：
+The standard explanation of quadrupole/butterfly residuals is a missing elongated component (a bar), **but it is not the only one**: two **mutually oblique elliptical components** (disk and lens/bar, each with its own ellipticity and PAs offset by about 60°–90°) can superpose into a boxy / mildly elongated non-axisymmetric outline — a classic GALFIT alternative. Bars rotate in the disk plane and can project at any angle to the disk major axis; likewise, the disk/lens ellipticities can each take independent directions. Discriminating clues and actions:
 
-- **触发条件**：四极矩残差持续存在（≥2 轮），且 bar 方向候选已在相同或相近成分 context 下被否定（`[被否定假设]` 有 ΔBIC 反升记录），或 bar 候选反复触界/坍缩、bulge q 长期触下界（非轴对称压力全挤在 bulge 一个参数上的信号）；
-- **动作**：生成 `tune(disk, q_init≈0.7, PA_init=<阶段一量测的特征方向>)` 或 `tune(lens/bar, q_init≈0.8, PA_init=<与 disk 斜交的方向>)` 类候选——q/PA 本来就是自由参数，改初值是合法的 tune 动作，目的是把优化器从"圆盆"带进"椭圆盆"；
-- **判据**：ΔBIC 显著下降（典型 ≥10）即支持斜交配置；bulge 的 q 触下界**同时消失**是该配置的常见副产品；
-- **真实事故**：四极矩残差 12 轮全部走 bar 路线（5 次 bar 类候选全败），bulge q=0.3 触界 12 轮无解；最终 disk(q0.66, PA−32°)+lens(q0.85, PA48°) 斜交配置一次解决，BIC −33.6，bulge q 触界自行消失。
+- **Trigger**: quadrupole residuals persist (≥ 2 rounds) and bar-direction candidates have been refuted in the same or a similar component context (`[Refuted hypotheses]` has a ΔBIC-worse record), or bar candidates repeatedly hit bounds/collapse and the bulge q sits at its lower bound for a long time (the signal of all the non-axisymmetric pressure squeezed onto one bulge parameter);
+- **Action**: generate candidates like `tune(disk, q_init≈0.7, PA_init=<feature direction measured in Phase 1>)` or `tune(lens/bar, q_init≈0.8, PA_init=<direction oblique to the disk>)` — q/PA are already free parameters, so changing initial values is a legal tune; the goal is to lead the optimiser from the "round basin" into the "elliptical basin";
+- **Decision**: a significant ΔBIC drop (typically ≥10) supports the oblique configuration; the simultaneous disappearance of the bulge's lower-bound q is a common by-product;
+- **Real incident**: quadrupole residuals went the bar route for all 12 rounds (5 bar-type candidates all failed), bulge q=0.3 bound-hit for 12 rounds; finally one disk(q0.66, PA−32°)+lens(q0.85, PA48°) oblique configuration solved it, BIC −33.6, and the bulge q bound-hit vanished by itself.
 
-### 自检硬约束
+### Self-check hard requirements
 
-- **触发复核**：若父状态含 Bulge 且上述四条联合条件成立，本次输出**必须**包含至少一个 Bar 候选（转换或新增）。若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"虽然 bulge q=0.27 触发，但 1D 残差曲线显示 X 方向更优"），不得静默跳过。
-- **简并预警**：若选择"新增 Bar"方案，physical_motivation 必须提及"通过约束 Bulge q_min≥0.7 打破 Bar/Bulge 简并"——否则拟合器容易把两个都放在中心的扁成分推到极端参数（典型退化：bulge n 坍缩至下界、bulge/bar 亮度和 PA 几乎相同）。
+- **Trigger review**: if the parent state has a Bulge and the four joint conditions hold, this output **must** contain at least one Bar candidate (conversion or addition). If absent, you **must** state the reason for waiver explicitly in a Candidate's physical_motivation (e.g. "although bulge q=0.27 triggers, the 1D residual curve favours direction X"); silent skipping is forbidden.
+- **Degeneracy warning**: if the "add Bar" route is chosen, physical_motivation must mention "breaking the Bar/Bulge degeneracy by constraining Bulge q_min≥0.7" — otherwise the fitter easily pushes both central flat components to extreme parameters (typical degeneration: bulge n collapses to its lower bound; bulge/bar brightness and PA nearly identical).
 
-## Disk 外围光度不足触发规则（VLM 必读，优先级高于中心成分规则）
+## Disk Outer-Flux-Deficit Trigger Rule (VLM must read; takes priority over the central-component rules)
 
-**动机**：Disk 是星系的基础骨架成分。若 disk Re 偏小，disk 会把本应属于自己的外缘通量"让"出去——要么迫使 lens/bar 膨胀去代偿（导致 Re 反置、触界等退化），要么让中心成分（Bulge/Bar）在不正确的盘基线上建立、参数看似需要反复调整实则只是 disk 骨架错的连带效应。在 beam search 深入探索中心成分后，VLM 和主模型容易"忘记"回头调 disk Re 这个根本有效的方向。本规则强制 VLM 在每轮候选生成时**优先**检查 disk 外围光度，命中时以最高优先级生成 `tune(disk, Re 更大)` 候选。
+**Motivation**: the Disk is the galaxy's foundation component. If the disk Re is too small, the disk "gives away" outer flux that belongs to it — either forcing lens/bar to inflate in compensation (causing Re inversion, bound hits and other degenerations), or letting the central components (Bulge/Bar) be built on a wrong disk baseline whose parameters seem to need repeated adjustment when it is merely a knock-on effect of the wrong disk skeleton. Once the beam search digs into the central components, the VLM and the orchestrator easily "forget" to come back to the fundamentally effective direction of adjusting the disk Re. This rule forces the VLM to check the disk's outer flux **first** in every round of candidate generation and, on a hit, to produce a `tune(disk, larger Re)` candidate at the highest priority.
 
-### 触发条件（三条同时满足，缺一不可）
+### Trigger (all three conditions must hold; none may be missing)
 
-读取 1D 表面亮度残差曲线（Δμ = Data − Model，下方面板）与 disk 的拟合 Re：
+Read the 1D surface-brightness residual curve (Δμ = Data − Model, lower panel) and the disk's fitted Re:
 
-| 指标 | 阈值 | 物理依据 |
+| Indicator | Threshold | Physical basis |
 |------|------|---------|
-| **残差位置** | 系统性正残差（Data 亮于 Model，Δμ < 0）出现在 r > 2×Re_disk 的外围区域 | disk 的外缘指数衰减（n=1）轮廓若 Re 偏小，外缘光度会系统性低于真实数据 |
-| **残差宽度与幅度** | 宽阔（跨越 > 15 px 量级，非窄尖峰），幅度 Δμ ≲ −0.05 mag | 显著的系统性通量缺失，超出噪声波动范围；窄尖峰更可能是背景梯度或掩膜边缘效应 |
-| **disk Re 未触界** | disk Re < `.cons` 中 disk 的 re 上限（即 disk 还有增大空间；无约束则恒满足） | 若 disk Re 已触界，增大方向需先放宽 re 上限，属另一类问题 |
+| **Residual location** | systematic positive residual (Data brighter than Model, Δμ < 0) appears in the outskirts at r > 2×Re_disk | if the disk's outer exponentially declining (n=1) profile has too small an Re, its outer luminosity falls systematically below the data |
+| **Residual width and amplitude** | broad (spanning > 15 px, not a narrow spike), amplitude Δμ ≲ −0.05 mag | significant systematic flux deficit beyond noise; narrow spikes are more likely background gradients or mask-edge effects |
+| **Disk Re not bound-hit** | disk Re < the disk's re upper bound in `.cons` (i.e. room to grow; always satisfied if unconstrained) | if the disk Re already hits its bound, growing it first requires relaxing the cap — another class of problem |
 
-### 判读注意事项
+### Reading cautions
 
-- **背景极限判读**：r > 30–40 px 后数据点常变为红色三角形（达到背景噪声极限、低信噪比）。只有当正残差在**进入背景极限前**就已系统性出现（如 r ≈ 15–30 px 区间内持续 Δμ < 0），才视为可靠命中；仅靠背景极限后的红三角形态判读不可靠。
-- **与 Lens 隆起的区分**：Lens 隆起的峰值位置在 ~1.5–2.5·Re_bar（介于中心与 disk 之间）；disk 外围光度不足的正残差从 r > 2×Re_disk 起向外延伸。两者可能同时存在——若 disk Re 偏小，lens 隆起的判读会被污染，应在同一候选集里同时包含 `tune(disk, Re 更大)` 与 `add(Lens)`（若 lens 触发也成立），让主模型打分竞争。
-- **与 sky 背景的区分**：若 sky 背景估计偏高，也会让外围 Data 系统性亮于 Model。检查 sky 成分星等线与 sky background 虚线的关系——若两者齐平且外围正残差显著，更可能是 disk Re 偏小；若 sky 星等线偏高，应先考虑 sky 修正。
+- **Background-limit reading**: beyond r > 30–40 px the data points often become red triangles (reaching the background-noise limit, low SNR). Only a positive residual that appears systematically **before** entering the background limit (e.g. persistently Δμ < 0 through r ≈ 15–30 px) counts as a reliable hit; reading the red-triangle regime beyond the limit alone is unreliable.
+- **Distinguishing from a lens bump**: the lens bump peaks at ~1.5–2.5·Re_bar (between the centre and the disk); the disk outer-flux-deficit positive residual extends outward from r > 2×Re_disk. Both can coexist — if the disk Re is too small, the lens-bump reading is contaminated, and the same candidate set should contain both `tune(disk, larger Re)` and `add(Lens)` (if the lens trigger also holds) to compete under the orchestrator's scoring.
+- **Distinguishing from the sky background**: an over-estimated sky also makes the outer Data systematically brighter than the Model. Check the sky-component magnitude line against the sky-background dashed line — if they are flush and the outer positive residual is significant, a too-small disk Re is more likely; if the sky line sits high, consider a sky correction first.
 
-### 触发后的候选生成
+### Candidate generation after the trigger
 
-触发条件全部成立时，**必须**以**最高优先级**产出 `tune(disk, Re 更大)` 候选（优先于中心成分的 add/tune 候选）：
+When all trigger conditions hold, you **must** produce a `tune(disk, larger Re)` candidate at the **highest priority** (ahead of central-component add/tune candidates):
 
 - **action**: `tune(disk, Re_init = 1.3–1.5 × current_disk_Re)`
-- **profile**: `expdisk`（不变；候选给出的 Re 指有效半径，主模型按 Rs=Re/1.68 写入 `4)` 行）
-- **n**: expdisk 无 n 参数（n≡1 由组件类型保证，禁止改为 sersic，见 Disk 成分 Sérsic 指数 n 的操作规范）
-- **Re**: 自由（toggle=1），初始值取 1.3–1.5 × current_disk_Re；不新增 re 上限约束（让 disk 自由增大，不设人为上限）
-- **其他参数**（xcen/ycen/axrat/ang）: 保持父状态拟合值热启动
-- **physical_motivation** 须引用：1D 正残差的起始半径（"Δμ 在 r ≈ XX px（= Y·Re_disk）处开始系统性为负，持续至 r ≈ ZZ px，峰值 ≈ −W mag"）、2D 残差图对应区域的近圆对称弥散正残差（若有）、以及"disk Re 偏小导致外缘光度未覆盖"的物理理由
+- **profile**: `expdisk` (unchanged; the Re you give is the effective radius, and the orchestrator writes Rs=Re/1.68 into the `4)` row)
+- **n**: expdisk has no n parameter (n≡1 is guaranteed by the component type; switching to sersic is forbidden, see the Disk-n operating rules)
+- **Re**: free (toggle=1), initial value 1.3–1.5 × current_disk_Re; add no re upper-bound constraint (let the disk grow freely with no artificial cap)
+- **Other parameters** (xcen/ycen/axrat/ang): warm-started to the parent fitted values
+- **physical_motivation** must cite: the onset radius of the 1D positive residual ("Δμ turns systematically negative from r ≈ XX px (= Y·Re_disk), continuing to r ≈ ZZ px, peak ≈ −W mag"), the near-circularly symmetric diffuse positive residual in that region on the 2D residual map (if any), and the physical rationale "the disk Re is too small, leaving the outer luminosity uncovered".
 
-### 自检硬约束
+### Self-check hard requirements
 
-- **触发复核**：若上述三条触发条件成立，本次输出**必须**包含至少一个 `tune(disk, Re 更大)` 候选，且其优先级应排在候选列表的前列。若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"外围正残差幅度仅 −0.03 mag，未达阈值"或"正残差仅在背景极限后的红三角区出现"），不得静默跳过。
-- **与中心成分规则的优先级**：若本轮同时触发 disk 外围光度不足与扁 Bulge→Bar / Lens 隆起 / 嵌入式伴星系等规则，`tune(disk, Re 更大)` 候选**必须**占候选列表的一个名额（不得因其他规则候选多而挤掉 disk Re 方向）。
+- **Trigger review**: if the three trigger conditions hold, this output **must** contain at least one `tune(disk, larger Re)` candidate, ranked near the top of the candidate list. If absent, you **must** state the waiver reason explicitly in a Candidate's physical_motivation (e.g. "outer positive residual amplitude only −0.03 mag, below threshold" or "the positive residual appears only in the red-triangle zone beyond the background limit"); silent skipping is forbidden.
+- **Priority over the central-component rules**: if this round triggers both the disk outer-flux deficit and rules such as flat-Bulge→Bar / lens bump / embedded companion, the `tune(disk, larger Re)` candidate **must** occupy a slot in the candidate list (it must not be squeezed out by other rules' candidates).
 
-## Lens 1D 轮廓隆起触发规则（VLM 必读）
+## Lens 1D Profile Bump Trigger Rule (VLM must read)
 
-**动机**：Lens 是低浓度（n<0.5）、延展的轴对称成分，在 2D 残差图上**无独立视觉签名**（不像 Bar 有"一字型"残差、Bulge 有致密核心）。但它会在 1D 表面亮度轮廓的 **Bar-Disk 过渡区**留下可辨识的印记：Data 曲线相对于平滑模型出现一个**宽阔的正向隆起**。该隆起无法被 n=1 的 Disk（指数衰减）和中心 Bulge/Bar 的线性叠加自然产生——它的存在直接指示一个中等 Re、低 n 的额外成分（即 Lens）。**但该隆起可以由位于同半径的致密伴星系经方位平均自然产生**——1D 隆起证据不唯一，触发前必须先完成伴星系污染排除（见阶段一"Lens 隆起的伴星系污染前置检查"）。
+**Motivation**: a Lens is a low-concentration (n<0.5), extended, axisymmetric component with **no independent visual signature** on the 2D residual map (unlike a Bar's "linear" residual or a Bulge's compact core). But it leaves an identifiable imprint in the **Bar–Disk transition zone** of the 1D surface-brightness profile: a **broad positive bump** of the Data curve over the smooth model. Such a bump cannot be produced naturally by the linear superposition of an n=1 Disk (exponential decline) and central Bulge/Bar — its existence directly indicates an extra component of intermediate Re and low n (a Lens). **But the bump can equally be produced by a compact companion at the same radius under azimuthal averaging** — the 1D bump is not unique evidence, and companion-contamination exclusion must be completed before triggering (see Phase 1's "pre-check for companion contamination of the lens bump").
 
-### 触发条件（五条同时满足，缺一不可）
+### Trigger (all five conditions must hold; none may be missing)
 
-当父状态已含 Bar 或 Bulge（中心骨架已建立）时，读取 1D 表面亮度残差曲线（Δμ = Data − Model，下方面板）：
+When the parent state already has a Bar or Bulge (the central skeleton is established), read the 1D surface-brightness residual curve (Δμ = Data − Model, lower panel):
 
-| 指标 | 阈值 | 物理依据 |
+| Indicator | Threshold | Physical basis |
 |------|------|---------|
-| **隆起位置** | 峰值在距中心 ~1.5–2.5·Re_bar（无 Bar 时取 ~2–4·Re_bulge） | Lens 的 Re 介于 Bar 与 Disk 之间（全序链 `Re_disk > Re_lens > Re_bar > Re_bulge`），其通量贡献的径向峰值落在 Bar 之外、Disk 主体之内 |
-| **隆起宽度** | 宽阔（跨越 ~10–30 px 量级，非窄尖峰） | 低 n Sersic（n<0.5）轮廓平缓，贡献跨越大半径范围；窄尖峰更像旋臂结块、PSF 问题或 binning 假象 |
-| **隆起幅度** | Δμ 峰值 ≲ −0.1 mag（Data 明显亮于 Model） | 显著通量贡献，超出噪声波动范围；Δμ > −0.05 mag 的微小波动不构成触发 |
-| **2D 对应** | 2D 残差图对应半径处呈**方位连续**（覆盖 ≳180°）的环状/壳层正残差，而非螺旋条带或单侧紧凑亮斑 | 排除旋臂——旋臂在 2D 上呈非轴对称螺旋图案，经方位平均后在 1D 上幅度被压制且位置不稳定。Lens 是轴对称的，1D 隆起幅度与 2D 环状残差一致 |
-| **伴星系漏光排除** | 隆起径向区间内不存在"位置未校准或参数退化"的 companion（2D 同半径残差为局部紧凑亮斑时即视为未排除） | 致密源经方位平均后同样产生宽阔隆起；1D 证据无法区分两者，必须靠 2D 形态（局部亮斑 vs 方位连续环状）与 companion 数值状态（Re 贴下界 / axrat 或 xcen 触界 / Mag 远暗于盘）排除 |
+| **Bump location** | peak at ~1.5–2.5·Re_bar from the centre (about ~2–4·Re_bulge with no Bar) | the Lens's Re lies between the Bar's and the Disk's (total order `Re_disk > Re_lens > Re_bar > Re_bulge`); the radial peak of its flux contribution falls outside the Bar and inside the main body of the Disk |
+| **Bump width** | broad (spanning ~10–30 px, not a narrow spike) | a low-n Sersic (n<0.5) profile is flat and contributes over a wide radial range; narrow spikes look more like arm knots, PSF issues or binning artefacts |
+| **Bump amplitude** | Δμ peak ≲ −0.1 mag (Data clearly brighter than Model) | a significant flux contribution beyond noise; tiny wiggles with Δμ > −0.05 mag do not trigger |
+| **2D counterpart** | at that radius the 2D residual map shows an **azimuthally continuous** (coverage ≳180°) ring/shell positive residual, not spiral bands or a one-sided compact blob | this excludes spiral arms — arms are non-axisymmetric spirals in 2D, suppressed in 1D amplitude by azimuthal averaging and unstable in position; a Lens is axisymmetric and its 1D bump amplitude matches the 2D ring |
+| **Companion leakage excluded** | no "uncalibrated or degenerate" companion exists within the bump's radial interval (a local compact blob in the 2D residual at the same radius counts as not excluded) | a compact source also produces a broad bump under azimuthal averaging; 1D evidence cannot tell them apart — exclusion must rely on 2D morphology (local blob vs azimuthally continuous ring) and the companion's numerical state (Re at the lower bound / axrat or xcen bound-hit / Mag far fainter than the disk) |
 
-### 与旋臂残差的关键鉴别
+### Key discrimination against spiral-arm residuals
 
-旋臂和 Lens 隆起都会在 1D 上表现为正残差，但物理本质不同：
+Arms and lens bumps both appear positive in 1D but differ physically:
 
-| 特征 | 旋臂 | Lens 隆起 |
+| Feature | Spiral arms | Lens bump |
 |------|------|-----------|
-| 2D 残差形态 | 螺旋条带（非轴对称） | 近圆对称环状/壳层 |
-| 1D 隆起幅度 | 方位平均后被压制，幅度较小 | 幅度显著（Δμ ≲ −0.1 mag） |
-| 1D 隆起宽度 | 较窄且位置受旋臂相位影响 | 宽阔且位置稳定（锁在 1.5–2.5·Re_bar） |
-| 触发结论 | 不生成 Lens 候选 | 生成 `add(Lens)` 候选 |
+| 2D residual morphology | spiral bands (non-axisymmetric) | near-circularly symmetric ring/shell |
+| 1D bump amplitude | suppressed by azimuthal averaging; small | significant (Δμ ≲ −0.1 mag) |
+| 1D bump width | narrower; position depends on arm phase | broad and positionally stable (locked at 1.5–2.5·Re_bar) |
+| Trigger conclusion | do not generate a Lens candidate | generate an `add(Lens)` candidate |
 
-### 触发后的候选生成
+### Candidate generation after the trigger
 
-**污染分支（优先于 add(Lens)）**：若隆起径向区间与某致密源半径共位，按模型中是否已有共位的 companion 分两种情形：
-- **已有 companion 且共位**：该 companion 存在位置偏差（Δr > 2 px，见 §伴星系位置核验）或参数退化（Re 贴下界 / axrat 或 xcen 触界 / Mag 异常暗于盘）时，本规则的优先产出是 `tune(companion, x_real, y_real)` 位置修正候选（或伴星系必要性核查）——先消除漏光，再看隆起是否仍在。
-- **尚无 companion（或无一与隆起共位）但 2D 残差在同半径呈局部紧凑亮斑**（原图对应位置可见点源/展源则证据更强）：本规则的优先产出是 `add(Companion, x_blob, y_blob, 紧致先验 [Re_min, Re_init, Re_max]（Re_init≈PSF 尺度至几 px，区间按亮点实测半径设定）, 中心自由（坐标初值即像素坐标）)` 候选——用致密源解释该半径的隆起，而非 `add(Lens)`。坐标直接写像素值，主模型原样填入 feedme。嵌入式伴星系的时机约束在此自动满足：路径 B 的前提是父状态已含 Bar 或 Bulge。
-仅当 2D 残差在同半径呈方位连续环状（覆盖 ≳180°）、或 companion 新增/修正后隆起依旧时，才生成 `add(Lens)`。证据混合（同半径既有局部亮斑又有环状残差）时，两类候选可作为竞争候选并存，由主模型打分。
+**Contamination branch (takes priority over add(Lens))**: if the bump's radial interval is co-located with some compact source's radius, split by whether the model already has a co-located companion:
+- **A co-located companion exists**: if that companion has a position offset (Δr > 2 px, see §Companion position verification) or degenerate parameters (Re at the lower bound / axrat or xcen bound-hit / Mag anomalously faint vs the disk), this rule's priority output is the `tune(companion, x_real, y_real)` position-correction candidate (or a companion-necessity check) — remove the leakage first, then see whether the bump persists.
+- **No companion yet (or none co-located with the bump) but the 2D residual at the same radius is a local compact blob** (stronger still if the original image shows a point/extended source there): this rule's priority output is an `add(Companion, x_blob, y_blob, compact prior [Re_min, Re_init, Re_max] (Re_init≈PSF scale to a few px; interval set from the blob's measured radius), free centre (the coordinate initial value is the pixel coordinate))` candidate — explain the bump at that radius with a compact source rather than `add(Lens)`. Write the coordinates as pixel values directly; the orchestrator fills them verbatim into the feedme. The embedded-companion timing constraint is automatically satisfied here: Path B presupposes the parent state already has a Bar or Bulge.
+Only when the 2D residual at the same radius is azimuthally continuous (coverage ≳180°), or the bump persists after the companion is added/corrected, generate `add(Lens)`. With mixed evidence (both a local blob and ring residual at the same radius), the two candidates may coexist as competitors for the orchestrator to score.
 
-触发条件全部成立时，**必须**产出 `add(Lens)` 候选：
+When all trigger conditions hold, you **must** produce an `add(Lens)` candidate:
 
-- **action**: `add(Lens, n<0.5 free, q>0.5, Re_init≈隆起峰值半径/2)`（px 单位，见 🔑 Re 约定：缺失成分的隆起峰值位于其 ~2·Re 处）
+- **action**: `add(Lens, n<0.5 free, q>0.5, Re_init≈bump peak radius/2)` (px; see the 🔑 Re Convention: a missing component's bump peaks at its ~2·Re)
 - **profile**: `sersic`
-- **n**: 自由（toggle=1），初始 ~0.3，范围 [0.1, 0.5]（物理先验 n<0.5，范围写入 `.cons`）
-- **Re**: 自由，初始值取 1D 隆起峰值半径的一半（≈该成分的 2·Re 处出现隆起），并按 🔑 Re 约定给出窄三元组 [Re_min, Re_init, Re_max]（±25–30%）；范围下界 > Re_bar（或 Re_bulge，取较大者），上界 < Re_disk，确保满足全序链
-- **q (axrat)**: 自由，初始 ~0.8，范围 [0.5, 1.0]（Lens 近圆，q>0.5）
-- **PA**: 自由，初始取 disk_ang（Lens 近圆，PA 不敏感）
-- **中心**: 自由（`1) x y 1 1`），初始取星系中心附近
-- **physical_motivation** 须引用：1D 隆起的精确位置（"Δμ 在 r≈XX px 处出现宽阔隆起，峰值 ≈−Y mag"）、2D 对应的环状残差特征、以及当前 Bar/Disk 均无法自然产生该过渡区通量的物理理由
+- **n**: free (toggle=1), initial ~0.3, range [0.1, 0.5] (prior n<0.5; range written into `.cons`)
+- **Re**: free, initial value half the 1D bump peak radius, with the narrow triplet [Re_min, Re_init, Re_max] (±25–30%) per the 🔑 Re Convention; lower bound > Re_bar (or Re_bulge, whichever larger), upper bound < Re_disk, satisfying the total order
+- **q (axrat)**: free, initial ~0.8, range [0.5, 1.0] (Lens near-round, q>0.5)
+- **PA**: free, initial disk_ang (Lens near-round; PA insensitive)
+- **Centre**: free (`1) x y 1 1`), initial near the galaxy centre
+- **physical_motivation** must cite: the bump's precise position ("Δμ shows a broad bump peaking ≈−Y mag at r≈XX px"), the corresponding ring residual in 2D, and the physical rationale that the current Bar/Disk cannot naturally produce that transition-zone flux
 
-### 自检硬约束
+### Self-check hard requirements
 
-- **触发复核**：若父状态含 Bar 或 Bulge，且上述五条联合条件成立（含伴星系漏光排除），本次输出**必须**包含至少一个 `add(Lens)` 候选。若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"1D 隆起位置在 1.2·Re_bar，偏离典型 Lens 区间"或"隆起与未校准 companion 半径共位，优先修正伴星系"或"隆起对应 2D 局部紧凑亮斑，优先 add(Companion)"），不得静默跳过。若隆起与 companion 半径或 2D 局部亮斑共位但本次仍输出了 `add(Lens)`，physical_motivation 必须引用 2D 环状残差的方位连续性证据（覆盖 ≳180°）。
-- **路径 A（Bar 异常）联动**：若父状态 Bar 同时满足路径 A 条件（`Re_bar ≳ Re_disk` 或 `q_bar ≳ 0.5`），可生成 `tune(Bar, split→Bar+Lens)`（拆分）或 `add(Lens)`（新增）候选之一，或两者并存测试不同假设。拆分候选的 physical_motivation 须引用 Bar 异常参数；新增候选的 physical_motivation 须引用 1D 隆起特征。
+- **Trigger review**: if the parent state has a Bar or Bulge and the five joint conditions hold (companion-leakage exclusion included), this output **must** contain at least one `add(Lens)` candidate. If absent, you **must** state the waiver reason explicitly in a Candidate's physical_motivation (e.g. "the bump sits at 1.2·Re_bar, off the typical Lens interval", or "the bump is co-located with an uncalibrated companion — correct the companion first", or "the bump corresponds to a 2D local compact blob — add(Companion) first"); silent skipping is forbidden. If the bump is co-located with a companion radius or a 2D local blob yet you still output `add(Lens)`, physical_motivation must cite the azimuthal-continuity evidence of the 2D ring residual (coverage ≳180°).
+- **Path A linkage (Bar anomaly)**: if the parent Bar also satisfies Path A (`Re_bar ≳ Re_disk` or `q_bar ≳ 0.5`), you may generate either a `tune(Bar, split→Bar+Lens)` (split) or an `add(Lens)` (addition), or both, to test different hypotheses. The split candidate's physical_motivation must cite the Bar-anomaly parameters; the addition candidate's must cite the 1D bump features.
 
-## Lens Re 膨胀触发规则（VLM 必读，生成竞争式路径）
+## Lens Re Inflation Trigger Rule (VLM must read; generates competing paths)
 
-**动机**：Lens 添加后常出现 Re 膨胀——lens Re 触上限、或 lens Re ≥ disk Re 导致物理性判定 FAIL。此时 VLM 容易只给出"收紧 lens Re"单一方向，错过"增大 disk Re"和"移除 lens"这两个可能更优的修复路径。本规则强制 VLM 在 lens 膨胀信号出现时生成**三条方向不同的竞争式候选（A/B/C）+ 条件触发的第四条（D）**，由主模型打分选择。
+**Motivation**: after a lens is added, Re inflation is common — the lens Re hits its upper bound, or lens Re ≥ disk Re causes a physicality FAIL. The VLM then tends to give only the single "tighten the lens Re" direction, missing the possibly better repairs "grow the disk Re" and "remove the lens". This rule forces the VLM, when an inflation signal appears, to generate **three competing candidates in different directions (A/B/C) plus a conditionally triggered fourth (D)**, scored by the orchestrator.
 
-> **D 的由来（真实事故）**：lens Re 连续两轮触及**前轮收紧产生的自设上限**（re_max 先 9.5px 后收紧 9px，两轮都触满），拟合 PASS、BIC 大幅改善、无任何简并信号（Re 比 0.70 < 0.85，通量 63% < 83%）——此时"上一轮收紧过猛、自设边界不是物理边界"才是正确假设，但 A/B/C 的封闭枚举把通用放宽规则（🔑 触界参数边界放宽规则）压制得从未产出"放宽"候选。D 路径就是为这个场景保留的席位。
+> **Why D exists (real incident)**: a lens Re hit a **self-imposed cap produced by an earlier tightening** in two consecutive rounds (re_max 9.5px then tightened to 9px, both hit), with a PASS fit, a large BIC improvement, and no degeneracy signal whatsoever (Re ratio 0.70 < 0.85, flux 63% < 83%) — there the correct hypothesis was "the last tightening overshot; the self-imposed bound is not a physical boundary", yet the closed A/B/C enumeration suppressed the generic relaxation rule (🔑 Bound-Relaxation Rule) so that a "relax" candidate never appeared. Path D is the seat reserved for exactly this scenario.
 
-### 触发条件（任一满足即触发）
+### Trigger (either condition triggers)
 
-读取参数摘要中 lens 的 Re 拟合值，以及父轮次 `.cons` 约束文件中 lens 的 re 上限（feedme 参数行本身无边界列，边界只存在于 `.cons`；lens 无 re 上限约束时不存在"触上限"概念，仅剩 Re 反置判据）：
+Read the lens's fitted Re from the parameter summary and the lens's re upper bound from the parent round's `.cons` (the feedme parameter rows carry no bounds; bounds exist only in `.cons`; with no bound on lens re there is no "upper-bound hit" and only the Re-inversion criterion remains):
 
-| 指标 | 阈值 | 物理依据 |
+| Indicator | Threshold | Physical basis |
 |------|------|---------|
-| **lens Re 触上限** | lens_Re ≥ 0.98 × re_max | 拟合器想让 lens 更大但被锁，是 lens 试图超越物理角色的信号 |
-| **lens Re ≥ disk Re** | lens_Re ≥ disk_Re（物理性判定 FAIL 会命中，或主模型从参数摘要直接比对报告） | lens 膨胀超过 disk，违反 Re_disk > Re_lens 全序 |
+| **lens Re hits the upper bound** | lens_Re ≥ 0.98 × re_max | the fitter wants the lens bigger but is locked out — a signal the lens is trying to exceed its physical role |
+| **lens Re ≥ disk Re** | lens_Re ≥ disk_Re (the physicality verdict catches this, or the orchestrator compares directly from the parameter summary) | lens inflation past the disk violates the Re_disk > Re_lens total order |
 
-### 触发后的候选生成（A/B/C 必出；D 条件成立时必出）
+### Candidate generation after the trigger (A/B/C mandatory; D mandatory when its conditions hold)
 
-触发条件成立时，**必须**产出 A/B/C 三条候选，覆盖三种不同的物理假设；D 的触发条件（见下）成立时**同样必出**：
+When the trigger holds you **must** produce A/B/C, covering three distinct physical hypotheses; when D's conditions (below) hold it is **equally mandatory**:
 
-**候选 A — 收紧 lens Re 上限**
-- action: `tune(lens, re_max = 0.9 × Re_above)`，其中 `Re_above` = 全序链中 lens 上方相邻成分（通常为 disk）的当前 Re
-- 假设：lens 真实属于过渡区，膨胀是拟合器逃逸；收紧后 lens 回到正确角色
-- 适用：disk Re 合理、lens 在过渡区确有独立通量贡献（1D 隆起仍存在）
-- expected_behavior_tag 示例：`lens_re_bound_tighten`
+**Candidate A — tighten the lens Re upper bound**
+- action: `tune(lens, re_max = 0.9 × Re_above)`, where `Re_above` = the current Re of the component directly above the lens in the total order (usually the disk)
+- hypothesis: the lens truly belongs to the transition zone; the inflation is the fitter escaping; tightening returns the lens to its proper role
+- applies when: the disk Re is sensible and the lens truly contributes independent flux in the transition zone (the 1D bump persists)
+- example expected_behavior_tag: `lens_re_bound_tighten`
 
-**候选 B — 增大 disk Re**
-- action: `tune(disk, Re_init = 1.3–1.5 × current_disk_Re)`，re_max 不收紧（让 disk 自由增大）；disk n 保持 fixed=1
-- 假设：disk Re 本身偏小，lens 被迫膨胀去代偿 disk 外缘通量；增大 disk 后 lens 自然回缩
-- 适用：disk Re 未触界（disk_Re < disk 的 re_max）、或 1D 曲线 r > 2×Re_disk 区域 Data 亮于 Model、或父轮次间 disk axrat 剧烈变化（身份不稳定）
-- **禁止**：当 disk Re 已触自身 re_max 上限时，候选 B 不适用（应显式在 physical_motivation 中说明"disk 已触界，候选 B 不适用"并跳过）
+**Candidate B — grow the disk Re**
+- action: `tune(disk, Re_init = 1.3–1.5 × current_disk_Re)`, with no re_max tightened (let the disk grow); keep disk n fixed=1 (guaranteed by expdisk type)
+- hypothesis: the disk Re itself is too small and the lens is forced to inflate to compensate the disk's outer flux; growing the disk lets the lens shrink back naturally
+- applies when: the disk Re is not bound-hit (disk_Re < the disk's re_max), or the 1D curve shows Data brighter than Model at r > 2×Re_disk, or the disk axrat swings wildly between rounds (unstable identity)
+- **Forbidden**: when the disk Re already hits its own re_max, candidate B does not apply (state explicitly in physical_motivation "the disk is bound-hit; B inapplicable" and skip)
 
-**候选 C — 移除 lens**
+**Candidate C — remove the lens**
 - action: `remove(lens)`
-- 假设：lens 是寄生/简并成分，其通量本应由 disk 或 bulge 承担；移除后重新分配通量更物理
-- 适用：lens 通量占比可疑（Mag_lens ≤ Mag_disk + 0.2，即通量接近甚至超过 disk）、或 lens n 退化（趋近 1 变成 mini-disk）、或历史轮次证明移除 lens 后 BIC 改善
-- expected_behavior_tag 示例：`lens_remove_parasitic`
+- hypothesis: the lens is a parasitic/degenerate component whose flux belongs to the disk or bulge; removing it and reapportioning is more physical
+- applies when: the lens flux fraction is suspicious (Mag_lens ≤ Mag_disk + 0.2, i.e. flux close to or exceeding the disk), or the lens n degenerates (drifting toward 1, becoming a mini-disk), or history shows BIC improving after lens removal
+- example expected_behavior_tag: `lens_remove_parasitic`
 
-**候选 D — 放宽自设上限（仅当触界源于前轮收紧，三条件缺一不可）**
-（本候选是 🔑 触界参数边界放宽规则 Tier 1（自设边界）在 lens Re 上的具体化，保留在此以维持与 A/B/C 的竞争语境）
-- action: `tune(lens, re_max = 触界值 × 1.3)`，其余参数全部热启动到父收敛值（不收紧 re_min）
-- 假设：触界的 re_max 是上一轮收紧动作（候选 A / 恢复候选 / 主模型防膨胀）留下的**自设边界**而非物理边界——lens 真实 Re 在当前值之上，应让优化器滑到自然停驻点
-- 适用（三条同时成立）：
-  1. lens Re 触上限（lens_Re ≥ 0.98 × re_max）；
-  2. **边界来源判定**：当前 re_max < 该成分在输入配置中的原始 re_max（即边界系前轮收紧产生；触原始边界 = 组件在挑战全量允许范围，属角色逃逸，不适用 D）；
-  3. **无简并信号**：`Re_lens / Re_disk < 0.85` **且** `Mag_lens > Mag_disk + 0.2`（即 §disk Re 瓶颈的两个子条件均未命中——任一命中时放宽只会喂养寄生/代偿模式，D 禁止）。
-- expected_behavior_tag 示例：`lens_re_bound_relax`
-- 落点解读（继承 🔑 触界参数边界放宽规则）：放宽后落在新区间**内部** = 找到真盆底（自设上限确实过紧）；**再次触新界** = 回到 A/B/C 的结构性假设（成分在逃逸其角色）
+**Candidate D — relax the self-imposed bound (only when the hit bound came from an earlier tightening; all three conditions required)**
+(this candidate is the Tier-1 (self-imposed bound) specialisation of the 🔑 Bound-Relaxation Rule on lens Re, kept here to stay in the competitive context with A/B/C)
+- action: `tune(lens, re_max = hit value × 1.3)`, all other parameters warm-started to the parent converged values (do not tighten re_min)
+- hypothesis: the hit re_max is a **self-imposed** bound left by the last round's tightening (candidate A / a recovery candidate / orchestrator anti-inflation), not a physical boundary — the true lens Re lies above the current value; let the optimiser slide to its natural rest
+- applies (all three simultaneously):
+  1. the lens Re hits the upper bound (lens_Re ≥ 0.98 × re_max);
+  2. **bound provenance**: the current re_max < the component's original re_max in the input configuration (the bound came from an earlier tightening; hitting the original bound = the component challenging the full allowed range, i.e. role escape — D does not apply);
+  3. **no degeneracy signal**: `Re_lens / Re_disk < 0.85` **and** `Mag_lens > Mag_disk + 0.2` (i.e. neither sub-criterion of the disk-Re bottleneck holds — if either holds, relaxing only feeds the parasitic/compensation mode and D is forbidden).
+- example expected_behavior_tag: `lens_re_bound_relax`
+- Outcome reading (inherited from the 🔑 Bound-Relaxation Rule): landing **inside** the new interval after relaxing = the true basin found (the self-imposed cap was too tight); **hitting the new bound again** = return to A/B/C's structural hypotheses (the component is escaping its role)
 
-### 自检硬约束
+### Self-check hard requirements
 
-- **触发复核**：若上述触发条件成立，本次输出**必须**包含候选 A、B、C。若少出某条，必须在对应 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"disk Re 已触 re_max，候选 B 不适用"），不得静默跳过。
-- **D 触发复核**：若候选 D 的三条适用条件同时成立（主模型会在 local_state_description 的数值规则委托中给出三条件的实测数值），本次输出**必须**包含候选 D（`lens_re_bound_relax`）；未包含且未显式声明放弃理由（指出哪条条件不成立）视为违规。任一条件不成立（触的是原始边界 / 存在简并信号）时 D 不生成，无需声明。
-- **方向多样性**：A/B/C（及触发时的 D）各条的 expected_behavior_tag 必须两两不同。
-- **与 §Disk 外围光度不足触发规则的关系**：候选 B 与该规则可能同时触发（一个基于参数状态、一个基于 1D 残差形状）。若两者同时命中，候选 B 满足双重义务，无需重复生成。
+- **Trigger review**: if the trigger holds, this output **must** contain candidates A, B and C. If one is missing, you **must** state the waiver reason explicitly in that Candidate's physical_motivation (e.g. "the disk Re already hits re_max; B inapplicable"); silent skipping is forbidden.
+- **D trigger review**: if all three applicability conditions of D hold (the orchestrator will give the three measured values in local_state_description's numeric-rule delegation), this output **must** contain candidate D (`lens_re_bound_relax`); its absence without an explicit waiver (naming the failing condition) is a violation. If any condition fails (the hit bound is original / a degeneracy signal exists), D is not generated and needs no declaration.
+- **Directional diversity**: A/B/C (and D when triggered) must have pairwise distinct expected_behavior_tag values.
+- **Relation to the Disk Outer-Flux-Deficit Trigger Rule**: candidate B can trigger simultaneously with that rule (one from parameter state, one from the 1D residual shape). If both hit, candidate B satisfies both obligations — no duplicate is needed.
 
-## Disk 成分 Sérsic 指数 n 的操作规范
+## Operating rules for the Disk component's Sérsic index n
 
-Disk 一律使用 `expdisk` 组件类型——expdisk **没有 n 参数**（指数盘 n≡1 由类型本身保证），"Disk 的 n 固定为 1"在 galfit 中由类型选择自动成立。无论 beam search 处于哪个阶段，都**禁止**生成"把 Disk 改为 sersic 并释放 n"的候选。
+The Disk always uses the `expdisk` component type — expdisk **has no n parameter** (n≡1 for an exponential disk is guaranteed by the type itself), so "the Disk's n is fixed at 1" holds automatically in galfit by type choice. Whatever stage the beam search is in, generating a candidate "changing the Disk to sersic with released n" is **forbidden**.
 
-- **角色判定（关键）**：galfit 中 "Disk 成分"（expdisk）与 "单 Sersic"（sersic）是不同组件类型，按 `0)` 行类型即可区分——
-    - **Disk 成分**（多成分分解中的盘组件，与 Bulge/Bar/Lens 并列存在）→ `expdisk`（其 `4)` 行是 Rs 标长；候选给出的 Re 三元组指有效半径 Re=1.68·Rs，由主模型换算后写入）。
-    - **单 Sersic**（整星系仅一个 sersic 组件、无并列中心成分；椭圆星系终态或 Round 0 起步）→ `sersic`，n 自由，作为整体浓度观测量。
-- **身份互换退化的联合诊断（保留）**：disk↔bulge 身份互换在 galfit 中表现为 `bulge_Re ≥ disk_Re`（Re 全序反置）**且同时** bulge 通量与 disk 相当甚至更亮——判据必须是**联合诊断**，单看某一参数不构成退化。出现联合退化时，主模型在打分阶段对该候选施加退化惩罚（§去重与排序 维度 4）。
+- **Role adjudication (key)**: in galfit the "Disk component" (expdisk) and the "single Sersic" (sersic) are different component types, distinguishable by the `0)` line —
+    - **Disk component** (the disk member of a multi-component decomposition, coexisting with Bulge/Bar/Lens) → `expdisk` (its `4)` row is the scale length Rs; the Re triplet you give refers to the effective radius Re=1.68·Rs, converted by the orchestrator when writing).
+    - **Single Sersic** (the galaxy's only sersic component with no parallel central components; an elliptical's end state or the Round-0 start) → `sersic`, with n free as the overall concentration observable.
+- **Joint diagnosis of identity-swap degeneration (kept)**: a disk↔bulge identity swap in galfit manifests as `bulge_Re ≥ disk_Re` (Re total-order inversion) **together with** bulge flux comparable to or brighter than the disk — the diagnosis must be **joint**; no single parameter constitutes degeneration. On joint degeneration the orchestrator applies the degeneracy penalty to that candidate (§Deduplication and Ranking, dimension 4).
 
-## Bulge 成分 Sérsic 指数 n 的操作规范（depth 分段，硬约束）
+## Operating rules for the Bulge component's Sérsic index n (depth-staged; hard requirement)
 
-与 Disk 的"n 一律固定为 1"相反，Bulge 的 n 策略随 beam search 深度演进：
+In contrast to the Disk's "n always 1", the Bulge's n policy evolves with depth:
+- **depth ≤ 2 (skeleton stage)**: `add(Bulge)` defaults to `n=4 fixed` (classical-bulge prior) — early on there are few components and high degeneracy risk; a fixed n=4 scaffolds against bulge/disk/bar flux fights.
+- **depth ≥ 3 (deepening stage, two hard rules)**:
+    1. **Release the stock**: if the parent inventory contains a bulge with n fixed (n=4 fixed), this output **must** include a release candidate — `tune(bulge, n_free)` (n free: the feedme `5)` toggle set to 1, initial value the parent converged ≈4, range [0.5, 8] written into `.cons`). Rationale: the fixed n=4 was skeleton-stage scaffolding; once the central structure is stable, n should be freed to distinguish **classical bulge (n≈4) vs pseudobulge (n≈1–2)** as two distinct physical hypotheses; if n converges back to ≈4 with little improvement, the classical hypothesis is fit-supported and n may be re-fixed later. If you do not generate the release candidate, you **must** state the waiver reason explicitly in a Candidate's physical_motivation (e.g. "last round's n_free converged back to 4.0 with no BIC gain"); silent skipping is forbidden.
+    2. **No locking for additions**: a bulge added this round (`add(Bulge)`) must have n **free** (toggle=1): initial ~2 (pseudobulge prior) or ~4 (classical prior) per the residual morphology, range covering [0.5, 8]; generating `add(Bulge, n=4 fixed)` at depth≥3 is **forbidden**. Rationale: at the deepening stage an added bulge tests "a not-yet-excluded bulge hypothesis"; fixing n=4 welds the hypothesis to one concentration, making the fit unable to distinguish "no bulge" from "a bulge with n≠4".
 
-- **depth ≤ 2（骨架阶段）**：`add(Bulge)` 默认 `n=4 fixed`（经典核球先验）——早期成分少、参数简并风险高，固定 n=4 是防止 bulge 与 disk/bar 互抢通量的脚手架。
-- **depth ≥ 3（深化阶段，两条硬规则）**：
-    1. **存量释放**：若父状态成分清单含 bulge 且其 n 为固定（n=4 fixed），本次输出**必须**包含释放 n 的候选动作——`tune(bulge, n_free)`（n 自由：feedme `5)` 行 toggle 置 1，初始值取父状态收敛值 ≈4，范围 [0.5, 8] 写入 `.cons`）。理由：固定 n=4 只是骨架阶段的脚手架，深化阶段中心结构已稳定，应让 n 自由以区分**经典核球（n≈4）vs 伪核球（n≈1–2）**两个不同的物理假设；若拟合后 n 收敛回 ≈4 且改善有限，经典核球假设得到拟合支持，后续轮次可重新固定。若本次不生成释放候选，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"上一轮 n_free 已收敛回 4.0 且 BIC 无改善"），不得静默跳过。
-    2. **增量不锁**：本轮若新增 bulge（`add(Bulge)`），其 n **一律自由**（toggle=1）：初始值按残差形态取 ~2（伪核球先验）或 ~4（经典核球先验），范围覆盖 [0.5, 8]；**禁止**在 depth≥3 生成 `add(Bulge, n=4 fixed)` 候选。理由：深化阶段新增 bulge 的目的是"检验一个尚未被排除的核球假设"，固定 n=4 会把假设焊死在单一浓度上，使拟合结果无法区分"核球不存在"与"核球存在但 n≠4"。
+## Candidate count rules (strictly depth-staged; no padding)
 
-## 候选数量规则（按 depth 强制分段，严禁凑数）
+The next step is usually deterministic in the shallow tree (building the Disk+Bulge foundation) — parallel exploration is pointless there; real branching starts once the two-component structure stabilises. Counts by depth:
 
-搜索树浅层的下一步通常是确定性的（建立 Disk+Bulge 基础结构），没有必要并行探索；真正的分支发生在双成分结构稳定之后。按 depth 分段给出候选数：
+### ⚠️ On the nature of Stage-1 detection (all depths)
+Stage-1 `detect_bar_lopsidedness` is a **top-down morphological hint**, not a bottom-up component verdict. Detection = weak positive evidence (generate the corresponding candidates actively); **non-detection = zero evidence, not negative evidence**. bar/lop can still be discovered in residual-driven exploration — typically, high-dynamic-range images reveal an elongated inner structure once the central components are built, or quadrupole bar signatures surface once the bulge n is released. So at depth ≥ 2, even with a Stage-1 non-detection, Bar / Fourier / Lens candidates should still be generated normally whenever **residual or original-image evidence supports them**; self-censoring on "not detected" is forbidden.
 
-### ⚠️ 阶段一检测性质（所有 depth 适用）
+### depth = 1 (the parent is the first fit of the input feedme)
+The count follows the Stage-1 `detect_bar_lopsidedness` conclusion in the `working_note.md` header:
+- **lopsidedness detected** → **1 candidate**: `tune(Disk, +F1)` (append an F1 line to the Disk / starting single-Sersic block; lopsidedness has the highest priority, ahead of adding any component).
+- **lopsidedness not detected + bar detected** → **1–2 candidates**: `add(Bulge, n=4 fixed, [Re_min, Re_init, Re_max]=from the first round's central-core radial measurement)` (the standard Disk+Bulge split) and `add(Bar, n=0.5 fixed, q<0.4, PA≈Stage-1 PA, [Re_min, Re_init, Re_max]=from the first round's bar-feature inner/outer radii)` (only when the original-image bar feature is strong). Measure the Re triplet on the first round's (single-Sersic) residual map, px. The `PA` here uses the **N=+Y contract** (see the 🔑 PA Convention); Stage-1 `detect_bar_lopsidedness`'s `bar.pa_deg` can be used directly.
+- **Neither detected** → **1 candidate**: `add(Bulge, n=4 fixed, [Re_min, Re_init, Re_max]=from the first round's central-core radial measurement, px)`. (At depth=1 build the Bulge skeleton first; bar exploration waits for depth≥2 on residual evidence — it is not closed by a Stage-1 non-detection.)
+- **Exception**: if the single-sersic residuals clearly show edge-on signatures (b/a < 0.17 with a dust lane / disk thickness), you may instead give **1 candidate**: `tune(Disk, →edgedisk)` (switch the starting component to the edgedisk type).
 
-阶段一 `detect_bar_lopsidedness` 是**自上而下的形态学提示**，不是自下而上的成分判定。检出 = 弱正证据（积极生成对应候选）；**未检出 = 零证据，不是负证据**。bar/lop 可能在残差驱动的探索中被发现——典型情形：中心成分建立后高动态范围图揭示扁长内部结构，或 bulge 释放 n 后残差浮现四极矩 bar 签名。因此 depth ≥ 2 时，即使阶段一未检出 bar/lop，只要**残差证据或原图特征支持**，仍应正常生成 Bar / Fourier / Lens 候选，不得因"未检出"而自我审查跳过。
+### depth = 2 (the two-component foundation is established)
+Output **2–3** candidates. Typical directions: fix constraints, release/tighten a parameter, add a compact component (a Nucleus), switch a component's model type.
 
-### depth = 1（父状态是输入 feedme 的首次拟合结果）
-依据 `working_note.md` 头部的阶段一 `detect_bar_lopsidedness` 结论决定候选数：
-- **lopsidedness 检出** → **1 个候选**：`tune(Disk, +F1)`（在 Disk/起手单 Sersic 成分块追加 F1 行；偏心优先级最高，先于加任何成分）。
-- **lopsidedness 未检出 + bar 检出** → **1–2 个候选**：`add(Bulge, n=4 fixed, [Re_min, Re_init, Re_max]=按首轮残差中心核径向量测)`（标准 Disk+Bulge 拆分）与 `add(Bar, n=0.5 fixed, q<0.4, PA≈阶段一 PA, [Re_min, Re_init, Re_max]=按首轮残差棒状特征内、外径量测)`（仅当原图 bar 特征强）。Re 三元组从首轮拟合（单 Sersic）的残差图上量测，px 单位。此处 `PA` 用 **N=+Y 契约**（见 §🔑 PA 约定），阶段一 `detect_bar_lopsidedness` 返回的 `bar.pa_deg` 可直接拿来用。
-- **两者都未检出** → **1 个候选**：`add(Bulge, n=4 fixed, [Re_min, Re_init, Re_max]=按首轮残差中心核径向量测，px)`。（depth=1 先建 Bulge 骨架；bar 的探索留到 depth≥2 基于残差证据进行，不因阶段一未检出而关闭。）
-- **例外**：若单 sersic 拟合残差清楚地显示侧视盘特征（b/a < 0.17 且残差有 dust lane / 盘厚度），可改为 **1 个候选**：`tune(Disk, →edgedisk)`（把起手成分切换为 edgedisk 组件类型）。
+### depth ≥ 3 (deepening)
+Output **2–4** candidates. The beam's parallel-exploration value is greatest here; use directional diversity fully. **Bulge-n hard rules at depth≥3** (see the Bulge-n operating rules): (a) if the parent inventory contains a bulge with n fixed, the output **must** include a `tune(bulge, n_free)` candidate (or an explicit waiver); (b) an `add(Bulge)` this round must have n **free** — `n=4 fixed` is forbidden.
 
-### depth = 2（双成分基础结构已建立）
-输出 **2–3 个**候选。典型方向：修约束、释放/收紧某参数、新增致密成分（Nucleus）、切换某成分模型类型。
+### General rules (all depths)
+- **No padding**: if you cannot produce enough candidates with pairwise distinct `expected_behavior_tag`, fewer than the lower bound is acceptable. One high-quality candidate beats two essentially identical fillers.
+- **Physical motivation must be grounded in Phase 1**: every candidate's physical_motivation must cite concrete residual features described in Phase 1 (position, strength, symmetry); speculation is forbidden.
+- **Follow the component-addition order** (by companion location):
+    - **Outer companion** (≳ 2·Re_disk from the centre): `Disk → (F1/Outer Companion if detected) → Bulge → Bar → Lens → Other`
+    - **Embedded companion** (≲ 2·Re_disk, inside the main galaxy's contours): `Disk → Bulge → Bar → (Embedded Companion if detected) → Lens → Other`
+    - i.e. **embedded companions come after Bulge/Bar**; outer companions are unconstrained. Bar/Lens/Nucleus recognition must follow the `<Overall workflow of galaxy component analysis>` section.
+    - **Lens candidate timing (two independent paths; either triggers)**:
+        - **Path A (inferred from a Bar anomaly)**: when the parent Bar is physically anomalous (`Re_bar ≳ Re_disk(=1.68·Rs_disk)` or `q_bar ≳ 0.5`, i.e. the Bar is being forced to fit a Lens structure), generate a split candidate: `tune(Bar, split→Bar+Lens)` or `add(Lens, n<0.5 free, q>0.5, [Re_min, Re_init, Re_max]=Re_init from bump peak radius/2, interval between bar and disk)`.
+        - **Path B (1D-profile bump)**: when the 1D residual curve shows a broad positive bump about 1.5–2.5·Re_bar from the centre (see the Lens 1D Profile Bump Trigger Rule), generate an `add(Lens, n<0.5 free, q>0.5, [Re_min, Re_init, Re_max] (Re_init≈bump peak radius/2))` candidate (px) even with perfectly normal Bar parameters.
+        - The Lens uses `sersic`, n free (toggle=1) with prior n<0.5, Re satisfying the total order `Re_disk > Re_lens > Re_bar > Re_bulge` (compare only the existing central components; drop the missing ones and require strict decrease), q>0.5, concentric with bulge/bar/disk.
+- **Respect history**: states/equivalences/hypotheses recorded in `[State ledger]`, `[Rollback edges]` and `[Refuted hypotheses]` must not be proposed again (see §Global-State Usage Rules clauses 2–3 and §State-Ledger Usage Rules; exception conditions and the novelty_claim duty are in those sections).
+- **Directional diversity** (with multiple candidates): candidates must span **clearly different** directions. Typical contrasting pairs:
+    - "add a component" vs "tune a parameter" (e.g. +Nucleus(compact) vs release bulge_n)
+    - "fix constraints" vs "change model type" (e.g. fix the bulge↔disk concentricity vs switch Disk→edgedisk)
+    - "Occam" vs "deepen" (e.g. remove(nucleus) vs tighten the bulge_Re cap)
+    - "split Bar→Bar+Lens" vs "tighten the Bar Re cap" (when the parent Bar's Re/q is anomalous: split out a Lens to absorb the extended component vs constrain the Bar back into a sensible range)
+    - "add(Lens) to absorb the 1D bump" vs "adjust Disk/Bar bounds" (when the 1D profile bumps at 1.5–2.5·Re_bar with a normal Bar: add a Lens to absorb the transition-zone flux vs try to cover it by tuning the existing components)
+    - "companion position fix" vs "companion morphology fix" (e.g. tune(companion, x_real, y_real) vs tune(companion, q_init=0.9, Re_init≈2px)); the position fix is mandatory only when Phase 1 already reported an offset > 2 px; otherwise prefer the morphology fix
+    - "three/four-way competition on lens inflation" (when the lens Re hits its cap or lens_Re ≥ disk_Re: tighten lens Re vs grow disk Re vs remove the lens, plus relax re_max when the cap is self-imposed with no degeneracy; see the Lens Re Inflation Trigger Rule)
 
-### depth ≥ 3（深化探索）
-输出 **2–4 个**候选。此时 beam search 的并行探索价值最大，应充分利用方向多样性。**depth≥3 的 Bulge n 硬规则**（详见 §Bulge 成分 Sérsic 指数 n 的操作规范）：(a) 父状态含 bulge 且 n 固定 → 本次输出**必须**包含 `tune(bulge, n_free)` 候选（或显式声明放弃理由）；(b) 本轮 `add(Bulge)` 的 n **一律自由**，禁止 `n=4 fixed`。
+## Required candidate fields
+Every candidate must give:
+- **expected_C'**: the expected component inventory after applying the action (e.g. `{Disk, Bulge, Nucleus}`)
+- **expected_behavior_tag**: expected fit-behaviour tag (short snake_case, e.g. `bulge_n_free_release`, `nucleus_add_compact`, `bar_pa_correct`, `edgedisk_switch`, `constrain_fix_concentric`, `occam_remove_nucleus`, `disk_add_fourier_f1`)
+- **local_benefit_σ** ∈ [0, 1]: your estimate of "the fraction of reduced χ² improvement this action can deliver". 0 = no improvement; 1 = nearly all residuals absorbed. **Advisory only** — the orchestrator scores independently.
+- **novelty_claim**: one line stating this candidate's new information relative to the `[State ledger]` (see §State-Ledger Usage Rules). Format: `new structure {…}` (the landed signature is outside every ledger line's tolerance band) or `≡<round> but <parameter axis> untested` (the only legal route when structure-equivalent). remove-only/revert candidates' novelty_claim must state "projection compared; no ledger/rollback-edge hit".
 
-### 通用规则（所有 depth 适用）
-- **严禁凑数**：若无法生成足够多 `expected_behavior_tag` **两两不同**的候选，允许实际数量少于上述下限。宁可只给 1 个高质量候选，也不要给 2 个实质相同的凑数候选。
-- **物理动机必须基于阶段一**：每个候选的 physical_motivation 必须引用阶段一描述过的具体残差特征（位置、强度、对称性等），严禁凭空推测。
-- **遵循成分添加次序**（按伴星系位置分类）：
-    - **外围伴星系**（距中心 ≳ 2·Re_disk）：`Disk → (F1/Outer Companion 若检出) → Bulge → Bar → Lens → Other`
-    - **嵌入式伴星系**（距中心 ≲ 2·Re_disk，落在主星系 contour 内）：`Disk → Bulge → Bar → (Embedded Companion 若检出) → Lens → Other`
-    - 即**嵌入式伴星系必须在 Bulge/Bar 之后**，外围伴星系无此约束。Bar/Lens/Nucleus 的认定条件须符合 `<星系成分分析的总体流程>` 章节。
-    - **Lens 候选生成时机（两条独立路径，满足任一即触发）**：
-        - **路径 A（Bar 异常反推）**：当父状态的 Bar 出现物理异常（`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`，即 Bar 被强行拉去拟合 Lens 结构）时，应生成拆分候选：`tune(Bar, split→Bar+Lens)` 或 `add(Lens, n<0.5 free, q>0.5, [Re_min, Re_init, Re_max]=按 1D 隆起峰值半径/2 定 Re_init，区间落在 bar 与 disk 之间)`。
-        - **路径 B（1D 轮廓隆起）**：当 1D 表面亮度残差曲线在距中心 ~1.5–2.5·Re_bar 处出现宽阔正向隆起（详见 §Lens 1D 轮廓隆起触发规则），即使 Bar 参数完全正常，也应生成 `add(Lens, n<0.5 free, q>0.5, [Re_min, Re_init, Re_max]（Re_init≈隆起峰值半径/2）)` 候选（px 单位，换算依据见 🔑 Re 约定）。
-        - Lens 用 `sersic`，n 自由（toggle=1）但物理先验 n<0.5，Re 满足全序基准 `Re_disk > Re_lens > Re_bar > Re_bulge`（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减），q>0.5，与 bulge/bar/disk 同心。
-- **尊重历史**：全局状态 `[状态账本]`、`[回滚边]` 与 `[被否定假设]` 中记录的状态/等价关系/假设不得重复提出（详见 §全局状态使用规则条款 2、3 与 §状态账本使用规则；例外条件与 novelty_claim 声明义务见该节）。
-- **方向多样性**（多候选时）：候选之间必须覆盖**显著不同**的探索方向。典型对比组合：
-    - "加成分" vs "调参"（如 +Nucleus(致密) vs release bulge_n）
-    - "修约束" vs "换模型类型"（如 修复 bulge↔disk 同心 vs 切换 Disk→edgedisk）
-    - "奥卡姆剃刀" vs "深化"（如 remove(nucleus) vs tighten bulge_Re 上限）
-    - "拆 Bar→Bar+Lens" vs "收紧 Bar Re 上限"（当父状态 Bar 的 Re/q 物理异常时，拆出 Lens 吸收延展成分 vs 用约束把 Bar 压回合理区间）
-    - "add(Lens) 吸收 1D 隆起" vs "调 Disk/Bar 边界"（当 1D 轮廓在 1.5–2.5·Re_bar 出现宽阔隆起但 Bar 参数正常时，加 Lens 成分吸收过渡区通量 vs 尝试用调参让现有成分覆盖该区域）
-    - "伴星系位置修正" vs "伴星系形态修正"（如 tune(companion, x_real, y_real) vs tune(companion, q_init=0.9, Re_init≈2px)）；仅当阶段一已报告位置偏差 > 2 px 时，位置修正候选才是必须的，否则优先形态修正
-    - "lens 膨胀时三/四路径竞争"（当 lens Re 触上限或 lens_Re ≥ disk_Re 时：收紧 lens Re vs 增大 disk Re vs 移除 lens，触自设上限且无简并时再加放宽 re_max，各自测试不同物理假设；详见 §Lens Re 膨胀触发规则）
-
-## 候选预期信息
-每个候选必须给出：
-- **expected_C'**：施加动作后的预期成分清单（如 `{Disk, Bulge, Nucleus}`）
-- **expected_behavior_tag**：预期拟合行为标签（短蛇形命名，如 `bulge_n_free_release`、`nucleus_add_compact`、`bar_pa_correct`、`edgedisk_switch`、`constrain_fix_concentric`、`occam_remove_nucleus`、`disk_add_fourier_f1`）
-- **local_benefit_σ** ∈ [0, 1]：你预估的"本动作能让 reduced_χ² 改善的比例"。0 表示无改善，1 表示残差几乎全被吸收。**此值仅供主模型参考**，主模型会独立打分。
-- **novelty_claim**：一行说明本候选相对 `[状态账本]` 的新信息（见 §状态账本使用规则）。格式：`新结构 {…}`（落地签名不在账本任何一行的容忍带内）或 `≡<轮次> 但 <参数轴> 未测`（结构等价时的唯一合法途径）。remove-only/revert 候选的 novelty_claim 必须注明"投影已比对，不命中账本/回滚边"。
-
-## 输出 schema（严格遵守 Markdown 格式）
+## Output Schema (strictly follow the Markdown format)
 
 ````markdown
 ## Physicality Verdict
 - verdict: PASS
-- failed_checks: 无
-- swap_hint: 无
+- failed_checks: none
+- swap_hint: none
 
 # Beam Action Candidates (branch={branch_id}, parent={parent_label}, depth={depth})
 
 ## Candidate 1
 - **action_id**: {branch_id}-{parent}-cand-1
 - **primitives**:
-  1. <add|remove|tune>(<target>, <key params>)   ← add() 且目标有 Re 时必含 [Re_min, Re_init, Re_max] px 三元组（AGN 豁免，见 🔑 Re 约定）
-  2. <add|remove|tune>(<target>, <key params>)   ← 可选，至多 2 条
-- **physical_motivation**: <引用阶段一描述的具体残差特征>
+  1. <add|remove|tune>(<target>, <key params>)   ← add() on a target with Re must include the [Re_min, Re_init, Re_max] px triplet (AGN exempt; see the 🔑 Re Convention)
+  2. <add|remove|tune>(<target>, <key params>)   ← optional, at most 2
+- **physical_motivation**: <cite the concrete residual features described in Phase 1>
 - **expected_C'**: {<component1>, <component2>, ...}
-- **novelty_claim**: <新结构 {…} | ≡<账本轮次> 但 <参数轴> 未测 | 投影已比对不命中账本/回滚边>
+- **novelty_claim**: <new structure {…} | ≡<ledger round> but <parameter axis> untested | projection compared, no ledger/rollback-edge hit>
 - **expected_behavior_tag**: <snake_case tag>
 - **local_benefit_σ**: <0.0–1.0>
 
-## Candidate 2   (按 depth 规则决定是否需要)
+## Candidate 2   (per the depth rules)
 - **action_id**: {branch_id}-{parent}-cand-2
 - **primitives**:
   1. ...
@@ -566,46 +552,46 @@ Disk 一律使用 `expdisk` 组件类型——expdisk **没有 n 参数**（指�
 - **expected_behavior_tag**: ...
 - **local_benefit_σ**: ...
 
-## Candidate 3   (可选，按 depth 规则)
+## Candidate 3   (optional, per the depth rules)
 ...
 
-## Candidate 4   (可选，仅 depth≥3 时可能)
+## Candidate 4   (optional, only possible at depth≥3)
 ...
 ````
 
-## 伴星系移除验证（当 local_state_description 含"伴星系条件 A 命中"时执行）
+## Companion-Removal Verification (execute when local_state_description contains "companion condition A hit")
 
-当本轮状态补充中出现伴星系通量比 ≤ 1% 的数值报告（标注为"伴星系条件 A 命中"），VLM **必须**执行以下条件 B 视觉验证，决定是否生成 `remove(Companion)` 候选：
+When this round's supplement reports a companion flux ratio ≤ 1% (labelled "companion condition A hit"), the VLM **must** perform the following condition-B visual verification to decide whether to generate a `remove(Companion)` candidate:
 
-1. **定位**：从参数摘要中读取 companion 的 xcen/ycen（即图像像素坐标，直接可与面板坐标对应）；或从残差图上识别伴星系残差位置反推原图位置。
-2. **查看原图面板**（**不是残差面板！不是模型面板！**），判断该位置是否有肉眼可见的小亮斑点：
-   - **无可见亮斑**（该位置干干净净，或仅被 mask 覆盖）→ 条件 B 命中 → A∧B 成立 → **生成** `remove(Companion)` 候选。physical_motivation 须同时引用数值证据（通量比、ΔMag 实测值）与视觉证据（"原图 companion 位置无可见源，仅为模型伪迹"）。
-   - **有可见亮斑**（原图该位置有明确的独立亮斑 / 点源 / 展源）→ 条件 B 不命中 → A∧¬B → **禁止**生成 `remove(Companion)` 候选。该 companion 是真实致密源（即使通量比很低），必须保留。
-3. **只看原图面板**：残差面板上的正残差**不能**作为"可见源"的证据——即使 companion 是假的，残差面板也可能因模型未拟合该位置而出现正残差。原图面板是物理真实性的唯一仲裁。
+1. **Locate**: read the companion's xcen/ycen from the parameter summary (image pixel coordinates, directly mappable onto the panel); or infer the position from a companion residual on the residual map.
+2. **Inspect the Original panel** (**not the residual panel! not the model panel!**) and judge whether that position shows a visible small bright spot:
+   - **No visible blob** (the position is clean, or only covered by the mask) → condition B hit → A∧B holds → **generate** the `remove(Companion)` candidate. physical_motivation must cite both the numerical evidence (flux ratio, measured ΔMag) and the visual evidence ("no visible source at the companion position in the original image; a model artefact").
+   - **Visible blob** (a clear independent spot / point source / extended source in the original) → condition B fails → A∧¬B → **forbidden** to generate a `remove(Companion)` candidate. The companion is a real compact source (however low its flux ratio) and must be kept.
+3. **Original panel only**: positive residuals on the residual panel are **not** evidence of a "visible source" — even a fake companion can leave positive residuals there if the model did not fit it. The original panel is the sole arbiter of physical reality.
 
-## 自检（生成后必须逐项确认）
-- **物理性判定复核（硬约束，第一项）**：输出顶部包含格式正确的 `## Physicality Verdict` 块（verdict / failed_checks / swap_hint 三字段齐全），且嵌套包含性检查（检查 1）、整体无瑕疵检查（检查 5）与最外围成分越界检查（检查 6）确已逐对核对椭圆与面板边界。verdict=FAIL 时确认本轮至少一个候选针对 failed_checks 修复（swap_hint=disk_bulge_swap 时应包含交换 disk ↔ bulge 标签方向的候选）；verdict=PASS 但阶段一特征描述中标注过"Re 全序反置"或描述过椭圆交叉/穿出/偏心/越出面板特征属自相矛盾，必须修正二者之一。
-- **add() 候选 Re 完整性（硬约束，逐条核对）**：对每个 `add(<Type>)` primitive 核对——凡目标类型**具有 Re 物理量**（Bulge / Bar / Lens / Companion / Disk 等 sersic/expdisk 类成分），primitives 中**必须**显式包含 `[Re_min, Re_init, Re_max]` px 三元组（含量测来源面板）。缺 Re 的 add() 候选**无效**，必须回阶段一的径向量测补数后重写（见 🔑 Re 约定的 add() 完整性条款）。**`add(AGN/Nucleus)`（psf 组件，无 Re 物理量）豁免本项——不得为 AGN 编造 Re**。若特征无法量测而采用 Re 全序链先验区间，必须已在 physical_motivation 中显式声明（见 🔑 Re 约定的降级条款），否则同样视为违反。
-- **Re 三元组邻接约束复核（硬约束，逐条核对）**：对每个含 Re 三元组的 add() 候选，按全序链 `Re_disk > Re_lens > Re_bar > Re_bulge` 把新增成分插入应有位置，用 Model 面板图例的 `Re(px)` 收敛值核对紧邻内外成分——`Re_min > 紧邻内层成分 Re` 且 `Re_max < 紧邻外层成分 Re` 必须同时成立（见 🔑 Re 约定的全序链邻接约束条款）。违反邻接约束（如 bar 的 Re_min < bulge Re、bar 的 Re_max > disk Re）的 add() 候选同样**无效**，必须按截断规则重写三元组。
-- **add() 候选形态最小集复核（硬约束，逐条核对）**：对每个 `add(<Type>)` 的 sersic/expdisk 类成分核对——primitives 中已显式包含 **n 初值 + free/fixed 状态**（禁止裸 `n_free`；expdisk 的 Disk 无 n 参数可豁免 n 项）、**q（初值或边界）**、**PA 初值（N=+Y 契约）** 三项，或已按 🔑 形态最小集约定显式声明降级理由（如"PA 未经量测，取对齐 disk 长轴"）。缺项且未声明的 add() 候选**无效**，必须回阶段一的形态/方向量测补数后重写。elongated 成分的 PA 必须来自阶段一量测的特征方向（见 🔑 PA 约定的 PA 传递条款）。`add(AGN)`（psf 组件）豁免本项。
-- **四极矩替代分解复核（硬约束）**：若阶段一描述了四极矩/蝴蝶形残差，且 bar 方向候选已在 `[被否定假设]` 中被否定（或父状态存在 bulge q 长期触下界 + bar 多次失败的记录），本次输出必须包含至少一个 disk/lens 椭率斜交方向的候选（见 §Bar 假设失败后的竞争分解）；未包含时必须在 Candidate 的 physical_motivation 中显式说明放弃理由，不得静默跳过。
-- 候选数量符合当前 depth 的分段规则（depth=1 多数情况为 1 个；depth=2 为 2–3 个；depth=3 为 2–4 个；depth≥4 为 1–3 个）
-- 每个候选 primitives 数量 ∈ [1, 2]，且语义内聚（与 §候选动作的原子操作 的"至多 2 个"上限一致；3 原子捆绑必然混入无关目标，破坏拟合归因）
-- 多候选时，所有候选的 `expected_behavior_tag` **两两不同**（硬约束；无法满足则减少候选数）
-- **禁止生成改变 Disk 类型/释放 Disk n 的候选**（Disk 一律 expdisk，n≡1 由组件类型保证，见"Disk 成分 Sérsic 指数 n 的操作规范"）；单 Sersic 模型（无 Bulge/Bar/Lens 并列）的 n 自由除外
-- **Bulge n 分段复核（硬约束，depth≥3）**：depth≥3 时逐项核对——(a) 若父状态成分清单含 bulge 且其 n 为固定，本次输出必须包含 `tune(bulge, n_free)`（单独或与其他语义内聚 primitive 组合）；未包含时，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**，不得静默跳过。(b) 若本轮生成 `add(Bulge)` 候选，其 n 必须自由（toggle=1）——primitives 中出现 `n=4 fixed` / `n fixed` 字样即违反本约束（见 §Bulge 成分 Sérsic 指数 n 的操作规范）。
-- physical_motivation 引用的特征均在阶段一出现过
-- **全局状态复核（硬约束）**：逐条核对——(a) 无任何候选与 `[被否定假设]` 条目同成分、同参数方向（除非引用了否定时不存在的新证据并在 motivation 中声明）；(b) 无候选与 `[已尝试动作]` 重复（tag 换名不构成差异）；(c) 凡涉及 `[已验证盆]` 覆盖的参数，候选取值引用盆值，或已完成锚定-验证推翻流程（引用模型椭圆相对判断 + 盆记录失效理由）；companion 位置类盆须先核对来源分级——`[待核验]`（或未标注）的盆不适用"引用盆值"，应附本轮原图面板独立读取的 x_real；盆复核信号 (a)–(d) 任一出现时必须先复核再定取值（§全局状态使用规则条款 1）；(d) 阶段一判"位置吻合（Δr ≤ 2 px）"的成分，无任何候选以位置漂移为动机（§全局状态使用规则条款 5）——但阶段一标注过"模型 companion 无原图对应源"或"伴星系半径失配"的除外（此为假盆信号，位置修正是正当动机）。
-- **状态账本复核（硬约束，图搜索环检测）**：逐个候选核对——(a) `expected_C'` 落地签名与 `[状态账本]` 任何一行带内等价、且无合法 novelty_claim 的候选已删除（结构等价 + 参数轴也一致 = 零新信息）；(b) remove-only / revert 候选已完成投影比对，命中 `[状态账本]` 或 `[回滚边]` 的已删除；(c) 所有候选的 novelty_claim 已逐条填写并引用账本轮次号；(d) 与账本行仅相差 `[zombie]` 成分的候选已按僵尸等价处理（需 novelty_claim 才可保留）。
-- 所有候选的 expected_C' 与当前父状态的 C' 差异均可解释
-- **Disk 外围光度触发复核（硬约束，优先级高于中心成分规则）**：必须确认已在 1D 残差曲线上检查 r > 2×Re_disk 外围区域的系统性正残差（见 §Disk 外围光度不足触发规则的三条触发条件：位置 + 宽度幅度 + disk Re 未触界）。条件全部成立时，本次输出**必须**包含至少一个 `tune(disk, Re 更大)` 候选，且优先级排在候选列表前列；若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"外围正残差幅度仅 −0.03 mag，未达 −0.05 mag 阈值"或"正残差仅在背景极限后的红三角区出现"），不得静默跳过。
-- **Lens 触发复核（硬约束）**：父状态含 Bar 或 Bulge 时，必须确认已主动回忆**两条** Lens 触发路径：
-    - **路径 A（Bar 异常反推）**：`Re_bar ≳ Re_disk(=1.68·Rs_disk)` 或 `q_bar ≳ 0.5`。
-    - **路径 B（1D 轮廓隆起）**：1D 残差曲线在 ~1.5–2.5·Re_bar 处出现宽阔正向隆起（位置 + 宽度 + 幅度 + 2D 方位连续环状 + 伴星系漏光排除五条联合条件，见 §Lens 1D 轮廓隆起触发规则）。**路径 B 触发前必须确认已执行伴星系污染前置检查**（见阶段一）：若隆起区间覆盖某 companion 半径且 2D 残差为局部紧凑亮斑，本次输出的优先候选应是 `tune(companion, ...)`（已有共位 companion）或 `add(Companion, ...)`（尚无共位 companion，2D 残差为局部亮斑）而非 `add(Lens)`；若仍生成 `add(Lens)`，physical_motivation 必须引用 2D 环状残差的方位连续性证据（覆盖 ≳180°）。
-    - **任一路径条件成立但本次未产出任何 Lens 相关候选**（`add(Lens)` 或 `tune(Bar, split→Bar+Lens)`）时，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"Bar 异常但残差更支持 X 方向"或"1D 隆起位置在 1.2·Re_bar，偏离典型 Lens 区间"），不得静默跳过。
-- **Lens Re 膨胀触发复核（硬约束）**：若本轮状态补充报告 lens Re 触上限（lens_Re ≥ 0.98 × re_max）或 lens_Re ≥ disk_Re（Re-ordering FAIL），必须确认本次输出包含候选 A（收紧 lens Re）/ B（增大 disk Re）/ C（移除 lens）三条竞争路径（详见 §Lens Re 膨胀触发规则）。若少出某条，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**（如"disk Re 已触 re_max，候选 B 不适用"），不得静默跳过。若候选 D 的三条适用条件（触上限 + 自设边界 + 无简并）同时成立，还必须包含候选 D（`tune(lens, re_max × 1.3)`，`lens_re_bound_relax`），缺席且未声明理由同样违规。
-- **触界放宽复核（硬约束，泛化——适用于一切成分的一切触界参数）**：对照本轮状态补充中的**触界参数清单**（主模型会逐参数报告：参数名、拟合值、被触边界、边界来源[自设/原始]、连续触界轮数）：凡 **Tier 1（自设边界）** 触界参数，本次输出必须包含对应放宽候选，缺席且未显式声明放弃理由视为违规；凡 **Tier 2（原始边界）** 触界参数，放宽候选与结构性替代候选至少含其一，两者皆缺席且未声明理由同样违规；例外参数（q 上界、硬物理先验、中心坐标、Re 下界 ≲1 px 的 PSF 尺度）不得生成放宽候选，应走点源身份/结构方向并引用例外条款。纯放宽候选数量遵守 ≤2 的上限（见 🔑 触界参数边界放宽规则）。
-- **嵌入式伴星系时机复核（硬约束）**：若生成了 `add(Companion)` 候选且阶段一报告该伴星系为嵌入式（落在主星系等照度线 contour 上或以内，距中心 ≲ 2·Re_disk），**必须确认父状态已含 Bulge 或 Bar**。若父状态既无 Bulge 也无 Bar 却出现了嵌入式伴星系残差，**禁止**生成 `add(Companion)` 候选——应改为 `add(Bulge)` 候选，待中心骨架建立后再处理伴星系。违反此约束的典型失败模式：伴星系被拽向中心、三参数（Re/xcen/ycen）全部撞界发散。
-- **伴星系移除验证复核（硬约束）**：若本轮状态补充中含"伴星系条件 A 命中"（通量比 ≤ 1%），必须确认已在**原图面板**上做过条件 B 视觉验证。若原图 companion 位置有可见亮斑却生成了 `remove(Companion)` 候选，视为违反约束。
-- **扁 Bulge → Bar 触发复核（硬约束）**：父状态含 Bulge 时，必须按"扁 Bulge → Bar 候选触发规则"的四条联合条件（bulge b/a < 0.5 AND PA 夹角 > 20° AND bulge n ∈ (0.5, 2.5) AND disk b/a > 0.5）做核对。条件全部成立时，本次输出**必须**包含至少一个 Bar 方向候选（`tune(Bulge→Bar)` 转换 或 `add(Bar)+tune(Bulge, q_min=0.7)` 新增）；若未产出，必须在 Candidate 的 physical_motivation 中**显式说明放弃理由**，不得静默跳过。
-- **主星系同心约束复核（硬约束）**：本轮输出的每个候选，只要其 `expected_C'` 包含 **≥ 2 个主星系中心成分**（Disk/Bulge/Bar/Lens，不含伴星系），就**必须**默认继承同心约束——`add(...)` 类候选的 `physical_motivation` 必须显式提及"通过 `.cons` 的 x,y offset 绑定同一中心"；`tune(...)` / `remove(...)` 类候选默认继承无需重复声明。**伴星系（`# STRUCTURE:` 名含 comp/companion/secondary/satellite）严禁参与**主星系同心约束。若本次输出中出现 `add(Bulge/Bar/Lens/AGN)` 候选却未在任何候选的 physical_motivation 中提及同心绑定，视为违反约束。
+## Self-Check (confirm item by item after generation)
+- **Physicality-verdict review (hard requirement, first item)**: the output starts with a properly formatted `## Physicality Verdict` block (all three fields verdict / failed_checks / swap_hint present), and the nested-containment check (check 1), the globally-unblemished check (check 5) and the outermost-component out-of-bounds check (check 6) really were performed pair by pair against the ellipses and the panel boundary. On verdict=FAIL, confirm that at least one candidate this round repairs failed_checks (with swap_hint=disk_bulge_swap, include a disk ↔ bulge label-swap candidate); a verdict=PASS that contradicts Phase-1 notes of "Re total-order inversion" or described ellipse crossing/poking/offset/out-of-panel features is self-contradictory — fix one of the two.
+- **add() Re completeness (hard requirement, item by item)**: for every `add(<Type>)` primitive — whenever the target type **has a physical Re quantity** (Bulge / Bar / Lens / Companion / Disk and other sersic/expdisk components), the primitives **must** explicitly include the `[Re_min, Re_init, Re_max]` px triplet (with the measurement-source panel). An add() candidate missing Re is **invalid** and must be rewritten after returning to Phase 1 for the radial measurement (see the add()-completeness clause of the 🔑 Re Convention). **`add(AGN/Nucleus)` (psf component, no Re quantity) is exempt — you must not invent an Re for an AGN.** If a prior interval from the Re total order was used because the feature could not be measured, this must already be declared in physical_motivation (see the degradation clause); otherwise it is equally a violation.
+- **Re-triplet adjacency review (hard requirement, item by item)**: for every add() candidate carrying an Re triplet, insert the new component at its proper place in the total order `Re_disk > Re_lens > Re_bar > Re_bulge` and check the adjacent inner/outer components against the Model-panel legend's converged `Re(px)` — `Re_min > adjacent inner Re` and `Re_max < adjacent outer Re` must both hold (see the total-order adjacency clause of the 🔑 Re Convention). A candidate violating adjacency (e.g. bar Re_min < bulge Re, bar Re_max > disk Re) is equally **invalid** and must rewrite the triplet per the truncation rule.
+- **add() shape-minimal-set review (hard requirement, item by item)**: for every `add(<Type>)` of a sersic/expdisk component — the primitives explicitly include the **n initial value + free/fixed state** (bare `n_free` forbidden; an expdisk Disk has no n parameter and is exempt from the n item), **q (initial value or bound)**, and **PA initial value (N=+Y contract)** — or an explicitly declared degradation per the 🔑 Shape-Minimal-Set Convention (e.g. "PA not measured; taken aligned with the disk major axis"). A candidate missing items without a declaration is **invalid** and must be rewritten after returning to Phase 1 for the shape/direction measurements. An elongated component's PA must come from a Phase-1 measured feature direction (see the PA transfer clause of the 🔑 PA Convention). `add(AGN)` (psf component) is exempt.
+- **Quadrupole alternative-decomposition review (hard requirement)**: if Phase 1 described quadrupole/butterfly residuals and the bar direction has been refuted in `[Refuted hypotheses]` (or the parent shows long-standing bulge-q lower-bound hits + repeated bar failures), this output must include at least one disk/lens oblique-ellipticity candidate (see Competing decompositions after the bar hypothesis fails); otherwise the waiver must be stated explicitly in a Candidate's physical_motivation — silent skipping is forbidden.
+- Candidate counts match the depth staging (depth=1 usually 1; depth=2 2–3; depth=3 2–4; depth≥4 1–3)
+- Every candidate has 1–2 primitives, semantically cohesive (consistent with the "at most 2" cap of the atomic-operations section; a 3-atomic bundle necessarily mixes unrelated goals and destroys fit attribution)
+- With multiple candidates, all `expected_behavior_tag` values are **pairwise distinct** (hard requirement; if impossible, reduce the count)
+- **Generating Disk type/n-release candidates is forbidden** (the Disk is always expdisk; n≡1 is guaranteed by the component type, see the Disk-n operating rules); a single-Sersic model (no parallel Bulge/Bar/Lens) with free n is the exception
+- **Bulge-n staging review (hard requirement, depth≥3)**: at depth≥3 check — (a) if the parent inventory contains a bulge with fixed n, the output must include `tune(bulge, n_free)` (alone or bundled with a cohesive primitive); if absent, the waiver reason must be **explicitly stated** in a Candidate's physical_motivation; silent skipping is forbidden. (b) If this round generates an `add(Bulge)`, its n must be free (toggle=1) — the wording `n=4 fixed` / `n fixed` in the primitives violates this rule (see the Bulge-n operating rules).
+- Every feature cited in physical_motivation appeared in Phase 1
+- **Global-state review (hard requirement)**: check item by item — (a) no candidate shares component and parameter direction with any `[Refuted hypotheses]` entry (unless citing evidence absent at refutation time and declared in the motivation); (b) no candidate duplicates `[Tried actions]` (renaming a tag is not a difference); (c) for parameters covered by a `[Verified basins]` entry, the candidate cites the basin value or has completed the anchor-and-verify override (relative judgement vs the model ellipse + a reason the basin failed); companion-position basins must first be checked for provenance tier — `[unverified]` (or untagged) basins get no "cite the basin value" protection and must carry an independently re-read x_real from this round's Original panel; when any re-verification signal (a)–(d) appears, re-verify before fixing the value (§Global-State Usage Rules clause 1); (d) for components Phase 1 judged "position consistent (Δr ≤ 2 px)", no candidate may be motivated by position drift (§Global-State Usage Rules clause 5) — except where Phase 1 flagged "model companion has no original-image counterpart" or "companion radius mismatch" (fake-basin signals; a position fix is then legitimate).
+- **State-ledger review (hard requirement, graph-search cycle detection)**: check candidate by candidate — (a) candidates whose `expected_C'` landed signature is band-equivalent to any `[State ledger]` line without a legal novelty_claim are deleted (structure + parameter axis equivalent = zero new information); (b) remove-only / revert candidates have completed the projection comparison, and those hitting `[State ledger]` or `[Rollback edges]` are deleted; (c) every candidate's novelty_claim is filled in and cites the ledger round number; (d) candidates differing from a ledger line only by `[zombie]` components are handled by zombie equivalence (a novelty_claim is required to keep them).
+- Every candidate's expected_C' differs from the current parent C' explainably
+- **Disk outer-flux trigger review (hard requirement; takes priority over the central-component rules)**: confirm you checked the r > 2×Re_disk outskirts for systematic positive residuals on the 1D residual curve (the three trigger conditions of the Disk Outer-Flux-Deficit Trigger Rule: location + width/amplitude + disk Re not bound-hit). When all hold, this output **must** include at least one `tune(disk, larger Re)` candidate, ranked near the top; if absent, the waiver reason must be **explicitly stated** in a Candidate's physical_motivation (e.g. "outer positive residual amplitude only −0.03 mag, below the −0.05 mag threshold" or "the positive residual appears only in the red-triangle zone beyond the background limit"); silent skipping is forbidden.
+- **Lens trigger review (hard requirement)**: when the parent has a Bar or Bulge, confirm you actively recalled **both** Lens trigger paths:
+    - **Path A (Bar anomaly)**: `Re_bar ≳ Re_disk(=1.68·Rs_disk)` or `q_bar ≳ 0.5`.
+    - **Path B (1D-profile bump)**: a broad positive bump at ~1.5–2.5·Re_bar on the 1D residual curve (the five joint conditions — location + width + amplitude + 2D azimuthal continuity + companion-leakage exclusion — of the Lens 1D Profile Bump Trigger Rule). **Before declaring Path B triggered, confirm the companion-contamination pre-check was performed** (see Phase 1): if the bump interval covers a companion radius and the 2D residual is a local compact blob, this output's priority candidate should be `tune(companion, ...)` (a co-located companion exists) or `add(Companion, ...)` (none exists; 2D residual a local blob) rather than `add(Lens)`; if `add(Lens)` is still generated, physical_motivation must cite the azimuthal-continuity evidence of the 2D ring residual (coverage ≳180°).
+    - If either path holds yet no Lens-related candidate appears (`add(Lens)` or `tune(Bar, split→Bar+Lens)`), the waiver reason must be **explicitly stated** in a Candidate's physical_motivation (e.g. "Bar anomalous but the residuals favour direction X" or "the bump sits at 1.2·Re_bar, off the typical Lens interval"); silent skipping is forbidden.
+- **Lens Re inflation trigger review (hard requirement)**: if this round's supplement reports the lens Re hitting its cap (lens_Re ≥ 0.98 × re_max) or lens_Re ≥ disk_Re (Re-ordering FAIL), confirm the output contains the three competing paths A (tighten lens Re) / B (grow disk Re) / C (remove the lens) (see the Lens Re Inflation Trigger Rule). If one is missing, its waiver reason must be **explicitly stated** in a Candidate's physical_motivation (e.g. "the disk Re already hits re_max; B inapplicable"); silent skipping is forbidden. If all three applicability conditions of candidate D hold (cap hit + self-imposed bound + no degeneracy), D must also be included (`tune(lens, re_max × 1.3)`, `lens_re_bound_relax`); its absence without a stated reason is equally a violation.
+- **Bound-relaxation review (hard requirement, generalised — applies to every bound-hit parameter of every component)**: against the **bound-hit parameter list** in this round's supplement (the orchestrator reports per parameter: name, fitted value, hit bound, bound provenance [self-imposed/original], consecutive bound-hit rounds): for every **Tier 1 (self-imposed)** parameter the output must contain the corresponding relaxation candidate — absence without an explicit waiver is a violation; for every **Tier 2 (original)** parameter, at least one of a relaxation candidate or a structural alternative must appear — both absent without a stated reason is equally a violation; exempt parameters (q upper bound, hard physical priors, centre coordinates, Re lower bounds at the ≲1 px PSF scale) get no relaxation candidates and must go the point-source-identity/structural route citing the exemption. Pure relaxation candidates obey the ≤2 cap (see the 🔑 Bound-Relaxation Rule).
+- **Embedded-companion timing review (hard requirement)**: if an `add(Companion)` candidate is generated and Phase 1 reported that companion as embedded (on or inside the main galaxy's isophotal contours, ≲ 2·Re_disk from the centre), **confirm the parent has a Bulge or Bar**. If the parent has neither yet embedded-companion residuals appear, generating `add(Companion)` is **forbidden** — generate `add(Bulge)` instead and handle the companion after the central skeleton is built. The typical failure of violating this: the companion is dragged toward the centre and all three parameters (Re/xcen/ycen) hit bounds and diverge.
+- **Companion-removal verification review (hard requirement)**: if this round's supplement contains "companion condition A hit" (flux ratio ≤ 1%), confirm condition-B visual verification was done on the **Original panel**. Generating a `remove(Companion)` candidate while a visible blob exists at the companion position in the original is a violation.
+- **Flat-Bulge → Bar trigger review (hard requirement)**: when the parent has a Bulge, check the four joint conditions of the Flat-Bulge → Bar Candidate Trigger Rule (bulge b/a < 0.5 AND PA angle > 20° AND bulge n ∈ (0.5, 2.5) AND disk b/a > 0.5). When all hold, this output **must** contain at least one Bar candidate (`tune(Bulge→Bar)` conversion or `add(Bar)+tune(Bulge, q_min=0.7)` addition); if absent, the waiver reason must be **explicitly stated** in a Candidate's physical_motivation; silent skipping is forbidden.
+- **Concentric-constraint review (hard requirement)**: every candidate whose `expected_C'` contains **≥ 2 main-galaxy central components** (Disk/Bulge/Bar/Lens; companions excluded) **must** inherit the concentric constraint by default — `add(...)` candidates' `physical_motivation` must explicitly mention "bound to the same centre via the `.cons` x,y offset"; `tune(...)` / `remove(...)` candidates inherit silently without restating. **Companions (`# STRUCTURE:` names containing comp/companion/secondary/satellite) are strictly forbidden** from the concentric constraint. If `add(Bulge/Bar/Lens/AGN)` candidates appear this round without any candidate's physical_motivation mentioning concentric binding, this is a violation.

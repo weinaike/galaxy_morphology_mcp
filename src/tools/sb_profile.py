@@ -115,10 +115,10 @@ def parse_photometry_params(param_file: str) -> tuple[float, float]:
     return zeropoint, pltscale
 
 def determine_center(image, mask=None):
-    """确定拟合中心
+    """Determine the fitting centre.
 
-    1. 计算正像素的 flux-weighted centroid
-    2. 若偏离图像中心 > CENTER_OFFSET_MAX, 则使用图像中心
+    1. Compute the flux-weighted centroid of positive pixels.
+    2. If it is offset from the image centre by > CENTER_OFFSET_MAX, use the image centre.
     """
     ny, nx = image.shape
     img_cx, img_cy = (nx - 1) / 2.0, (ny - 1) / 2.0
@@ -144,7 +144,7 @@ def determine_center(image, mask=None):
         return img_cx, img_cy
     return cx, cy
 def get_initial_params(image, mask=None):
-    """从图像获取初始拟合参数 (无 segmentation map 时的通用方法)"""
+    """Derive initial isophote-fitting parameters from the image (generic path when no segmentation map is available)."""
     ny, nx = image.shape
 
     # Get center 10x10 region coordinates
@@ -172,7 +172,7 @@ def get_initial_params(image, mask=None):
     cx, cy = float(peak_x), float(peak_y)
     # cx, cy = determine_center(image)
 
-    # 用二阶矩估计 ellipticity 和 PA
+    # Estimate ellipticity and PA from second moments
     positive = image > 0
     if mask is not None:
         positive &= ~mask
@@ -194,15 +194,15 @@ def get_initial_params(image, mask=None):
     y2 = np.sum(w * dy * dy)
     xy = np.sum(w * dx * dy)
 
-    # 主轴方向
+    # Major-axis orientation
     theta = 0.5 * np.arctan2(2 * xy, x2 - y2)
-    # 椭率
+    # Ellipticity
     Ixx = x2 * np.cos(theta)**2 + 2 * xy * np.cos(theta) * np.sin(theta) + y2 * np.sin(theta)**2
     Iyy = x2 * np.sin(theta)**2 - 2 * xy * np.cos(theta) * np.sin(theta) + y2 * np.cos(theta)**2
     eps = 1.0 - np.sqrt(Iyy / max(Ixx, 1e-30))
     eps = np.clip(eps, 0.01, 0.9)
 
-    # 起始 sma: 基于二阶矩尺度
+    # Initial semi-major-axis length: based on the second-moment scale
     sma0 = max(3, int(round(np.sqrt(Ixx) * 0.5)))
 
     return cx, cy, eps, theta, sma0

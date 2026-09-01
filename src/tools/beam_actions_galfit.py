@@ -33,13 +33,18 @@ dotenv.load_dotenv()
 # instead (north assumed aligned with +Y, so sky-PA ≡ the feedme `10)` frame
 # and VLM readings are written verbatim). Patch the PA clause at load time —
 # the shared file itself stays untouched for GalfitS.
-_PA_CLAUSE_RE = re.compile(r"(?m)^3\. \*\*PA 约定\*\*：.*$")
+_PA_CLAUSE_RE = re.compile(r"(?m)^3\. \*\*PA convention\*\*:.*$")
 _NPY_PA_CLAUSE = (
-    "3. **PA 约定（N=+Y 契约）**：凡涉及位置角（PA）—— 包括成分的 PA、Fourier 模式的相位角、"
-    "建议纠正的方向 —— 一律按本工作流的 **N=+Y 契约**：**假定图像正北方向与 Y 轴正上方一致，"
-    "0° = 图像 Y 轴正上方，逆时针增大**——读角度直接对齐图像纵轴。该约定与 GALFIT feedme `10)` "
-    "参数行（\"+Y 轴为 0°\"）数值等同：你读出/写出的 PA 会被主模型**原样写入** feedme，不做任何换算。"
-    "`detect_bar_lopsidedness` 返回的 `bar.pa_deg` 与 `lopsidedness.phase_deg` 在本契约下可直接引用。"
+    "3. **PA convention (N=+Y contract)**: whenever a position angle (PA) is involved — "
+    "including a component's PA, a Fourier mode's phase angle, or a suggested correction "
+    "direction — always follow this workflow's **N=+Y contract**: **assume the image's "
+    "North direction coincides with the +Y axis; 0° = the image's +Y axis (up), "
+    "increasing counterclockwise** — read angles aligned with the image's vertical axis. "
+    "This convention is numerically identical to the GALFIT feedme `10)` parameter row "
+    "(\"+Y axis = 0°\"): PA values you read out or write are inserted **verbatim** by the "
+    "orchestrator into the feedme, with no conversion. `detect_bar_lopsidedness` returns "
+    "`bar.pa_deg` and `lopsidedness.phase_deg`, which can be used directly under this "
+    "contract."
 )
 
 
@@ -103,7 +108,7 @@ def _build_summary_content_galfit(
         return ""
 
     out: list[str] = []
-    out.append("=== GALFIT 单波段拟合参数摘要（全部数值为像素单位，与对比图面板同参考系） ===\n")
+    out.append("=== GALFIT single-band fitted-parameter summary (all values in pixels, same reference frame as the comparison panels) ===\n")
     for i, comp in enumerate(components, start=1):
         out.append(f"- Component {i}: {comp['name']}")
         out.append(f"  - Type: {comp['type']}")
@@ -117,7 +122,7 @@ def _build_summary_content_galfit(
             rs = comp["re"]
             out.append(
                 f"  - Rs: {rs:.3f} px ({_fmt_toggle(toggles, 're')}) "
-                f"[有效半径 Re = {EXPDISK_RE_FACTOR}·Rs = {effective_re(comp):.3f} px]"
+                f"[effective radius Re = {EXPDISK_RE_FACTOR}·Rs = {effective_re(comp):.3f} px]"
             )
         else:
             out.append(f"  - Re: {comp['re']:.3f} px ({_fmt_toggle(toggles, 're')})")
@@ -127,10 +132,10 @@ def _build_summary_content_galfit(
             out.append(f"  - q (b/a): {comp['ba']:.3f} ({_fmt_toggle(toggles, 'ba')})")
             out.append(
                 f"  - PA: {comp['pa']:.2f}° ({_fmt_toggle(toggles, 'pa')}) "
-                "[N=+Y 契约：Y 轴正上方为 0°，逆时针增大；与 feedme 10) 行同帧]"
+                "[N=+Y contract: 0° = +Y axis (up), counterclockwise; same frame as the feedme 10) row]"
             )
         else:
-            out.append("  - (psf 组件：无 n/q/PA/Re 形状参数)")
+            out.append("  - (psf component: no n/q/PA/Re shape parameters)")
         out.append("")
 
     if summary_file:
@@ -147,7 +152,7 @@ def generate_galfit_beam_actions(
     fitted_param_file: Annotated[str, "Absolute path to the parent state's fitted parameter file (galfit.NN, e.g. the archived output_param_file returned by run_galfit)"],
     comparison_file: Annotated[str, "Absolute path to the 2x3 comparison PNG produced by the parent state's run_galfit call"],
     summary_file: Annotated[str, "Absolute path to the markdown summary produced by the parent state's run_galfit call (only its statistics table is parsed; may be empty)"] = "",
-    global_state_description: Annotated[str, "Cross-round stable facts for the stateless VLM, distilled by the orchestrator from working_note.md (NOT the raw note). Fixed schema per workflow_galfit.md §global_state_description 生成规范: [元信息（px 契约）]/[阶段一结论]/[状态账本(px)]/[回滚边]/[已验证盆]/[被否定假设]/[预算]. Keep ≤ ~50 lines."] = "",
+    global_state_description: Annotated[str, "Cross-round stable facts for the stateless VLM, distilled by the orchestrator from working_note.md (NOT the raw note). Fixed schema per workflow_galfit.md 'Generation spec for global_state_description / local_state_description': [Meta (pixel contract)]/[Stage-1 conclusions]/[State ledger (px)]/[Rollback edges]/[Verified basins]/[Refuted hypotheses]/[Budget]. Keep <= ~50 lines."] = "",
     local_state_description: Annotated[str, "Current-round objective description: parent component inventory C + key params, bound-hit parameters (⚠️ + values vs .cons bounds), residual features, identity anomalies, and orchestrator numeric-rule delegations (companion flux check / disk-Re bottleneck / lens inflation / flat-bulge trigger values). Must NOT suggest candidate directions."] = "",
     branch_id: Annotated[str, "Current beam branch identifier (e.g. 'A', 'B'). Used in candidate action_ids."] = "A",
     parent_label: Annotated[str, "Parent round label inside the branch (e.g. 'A.3'). Used in candidate action_ids."] = "",
@@ -158,7 +163,7 @@ def generate_galfit_beam_actions(
     Called by the orchestrator agent after each successful ``run_galfit`` fit.
     The output is a structured Markdown list of candidates (with a leading
     ``## Physicality Verdict`` block); the agent performs semantic deduplication
-    and global heuristic ranking (per workflow_galfit.md §去重与排序) before
+    and global heuristic ranking (per workflow_galfit.md "Deduplication and Ranking") before
     enqueuing into the priority queue of width W=5.
 
     Unlike the GalfitS variant there is **no unit conversion**: the VLM reads
@@ -234,13 +239,14 @@ def generate_galfit_beam_actions(
         from .acp_analysis import run_component_analysis_acp
         # ACP uses a single mega-prompt concatenating all phases.
         mega = (
-            "你是 GALFIT 单波段 Beam Search 候选动作生成器。基于 GALFIT 拟合结果，"
-            "通过两阶段思维链输出物理性判定与 2–4 个候选复合动作。\n\n"
-            "在这个过程中只能使用 read_file 和 write_file 工具，不能使用其他工具。\n\n"
-            f"【输入图像文件】：{os.path.abspath(comparison_file)}\n"
-            "（2×3 布局：DATA LOW/HIGH DR | MODEL // RESIDUAL | RESIDUAL ZOOM | 1D SB profile）\n\n"
-            "请使用 read_file 工具读取上述文件后，依次执行以下 2 个阶段。"
-            "在阶段一中，你必须保持绝对的客观。\n\n"
+            "You are the candidate-action generator for the GALFIT single-band beam search. "
+            "Given the GALFIT fitting results, produce the physicality verdict and 2-4 "
+            "candidate composite actions through a two-phase chain of thought.\n\n"
+            "During this process you may only use the read_file and write_file tools and no others.\n\n"
+            f"[Input image file]: {os.path.abspath(comparison_file)}\n"
+            "(2x3 layout: DATA LOW/HIGH DR | MODEL // RESIDUAL | RESIDUAL ZOOM | 1D SB profile)\n\n"
+            "After reading the file above with read_file, carry out the following 2 phases in order. "
+            "In Phase 1 you must remain strictly objective.\n\n"
             f"{turn1}\n\n{turn2}"
         )
         analysis, session_id, error = run_component_analysis_acp(
@@ -292,27 +298,39 @@ def generate_galfit_beam_actions(
     # ── Hand-off note for the orchestrator agent ──────────────────────
     handoff = (
         "\n\n---\n"
-        "# 候选入队守则（主模型职责）\n"
-        "- 先解析返回 Markdown 顶部的 `## Physicality Verdict` 块（verdict / failed_checks / "
-        "swap_hint）：verdict=FAIL 的父状态不得参与 s* 更新（workflow_galfit.md §步骤 e 物理性守门），"
-        "且需按 §非物理结果恢复协议 生成受保护恢复候选；swap_hint=disk_bulge_swap 时确认候选中含交换"
-        " disk ↔ bulge 标签方向的修复候选。verdict 块原样记录到 working_note，不得改写。\n"
-        "- 对每个候选执行语义去重（与当前 Q 中已有 (s_j, a_j) 比对；等价则保留 g 较高者）。\n"
-        "- 去重判据（同时满足视为等价）：\n"
-        "  1) expected_C' 在物理身份上等价（允许 bulge/bar 命名互换等）；\n"
-        "  2) 预期参数在容忍带内一致（Re ±20%、n ±0.5、q ±0.1、PA ±10°（N=+Y 契约）、mag ±0.5）；\n"
-        "  3) expected_behavior_tag 一致。\n"
-        "- 图搜索环检测（先于语义去重，与 Q 内去重共用同一套签名判据）：除比对 Q 外，还须与"
-        " **执行历史**比对——(R1) 候选转写为假想 feedme 的规范形式（结构 × free/fixed 配置 × `.cons`"
-        " 边界带 × 初始值带，一律 px）与**输入账本**比对，带内等价 → 丢弃（同一输入重跑无新信息）；"
-        "(R2) remove-only / 参数 revert / 边界还原类闭式转移候选的产出状态可精确投影，投影签名与"
-        "**结果账本**比对（僵尸感知：仅相差 [zombie] 成分的状态等价），严格命中 → 不入队（零成本回滚），"
-        "仅结构一致 → 标'[疑似近重复]'（退化惩罚维度记 0）。候选的 novelty_claim 须与账本核对：结构等价"
-        "且无新参数轴的候选整条丢弃。\n"
-        "- 对保留者按六维（残差改善潜力、物理合理性、路径多样性、退化惩罚、历史一致性、BIC 门槛）\n"
-        "  各打 0–1 分后加权平均得到 g：路径多样性权重 ×2，其余 ×1（多样性以全局已执行候选为主、Q 内\n"
-        "  元素为辅比对方向差异，同成分结构/同参数轴的重复方向该维低分），按 g 降序截断到 W=5 入队 Q。\n"
-        "- candidate 的 σ 仅供参考，不直接用于排序。\n"
+        "# Candidate-enqueue rules (orchestrator's responsibility)\n"
+        "- First parse the `## Physicality Verdict` block at the top of the returned Markdown "
+        "(verdict / failed_checks / swap_hint): a parent state with verdict=FAIL must not take part "
+        "in s* updates (workflow_galfit.md Step e physicality gate), and protected recovery "
+        "candidates must be generated per the Recovery Protocol for Non-Physical Results; when "
+        "swap_hint=disk_bulge_swap, confirm the candidates include one in the disk <-> bulge "
+        "label-swap direction. Record the verdict block verbatim in working_note; do not rewrite it.\n"
+        "- Apply semantic deduplication to every candidate (compare against the (s_j, a_j) already "
+        "in Q; if equivalent, keep the one with the higher g).\n"
+        "- Equivalence criteria (all three must hold):\n"
+        "  1) expected_C' is equivalent in physical identity (bulge/bar naming swaps allowed, etc.);\n"
+        "  2) expected parameters agree within the tolerance bands (Re ±20%, n ±0.5, q ±0.1, "
+        "PA ±10° (N=+Y contract), mag ±0.5);\n"
+        "  3) expected_behavior_tag is identical.\n"
+        "- Graph-search cycle detection (before semantic dedup, sharing the same signature criteria "
+        "as the in-Q dedup): besides comparing against Q, compare against the **execution history** — "
+        "(R1) transcribe the candidate into the canonical form of a hypothetical feedme (structure × "
+        "free/fixed configuration × `.cons` bound bands × initial-value bands, all in px) and compare "
+        "with the **input ledger**; equivalence within the bands -> discard (rerunning the same input "
+        "yields no new information); (R2) for closed-form transitions (remove-only / parameter revert "
+        "/ bound restoration), the resulting state can be projected exactly — compare the projected "
+        "signature with the **result ledger** (zombie-aware: states differing only by [zombie] "
+        "components are equivalent); exact hit -> do not enqueue (zero-cost rollback); structure-only "
+        "match -> tag '[suspected near-duplicate]' (score 0 on the degeneracy-penalty dimension). "
+        "Check every candidate's novelty_claim against the ledgers: a candidate equivalent in "
+        "structure with no new parameter axis is dropped entirely.\n"
+        "- Score each survivor on the six dimensions (residual-improvement potential, physical "
+        "plausibility, path diversity, degeneracy penalty, historical consistency, BIC threshold), "
+        "each 0-1, and take the weighted average as g: path diversity carries weight x2, the rest x1 "
+        "(diversity is judged mainly against the globally executed candidates, secondarily against "
+        "the elements in Q; repeated directions on the same component structure / parameter axis "
+        "score low on this dimension); sort by g descending and truncate to W=5 when enqueuing into Q.\n"
+        "- A candidate's σ is advisory only and is not used directly for ranking.\n"
     )
 
     return {
@@ -367,7 +385,7 @@ def check_feedme_file(
     if n_type_lines == 0:
         errors.append("No component blocks found (no '0) <type>' lines)")
     if "sky" not in content.lower():
-        warnings.append("No sky component found — GALFIT will not fit the background")
+        warnings.append("No sky component found - GALFIT will not fit the background")
 
     # Semantic names: recover which blocks carry a '# STRUCTURE:' comment.
     structure_names = re.findall(r"(?im)^\s*#\s*STRUCTURE:\s*(\S+)", content)
@@ -414,7 +432,8 @@ def check_feedme_file(
         "constraint": paths.get("constraint") or None,
         "warnings": warnings,
         "message": (
-            "Feedme 结构校验通过。components 为规范化成分清单（px 单位，N=+Y 契约 PA），"
-            "可直接用作 beam 状态签名与热启动回填的读取源。"
+            "Feedme structure check passed. 'components' is the canonical component "
+            "inventory (px units, PA in the N=+Y contract); use it directly as the source for "
+            "beam-state signatures and warm-start backfill."
         ),
     }

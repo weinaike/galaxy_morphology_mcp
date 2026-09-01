@@ -1,46 +1,46 @@
+# Component Addition Specification
 
-# 成分添加规范
+## GALFIT component-type rules (must be strictly followed)
+- To add a Disk, use component type `expdisk`.
+- To add a Bulge, use component type `sersic`.
+- When the added Bulge has Re < 0.2 pixel, the type must be changed to `psf` (it has collapsed to a point source); when Re is in the 0.2–0.5 pixel border zone, you may create a competing `psf` variant for comparison — adopt the `psf` only if the residuals are clearly better, otherwise keep `sersic`; for Re > 0.5 px keep the `sersic` type.
+- To add a Bar, use a `sersic` model with n = 0.5 [fixed].
+- To add a Lens, use a `sersic` model with n < 0.5 and q > 0.5; the initial values follow the total-order chain Re_disk > Re_lens > Re_bar > Re_bulge (compare only the central components that actually exist: remove the missing ones from the chain and require strict decrease over the survivors).
+- If the galaxy already has a Disk component and the outskirts are still unfitted, a second Disk or Sérsic component may be added (typically with large Re and n < 1) to capture the more extended structure.
+- If the galaxy is an elliptical and a single component suffices, use a `sersic` model directly:
+  - However, if a single-`sersic` fit returns an axis ratio q < 0.5, the elliptical classification must be revisited — a disk is implied, and where there is a disk, a bulge or further components should be considered.
+- Azimuthal Fourier modes may only be attached to a Disk component, never to a Bulge or Bar. For a single-component model they may be attached to the (single) Sersic.
 
-## Galfit 添加成分类型的规范 （必须严格遵守）
-- 要增加Disk, Component type选用 expdisk.
-- 要增加成分BULGE： Component type选用 sersic.
-- 当添加的 Bulge的 Re 小于 0.2 pixel, 必须更换类型为 psf（已坍缩为点源）；当 Re 在 0.2–0.5 pixel 之间时（边界区域），可以创建一个 psf 替代方案进行竞争对比，只有残差明显更优时才采纳 psf，否则保持 sersic；Re 大于 0.5px 保持 sersic 类型
-- 要增加棒 Bar：Component type选用  n=0.5[fix] 的 Sersic 模型.
-- 但增加Lens时，Component type选用 n<0.5 的 Sersic 模型. q>0.5, 初值设置，遵循全序基准 Re_disk > Re_lens > Re_bar > Re_bulge（仅比较实际存在的中心成分，把缺失者从链中剔除后按相对顺序严格递减）
-- 如果星系已经有一个 Disk 成分了，针对星系外围（Outskirt）未拟合上的情况，可以添加第二个 Disk 成分或 Sérsic 成分（这时通常Re较大，n较小<1），以捕捉更延展的结构，
-- 如果星系是elliptical， 只有单个成分，这直接选用 sersic 模型即可，
-  - 但如果一个星系用单 sersic 成分拟合后，出现 axis ratio （q<0.5）, 那么elliptical判断需要调整，应该有 disk。有 disk 就应该考虑 bulge,或者更多成分。
-- Fourier mode 只能添加于 Disk 成分； 不能加在 Bulge 或者 Bar上。 对于单成分可以加在 Sersic上
+## Reference for setting initial component parameters
 
-## 成分初始参数的设置参考
+The following acquisition rules are common to all model types:
+- x and y (centre position): read the pixel coordinates of the component's brightness peak directly from the image. When multiple components are concentric (e.g. bulge + disk), add a constraint that binds their initial x, y together to enforce concentricity. (No co-alignment of PA is required.)
+- mag (integrated magnitude): for multi-component fits, set the initial value by adjusting from the existing Sérsic magnitude. Avoid initial values that are so far off that the fit fails:
+  - a. Inter-component flux contrast is best described in three tiers: "Comparable",
+  - b. "Faint" (about 1/3),
+  - c. "Much fainter" (1–1.5 mag fainter).
+- b/a (axis ratio): estimate visually. 1 = circular; the flatter, the closer to 0.
+- PA (position angle): the angle of the major axis measured counterclockwise from the +Y axis (usually North). Estimate the initial value from the original image; for a Bar this initial value is especially important.
+- When splitting a single component into two (e.g. replacing one Sérsic with Bulge + Disk):
+  - Flux split: partition the measured total flux 3:7 or 4:6 and convert each share into a magnitude for the bulge and the disk.
+  - Size split:
+    - The bulge's initial R_e is typically 1/5 to 1/3 of the total photometric radius;
+    - The disk's initial R_e must be larger than the single Sérsic's Re (the exact value follows the mid- and outer-range behaviour of the 1D surface-brightness residual profile: the Disk must be able to carry the flux in that region).
+    - The initial R_s of an `expdisk` can be estimated as the measured disk half-light radius divided by 1.678.
+- If Bar signatures are visible in the residual map and the original image, consider adding a Bar component:
+  - Initial Bar parameters:
+    - n fixed at 0.5,
+    - initial axis ratio b/a in the range 0.2–0.4,
+    - PA initialised from the measured major-axis direction of the bar in the image,
+    - size parameter R_e set between those of the bulge and the disk,
+    - mag set following the flux-split tiers above,
+  - When adding the Bar, also adjust the Disk's initial Re so that the overall budget remains sensible.
+**Always base estimates and edits on the previous round's fitting results (a copy thereof) so that successive rounds improve incrementally — never restart from scratch.**
 
-在深入各个模型之前，以下参数的获取方式通常是通用的，
-- x 和 y（中心位置）：直接读取图像上该成分的亮度峰值像素坐标。如果多个成分同心（如核球+盘），添加约束条件使得它们的初始 x、y 绑定在一起，保证同心。（无同轴/同PA要求）
-- mag（积分星等）：如果是多成分拟合，初值设定方法。需要考虑 mag 的值，需要基于原来的 sersic 星等下调整；避免初始值差异过大导致拟合失败
-  - a. 建议将成分间的通量差异分为“Comparable（相当）”
-  - b. “Faint（较暗，约 1/3）”
-  - c. “Much Fainter（暗很多，差 1-1.5 个星等）”三个等级
-- b/a（轴比）：视觉估算。正圆为 1，越扁越接近 0。
-- PA（位置角）：长轴相对于 y 轴（通常是正北）逆时针旋转的角度。初始值通过原图中预估, 特别是 Bar,该初值非常重要。
-- 将单成分拆分为双成分拟合时： 例如准备用核球+盘 (Bulge+Disk) 的替代原来单 Sérsic 是：
-  - 通量分配： 将测得的总通量按 $3:7$ 或 $4:6$ 的比例拆分，分别转换为星等赋值给核球和盘。
-  - 尺寸分配： 
-    - 核球的初始 $R_e$ 通常设为测光总半径的 $1/5$ 到 $1/3$；
-    - 盘的初值 $R_e$ 要求大于单Sérsic的 Re （具体值需要考虑 1D Surface profile 残差曲线中部与后部的表现，要求Disk能够承接这个区域的光通量）。
-    - expdisk 的 R_s 初值可以通过测量盘的半光半径除以 1.678 来估算。
-- 如果再残差图和原图上能够看到 Bar的特征，则可以考虑添加 Bar 成分，
-  - Bar 的初始参数设置为： 
-    - n 固定为 0.5，
-    - 轴比 b/a 初值设定在 0.2 - 0.4 之间，
-    - 位置角 PA 根据图像中 Bar 的长轴方向测量后初始化，
-    - 尺寸参数 R_e 则设定在核球和盘之间。
-    - mag 设置参考上面的通量分配原则，
-  - 添加Bar的同时，Disk 的 Re 的初值也进行对应调整，使得总体合理。
-**要求基于上一轮的拟合结果副本的基础上预估与修改，起到逐渐改善效果的目的，不要每次都从头开始**
+## Component parameter definitions
+1. sersic — commonly used for BULGE / Bar
 
-## 成分参数定义
-1. sersic — 常用于 BULGE / Bar 
-
+```
 0) sersic                 #  Component type
 1) <x>  <y>  1 1          #  Position x, y
 3) <mag>       1          #  Integrated magnitude
@@ -52,10 +52,12 @@
 9) <b/a>       1          #  Axis ratio (b/a)
 10) <PA>       1          #  Position angle (PA) [deg]
 Z) 0                      #  Skip this model? (yes=1, no=0)
+```
 
 ---
-1. expdisk  — 常用于 DISK 
+1. expdisk — commonly used for DISK
 
+```
 0) expdisk                #  Component type
 1) <x>  <y>  1 1          #  Position x, y
 3) <mag>       1          #  Integrated magnitude
@@ -67,61 +69,70 @@ Z) 0                      #  Skip this model? (yes=1, no=0)
 9) <b/a>       0          #  Axis ratio (b/a)
 10) <PA>       0          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
+```
 
-关键参数：R_s（盘标长）
-- R_s（盘标长 Scale-length）：表面亮度下降 $e$ 倍（约 2.718 倍）的距离。它与有效半径 $R_e$ 的数学关系为：$R_e \approx 1.678 R_s$。初始化方法：如果你知道盘的半光半径（通过测光或肉眼估计盘的范围），除以 1.678 即可作为 R_s 的初始值。肉眼看的话，大概是盘的整体可见半径的 1/3 到 1/4 左右。
+Key parameter: R_s (disk scale length)
+- R_s (scale length): the distance over which the surface brightness falls by a factor of e (about 2.718). Its relation to the effective radius is R_e ≈ 1.678 R_s. Initialisation: if you know the disk's half-light radius (from photometry or a visual estimate of the disk's extent), divide by 1.678 to get the initial R_s. By eye, R_s is roughly 1/3 to 1/4 of the disk's overall visible radius.
 
 ---
-1. psf — (常用于 活动星系核 AGN / 恒星 / 极其致密的核)
+1. psf — (commonly used for an AGN / a star / an extremely compact nucleus)
 
+```
 0) psf                    #  Component type
 1) <x>  <y>  1 1          #  Position x, y
 3) <mag>       1          #  Integrated magnitude
 Z) 0                      #  Skip this model?
+```
 
-关键参数：仅 x, y 位置和积分星等，形状参数全部固定。
-- x, y（中心位置）：必须极其精确。通常直接锁定图像中最亮的一个像素位置。
-- mag（星等）：如果中心有明显的致密亮核（如 AGN），估算这个点源的星等。可以尝试用较小孔径测光的结果作为初始值。
+Key parameters: only the x, y position and the integrated magnitude; all shape parameters are fixed.
+- x, y (centre position): must be extremely precise. Usually lock onto the brightest pixel of the image.
+- mag (magnitude): if there is an obvious compact bright core (e.g. an AGN), estimate the point source's magnitude; a small-aperture photometry measurement is a reasonable initial value.
 
 
---- 
-1. sky 用于估计背景
+---
+1. sky — used to model the background
 
- 0) sky
- 1) <sky>      1       # sky background       [ADU counts]
- 2) 0.000      0       # dsky/dx (sky gradient in x)
- 3) 0.000      0       # dsky/dy (sky gradient in y)
- Z) 0                  #  Skip this model in output image?  (yes=1, no=0)
- <sky> 的具体数值需要参考1D SB profile 上的的sky background数据， 拟合之前，必须将 <sky> fix 到sky background 不变
+```
+0) sky
+1) <sky>      1       # sky background       [ADU counts]
+2) 0.000      0       # dsky/dx (sky gradient in x)
+3) 0.000      0       # dsky/dy (sky gradient in y)
+Z) 0                  #  Skip this model in output image?  (yes=1, no=0)
+```
+The <sky> value must reference the sky-background data shown on the 1D SB profile; before fitting, <sky> must be fixed to the sky-background value.
 
-## 成分的高阶参数，需要拟合高阶成分特征时使用。
-The parameters C0, B1, B2, F1, F2, etc. listed below are hidden from the user unless he/she explicitly requests them.  These can be tagged on to the end of any previous components except, of course, the PSF and the sky -- If a Fourier or Bending amplitude is set to 0 initially GALFIT will reset it  to a value of 0.01. To prevent GALFIT from doing so, one can set it to any other value.
+## Higher-order component parameters — used only when fitting higher-order structural features.
+The parameters C0, B1, B2, F1, F2, etc. listed below are hidden from the user unless explicitly requested. These can be tagged on to the end of any previous component except, of course, the PSF and the sky — If a Fourier or Bending amplitude is set to 0 initially, GALFIT will reset it to a value of 0.01. To prevent GALFIT from doing so, one can set it to any other value.
 
+```
 - Bending modes
 B1)  0.07      1       # Bending mode 1 (shear)
 B2)  0.01      1       # Bending mode 2 (banana shape)
 B3)  0.03      1       # Bending mode 3 (S-shape)
 
 - Azimuthal fourier modes
-F1)  0.07  30.1  1  1  # Az. Fourier mode 1, amplitude and phase angle （amplitude 大于 阈值 0.02 就可以保留。不需要移除）
+F1)  0.07  30.1  1  1  # Az. Fourier mode 1, amplitude and phase angle (amplitude above the 0.02 threshold may be kept; no need to remove it)
 
-- Traditional Diskyness/Boxyness parameter c
+- Traditional diskyness/boxyness parameter c
 C0) 0.1         0      # traditional diskyness(-)/boxyness(+)
+```
 
+## How to set sensible constraints (best practice)
 
-## 如何设置合理的约束条件（最佳实践）
+Constraints are the safety net that stops the optimiser from "running away", but a net woven too tight strangles legitimate exploration. The recommended pipeline strategy:
 
-约束条件（Constraints）是防止算法“暴走”的安全网，但网织得太紧会勒死正常的优化过程。建议流水线采取以下策略：
-
-- 设定符合物理意义的软性边界（Hard Bounds）：
-在 .cons 约束文件中，为关键参数划定既安全又不至于太局促的绝对区间：
-  - 中心坐标 (x,y)： 约束在初始值的 $\pm 2$ 到 $5$ 个像素内（如果是高度扰动的并合星系可放宽）。绝对不能让星系中心飘到图像边缘。
-  - 有效半径 $R_e$： 最小值约束为 0.1 像素（或 PSF 的一半），最大值约束为图像边长的 1/2 或 1/3，防止模型在尝试拟合平坦背景时无限膨胀。
-  - Sérsic 指数 $n$： 这是最容易暴走的参数。对于纯星系结构，物理上合理的 $n$ 值通常在 $0.1 \sim 8.0$ 之间。建议将其强制约束在 0.1 8.0。
-  - 轴比 $b/a$： 约束在 0.05 1.0 之间，防止弱信噪比的盘成分被压成一条无物理意义的无限细线。
+- Impose physically motivated soft bounds (hard bounds) via the `.cons` constraint file, drawing absolute intervals for the key parameters that are safe yet not cramped:
+  - Centre coordinates (x, y): constrain within ±2 to ±5 pixels of the initial value (relax for heavily disturbed mergers). Never let the galaxy centre drift to the image edge.
+  - Effective radius R_e: minimum 0.1 pixel (or half the PSF size), maximum 1/2 or 1/3 of the image side length, preventing the model from inflating without bound while trying to fit a flat background.
+  - Sérsic index n: the parameter most prone to running away. For genuine galaxy structure, physically sensible n lies roughly in 0.1–8.0; enforce that range.
+  - Axis ratio b/a: constrain to 0.05–1.0 so a low-SNR disk cannot be crushed into a physically meaningless infinitely thin line.
 
 ```text
 # Component/    parameter   constraint    Comment
-  3_2_1_9        x          offset      # Hard constraint: Constrains the x,y parameter for components 3, 2, 1, and 9 to have RELATIVE positions
-  3_2_1_9        y          offset                                              
+# operation (see below)   range
+
+  3_2_1_9        x          offset      # Hard constraint: Constrains the
+  3_2_1_9        y          offset      # x,y parameter for components 3, 2,
+                                        # 1, and 9 to have RELATIVE positions
+                                        # defined by the initial parameter file.
 ```

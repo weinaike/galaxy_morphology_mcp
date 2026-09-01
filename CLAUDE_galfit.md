@@ -1,45 +1,45 @@
 
 
 
-# 星系成分分析的方法指南
+# Methodology guide for galaxy component analysis
 @src/prompts/residual_analysis_message.md
 ---
 
-## PA 约定覆盖条款（galfit 模式专用，优先级高于上文引用文件中的 PA 约定）
-上文引用的 `residual_analysis_message.md` 面向多波段 GalfitS，其"PA 约定"要求 sky-PA 并对齐指南针。**galfit 单波段模式不适用该条款**：本模式采用 **N=+Y 契约**——假定图像正北方向与 Y 轴正上方一致，**PA 一律按"图像 Y 轴正上方为 0°，逆时针增大"读与写**（读 PA 对齐图像纵轴，不对齐指南针），与 feedme `10)` 参数行（GALFIT "+Y 轴为 0°"）数值等同，**主模型把 VLM 读出的 PA 原样写入 `10)` 行，不做任何换算**。`detect_bar_lopsidedness` 返回的 `bar.pa_deg` / `lopsidedness.phase_deg` 在本契约下可直接使用。
+## PA-convention override clause (galfit mode only; takes precedence over the PA convention in the file referenced above)
+The referenced `residual_analysis_message.md` targets the multi-band GalfitS flow: its "PA convention" requires sky-PA aligned with the compass. **The single-band galfit mode does not apply that clause**: this mode adopts the **N=+Y convention** — the image's North direction is assumed to coincide with the +Y axis, and **PA is always read and written as "0° = the image's +Y axis (up), increasing counterclockwise"** (read PA against the image's vertical axis, not the compass), numerically identical to the feedme `10)` parameter row (GALFIT's "+Y axis = 0°"); **the orchestrator writes the VLM's PA verbatim into the `10)` row with no conversion**. `detect_bar_lopsidedness`'s `bar.pa_deg` / `lopsidedness.phase_deg` can be used directly under this convention.
 
-## 单位契约（galfit 模式专用）
-本模式所有 Re / 位置 / 尺寸**一律为像素（px）**：VLM 从对比图面板读出的 px 值与 feedme 参数行同单位同参考系，**原样写入、禁止任何换算**（expdisk 的 Rs 换算 Re=1.68·Rs 是唯一例外：VLM 给出的 Re 一律指有效半径，主模型写入 `4)` 行时按 Rs=Re/1.68 换算）。全流程禁止出现 arcsec，禁止调用任何单位转换工具。
+## Unit contract (galfit mode only)
+All Re / positions / sizes in this mode are **pixels (px)**: a px value read by the VLM off a comparison panel shares the unit and reference frame of the feedme parameter rows and is **written verbatim — any conversion is forbidden** (the expdisk conversion Rs = Re/1.68 is the sole exception: Re values given by the VLM always mean the effective radius, converted by the orchestrator when writing the `4)` row). Arcsec must never appear anywhere in the flow, and calling any unit-conversion tool is forbidden.
 
-## 添加约束
-GALFIT 的参数约束文件（通常以 `.cons` 为后缀）是解决成分分配失衡和参数越界最核心的工具。
+## Adding constraints
+GALFIT's parameter-constraint file (usually suffixed `.cons`) is the central tool for curing unbalanced component flux allocation and runaway parameters.
 
-### 一、如何在 `feedme` 文件中启用约束
+### 1. Enabling constraints in the `feedme` file
 
-在你的主输入文件（`feedme`）开头部分，有一项专门用于指定约束文件：
+Near the top of the main input file (`feedme`) there is an entry dedicated to the constraint file:
 
 ```text
 G) galaxy.cons      # Parameter constraint file (empty string)
 ```
 
-将你的约束文件名（例如 `galaxy.cons`）填入 `G)` 项即可。如果不需要约束，留空或写 `none`。
+Simply put your constraint file's name (e.g. `galaxy.cons`) into the `G)` item. If no constraints are needed, leave it empty or write `none`.
 
 ---
-### 二、`.cons` 文件的基本语法
+### 2. Basic syntax of the `.cons` file
 
-约束文件的每一行代表一条规则。它的标准语法格式如下：
-`[成分编号]   [参数名称]   [约束类型]   [下限]   [上限]`
+Each line of the constraint file is one rule. Its standard syntax:
+`[component number]   [parameter name]   [constraint type]   [lower limit]   [upper limit]`
 
-#### 1. 常见参数名称缩写
+#### 1. Common parameter-name abbreviations
 
-在 `.cons` 文件中，参数必须使用特定的英文缩写：
+Inside a `.cons` file, parameters must use these English abbreviations:
 
-* 位置坐标：`x`, `y` (通常写在一起 `x,y`) 约束也要同时约束（不可单独约束x或者y）
-* 总星等：`mag`
-* 有效半径：`re` (Sérsic) / `rs` (Exponential disk) / `fwhm` (Gaussian/Moffat)
-* Sérsic 指数：`n`
-* 轴比：`q` (b/a)
-* 位置角：`pa`
+* Position coordinates: `x`, `y` (usually written together `x,y`) — constrain them together (constraining x or y alone is not allowed)
+* Integrated magnitude: `mag`
+* Effective radius: `re` (Sérsic) / `rs` (exponential disk) / `fwhm` (Gaussian/Moffat)
+* Sérsic index: `n`
+* Axis ratio: `q` (b/a)
+* Position angle: `pa`
 
 ```text
 # Component/    parameter   constraint    Comment
@@ -49,56 +49,56 @@ G) galaxy.cons      # Parameter constraint file (empty string)
   3_2_1_9        y          offset      # x,y parameter for components 3, 2,
                                         # 1, and 9 to have RELATIVE positions
                                         # defined by the initial parameter file.
-  
+
   1_5_3_2       re          ratio       # Hard constraint: similar to above
-                                        # except constrain the Re parameters 
+                                        # except constrain the Re parameters
                                         # by their ratio, as defined by the
                                         # initial parameter file.
 
-    3           n           0.7 to 5    # Soft constraint: Constrains the 
-                                        # sersic index n to within values 
+    3           n           0.7 to 5    # Soft constraint: Constrains the
+                                        # sersic index n to within values
                                         # from 0.7 to 5.
 
-    2           x           -1  0.5     # Soft constraint: Constrains 
+    2           x           -1  0.5     # Soft constraint: Constrains
                                         # x-position of component
                                         # 2 to within +0.5 and -1 of the
                                         # >>INPUT<< value.
 
-    3-7         mag         -0.5 3      # Soft constraint:  The magnitude 
-                                        # of component 7 is constrained to 
-                                        # be WITHIN a range -0.5 mag brighter 
-                                        # than component 3, 3 magnitudes 
+    3-7         mag         -0.5 3      # Soft constraint:  The magnitude
+                                        # of component 7 is constrained to
+                                        # be WITHIN a range -0.5 mag brighter
+                                        # than component 3, 3 magnitudes
                                         # fainter.
 
-    3/5         re          1  3        # Soft constraint:  Couples components 
-                                        # 3 and 5 Re or Rs ratio to be greater 
-                                        # than 1, but less than 3. 
+    3/5         re          1  3        # Soft constraint:  Couples components
+                                        # 3 and 5 Re or Rs ratio to be greater
+                                        # than 1, but less than 3.
 
 # Note on parameter column:
 #   The parameter name options are x, y, mag, re (or rs -- it doesn't matter),
 #   n, alpha, beta, gamma, pa, q, c, f1a (Fourier amplitude), f1p (Fourier
-#   phase angle), f2a, f2p, r5 (coordinate rotation), etc., .  Or 
+#   phase angle), f2a, f2p, r5 (coordinate rotation), etc., .  Or
 #   alternatively, one can specify the parameter number instead (for the
 #   classical parameters only) corresponding to the same numbers in the
 #   galfit input file.
 ```
 
 
-## 主星系同心约束（强制默认，非可选）——`.cons` 文件撰写规范
+## Concentric constraint for main-galaxy central components (mandatory default, not optional) — `.cons` authoring specification
 
-Disk、Bar、Bulge、Lens 四类主星系中心成分**必须同心**：只要 feedme 中存在 **≥ 2 个**主星系中心成分（`# STRUCTURE:` 名为 disk/bulge/bar/lens），就必须通过 `.cons` 约束文件把它们绑定到同一中心——这是默认硬约束，不是"需要时才做"的可选项。
+The four main-galaxy central component types Disk, Bar, Bulge, Lens **must be concentric**: as soon as the feedme contains **≥ 2** main-galaxy central components (`# STRUCTURE:` names disk/bulge/bar/lens), they must be bound to a common centre via the `.cons` constraint file — a default hard constraint, not an on-demand option.
 
-### 一、唯一有效的语法：链式硬约束 `offset`（实测验证）
+### 1. The only effective syntax: the chained hard constraint `offset` (empirically verified)
 
-把锚点与所有从属中心成分的 GALFIT 编号用 `_` 连成链，写**成对**的两行（x 与 y 必须同时绑定，**严禁只绑一个**）。设锚点（Disk）编号为 D，从属成分编号为 K1、K2…：
+Chain the anchor's and all subordinate central components' GALFIT numbers with `_` and write the **paired** lines (x and y must be bound together; **binding only one is strictly forbidden**). With the anchor (Disk) numbered D and subordinates K1, K2…:
 
 ```text
-# 主星系同心约束（锚点=1 disk，从属=2 bulge, 3 bar, 4 lens）
+# Main-galaxy concentric constraint (anchor = 1 disk, subordinates = 2 bulge, 3 bar, 4 lens)
 D_K1_K2_K3   x   offset
 D_K1_K2_K3   y   offset
 ```
 
-具体示例（feedme 中 1=disk, 2=bulge, 3=bar, 4=lens, 5=companion, 6=sky）：
+Concrete example (feedme: 1=disk, 2=bulge, 3=bar, 4=lens, 5=companion, 6=sky):
 
 ```text
 # Concentric constraint: bulge/bar/lens anchored to disk (comp 1)
@@ -107,78 +107,78 @@ D_K1_K2_K3   y   offset
 # Companion position pinned to initial estimate (soft ±5px window)
  5           x     122.5  123.5
  5           y     130.8  131.8
-# (可选) 其他参数边界与同心约束合并写在同一文件，如 bulge n 范围
+# (optional) other parameter bounds merged into the same file, e.g. the bulge n range
  2           n     0.5  8
 ```
 
-**feedme 侧配套操作**：
-- 锚点（Disk）的 `1)` 行 toggle **保持 `1 1` 自由**（推荐）——约束生效后**整组联动平移**，中心由拟合器共同优化；锚点也可固定 `0 0`（初值取父轮收敛中心），效果是全组钉死在该坐标。
-- 从属成分的 `1)` 行 toggle 保持 `1 1`——GALFIT 加载约束后会自动将其改写为 `2 2`（受约束标记），无需手动改。
-- feedme `G)` 项指向该约束文件（如 `G) iter3.cons`）；beam 轮次命名 `iter{n}.cons`，与 `_iter{n}.feedme` 同目录、同编号。**GALFIT 只加载一个约束文件**——其他边界（re/mag/n 范围、伴星系位置窗）必须合并写入同一个 `.cons`。
+**Accompanying feedme-side operations**:
+- The anchor's (Disk) `1)` toggle **stays `1 1` free** (recommended) — once the constraint takes effect the **group translates jointly** and the centre is optimised by the fitter; the anchor may alternatively be fixed `0 0` (initial value = the parent round's converged centre), pinning the whole group at that coordinate.
+- Subordinates' `1)` toggles stay `1 1` — GALFIT rewrites them to `2 2` (the constrained marker) on loading; no manual edit is needed.
+- The feedme `G)` item points at the constraint file (e.g. `G) iter3.cons`); beam rounds name it `iter{n}.cons`, sharing the directory and number of `_iter{n}.feedme`. **GALFIT loads exactly one constraint file** — all other bounds (re/mag/n ranges, companion position windows) must be merged into that single `.cons`.
 
-### 二、约束生效的验证标志（每轮必查）
+### 2. Verification markers that the constraint took effect (check every round)
 
-- 拟合产出的 `galfit.NN` 中，受约束从属成分的 `1)` 行 toggle 显示 **`2 2`**（GALFIT 的受约束标记），且链内全部成分的 x,y 数值**完全一致**。
-- 若 toggle 仍为 `1 1` 或中心不一致 → 约束**没有生效**（多为写法错误被静默忽略），必须回查 `.cons` 语法，不得带病入账。
+- In the fitted `galfit.NN`, chained subordinates' `1)` toggles read **`2 2`** (GALFIT's constrained marker), and all chained components' x,y values are **exactly identical**.
+- If a toggle is still `1 1` or the centres differ → the constraint **did not take effect** (usually a syntax error silently ignored); re-check the `.cons` syntax — never enter a broken round into the ledger.
 
-### 三、严禁使用两种实测无效的写法（静默失效，不报错）
+### 3. Two empirically ineffective syntaxes are strictly forbidden (silent failure, no error)
 
-以下两种"看似合理"的成对写法在本机 GALFIT 上**实测不生效**（GALFIT 不报解析错误，但成分中心各自漂移 ~0.5 px，约束完全被忽略；源目录 `gadotti-gt/Plate0270_MJD51909_Fiber095_r` 的历史 cons.con 即第一种写法，其 galfit.05 输出中心漂移即为实证）：
+The following plausible-looking pairwise forms were **tested on this machine's GALFIT and do not take effect** (GALFIT raises no parse error, yet the component centres each drift ~0.5 px — the constraint is ignored entirely; the historical cons.con in `gadotti-gt/Plate0270_MJD51909_Fiber095_r` uses the first form, and its galfit.05 centre drift is the evidence):
 
 ```text
-# ✗ 无效写法一：空格分隔的成对软约束 —— 静默忽略，禁止使用
+# ✗ Invalid form 1: space-separated pairwise soft constraint — silently ignored, forbidden
  1  2  x  0.0 0.0
  1  2  y  0.0 0.0
-# ✗ 无效写法二：横线成对软约束 —— 对 x/y 同样静默忽略，禁止使用
+# ✗ Invalid form 2: dash-pairwise soft constraint — equally ignored for x/y, forbidden
  1-2  x  0.0 0.0
  1-2  y  0.0 0.0
 ```
 
-唯一可靠的形式是上节的**链式硬约束 `offset`**。
+The only reliable form is the **chained hard constraint `offset`** above.
 
-### 四、伴星系豁免（强制）
+### 4. Companion exemption (mandatory)
 
-伴星系（`# STRUCTURE:` 名含 comp/companion/secondary/satellite）的编号**严禁写入**同心约束链——伴星系中心必须保持自由拟合。新增伴星系时改用**软约束窗**钉住位置（±5px，初值即 VLM 量测的像素坐标）：`<编号>  x  <init-5>  <init+5>` 与 `<编号>  y  <init-5>  <init+5>`。锚点选取：优先 Disk；暂无 Disk 时取最亮的中心成分。
+A companion's number (`# STRUCTURE:` name containing comp/companion/secondary/satellite) is **strictly forbidden** in the concentric chain — companion centres must stay freely fitted. When adding a companion, pin its position with a **soft window** instead (±5px; the initial value is the VLM's measured pixel coordinate): `<number>  x  <init-5>  <init+5>` and `<number>  y  <init-5>  <init+5>`. Anchor choice: prefer the Disk; absent a Disk, the brightest central component.
 
 
-## Galfit 添加成分类型的规范 （必须严格遵守）
+## GALFIT component-type specification (must be strictly observed)
 @src/prompts/component_specification_galfit.md
 
 
-## Galfit 执行规范
-- 执行 Galfit 优化，必须使用 galmcp 中的run_galfit工具， 不能直接使用用bash工具执行 galfit 命令行。因为 run_galfit 工具会自动处理一些后续的分析步骤（如残差图生成、参数解析等），直接调用 galfit 可能会导致后续流程无法
+## GALFIT execution rules
+- To run a GALFIT optimisation you must use the run_galfit tool in galmcp; executing the galfit command line directly via bash is not allowed. run_galfit automatically handles downstream analysis steps (residual-image generation, parameter parsing, etc.) — calling galfit directly can break the subsequent flow.
 
 
 
-# Working Note 的撰写规范（Beam Search 多分支版）
+# Working-note authoring specification (Beam Search multi-branch edition)
 
-- Working Note 是记录 beam search 全过程的核心文档，也是**唯一真源**：优先队列 Q 的内容、当前最优 s\*、拟合计数 n / stagnation / global_iter_id、状态账本（输入账本 + 结果账本 + 回滚边）全部以它为准，每次决策前先 Read。
-- **结构必须严格按照 `workflow_galfit.md` §多分支 working_note 模板**（头部基本信息 + Beam 状态快照[覆写] + 状态账本[追加] + 分支小节[追加] + 失败归档 + 跨分支决策日志[追加]）。
-- 头部【必填】：阶段一 VLM 形态判断（相当于 Round 0 原图成分预测，必须明确指出高概率存在的成分）、`detect_bar_lopsidedness` 的结论（bar/lop 检出与否、PA（N=+Y 契约）、b/a；仅作为初始猜测，实际以拟合效果为准。未检出的成分必须写成"未检出（零证据，非判定性）"）。
-- 每个分支轮次小节【必填】：
-  - 本轮动作（action_id 与 primitives 摘要）与所用的 `_iter{n}.feedme` / `iter{n}.cons`；
-  - 拟合后成分类型与关键参数（位置 px、星等、尺寸、形状参数；expdisk 标 Rs 与有效半径 Re）、reduced_χ²（chisq1d_nu）/ BIC（bic1d）；
-  - **VLM 物理性判定（Physicality Verdict：verdict / failed_checks 摘要，原样记录不得改写）**；
-  - `generate_galfit_beam_actions` 返回的候选 action_id 列表与入队/截断情况；
-  - 【必填】距离预期目标的偏差。
-- 覆写优于追加：Beam 状态快照每次主循环迭代后覆写；分支小节与跨分支决策日志才追加。
+- The working note is the core record of the whole beam search and its **single source of truth**: the priority queue Q's contents, the current best s\*, the counters n / stagnation / global_iter_id, and the state ledgers (input ledger + result ledger + rollback edges) are all governed by it — read it before every decision.
+- **Its structure must strictly follow the §Multi-Branch working_note Template of `workflow_galfit.md`** (header with basic information + beam-state snapshot [overwritten] + state ledgers [appended] + branch sections [appended] + failure archive + cross-branch decision log [appended]).
+- Header [mandatory]: the Stage-1 VLM morphology judgement (equivalent to the Round-0 original-image component prediction; the high-probability components must be stated explicitly) and the `detect_bar_lopsidedness` conclusions (bar/lop detected or not, PA (N=+Y convention), b/a; initial guesses only — the fit is the arbiter. An undetected component must be written as "not detected (zero evidence, non-determinative)").
+- Each branch-round section [mandatory]:
+  - the round's action (action_id and primitives summary) and the `_iter{n}.feedme` / `iter{n}.cons` used;
+  - post-fit component types and key parameters (position px, magnitudes, sizes, shape parameters; expdisk annotated with Rs and effective radius Re), reduced_χ² (chisq1d_nu) / BIC (BIC_eff);
+  - **the VLM Physicality Verdict (verdict / failed_checks summary; record verbatim, never rewrite)**;
+  - the candidate action_ids returned by `generate_galfit_beam_actions` and their enqueue/truncation fate;
+  - [mandatory] the deviation from the expected goal.
+- Prefer overwriting to appending: the beam-state snapshot is overwritten after every main-loop iteration; only branch sections and the cross-branch decision log append.
 
-# 最优轮次锁定的标准
-- 成分条件：图像与残差观测得到疑似已经充分认证，存在的成分已经全部添加。
-- 拟合条件：1D profile残差图（DATA-MODEL）已经没有明显的尖峰或者系统性的偏离。2D残差图已经没有明显的对称残差。
-- 物理条件：最终拟合参数之间的关系符合物理意义。
-- 参数条件：非必要的约束条件已经全部释放，必要的约束条件已经全部添加。
-  - 多成分时:Disk 使用 expdisk, 单成分时：使用 Sersic 成分。
-  - Bar 的 n 固定为 0.5
-  - 所有中心星系成分的 x,y 位置约束为 offset，保证同心。
-  - 其他参数如 Re, mag 等没有过多的约束，允许合理范围内的调整。
-- 校验条件：最优轮次一定是经过 `generate_galfit_beam_actions` 分析的轮次（该轮 archives 目录下存在 `*_beam_actions_*.md` 候选产物，且 working_note 中记录了该轮的 Physicality Verdict）。疑似最优的轮次如果缺少 beam_actions 产物或 verdict 记录，需要补调一次 `generate_galfit_beam_actions`（以其 feedme / galfit.NN / 对比图为输入）生成，以辅助验证是否符合最优条件。
-- 指标条件：以上成分、拟合、物理、尝试、校验五个维度的条件都满足的情况下，基于残差质量选择
-  - `generate_galfit_beam_actions` 每次调用都会输出 Physicality Verdict（残差视觉判断）与候选清单，配合 `run_galfit` 返回的 χ²/BIC 统计，是残差质量的重要参考（模型比较所用 BIC 一律为 **BIC_eff** = χ²/A_psf + k·ln(N/A_psf)，见 summary 统计表；1D BIC 仅作参考）
-  - 两个轮次的差异仅在 F1时，F1 成分的 amplitude 大于 阈值 0.02 就可以保留,选择包含 F1 成分的轮次。
+# Criteria for locking the best round
+- Component criterion: image and residual observations suggest full identification — every existing component has been added.
+- Fit criterion: the 1D profile residual (DATA−MODEL) shows no obvious spikes or systematic offsets, and the 2D residual map shows no obvious symmetric residuals.
+- Physics criterion: the relations among the final fitted parameters are physically meaningful.
+- Parameter criterion: all unnecessary constraints have been released and all necessary ones applied.
+  - With multiple components the Disk uses expdisk; with a single component, Sersic.
+  - The Bar's n is fixed at 0.5.
+  - All main-galaxy components' x,y positions are constrained as offset, ensuring concentricity.
+  - Other parameters (Re, mag, …) are not over-constrained and may adjust within reasonable ranges.
+- Verification criterion: the best round must be one analysed by `generate_galfit_beam_actions` (its archives directory contains `*_beam_actions_*.md` candidate artefacts, and the working_note records that round's Physicality Verdict). If a suspected-best round lacks beam-action artefacts or a verdict record, call `generate_galfit_beam_actions` once more (with that round's feedme / galfit.NN / comparison image as input) to generate them and support the optimality check.
+- Metric criterion: with the component, fit, physics, attempt and verification criteria above all satisfied, select on residual quality:
+  - every `generate_galfit_beam_actions` call outputs a Physicality Verdict (visual residual judgement) and a candidate list; together with the χ²/BIC statistics returned by `run_galfit` they are key references for residual quality (the BIC used for model comparison is always **BIC_eff** = χ²/A_psf + k·ln(N/A_psf); see the summary statistics table — the 1D BIC is reference only).
+  - When two rounds differ only in F1, an F1 amplitude above the 0.02 threshold suffices to keep it — choose the F1-bearing round.
 
-### 落锁强制审计（enforcement）
-上述六维标准在执行中容易被遗漏，因此**正式锁定最优轮次之前，必须调用 subagent `best-round-verifier`**（定义见 `.claude/agents/best-round-verifier.md`）对候选轮做独立、机械、可追溯的校验：
-- 该 subagent 为**只读审计**，按上述六个维度逐条核查并给出证据，返回 `verdict: PASS|FAIL`。
-- `FAIL` → 严禁落锁，按其"阻断性问题"清单修复后重拟、复审至 `PASS`；`PASS`（含 WARN）方可落锁。
-- 工作流（`workflow_galfit` / `workflow_galfits`）的阶段三锁定步骤已内嵌此审计门。
+### Lock-enforcing audit (enforcement)
+These six criteria are easily overlooked in execution, so **before formally locking the best round, the subagent `best-round-verifier` must be called** (defined in `.claude/agents/best-round-verifier.md`) to audit the candidate round independently, mechanically and traceably:
+- The subagent is a **read-only audit**: it checks every criterion with evidence and returns `verdict: PASS|FAIL`.
+- `FAIL` → locking is strictly forbidden; fix per its "blocking issues" list, refit and re-audit to `PASS`; only `PASS` (WARN allowed) may lock.
+- The Stage-3 locking steps of the workflows (`workflow_galfit` / `workflow_galfits`) embed this audit gate.

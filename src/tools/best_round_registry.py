@@ -48,16 +48,18 @@ _VERDICT_LINE_RE = re.compile(
 )
 
 _COMPARISON_SYSTEM = (
-    "你是一位严谨的星系形态学拟合质量评审专家。你的任务是基于两个拟合轮次的对比图，"
-    "以图像残差与成分结构为核心依据，判断哪一轮拟合质量更高。"
-    "指标（卡方、BIC）与 summary 中的参数/约束条件仅供参考，不得作为主要判据。"
-    "最后必须给出严格的 verdict 判定。"
+    "You are a rigorous reviewer of galaxy morphological fitting quality. Given the "
+    "comparison images of two fitting rounds, decide which round fits better, with image "
+    "residuals and component structure as the primary evidence. Metrics (chi-squared, BIC) "
+    "and the parameters/constraints in the summary are reference only and must not be the "
+    "main criterion. You must end with a strict verdict."
 )
 
 _COMPARISON_INTRO = (
-    "下面第一张图为历史最优轮次，最后一张图为当前轮次。"
-    "请以【2D残差结构 + 1D残差曲线 + 成分结构】的对比为核心依据判断哪一轮拟合质量更高；"
-    "指标与参数条件仅为参考。"
+    "The first image below is the historical best round and the last image is the current "
+    "round. Judge which round fits better primarily by comparing [2D residual structure + "
+    "1D residual curve + component structure]; metrics and parameter conditions are "
+    "reference only."
 )
 
 
@@ -319,9 +321,9 @@ def _build_reference_block(entry: BestRoundEntry) -> str:
     """Compact secondary-reference text: round id + metrics + summary excerpt."""
     parts: list[str] = []
     if entry.round_number is not None:
-        parts.append(f"轮次 round {entry.round_number}（{entry.round_label}）")
+        parts.append(f"Round {entry.round_number} ({entry.round_label})")
     else:
-        parts.append(f"轮次 {entry.round_label}")
+        parts.append(f"Round {entry.round_label}")
 
     metrics = []
     if entry.reduced_chisq is not None:
@@ -329,7 +331,7 @@ def _build_reference_block(entry: BestRoundEntry) -> str:
     if entry.bic is not None:
         metrics.append(f"BIC={entry.bic:.2f}")
     if metrics:
-        parts.append("指标：" + ("，".join(metrics)))
+        parts.append("Metrics: " + (", ".join(metrics)))
 
     excerpt = ""
     try:
@@ -340,7 +342,7 @@ def _build_reference_block(entry: BestRoundEntry) -> str:
         excerpt = ""
     if excerpt:
         excerpt = excerpt.strip()
-        parts.append("summary 摘要：\n" + excerpt)
+        parts.append("Summary excerpt:\n" + excerpt)
     return "\n".join(parts)
 
 
@@ -411,14 +413,14 @@ def _metrics_summary(best: BestRoundEntry, current: BestRoundEntry) -> str:
         parts.append(f"ΔBIC={dbic:+.2f}")
         signs.append(1 if dbic > 0 else -1)
     if not parts:
-        return "指标缺失（未解析到 reduced χ² / BIC）"
+        return "Metrics unavailable (no reduced chi2 / BIC parsed)"
     if all(s == 1 for s in signs):
-        agree = "一致"
+        agree = "consistent"
     elif all(s == -1 for s in signs):
-        agree = "冲突"
+        agree = "in conflict"
     else:
-        agree = "部分冲突"
-    return "、".join(parts) + f"（与视觉判据{agree}）"
+        agree = "partly in conflict"
+    return "; ".join(parts) + f" ({agree} with the visual verdict)"
 
 
 def _build_regression_conclusion(
@@ -432,17 +434,21 @@ def _build_regression_conclusion(
     the closing line asks component_analysis to adopt / revise / overrule it via its
     own analysis. Built only when the verdict is HISTORICAL_BETTER.
     """
-    focus = fields.get("regression_focus") or "（对比未给出退步落点）"
-    salvage = fields.get("salvage") or "无"
-    direction = fields.get("direction") or "（对比未给出方向）"
+    focus = fields.get("regression_focus") or "(comparison gave no regression locus)"
+    salvage = fields.get("salvage") or "none"
+    direction = fields.get("direction") or "(comparison gave no direction)"
     return (
-        f"【最优轮对比·参考】当前轮相对历史最优轮（目录 {best.round_label}）退步。\n"
-        f"- 指标：{_metrics_summary(best, current)}\n"
-        f"- 退步落点（视觉）：{focus}\n"
-        f"- 可保留局部：{salvage}\n"
-        f"- 参考方向：{direction}\n"
-        f"以上为对比的参考意见（视觉＋指标，可能偏差）。请结合本轮全面分析独立裁定最终方向"
-        f"——可采纳、修正或否决（否决需说明）；阶段1 客观视觉提取与物理核验仍独立完成。"
+        f"[Best-round comparison - reference] The current round regressed relative to the "
+        f"historical best round (directory {best.round_label}).\n"
+        f"- Metrics: {_metrics_summary(best, current)}\n"
+        f"- Regression locus (visual): {focus}\n"
+        f"- Salvageable parts: {salvage}\n"
+        f"- Suggested direction: {direction}\n"
+        f"The above is a reference opinion from the comparison (visual + metrics; it may be "
+        f"wrong). Independently adjudicate the final direction from your full analysis of "
+        f"this round - you may adopt, revise or overrule it (overruling requires a stated "
+        f"reason); the Phase-1 objective visual extraction and physical verification remain "
+        f"independent."
     )
 
 
@@ -474,7 +480,7 @@ def run_round_comparison(
 
     reference_blocks = [{
         "image": best.image_path,
-        "caption": f"历史最优轮次（{best.round_label}）的对比图（原图/模型/2D残差/1D残差）",
+        "caption": f"Comparison image of the historical best round ({best.round_label}): original/model/2D residual/1D residual",
     }]
 
     try:
@@ -503,11 +509,11 @@ _COMPARISON_REPORT_FILENAME = "best_round_comparison.md"
 def _format_round_section(title: str, entry: BestRoundEntry) -> list[str]:
     """Render a ``## <title>`` block with one round's identity + metrics."""
     lines = [f"## {title}", ""]
-    lines.append(f"- 目录：`{entry.round_label}`")
+    lines.append(f"- Directory: `{entry.round_label}`")
     if entry.round_number is not None:
         lines.append(f"- round：{entry.round_number}")
     if entry.object_name:
-        lines.append(f"- 对象：{entry.object_name}")
+        lines.append(f"- Object: {entry.object_name}")
     if entry.reduced_chisq is not None:
         lines.append(f"- reduced χ²/nu：{entry.reduced_chisq:.4f}")
     if entry.bic is not None:
@@ -515,7 +521,7 @@ def _format_round_section(title: str, entry: BestRoundEntry) -> list[str]:
     if entry.summary_path:
         lines.append(f"- summary：`{entry.summary_path}`")
     if entry.image_path:
-        lines.append(f"- 对比图：`{entry.image_path}`")
+        lines.append(f"- Comparison image: `{entry.image_path}`")
     lines.append("")
     return lines
 
@@ -531,25 +537,25 @@ def _format_comparison_report(
 ) -> str:
     """Assemble the human-readable cross-round comparison markdown."""
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    lines: list[str] = ["# 最优轮对比报告（best-round comparison）", ""]
-    lines.append(f"- 生成时间：{ts}")
-    lines.append(f"- 判定 verdict：{verdict or 'UNKNOWN'}")
+    lines: list[str] = ["# Best-Round Comparison Report", ""]
+    lines.append(f"- Generated at: {ts}")
+    lines.append(f"- Verdict: {verdict or 'UNKNOWN'}")
     if status:
-        lines.append(f"- 状态 status：{status}")
+        lines.append(f"- Status: {status}")
     lines.append(f"- {_metrics_summary(best, current)}")
     if error:
-        lines.append(f"- 错误：{error}")
+        lines.append(f"- Error: {error}")
     lines.append("")
-    lines.extend(_format_round_section("历史最优轮次（best）", best))
-    lines.extend(_format_round_section("当前轮次（current）", current))
+    lines.extend(_format_round_section("Historical best round", best))
+    lines.extend(_format_round_section("Current round", current))
     if conclusion:
-        lines.append("## 对比参考结论（仅退步时生成）")
+        lines.append("## Reference conclusion from the comparison (generated on regression only)")
         lines.append("")
         lines.append(conclusion)
         lines.append("")
-    lines.append("## VLM 对比正文")
+    lines.append("## VLM comparison response")
     lines.append("")
-    body = text.strip() if text and text.strip() else "（无 VLM 输出）"
+    body = text.strip() if text and text.strip() else "(no VLM output)"
     lines.append(body)
     lines.append("")
     return "\n".join(lines)

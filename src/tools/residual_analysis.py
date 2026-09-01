@@ -36,7 +36,7 @@ def _maybe_fetch_reference_blocks(image_file: str):
 
 
 def _galaxy_dir_of(path: str) -> str:
-    """从某个输出文件路径向上定位星系主目录（首个含 output/ 子目录的祖先）。"""
+    """Locate the galaxy home directory (first ancestor containing an output/ subdirectory) from an output-file path."""
     p = os.path.dirname(os.path.abspath(path))
     for _ in range(6):
         if os.path.isdir(os.path.join(p, "output")):
@@ -49,10 +49,10 @@ def _galaxy_dir_of(path: str) -> str:
 
 
 def _persist_timing(ref_path: str, timing: dict) -> None:
-    """把单次 VLM 分析的 timing 追加写到星系目录下的 timing_log.md，便于跨轮汇总。
+    """Append the per-call VLM timing to timing_log.md in the galaxy directory for cross-round aggregation.
 
-    默认不写文件（避免污染星系目录）；在 .env 中设置 VLM_TIMING_LOG=1 开启。
-    计时数据始终可通过 stdout 与 result["timing"] 获取，不受此开关影响。
+    Off by default (keeps galaxy directories clean); enable with VLM_TIMING_LOG=1 in .env.
+    Timing data is always available via stdout and result["timing"] regardless of this switch.
     """
     if os.environ.get("VLM_TIMING_LOG", "0") != "1":
         return
@@ -137,10 +137,10 @@ def analyze_multiband_components(
         from .cc_analysis import run_component_analysis_cc
         session_id = str(uuid.uuid4())
 
-        cc_summary = f"请使用 read_file 工具读取参数摘要文件：{os.path.abspath(summary_file)}"
+        cc_summary = f"Use the read_file tool to read the parameter summary file: {os.path.abspath(summary_file)}"
         cc_instructions = custom_instructions
         if working_note_file:
-            cc_instructions += f"\n\n历史轮次的分析结果和调整决策摘要记录在 {working_note_file}"
+            cc_instructions += f"\n\nSummaries of previous rounds' analyses and adjustment decisions are recorded in {working_note_file}"
 
         phase_param = prompt.get_phase_parameter_review(cc_summary, cc_instructions)
         turn2 = phase_param + "\n\n" + phase_reason
@@ -159,22 +159,22 @@ def analyze_multiband_components(
         timing = None
         from .acp_analysis import run_component_analysis_acp
         if working_note_file:
-            custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要记录在 {working_note_file}"
+            custom_instructions += f"\n\nSummaries of previous rounds' analyses and adjustment decisions are recorded in {working_note_file}"
 
         phase_param = prompt.get_phase_parameter_review(
-            f"请使用 read_file 工具读取参数摘要文件：{os.path.abspath(summary_file)}",
+            f"Use the read_file tool to read the parameter summary file: {os.path.abspath(summary_file)}",
             custom_instructions,
         )
 
         step1 = f'''
-你是一个集成了"计算机视觉特征提取"与"天体物理形态学专家推理"的自动化诊断 Agent。你的任务是基于 GALFITS 的拟合结果，通过严密的四步思维链（Chain-of-Thought），诊断当前模型的缺陷，并输出下一步的调整决策。
+You are an automated diagnostic agent that combines computer-vision feature extraction with expert astrophysical morphology reasoning. Given the GalfitS fitting results, diagnose the deficiencies of the current model through a rigorous four-step chain of thought (CoT) and output the next adjustment decision.
 
-在这个过程中只能使用read_file 和 write_file 工具，不能使用其他工具。 write_file 可以用于编写 /tmp/todo_xxx.md来记录代办进展。
+During this process you may only use the read_file and write_file tools and no others. write_file may be used to maintain a progress checklist at /tmp/todo_xxx.md.
 
-【输入文件】
-- 图像文件：{os.path.abspath(comparison_file)}（包含原图、模型图、2D残差图及1D表面亮度轮廓图）
+[Input files]
+- Image file: {os.path.abspath(comparison_file)} (contains the original image, model image, 2D residual map and 1D surface-brightness profile)
 
-请使用 read_file 工具读取上述文件后，依次执行以下 4 个阶段的分析。在阶段 1 和阶段 2 中，你必须保持绝对的客观。
+After reading the file above with read_file, carry out the following 4 analysis phases in order. In Phases 1 and 2 you must remain strictly objective.
 
 {phase_visual}
 
@@ -206,7 +206,7 @@ def analyze_multiband_components(
         if working_note_file and os.path.exists(working_note_file):
             working_note_content = read_summary_file(working_note_file) or ""
             if working_note_content:
-                custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要：\n{working_note_content}"
+                custom_instructions += f"\n\nSummaries of previous rounds' analyses and adjustment decisions:\n{working_note_content}"
 
         # Soft "best-round regression" reference (only present when the comparison
         # judged the current round worse than the historical best). Fed into turn-2
@@ -262,10 +262,10 @@ def analyze_multiband_components(
         _brr.attach_analysis_to_best(comparison_file, analysis)
 
     require = '''
-- 必须严格落实【调整决策】中的要求，基于上一轮的拟合结果的基础上调整初始参数。
-    - 落实过程中，不可以私自增减（即使因为拟合出现异常），增减成分的决策权归属 component_analysis 所有。
-- 落实过程中，可以对参数细节做调整，比如参数初值、fix/free等，但必须保证调整的方向和目标与 component_analysis 输出的决策完全一致。
-- 决策落实完成后，及时调用 component_analysis 进行下一轮的分析和调整，直到达到满意的拟合结果为止。
+- The requirements in [Adjustment Decision] must be implemented strictly, adjusting initial parameters on the basis of the previous round's fitting results.
+    - During implementation you may not add or remove components on your own (even if the fit misbehaves); the authority to add/remove components belongs solely to component_analysis.
+- Parameter details may be fine-tuned during implementation (initial values, fix/free status, etc.), but the direction and goal of every change must remain fully consistent with the decision output by component_analysis.
+- Once a decision has been implemented, promptly call component_analysis for the next round of analysis and adjustment until a satisfactory fit is reached.
 '''
     result = {
         "status": "success",
@@ -362,10 +362,10 @@ def component_analysis(
         from .cc_analysis import run_component_analysis_cc
         session_id = str(uuid.uuid4())
 
-        cc_summary = f"请使用 read_file 工具读取参数摘要文件：{os.path.abspath(summary_file)}"
+        cc_summary = f"Use the read_file tool to read the parameter summary file: {os.path.abspath(summary_file)}"
         cc_instructions = custom_instructions
         if working_note_file:
-            cc_instructions += f"\n\n历史轮次的分析结果和调整决策摘要记录在 {working_note_file}"
+            cc_instructions += f"\n\nSummaries of previous rounds' analyses and adjustment decisions are recorded in {working_note_file}"
 
         phase_param = prompt.get_phase_parameter_review(cc_summary, cc_instructions)
         turn2 = phase_param + "\n\n" + phase_reason
@@ -384,22 +384,22 @@ def component_analysis(
         timing = None
         from .acp_analysis import run_component_analysis_acp
         if working_note_file:
-            custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要记录在 {working_note_file}"
+            custom_instructions += f"\n\nSummaries of previous rounds' analyses and adjustment decisions are recorded in {working_note_file}"
 
         phase_param = prompt.get_phase_parameter_review(
-            f"请使用 read_file 工具读取参数摘要文件：{os.path.abspath(summary_file)}",
+            f"Use the read_file tool to read the parameter summary file: {os.path.abspath(summary_file)}",
             custom_instructions,
         )
 
         step1 = f'''
-你是一个集成了"计算机视觉特征提取"与"天体物理形态学专家推理"的自动化诊断 Agent。你的任务是基于 GALFIT 的拟合结果，通过严密的四步思维链（Chain-of-Thought），诊断当前模型的缺陷，并输出下一步的调整决策。
+You are an automated diagnostic agent that combines computer-vision feature extraction with expert astrophysical morphology reasoning. Given the GALFIT fitting results, diagnose the deficiencies of the current model through a rigorous four-step chain of thought (CoT) and output the next adjustment decision.
 
-在这个过程中只能使用read_file 和 write_file 工具，不能使用其他工具。 write_file 可以用于编写 /tmp/todo_xxx.md来记录代办进展。
+During this process you may only use the read_file and write_file tools and no others. write_file may be used to maintain a progress checklist at /tmp/todo_xxx.md.
 
-【输入文件】
-- 图像文件：{os.path.abspath(image_file)}（包含原图、模型图、2D残差图及1D表面亮度轮廓图）
+[Input files]
+- Image file: {os.path.abspath(image_file)} (contains the original image, model image, 2D residual map and 1D surface-brightness profile)
 
-请使用 read_file 工具读取上述文件后，依次执行以下 4 个阶段的分析。在阶段 1 和阶段 2 中，你必须保持绝对的客观。
+After reading the file above with read_file, carry out the following 4 analysis phases in order. In Phases 1 and 2 you must remain strictly objective.
 
 {phase_visual}
 
@@ -431,7 +431,7 @@ def component_analysis(
         if working_note_file and os.path.exists(working_note_file):
             working_note_content = read_summary_file(working_note_file) or ""
             if working_note_content:
-                custom_instructions += f"\n\n历史轮次的分析结果和调整决策摘要：\n{working_note_content}"
+                custom_instructions += f"\n\nSummaries of previous rounds' analyses and adjustment decisions:\n{working_note_content}"
 
         # Soft "best-round regression" reference (only present when the comparison
         # judged the current round worse than the historical best). Fed into turn-2
@@ -471,16 +471,16 @@ def component_analysis(
     
     require = '''
 
-# 决策落实守则
-- 必须严格落实【调整决策】中的要求，基于上一轮的拟合结果的基础上调整初始参数。
-    - 落实过程中，不可以私自增减（即使因为拟合出现异常），增减成分的决策权归属 component_analysis 所有。
-    - 若【调整决策】涉及到多个成分增减，需要遵循一次只增减一个成分的原则，避免陷入局部最优或者拟合崩溃。
-        - example1: 目标：sersic->(expdisk + F1 + Bulge);实际要分三步：sersic->expdisk->(expdisk + F1)->(expdisk + F1 + Bulge)
-        - example2: 目标：sersic->(expdisk + companion);实际要分两步：sersic->expdisk->(expdisk + companion)        
-        - 这里的一次是执行一次 run_galfit，一个调整策略可以执行多次run_galfit，调整与执行的优先级持续参考 example1、example2 的顺序。(后步骤要基于前步骤的输出结果参数基础上继续调整)
-    - 落实过程中，可以对参数细节做调整，比如参数初值、fix/free等，但必须保证调整的方向和目标与 component_analysis 输出的决策完全一致。
-- 决策落实（多次调参拟合）完成后，无论结果如何，都必须必须向 component_analysis 汇报进展并获取下一轮的分析并获取调整意见，严禁私自决定。
-- 你可以怀疑 component_analysis 的判断，但只能保留意见，必须严格执行 component_analysis 的决策，直到所有决策落地执行（可以反馈意见，严禁私自篡改决策）。
+# Decision-implementation rules
+- The requirements in [Adjustment Decision] must be implemented strictly, adjusting initial parameters on the basis of the previous round's fitting results.
+    - During implementation you may not add or remove components on your own (even if the fit misbehaves); the authority to add/remove components belongs solely to component_analysis.
+    - When [Adjustment Decision] involves adding or removing several components, follow the one-component-per-step principle to avoid local minima or fit breakdown.
+        - example1: target sersic->(expdisk + F1 + Bulge) must be split into three steps: sersic->expdisk->(expdisk + F1)->(expdisk + F1 + Bulge)
+        - example2: target sersic->(expdisk + companion) must be split into two steps: sersic->expdisk->(expdisk + companion)
+        - One "step" here means one run_galfit execution; a single adjustment strategy may involve multiple run_galfit calls, and the ordering always follows example1/example2 (each later step builds on the output parameters of the previous step).
+    - Parameter details may be fine-tuned during implementation (initial values, fix/free status, etc.), but the direction and goal of every change must remain fully consistent with the decision output by component_analysis.
+- After implementing the decisions (possibly over several tuning fits), you must report progress to component_analysis and obtain the next round of analysis and adjustment suggestions regardless of the outcome; deciding on your own is strictly forbidden.
+- You may doubt component_analysis's judgement, but you may only register your reservation: its decisions must be executed exactly until all decisions have been carried out (feedback is allowed; silently altering decisions is strictly forbidden).
 '''
     # Save analysis
     base_name = os.path.splitext(os.path.basename(image_file))[0]
@@ -510,10 +510,11 @@ def component_analysis(
         _persist_timing(image_file, timing)
     if _best_info is not None:
         _br = _best_info.get("best_round")
-        _br_label = _best_info.get("best_round_label") or "未知轮次"
-        _br_id = f"round {_br}（{_br_label}）" if _br is not None else _br_label
+        _br_label = _best_info.get("best_round_label") or "unknown round"
+        _br_id = f"round {_br} ({_br_label})" if _br is not None else _br_label
         result["best_round_judge"] = (
-            f"对比图像，最优轮次判断（{_best_info.get('status')}）：当前最优轮次为 {_br_id}。"
+            f"Best-round judgement from the comparison images ({_best_info.get('status')}): "
+            f"the current best round is {_br_id}."
         )
         if os.environ.get("BEST_ROUND_VERBOSE") == "1":
             if _best_info.get("verdict") is not None:

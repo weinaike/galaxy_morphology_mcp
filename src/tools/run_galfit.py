@@ -42,20 +42,22 @@ def _json_safe(value: Any) -> Any:
     return value
 
 # Residual-zoom panel geometry (mirrors v2 layout in rerender_comparisons.py)
-ZOOM_HALF_MIN_PX = 12       # 放大框半宽下限，防止 Re 过小时框退化
-ZOOM_RE_FACTOR = 2.5        # 半宽 = 2.5×Re，即全宽 5×Re
-ZOOM_SIGMA_RANGE = 10       # 放大图色标 ±10σ，与主残差图一致
-CENTER_CLUSTER_PX = 3.0     # 距场心同一目标簇的容差：同心多成分(盘+核+棒)归为一簇
+ZOOM_HALF_MIN_PX = 12       # lower bound on the zoom-box half-width, avoids a degenerate box for tiny Re
+ZOOM_RE_FACTOR = 2.5        # half-width = 2.5*Re, i.e. full box width 5*Re
+ZOOM_SIGMA_RANGE = 10       # zoom color scale +/-10 sigma, same as the main residual panel
+CENTER_CLUSTER_PX = 3.0     # tolerance for clustering targets around the field center: concentric multi-components (disk+nucleus+bar) form one cluster
 
 
 def observed_reff(data: np.ndarray, mask: np.ndarray,
                   ixc: float, iyc: float) -> float:
-    """原图实测圆形半光半径 R_e,obs [pix]（掩膜内、去天光）。
+    """Observed circular half-light radius R_e,obs [pix] of the original image (masked, sky-subtracted).
 
-    作为放大框尺寸的稳健基准：不依赖任一成分的拟合 Re，规避
-    PSF(Re=0)/坍缩 bulge 把框压到下限，也与成分标签解耦。
-    半光半径由「以拟合中心为圆心的圆形通量增长曲线」取半光得到；
-    返回 0.0 表示无法测定（像素不足/总通量非正），调用方据此回落。
+    Used as a robust baseline for the zoom-box size: it depends on no single
+    component's fitted Re (so a PSF (Re=0) or a collapsed bulge cannot shrink
+    the box to the lower bound) and is decoupled from component labels.
+    The half-light radius is taken from the circular flux-growth curve centred
+    on the fitted centre. Returns 0.0 when it cannot be measured (too few
+    pixels / non-positive total flux); callers fall back accordingly.
     """
     good = np.isfinite(data) & (mask == 0)
     if int(good.sum()) < 50:
@@ -386,11 +388,15 @@ def create_comparison_png(
             cbar.ax.tick_params(labelsize=9)
             cbar.set_label('Residual (σ)', fontsize=9)
 
-        # ── 放大框几何 ──
-        # 定心：目标星系 = 距拟合区域几何中心最近者（伴星系虽亮但偏置，会被排除）；
-        #       同心多成分（盘+核+棒，位置几乎重合）归为同一目标簇，取最亮为代表。
-        # 尺寸：原图实测半光半径 R_e,obs（掩膜内、去天光、圆形增长曲线），规避
-        #       PSF(Re=0)/坍缩 bulge 框过小，并与成分标签解耦。半宽 = max(2.5×R_e,obs, 下限)。
+        # ── Zoom-box geometry ──
+        # Centering: target galaxy = the component nearest the fit-region geometric
+        #            centre (a companion may be bright but offset, so it is excluded);
+        #            concentric multi-components (disk+nucleus+bar, nearly coincident)
+        #            form one target cluster, represented by the brightest member.
+        # Size: observed half-light radius R_e,obs of the original image (masked,
+        #       sky-subtracted, circular growth curve), avoiding a too-small box for
+        #       a PSF (Re=0) or collapsed bulge, and decoupled from component labels.
+        #       Half-width = max(2.5*R_e,obs, lower bound).
         ctr_x, ctr_y = (xmin + xmax) / 2, (ymin + ymax) / 2
         cands = [c for c in components or [] if c.get("type") != "sky"]
         if cands:
@@ -407,8 +413,8 @@ def create_comparison_png(
             re_fit = 0
         re_obs = observed_reff(original_data, mask, cx - xmin, cy - ymin) or re_fit
         half = max(ZOOM_RE_FACTOR * re_obs, ZOOM_HALF_MIN_PX)
-        # 上限：拟合区域短边的 1/4，保证放大图至少有 2 倍放大率
-        # （R_e 很大时 5×R_e 会接近全幅，放大失去意义）
+        # Cap: 1/4 of the fit-region short side, keeping at least 2x magnification
+        # (for very large R_e, 5*R_e approaches the full frame and zooming loses meaning)
         half = min(half, (xmax - xmin) / 4, (ymax - ymin) / 4)
         zx0 = max(xmin, cx - half); zx1 = min(xmax, cx + half)
         zy0 = max(ymin, cy - half); zy1 = min(ymax, cy + half)
@@ -435,8 +441,9 @@ def create_comparison_png(
             ax_zoom.imshow(mask_overlay[iy0:iy1 + 1, ix0:ix1 + 1],
                            origin='lower', extent=zoom_extent, interpolation='nearest')
 
-            # 中心饱和补救：色标外（>±10σ）的纯色块会吞掉几何信息，
-            # 叠加对数间隔的高 σ 等值线还原饱和区内部形态。
+            # Central-saturation remedy: solid color blocks beyond the scale (>+/-10 sigma)
+            # swallow geometric information; overlay logarithmically spaced high-sigma
+            # contours to recover the morphology inside saturated regions.
             contour_note = ""
             zoom_abs = np.abs(zoom[np.isfinite(zoom)])
             maxabs = zoom_abs.max() if zoom_abs.size else 0

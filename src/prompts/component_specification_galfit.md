@@ -76,6 +76,8 @@ Key parameter: R_s (disk scale length)
 
 Note (this workflow): the template's `9) b/a` and `10) PA` toggles shown as `0` above are **not** used here — in this workflow the Disk's q and PA are **free** (`1`); oblique disk configurations are legal search directions (see the solution-space definition in CLAUDE.md).
 
+Note (SingleSersic start): the single-component start is named `singlesersic` (sersic, free n). The moment a second central component is added, the start must be converted to `expdisk` and renamed `disk` (`4)` row = Rs = fitted Re / 1.68; the n row is dropped) — bundled with the first add as its second primitive; a multi-component model with a sersic `disk` is invalid.
+
 ---
 1. psf — (commonly used for an AGN / a star / an extremely compact nucleus)
 

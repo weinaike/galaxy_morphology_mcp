@@ -433,6 +433,39 @@ def check_feedme_file(
         }
         inventory.append(entry)
 
+    # Disk-type enforcement (solution space): in a multi-component model the
+    # disk slot must be `expdisk` named `disk` (n==1 by type); the `singlesersic`
+    # identity (sersic with free n) is legal ONLY as the sole luminous component.
+    # This is where a missed SingleSersic->Disk conversion is caught BEFORE the
+    # fit wastes budget (the verifier's 5a only audits at lock time).
+    names = {c["name"] for c in components}
+    if len(components) >= 2:
+        for c in inventory:
+            if c["name"] == "disk" and c["type"] != "expdisk":
+                errors.append(
+                    f"Component '{c['name']}' (number {c['number']}) has type "
+                    f"'{c['type']}' — the disk slot in a multi-component model must be "
+                    "`expdisk` (n==1 guaranteed by type). The SingleSersic->Disk "
+                    "conversion was missed: convert to expdisk named `disk` "
+                    "(Rs = fitted Re / 1.68) and refit."
+                )
+        for c in inventory:
+            if "singlesersic" in c["name"]:
+                errors.append(
+                    f"Component '{c['name']}' (number {c['number']}) carries the "
+                    "single-Sersic identity (sersic with free n) alongside other "
+                    "components — the singlesersic slot is legal ONLY as the sole "
+                    "luminous component. Convert it to `expdisk` named `disk` "
+                    "(Rs = fitted Re / 1.68) when the decomposition begins."
+                )
+    elif len(components) == 1 and "disk" in names and components[0]["type"] == "sersic":
+        warnings.append(
+            "The sole component is a sersic named 'disk' with free n — in the "
+            "single-component regime it should be named 'singlesersic' (the disk "
+            "name is reserved for the expdisk slot of multi-component models); "
+            "rename it to keep ledger signatures unambiguous."
+        )
+
     if errors:
         return {
             "status": "failure",

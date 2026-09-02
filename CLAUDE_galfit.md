@@ -50,13 +50,16 @@ GALFIT feedme parameter rows carry no bounds — without a `.cons` the solution 
 
 ```text
 # Default bounds for component <N> (every non-sky component, every round)
-  <N>   re   max(0.1, 0.5*FWHM_PSF)   <half the fit-region side length>   # expdisk: the row bounds Rs
-  <N>   n    0.1   8                  # sersic components only
-  <N>   q    0.05  1.0                # shaped components only
+# Absolute bands MUST use the 'to' keyword form (see the semantics note below)
+  <N>   re   max(0.1, 0.5*FWHM_PSF) to <half the fit-region side length>   # expdisk: the row bounds Rs
+  <N>   n    0.1 to 8                  # sersic components only
+  <N>   q    0.05 to 1.0               # shaped components only
 # centres: K>=2 central components -> offset chain (no separate window);
-#          K<=1 -> <N> x <init-2> <init+2> and <N> y <init-2> <init+2>
-#          companions -> <N> x <init-5> <init+5> and <N> y <init-5> <init+5>
+#          K<=1 -> <N> x -2 2 and <N> y -2 2          (relative-to-input +/-2px window)
+#          companions -> <N> x -5 5 and <N> y -5 5    (relative-to-input +/-5px window)
 ```
+
+**🔑 `.cons` numeric-band semantics (empirically determined on this machine's GALFIT 3.0.5; verified 2026-09-02, KILOGAS_296 `cons_test/`)**: a soft-constraint row with **two bare numbers** (`N re 4.0 13.5`, `N q 0.05 1.0`, `N x -1 0.5`) is interpreted as **offsets from the component's INPUT value** — the effective band is `[input−a, input+b]`, NOT an absolute interval; a band written absolute-style with bare numbers is **silently never enforced** (no parse error, no warning). Absolute bands for `re` / `n` / `q` MUST use the `to` keyword form (`N re 4.0 to 13.5`), which IS enforced as written (verification: narrow test bands pinned the fitted values exactly at their bounds). Position windows (K≤1 centres ±2px, companions ±5px) are intentionally relative — write them as bare ±offsets around the input value (`N x -5 5`). Bound-hit diagnostics must always compare against the **effective** band: with the `to` form the written numbers are the effective band; with the bare-number fallback decode `[input−a, input+b]` first.
 
 - FWHM_PSF comes from `fit_statistics.psf_fwhm` (fall back to 1 px when unavailable); expdisk rows are written in Rs (= declared Re / 1.68).
 - **Provenance convention**: these default bounds count as **original** in the bound-hit provenance reporting; candidate-driven tightenings count as **self-imposed**.
@@ -81,6 +84,8 @@ Simply put your constraint file's name (e.g. `galaxy.cons`) into the `G)` item. 
 
 Each line of the constraint file is one rule. Its standard syntax:
 `[component number]   [parameter name]   [constraint type]   [lower limit]   [upper limit]`
+
+**⚠️ Semantics warning (empirical, this machine's GALFIT 3.0.5)**: with **two bare numbers** the limits are interpreted as **offsets relative to the component's INPUT value** (effective band `[input−lower, input+upper]`), not absolute values — see the examples below (`2 x -1 0.5` is explicitly input-relative). To express an **absolute** band for `re`/`n`/`q`, use the `to` keyword: `3 n 0.7 to 5`, `2 re 0.5 to 4.0` (verified enforced as written). Details: the `.cons` numeric-band semantics note in the solution-space definition (§3).
 
 #### 1. Common parameter-name abbreviations
 
@@ -156,11 +161,11 @@ Concrete example (feedme: 1=disk, 2=bulge, 3=bar, 4=lens, 5=companion, 6=sky):
 # Concentric constraint: bulge/bar/lens anchored to disk (comp 1)
  1_2_3_4     x     offset
  1_2_3_4     y     offset
-# Companion position pinned to initial estimate (soft ±5px window)
- 5           x     122.5  123.5
- 5           y     130.8  131.8
-# (optional) other parameter bounds merged into the same file, e.g. the bulge n range
- 2           n     0.5  8
+# Companion position pinned to initial estimate (soft ±5px window, RELATIVE to the input value)
+ 5           x     -5    5
+ 5           y     -5    5
+# (optional) other parameter bounds merged into the same file, e.g. the bulge n range (absolute 'to' form)
+ 2           n     0.5 to 8
 ```
 
 **Accompanying feedme-side operations**:
@@ -190,7 +195,7 @@ The only reliable form is the **chained hard constraint `offset`** above.
 
 ### 4. Companion exemption (mandatory)
 
-A companion's number (`# STRUCTURE:` name containing comp/companion/secondary/satellite) is **strictly forbidden** in the concentric chain — companion centres must stay freely fitted. When adding a companion, pin its position with a **soft window** instead (±5px; the initial value is the VLM's measured pixel coordinate): `<number>  x  <init-5>  <init+5>` and `<number>  y  <init-5>  <init+5>`. Anchor choice: prefer the Disk; absent a Disk, the brightest central component.
+A companion's number (`# STRUCTURE:` name containing comp/companion/secondary/satellite) is **strictly forbidden** in the concentric chain — companion centres must stay freely fitted. When adding a companion, pin its position with a **soft window** instead (relative-to-input ±5px; the initial value is the VLM's measured pixel coordinate): `<number>  x  -5  5` and `<number>  y  -5  5` (bare numbers are input-relative offsets — see the `.cons` numeric-band semantics note in the solution-space definition). Anchor choice: prefer the Disk; absent a Disk, the brightest central component.
 
 
 ## GALFIT component-type specification (must be strictly observed)

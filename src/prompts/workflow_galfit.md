@@ -31,7 +31,7 @@ Stage 2. Structure search and dynamic validation (Beam Search mode)
 ### Constants (hard; not adjusted per galaxy)
 - Beam width W = 5 (priority-queue capacity)
 - Global fitting budget N_max = 15 (every `run_galfit` call counts, success or failure)
-- Early-stop threshold S_max = N_max = 15 (cap on consecutive non-improvements; currently equal to N_max so the early stop is effectively inert — termination is controlled by the budget N_max alone)
+- Early-stop threshold S_max = 5 (cap on consecutive non-improvements; deliberately tighter than N_max so a converged beam stops early and preserves fitting budget for Stage-3 / Step-4 restart rounds)
 - **Per-combination attempt cap = 4**: any single component combination (the same physical-identity inventory C) may be fitted at most 4 times — a diversity-promoting cap that forces exploration toward untried combinations instead of re-testing saturated ones (see the formal definitions and Step 1.b.0/R0)
 
 ### BIC Convention (global; hard requirement)
@@ -78,7 +78,7 @@ All model-quality comparisons, state-ledger records and ΔBIC threshold judgemen
 
 ### Step 1. Main loop (run while no termination condition holds)
 ```
-while Q non-empty and n < 15 and stagnation < 15:
+while Q non-empty and n < 15 and stagnation < 5:
 ```
 a. **Dequeue**: take the highest-g (s, a, σ, g, branch, depth) from Q and remove it.
 b. **Execute the transition T(s, a)**:
@@ -154,7 +154,9 @@ h. **Derive a new branch (optional)**: when a candidate differs markedly from th
 ### Step 2. Termination (stop when any holds)
 - Q is empty;
 - n ≥ 15;
-- stagnation ≥ 15 (the 15 highest-priority (s, a) dequeued in a row produced no s' better than s\* — the beam has converged; the threshold equals N_max, so n ≥ 15 fires first in practice).
+- stagnation ≥ 5 (the 5 highest-priority (s, a) dequeued in a row produced no s' better than s\* — the beam has converged).
+
+**Never-executed-inventory precheck (hard; run before accepting ANY termination condition)**: scan the full candidate history (every action_id ever returned by `generate_galfit_beam_actions`, whether enqueued, truncated or discarded). If any `expected_C'` has been proposed **≥2 times** (any tag, any branch) yet **never executed** (absent from the input ledger), the termination is **suspended**: the orchestrator must either (a) enqueue that inventory's best variant with a floor of g ≥ 0.5 and spend at least one fit on it (if n < N_max allows), or (b) record in the cross-branch decision log a refutation grounded in **directly equivalent evidence** — a failure of a physically identical inventory in a directly comparable configuration. Failures of *different* inventories (e.g. two-component splits failing while the unexecuted candidate is a three-component skeleton) are **indirect evidence and never suffice**. Only when every never-executed ≥2-times-proposed inventory has been either executed or directly refuted may termination take effect.
 
 ### Step 3. Wrap-up before Stage 3
 1. Write into the "cross-branch decision log" of `working_note.md`: the termination condition, the cumulative fit count n, the number of branches explored, and the truncated candidate action_ids.
@@ -226,10 +228,12 @@ Identify the **inflated component** from failed_checks (the one whose Re exceeds
 1. **Residual-improvement potential**: combine the VLM's σ with the orchestrator's independent estimate of the explainable residual fraction.
 2. **Physical-plausibility prior**: consistency with the "Disk → (F1/Companion if detected) → Bulge → Bar → Other" addition order; conformity of Bar/Bulge/Lens/Nucleus with the recognition conditions (see `<Overall workflow of galaxy component analysis>`). **Stage-1 detect_bar_lopsidedness results are only a weak prior here**: a detection may add a little (hint-level positive evidence), but **a non-detection must not deduct** — non-detection is zero evidence, not negative. A Bar/Lens/Fourier candidate grounded in residual evidence (central quadrupole, high-ellipticity inner structure, bar-like residuals, etc.) scores on the **strength of the residual evidence** even if Stage 1 detected nothing; the gold standard is residual-driven fitting validation, not Stage-1 detection.
    **The "hint-level evidence ≠ negative evidence" principle extends to historical path failures**: a candidate X failing in a parent context (rising BIC, bound hits) does **not** constitute determinate evidence that "the hypothesis X is wrong". When the beam search reaches a new component context, the orchestrator **must not** carry over "this direction failed historically" to suppress the physical-plausibility score of a same-direction candidate the VLM re-proposes on residual evidence.
-3. **Path diversity (weight ×2)**: the more a candidate's direction differs from the **globally used candidates** (the executed history, i.e. the action genealogy in the input/result ledgers) and from the current Q's elements, the higher the score. Direction criteria: the expected_C' component-set difference primarily; expected_behavior_tag / main tune axis secondarily.
+3. **Path diversity (weight ×2)**: the more a candidate's direction differs from the **globally used candidates** (the executed history, i.e. the action genealogy in the input/result ledgers) and from the current Q's elements, the higher the score. Direction criteria: the expected_C' component-set difference primarily; expected_behavior_tag / main tune axis secondarily. **Enforcement (hard)**: an `expected_C'` that has never appeared in the executed history (input ledger) scores **high** on this dimension even when its tune axis overlaps an already-executed candidate (e.g. after {disk,bar} was executed, a proposed {disk,bar,bulge} is still a NEW direction); only candidates landing on an already-executed inventory (or one already represented by a higher-g in-Q candidate) with no new parameter axis score low. The secondary criterion (tag / tune axis) may **never override** the primary one (component set).
 4. **Degeneracy penalty**: is the parent state already degenerate (e.g. a failing `.cons`, identical bulge/disk flux)? Might this action inherit the degeneration? **This dimension assesses whether the candidate itself inherits the parent's degeneration** — a successor-correction candidate (position / PA / Re fixes) of a worse-BIC s' (say, a poorly initialised parameter) is repairing the degeneration and should get a **low** penalty.
 5. **Historical consistency**: coherence with the working_note's prior goals — avoid flip-flopping.
 6. **BIC threshold**: active only when the action adds/removes a Nucleus/AGN; estimate whether ΔBIC clears the +10 threshold (BIC = `fit_statistics`'s `bic_eff` per the BIC Convention; fall back to `bic1d` if missing).
+
+**Failure-taint isolation (hard; applies to dimensions 4 and 5)**: a fit failure of a candidate with inventory C_x (worse BIC, physicality FAIL, crash) may only depress the s₄/s₅ scores of later candidates whose `expected_C'` is **physically identical to C_x**. For a candidate whose `expected_C'` differs (e.g. {disk,bar} failed → now evaluating {disk,bar,bulge}), the taint does **not** transfer: dimensions 4/5 must be scored on the candidate's own merits (its own parent state, its own degeneracy risk), consistent with dimension 2's "hint-level failure ≠ negative evidence" principle — a differently-composed inventory is precisely the "new component context" that re-arms a direction.
 
 `score(s)` decides s\* and shares the same dimensions and weights (dimension 3 ×2); it scores a finished fit rather than an enqueued candidate.
 
@@ -243,7 +247,7 @@ Identify the **inflated component** from failed_checks (the one whose Re exceeds
 - **Disk-Re bottleneck candidate** (see d.ii): when the lens/bar Re hits the cap with Re degeneracy (≥0.85) or flux-approaching (≥83% disk), the `tune(disk, larger Re)` candidate is floor-enqueued at g ≥ 0.5.
 - **Lens self-imposed-cap relaxation candidate D** (see d.ii): when the lens Re hits a cap produced by an earlier tightening (current re_max < original input re_max) with neither degeneracy sub-criterion met, candidate D (`tune(lens, re_max = hit value × 1.3)`) is floor-enqueued at g ≥ 0.5 (VLM's or the orchestrator's "[orchestrator lens-inflation supplement-D]").
 - **Persistent-candidate protection (VLM repeat proposals across rounds)**: if the VLM returned a **same-direction** candidate in the last **≥2 `generate_galfit_beam_actions` calls** (adjacent or not, same branch or not) with σ ≥ 0.5 each time, that direction **must** be enqueued and executed at least once; the orchestrator must not push its g below g_min=0.3 on "historical failure", "consistency" or "diversity" grounds.
-  - **"Same direction"**: identical `expected_behavior_tag` and physically equivalent `expected_C'` (parameter tweaks allowed — PA=90° vs 85°, Re_init=1.5px vs 2.0px are the same direction).
+  - **"Same direction"**: physically equivalent `expected_C'` (per §Deduplication and Ranking criterion 1, tolerance bands applied) **and** the same primitive kinds (e.g. two `add(...)` candidates building the same inventory). The `expected_behavior_tag` is free-form VLM text and is **reference only — never a gating condition**: two proposals of the same never-executed inventory carrying different tags (e.g. `bar_add_for_quadrupole` vs `bulge_add_center`, both → {disk,bar,bulge}) are the **same direction**; keying on the tag lets repeated proposals escape protection. Parameter tweaks allowed — PA=90° vs 85°, Re_init=1.5px vs 2.0px are the same direction.
   - **On trigger**: force the candidate's g to **≥0.6** (floor); annotate "[persistent-candidate protection triggered]" in working_note with the triggering calls' session_ids and σ values.
   - **Post-execution expiry**: if the candidate then fails (BIC worse, parameters escaping the constraint region), the orchestrator may veto later same-direction candidates **within the same component context** with a written reason (in the "cross-branch decision log"); the veto holds **only for the same C'**. Any context change (a component added or removed) re-arms the protection for new same-direction candidates.
   - **Rationale**: repeated same-direction high-σ proposals across calls are stronger evidence than a single σ — one call may misjudge, repeated appearances across contexts mean the residual feature is stable. Suppressing them puts the orchestrator's prior above the VLM's visual evidence, against the beam search's design.
@@ -357,7 +361,7 @@ Each candidate returned by `generate_galfit_beam_actions` declares primitives (e
 
 ### Global fit counters
 - n = X / 15
-- stagnation = Y / 15
+- stagnation = Y / 5
 - global_iter_id = Z (the next feedme suffix)
 
 ## State ledgers (graph-search visited set; append one line per successful fit; never overwrite)

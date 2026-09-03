@@ -345,6 +345,88 @@ def generate_galfit_beam_actions(
     }
 
 
+def _validate_cons_file(cons_file: str) -> tuple[list[str], list[str]]:
+    """Validate a GALFIT ``.cons`` constraint file's row encodings.
+
+    Enforces the empirically verified encoding contract (this machine's
+    GALFIT 3.0.5; see CLAUDE.md's ``.cons`` numeric-band semantics note):
+    a soft-constraint row with **two bare numbers** is parsed as offsets
+    relative to the component's INPUT value ([input-a, input+b]) — a band
+    written absolute-style with bare numbers is silently never enforced as
+    written. Absolute bands for ``re``/``rs``/``n``/``q`` MUST use the ``to``
+    keyword form. Position windows (``x``/``y``) and ``mag`` relative bands
+    are intentionally relative, so bare numbers are legal there.
+
+    Also verifies that chained ``offset`` rows bind x and y in pairs (binding
+    only one is strictly forbidden).
+
+    Returns ``(errors, warnings)``.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    # params whose bands are absolute-intent in this workflow -> 'to' form required
+    absolute_intent = {"re", "rs", "n", "q"}
+    offset_chains: dict[str, set[str]] = {}
+
+    try:
+        with open(cons_file, encoding="utf-8") as f:
+            raw_lines = f.readlines()
+    except OSError as e:
+        return ([f"Could not read constraint file {cons_file}: {e}"], [])
+
+    for lineno, raw in enumerate(raw_lines, start=1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        tokens = line.split()
+        # Operator (hard-constraint) rows: "<chain> <param> offset|ratio"
+        if tokens[-1].lower() in {"offset", "ratio"}:
+            if len(tokens) != 3:
+                warnings.append(
+                    f"cons L{lineno}: unrecognised operator row '{line}' (expected '<chain> <param> offset|ratio')"
+                )
+                continue
+            comp_spec, param = tokens[0], tokens[1].lower()
+            if param in {"x", "y"} and tokens[-1].lower() == "offset":
+                offset_chains.setdefault(comp_spec, set()).add(param)
+            continue
+        # 'to' rows: "<N> <param> <a> to <b>" — enforced absolute band, legal for any param
+        if "to" in tokens[2:]:
+            continue
+        # Bare two-number rows: "<N> <param> <a> <b>"
+        if len(tokens) == 4:
+            comp_spec, param, a, b = tokens[0], tokens[1].lower(), tokens[2], tokens[3]
+            try:
+                float(a), float(b)
+            except ValueError:
+                warnings.append(
+                    f"cons L{lineno}: could not parse numbers in '{line}' — row ignored by this check"
+                )
+                continue
+            if param in absolute_intent:
+                errors.append(
+                    f"cons L{lineno}: row '{line}' bounds '{param}' with two BARE numbers — this "
+                    "GALFIT build parses them as INPUT-RELATIVE offsets ([input-a, input+b]), so "
+                    "the intended absolute band is silently never enforced as written. Rewrite "
+                    f"absolute bands in the 'to' keyword form: '{comp_spec} {param} <min> to <max>' "
+                    "(real incidents: KILOGAS_432 A.10 and KILOGAS_353 A.6 — '2 n 0.5 8' with "
+                    "n_init=4 decoded to [3.5, 12.0] and invalidated both refutations). Bare "
+                    "numbers stay legal only for x/y windows and mag relative bands."
+                )
+            continue
+        warnings.append(f"cons L{lineno}: unrecognised row '{line}' — verify against GALFIT .cons syntax")
+
+    for comp_spec, params in offset_chains.items():
+        missing = {"x", "y"} - params
+        if missing:
+            errors.append(
+                f"cons: chained offset constraint '{comp_spec}' binds only "
+                f"{sorted(params)} — x and y must be bound TOGETHER (binding only "
+                "one is strictly forbidden; the chain silently fails otherwise)"
+            )
+    return errors, warnings
+
+
 def check_feedme_file(
     feedme_file: Annotated[str, "Absolute path to the GALFIT feedme configuration file"],
 ) -> dict[str, Any]:
@@ -355,8 +437,10 @@ def check_feedme_file(
     handing it to ``run_galfit``. It verifies the file parses, that every
     non-sky component carries a semantic ``# STRUCTURE:`` name (GALFIT drops
     them in its output files, so they must be maintained on the input side),
-    and returns the canonical component inventory used for beam-state
-    signatures (name / type / params / free-fixed toggles, all in px).
+    validates the ``G)`` constraint file's row encodings (absolute ``re``/``n``/``q``
+    bands must use the ``to`` keyword form; chained ``offset`` rows must bind x
+    and y in pairs), and returns the canonical component inventory used for
+    beam-state signatures (name / type / params / free-fixed toggles, all in px).
     """
     if not os.path.exists(feedme_file):
         return {"status": "failure", "error": f"Feedme file not found: {feedme_file}"}
@@ -373,6 +457,22 @@ def check_feedme_file(
         errors.append("A) input image path is missing")
     if not paths.get("output"):
         errors.append("B) output image path is missing")
+
+    # Constraint-file encoding validation (G) pointer): absolute re/n/q bands
+    # MUST use the 'to' keyword form on this GALFIT build; chained offset rows
+    # must bind x and y in pairs. A violating .cons silently enforces a
+    # different band than written — it must be fixed BEFORE the fit runs.
+    cons_path = paths.get("constraint")
+    if cons_path:
+        if os.path.exists(cons_path):
+            cons_errors, cons_warnings = _validate_cons_file(cons_path)
+            errors.extend(cons_errors)
+            warnings.extend(cons_warnings)
+        else:
+            warnings.append(
+                f"G) constraint file not found: {cons_path} — GALFIT will run unconstrained "
+                "(silently ignoring the pointer); confirm the path or clear the G) item"
+            )
 
     try:
         with open(feedme_file, encoding="utf-8") as f:

@@ -174,6 +174,14 @@ Each candidate composite action consists of at most **2** atomic operations, whi
 
 **It is forbidden** to bundle unrelated atomic operations (e.g. adding a Bulge while changing the Disk PA while deleting a companion).
 
+## 🔑 σ Calibration for Parameter-Release Candidates (must read before scoring `local_benefit_σ`)
+
+Single-parameter release/reallocation tunes (`tune(bulge, n_free)`, `tune(disk, q_init)`, mag initial-value reapportionment, bound moves) are **cheap, low-risk, high-information experiments**: they add no component, degenerate with nothing structurally new, and adjudicate between distinct physical hypotheses (e.g. classical bulge n≈4 vs pseudobulge n≈1–2). Score their σ on **residual evidence and information value**, NOT on structural novelty:
+
+- A mandated release candidate supported by residual evidence (or with no prior valid test in `[Refuted hypotheses]`) deserves **σ ≥ 0.5** — do not systematically rank it below add-component candidates just because it "changes no structure".
+- Real incidents (calibration anchors): in two searches the n-release candidate was deprioritised at σ 0.1–0.4 while lens/bar additions (σ 0.5–0.8) consumed nearly the whole budget and every one failed catastrophically (ΔBIC +2 000…+10 000 or crash); the single cleanly executed n-release then delivered ΔBIC_eff **−1063** (KILOGAS_432, n 4→1.38) and **−465** (KILOGAS_353, n 4→0.60) — the largest single-step gains of both searches.
+- Structural novelty is dimension 3's business (the orchestrator's diversity weighting), not a reason to depress σ: σ measures expected local benefit, and a one-parameter experiment that can swing BIC by ~10³ is locally as beneficial as anything in the space.
+
 ## 🔑 Bound-Relaxation Rule for Bound-Hit Parameters (bound-hit = a constrained extremum, not a basin floor; applies to every parameter of every component)
 
 Parameters flagged `⚠️ hitting the upper bound`/`⚠️ hitting the lower bound` in local_state_description mean the optimiser is blocked by an artificial bound (the gradient points outside it) and the converged value is untrustworthy. Whenever a bound-hit parameter appears, generate a `tune(component, relax the hit bound)` candidate: **upper bound hit → relax the upper bound by 20%~30% (×1.2~1.3); lower bound hit → relax the lower bound by 20%~30% (×0.7~0.8)**, leaving everything else untouched (warm-start to the parent converged values) so the optimiser can slide to its natural resting point. In galfit, parameter bounds live in the paired `.cons` constraint file (pointed to by the feedme `G)` item) as range lines — relaxing/tightening a bound = the orchestrator rewriting that `.cons` line; unbounded parameters have no bounds and cannot hit one.

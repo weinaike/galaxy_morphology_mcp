@@ -434,6 +434,68 @@ def parse_model_hdu_header(header) -> dict[str, Any]:
     return result
 
 
+def compute_convergence_check(config_file: str, galfit_file: str) -> dict[str, Any]:
+    """Compare converged (galfit.NN) values against the input feedme to flag
+    sub-converged rounds.
+
+    A round is flagged ``sub-converged`` when **>= 2 free NON-POSITION
+    parameters** (mag / re / n / q / pa) ended exactly at their input values —
+    the empirically observed signature of an optimiser that never really
+    explored (real incidents: KILOGAS_432 A.10 and KILOGAS_353 A.6, where
+    bulge/disk Mag and PA stayed bit-identical to the input, the newly freed n
+    parked at a round value, and chi-squared even *rose* — yet the rounds were
+    recorded as valid refutations and poisoned the search). Centre coordinates
+    x/y are deliberately EXCLUDED: warm-started centres legitimately converge
+    back to sub-0.01-px offsets from their input values, so x/y freezing is
+    normal, not a sub-convergence signature.
+    The flag is advisory: the workflow forbids grounding [Refuted hypotheses]
+    entries and per-combination attempt-cap counts on a sub-converged round.
+
+    Skips: fixed parameters (input toggle != 1); parameters absent from either
+    file (e.g. n for expdisk).
+    """
+    from .parse_feedme import parse_components
+
+    result: dict[str, Any] = {"flag": "ok", "frozen_free_params": [], "n_frozen": 0}
+    try:
+        input_comps = parse_components(config_file)
+        fitted_comps = parse_components(galfit_file, name_file=config_file)
+    except Exception as e:  # advisory check: never block the fit pipeline
+        result["note"] = f"convergence check skipped (parse failure: {e})"
+        return result
+
+    if len(input_comps) != len(fitted_comps):
+        result["note"] = (
+            f"convergence check skipped (component count mismatch: "
+            f"{len(input_comps)} input vs {len(fitted_comps)} fitted)"
+        )
+        return result
+
+    frozen: list[str] = []
+    for inp, fit in zip(input_comps, fitted_comps):
+        in_t = inp.get("toggles", {})
+        for key, label in (("mag", "mag"), ("re", "re"), ("n", "n"),
+                           ("ba", "q"), ("pa", "pa")):
+            if in_t.get(key) != 1:            # only genuinely free input params
+                continue
+            v_in, v_fit = inp.get(key), fit.get(key)
+            if v_in is None or v_fit is None:
+                continue
+            if abs(v_fit - v_in) <= 1e-4:     # file precision is 4 decimals
+                frozen.append(f"{inp['name']}.{label}={v_in}")
+    result["frozen_free_params"] = frozen
+    result["n_frozen"] = len(frozen)
+    if len(frozen) >= 2:
+        result["flag"] = "sub-converged"
+        result["note"] = (
+            ">=2 free non-position parameters ended at their input values — the "
+            "optimiser likely never explored; do NOT ground refutations or "
+            "combo-cap counts on this round (re-run the direction from a "
+            "corrected configuration when re-proposed)"
+        )
+    return result
+
+
 def extract_summary_from_galfit(fits_file: str, config_file: str | None = None,
                                 statistics_1d: dict | None = None,
                                 constraint_file: str | None = None,

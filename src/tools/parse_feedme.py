@@ -34,7 +34,10 @@ def parse_feedme(config_file: str) -> dict[str, Any]:
         "sigma": r"^C\)\s*(.+?)\s*#",
         "psf": r"^D\)\s*(.+?)\s*#",
         "mask": r"^F\)\s*(.+?)\s*#",
-        "constraint": r"^G\)\s*(.+?)\s*#",
+        # G) may be written with or without a trailing '#' comment ("G) iter3.cons
+        # # File..." vs "G) iter14.cons File with parameter constraints"); match the
+        # first whitespace-delimited token so the pointer is never silently dropped.
+        "constraint": r"^G\)\s*([^\s#]+)",
     }
 
     for key, pattern in patterns.items():

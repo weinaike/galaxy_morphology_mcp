@@ -19,7 +19,7 @@ from astropy.stats import sigma_clipped_stats
 import datetime
 import glob
 
-from .extract_summary_galfit import extract_summary_from_galfit
+from .extract_summary_galfit import extract_summary_from_galfit, compute_convergence_check
 from .parse_feedme import parse_feedme, parse_components
 from .render_original import render_asinh_panel, draw_re_ellipses, effective_re
 from .sb_profile import render_sb_profile, component_color, assign_component_colors
@@ -633,6 +633,14 @@ async def run_galfit(
                                                      constraint_file=constraint_file,
                                                      psf_file=psf_file)
 
+    # Convergence-quality check (advisory): free parameters frozen at their
+    # input values flag a sub-converged round. The workflow's refutation-validity
+    # gate forbids grounding [Refuted hypotheses] entries and per-combination
+    # attempt-cap counts on such rounds (real incidents: KILOGAS_432 A.10 /
+    # KILOGAS_353 A.6 — invalid n-release refutations from frozen optimiser runs).
+    if matched_galfit_files:
+        fit_stats["convergence"] = compute_convergence_check(config_file, latest_galfit)
+
     # Cleanup the workspace
     ws_dir = os.path.dirname(output_file)
     ar_dir = os.path.join(ws_dir, "archives", "%s.%s" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S"), hashlib.md5(config_file.encode("utf-8")).hexdigest()[:8]))
@@ -719,6 +727,17 @@ async def run_galfit(
     if bic_eff is not None:
         stats_lines += f"-PSF FWHM: {psf_fwhm:.4f} px; A_psf: {a_psf:.4f} px²\n"
         stats_lines += f"-BIC_eff (χ²/A_psf + k·ln(N/A_psf)): {bic_eff:.4f}\n"
+    conv = fit_stats.get("convergence") or {}
+    if conv:
+        if conv.get("flag") == "sub-converged":
+            frozen_str = ", ".join(conv.get("frozen_free_params", []))
+            stats_lines += (
+                f"-⚠ Convergence check: SUB-CONVERGED — {conv.get('n_frozen', 0)} free "
+                f"parameters frozen at input values ({frozen_str}); do NOT ground "
+                "refutations or combo-cap counts on this round\n"
+            )
+        else:
+            stats_lines += "-Convergence check: ok\n"
 
     message = (
         "GALFIT completed successfully.\n"

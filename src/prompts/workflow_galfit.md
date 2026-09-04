@@ -280,8 +280,16 @@ The `generate_galfit_beam_actions` VLM is **stateless**: each call sees only the
   [Refuted hypotheses] all five fields mandatory: direction | context signature | quantitative evidence | failure reason | reopening condition.
       e.g. bar+bulge coexistence | {disk,bulge,bar,comp} | ΔBIC_eff +15.5/+67.5 (A.5/A.11) | the two components degenerate at Re≈1.7px, fighting for flux | the degeneracy disappears
   [Budget] n = X / N_max, Y left
+  [Temporary constraints] user-issued session-scoped directives (issue date + lifting condition); carried verbatim in every call while ACTIVE:
+      ACTIVE 2026-09-04 (until revoked by the user) — companion exclusion, candidates must NOT consider companions this session:
+        (1) generating add(Companion) candidates is forbidden;
+        (2) maintenance tunes of existing companion components (position / morphology / type switch) are suspended;
+        (3) Phase-1 companion mandatory items (coordinate table, embedded-companion check, radius-spike cross-check, companion-contamination pre-check) are waived — spend no description budget on them;
+        (4) companion-related Self-Check items (embedded-companion timing review, companion-removal verification) are waived;
+        (5) any companion candidate that slips through is discarded by the orchestrator, logged in the cross-branch decision log as a "temporary-constraint discard".
   ```
   Maintenance rules — refresh at each round's Step g:
+  - `[Temporary constraints]`: while an entry is ACTIVE it is appended **verbatim** to every `global_state_description` (do not paraphrase or drop sub-items); a per-galaxy scoping note may be added in that galaxy's working_note header; delete the entry only when the user revokes it.
   - `[State ledger]`: append a line per successful fit; tag components with flux < 0.5% of the brightest `[zombie]` (**relative flux criterion; absolute magnitudes forbidden**); when a component combination's **4th** attempt completes, mark its lines `[combo-exhausted]` in the notes column (the per-combination attempt cap — the VLM must not generate further candidates on that inventory; see the formal definitions).
   - `[Rollback edges]`: append on an R2 exact hit, or when a result is zombie-equivalent to a ledger line.
   - `[Verified basins]`: new entry only when the fit produced physical values without bound hits (collapsed/bound-hit/drifted ones don't count).

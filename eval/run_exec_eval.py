@@ -331,6 +331,17 @@ async def execute_galfit_with_spec(
 
 
     if result.get("status") == "success":
+        optimized_parameter_files = glob_mod.glob(
+            os.path.join(work_dir, "galfit.[0-9]*")
+        )
+        optimized_parameter_file = (
+            max(
+                optimized_parameter_files,
+                key=lambda path: int(path.rsplit(".", 1)[-1]),
+            )
+            if optimized_parameter_files
+            else None
+        )
         _, artifact_errors = validate_galfit_reward_artifacts(
             result.get("summary_file"), result.get("image_file")
         )
@@ -356,6 +367,7 @@ async def execute_galfit_with_spec(
             "summary_file": result.get("summary_file"),
             "output_fits_file": result.get("optimized_fits_file"),
             "feedme_path": new_feedme_path,
+            "next_feedme_path": optimized_parameter_file or new_feedme_path,
             **diagnostic_fields,
         }
 
@@ -443,6 +455,7 @@ async def execute_galfit_with_spec(
         "summary_file": summary_path,
         "output_fits_file": output_file,
         "feedme_path": new_feedme_path,
+        "next_feedme_path": param_file_for_plot,
         **diagnostic_fields,
     }
 

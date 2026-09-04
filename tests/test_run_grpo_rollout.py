@@ -3,6 +3,7 @@ import json
 
 from data_gen.dataset_utils import _to_physical_id
 from eval.run_grpo_rollout import (
+    advance_online_parent,
     _prediction_summary,
     build_parser,
     classify_parent_kind,
@@ -210,6 +211,36 @@ def test_incomplete_component_spec_is_policy_invalid_before_evaluator(tmp_path):
     assert result["outcome"] == "policy_invalid"
     assert result["failure_stage"] == "response_validation"
     assert result["failure_reason"] == "invalid_model_spec: component_0_missing_or_null:re"
+
+
+def test_advance_online_parent_uses_successful_galfit_artifacts():
+    parent = {
+        "group_id": "galaxy::root",
+        "parent_id": "root",
+        "parent_depth": 0,
+        "next_step": 1,
+        "feedme_path": "/old.feedme",
+    }
+    rollout = {
+        "outcome": "success",
+        "candidate_id": "candidate-1",
+        "model_feedme_path": "/new.feedme",
+        "model_residual_path": "/new.png",
+        "model_summary_path": "/new.md",
+        "model_metrics": {"chi2_nu": 1.1},
+    }
+
+    next_parent = advance_online_parent(parent, rollout)
+
+    assert next_parent["group_id"] == parent["group_id"]
+    assert next_parent["parent_id"] == "candidate-1"
+    assert next_parent["parent_depth"] == 1
+    assert next_parent["next_step"] == 2
+    assert next_parent["feedme_path"] == "/new.feedme"
+
+
+def test_advance_online_parent_ends_failed_trajectory():
+    assert advance_online_parent({}, {"outcome": "policy_invalid"}) is None
 
 
 def test_execution_spec_validation_accepts_model_specific_fields():

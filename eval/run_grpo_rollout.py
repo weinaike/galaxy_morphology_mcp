@@ -437,6 +437,80 @@ def _base_rollout_record(prediction: Mapping[str, Any]) -> dict[str, Any]:
     return {key: prediction.get(key) for key in keys}
 
 
+def advance_online_parent(
+    parent: Mapping[str, Any],
+    rollout: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Build the next live GRPO state after one successful GALFIT action.
+
+    Policy/evaluator failures are terminal for that sampled trajectory.  The
+    returned manifest deliberately keeps the initial ``group_id`` so sibling
+    trajectories can still be compared at the same decision depth.
+    """
+
+    if rollout.get("outcome") != "success":
+        return None
+    required = {
+        "feedme_path": rollout.get("model_feedme_path"),
+        "residual_path": rollout.get("model_residual_path"),
+        "summary_path": rollout.get("model_summary_path"),
+        "parent_metrics": rollout.get("model_metrics"),
+    }
+    missing = [key for key, value in required.items() if value is None]
+    if missing:
+        raise ValueError(
+            "successful rollout is missing next-state fields: " + ", ".join(missing)
+        )
+    next_parent = dict(parent)
+    next_parent.update(required)
+    next_parent["parent_id"] = str(
+        rollout.get("candidate_id") or f"online_step_{parent.get('next_step', 1)}"
+    )
+    next_parent["parent_depth"] = int(parent.get("parent_depth") or 0) + 1
+    next_parent["next_step"] = int(parent.get("next_step") or 1) + 1
+    return next_parent
+
+
+def build_online_step_prompt(
+    parent: Mapping[str, Any],
+    history: Sequence[Mapping[str, Any]],
+    *,
+    max_steps: int,
+) -> tuple[str, str, str]:
+    """Construct the next model prompt from a live GALFIT state."""
+
+    from data_gen.convert_sft_to_llamafactory import _count_sersic
+    from data_gen.reward import read_summary_md
+    from data_gen.vlm_proposal import SYSTEM_PROMPT, build_proposal_prompt
+    from simulator_env.galfit_actions import parse_components_from_feedme
+
+    summary_path = parent.get("summary_path")
+    summary = "(参数摘要不可用)"
+    if summary_path and os.path.exists(str(summary_path)):
+        summary = read_summary_md(str(summary_path))
+    components = parse_components_from_feedme(str(parent["feedme_path"]))
+    history_lines = []
+    for item in history:
+        history_lines.append(
+            "Step {step}: action={action}; outcome={outcome}; raw_reward={reward}".format(
+                step=item.get("step_id"),
+                action=item.get("action_type") or "unknown",
+                outcome=item.get("outcome") or "unknown",
+                reward=item.get("raw_reward"),
+            )
+        )
+    user_text = build_proposal_prompt(
+        summary_content=summary,
+        step=int(parent.get("next_step") or 1),
+        max_steps=max_steps,
+        num_sersic=_count_sersic(components),
+        expert_gt=None,
+        current_components=components,
+        history_summary="\n".join(history_lines) or "(no previous online action)",
+    )
+    return SYSTEM_PROMPT, user_text, str(parent["residual_path"])
+
+
 def validate_model_spec_for_execution(spec: Mapping[str, Any]) -> str | None:
     """Return a policy-attributable error before the GALFIT evaluator is called.
 
@@ -588,7 +662,9 @@ async def execute_prediction(
         )
         return record
     record["galfit_status"] = galfit_result.get("status")
-    record["model_feedme_path"] = galfit_result.get("feedme_path")
+    record["model_feedme_path"] = (
+        galfit_result.get("next_feedme_path") or galfit_result.get("feedme_path")
+    )
     record["model_residual_path"] = galfit_result.get("image_file")
     record["model_output_fits_path"] = galfit_result.get("output_fits_file")
     record["model_summary_path"] = galfit_result.get("summary_file")

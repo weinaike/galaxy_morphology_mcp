@@ -471,6 +471,34 @@ def advance_online_parent(
     return next_parent
 
 
+def format_online_history(
+    history: Sequence[Mapping[str, Any]],
+    *,
+    max_prediction_chars: int = 3000,
+) -> str:
+    """Serialize actual sampled actions without substituting unavailable GT."""
+
+    if max_prediction_chars < 1:
+        raise ValueError("max_prediction_chars must be positive")
+    history_lines = []
+    for item in history:
+        line = (
+            "Step {step}: action={action}; outcome={outcome}; raw_reward={reward}".format(
+                step=int(item.get("step_id") or 0) + 1,
+                action=item.get("action_type") or "unknown",
+                outcome=item.get("outcome") or "unknown",
+                reward=item.get("raw_reward"),
+            )
+        )
+        prediction = str(item.get("prediction") or "").strip()
+        if prediction:
+            if len(prediction) > max_prediction_chars:
+                prediction = prediction[:max_prediction_chars] + " ...[truncated]"
+            line += "\nModel response used for this action:\n" + prediction
+        history_lines.append(line)
+    return "\n".join(history_lines) or "(no previous online action)"
+
+
 def build_online_step_prompt(
     parent: Mapping[str, Any],
     history: Sequence[Mapping[str, Any]],
@@ -489,24 +517,14 @@ def build_online_step_prompt(
     if summary_path and os.path.exists(str(summary_path)):
         summary = read_summary_md(str(summary_path))
     components = parse_components_from_feedme(str(parent["feedme_path"]))
-    history_lines = []
-    for item in history:
-        history_lines.append(
-            "Step {step}: action={action}; outcome={outcome}; raw_reward={reward}".format(
-                step=item.get("step_id"),
-                action=item.get("action_type") or "unknown",
-                outcome=item.get("outcome") or "unknown",
-                reward=item.get("raw_reward"),
-            )
-        )
     user_text = build_proposal_prompt(
         summary_content=summary,
-        step=int(parent.get("next_step") or 1),
+        step=len(history) + 1,
         max_steps=max_steps,
         num_sersic=_count_sersic(components),
         expert_gt=None,
         current_components=components,
-        history_summary="\n".join(history_lines) or "(no previous online action)",
+        history_summary=format_online_history(history),
     )
     return SYSTEM_PROMPT, user_text, str(parent["residual_path"])
 

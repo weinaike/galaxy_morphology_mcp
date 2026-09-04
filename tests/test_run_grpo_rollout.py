@@ -9,6 +9,7 @@ from eval.run_grpo_rollout import (
     classify_parent_kind,
     collect_parent_records,
     execute_prediction,
+    format_online_history,
     load_physical_ids,
     select_parent_records,
     validate_model_spec_for_execution,
@@ -241,6 +242,36 @@ def test_advance_online_parent_uses_successful_galfit_artifacts():
 
 def test_advance_online_parent_ends_failed_trajectory():
     assert advance_online_parent({}, {"outcome": "policy_invalid"}) is None
+
+
+def test_online_history_uses_actual_model_response_without_gt_patch():
+    history = format_online_history(
+        [
+            {
+                "step_id": 0,
+                "action_type": "modify",
+                "outcome": "success",
+                "raw_reward": 0.75,
+                "prediction": '{"components": [{"role": "disk"}]}',
+            }
+        ],
+        max_prediction_chars=100,
+    )
+
+    assert "Step 1" in history
+    assert "raw_reward=0.75" in history
+    assert "Model response used for this action" in history
+    assert '"role": "disk"' in history
+
+
+def test_online_history_bounds_previous_response_length():
+    history = format_online_history(
+        [{"step_id": 1, "prediction": "x" * 20}],
+        max_prediction_chars=8,
+    )
+
+    assert "Step 2" in history
+    assert "x" * 8 + " ...[truncated]" in history
 
 
 def test_execution_spec_validation_accepts_model_specific_fields():

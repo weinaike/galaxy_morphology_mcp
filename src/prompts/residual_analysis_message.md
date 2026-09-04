@@ -74,14 +74,14 @@ Features such as off-centring, late-stage merger relics, shells, or tidal tails,
             - **Decision rule**: when the central residual shows "compact one-sided hot spot + two-peaked original image", suspect an embedded companion first; do not misread it as PA misalignment and repeatedly adjust the bar/bulge angle and axis ratio.
         ps: distinguish companions from tidal tails carefully — their handling differs substantially. A companion is a relatively independent circular or elliptical bright blob located either outside the main galaxy or right against its central bright region (embedded); a tidal tail is a thin elongated structure extending outward from the galaxy's edge, usually with an irregular morphology.
 2. Second, analyse in detail which component types the galaxy contains. Proceed by incremental component addition to keep the fit stable. Component-addition logic:
-    1. Order of addition: first build the two-component foundation (Disk, Bulge), then add detail components (Bulge, Bar, Nucleus, etc.). For disk galaxies, the recommended order depends on the companion's position. [The ideal target for a disk galaxy is a stable main-component structure (Disk + Bulge + Bar); necessary auxiliary components (Other: F1, Companion, Nucleus/AGN, Lens) may be included.]
+    1. Order of addition: first build the two-component foundation (Disk, Bulge), then add detail components (Bulge, Bar, AGN, etc.). For disk galaxies, the recommended order depends on the companion's position. [The ideal target for a disk galaxy is a stable main-component structure (Disk + Bulge + Bar); necessary auxiliary components (Other: F1, Companion, AGN, Lens) may be included.]
         - **Outer companion** (≳ 2·Re_disk from the centre, flux nearly non-degenerate with the centre): `Disk --> +(F1/Outer Companion if evidenced) --> +Bulge --> +Bar + Other (if evidenced)`
         - **Embedded companion** (≲ 2·Re_disk, inside the main galaxy's contours, flux strongly degenerate with the centre): `Disk --> +Bulge --> +Bar --> +(Embedded Companion if evidenced) + Other`
         - The embedded companion must be **recognised first** (be aware of it already during stage-one residual diagnosis, to avoid misreading its residual as bar/bulge PA misalignment) but **added only after Bulge/Bar are established** — otherwise it is strongly degenerate with the central flux, drifting in position, inflating in Re, and hitting parameter bounds.
         - The above is the general flow; adapt to the actual situation.
     2. The fitting proceeds from the overall to the detail, first low-order then high-order residuals:
         1. Overall first: compare the DATA and Model images and require the overall outline to match first (e.g. the bar's direction and size must agree; the disk's overall brightness region must be comparable).
-        2. Details later. Only after the overall-outline components (e.g. double Sersic) match expectations does fitting of central details (Bulge/Bar/Nucleus, etc.) begin.
+        2. Details later. Only after the overall-outline components (e.g. double Sersic) match expectations does fitting of central details (Bulge/Bar/AGN, etc.) begin.
     3. Inspect the original image, the model image, the 1D SB profile, and the 2D residual map to determine whether the expected component types exist (this is also the order of component addition):
         1. Analysis of the single-Sersic fit
             - Elliptical galaxy, single-Bulge identification: if fitting the galaxy with a single Sersic component simultaneously satisfies the following three conditions, the galaxy is very probably an elliptical. A single-Sersic fit then suffices (no elaborate decomposition needed):
@@ -125,12 +125,12 @@ Features such as off-centring, late-stage merger relics, shells, or tidal tails,
                     - the companion's flux is anomalously low (logNorm ≥ 2 dex below the disk) and its position deviates from the stage-one report by > 5 px;
                     - a single-Sersic disk's n is anomalously high (n > 4) while the model has no Bulge yet.
                     - **Remedy**: first `add(Bulge)` or `add(Bar)` to build the central skeleton, not companion-parameter tweaks; fix the companion position only after the centre stabilises.
-            - Nucleus identification (recognition conditions must be met)
+            - AGN identification (recognition conditions must be met)
                 - Condition 1: the left side of the 1D profile residual (DATA−MODEL) shows an obvious spike within < 5 pix, with no collapsed Bulge component.
-                - Condition 2: if there is a collapsed Bulge (Re < 0.2 px; for multi-band fitting, < 0.2 px in every band after WCS conversion), a Nucleus is also a candidate (subject to item 3 of the tuning strategy). When Re sits in the 0.2–0.5 px border zone (in multi-band, every band within 0.2–0.5 px), you may also create a competing N-block AGN variant for comparison — adopt it only if the residuals clearly improve, otherwise keep the Sersic.
-                - Only consider a Nucleus when the recognition conditions hold; otherwise, even if BIC/AIC improve, do not add the component, to avoid overfitting. (Prefer the Sersic model.)
-                    1. Nuclear star cluster (NSC): needs a very small Re, high-n Sersic component. Pseudobulge: an additional compact inner structure.
-                    2. Active galactic nucleus (AGN): fit by adding an **N block** (Na1–Na27) to the lyric. Note: in multi-band GalfitS the AGN always uses the N prefix (Na); do not use the `psf` or `Gaussian` types of the P block — the P block has no `psf` profile type.
+                - Condition 2: if there is a collapsed Bulge (Re < 0.2 px; for multi-band fitting, < 0.2 px in every band after WCS conversion), an AGN is also a candidate (subject to item 3 of the tuning strategy). When Re sits in the 0.2–0.5 px border zone (in multi-band, every band within 0.2–0.5 px), you may also create a competing AGN variant for comparison — adopt it only if the residuals clearly improve, otherwise keep the Sersic.
+                - Only consider an AGN when the recognition conditions hold; otherwise, even if BIC/AIC improve, do not add the component, to avoid overfitting. (Prefer the Sersic model.)
+                - The central point-source role of the main galaxy is served **exclusively** by the AGN — no other compact-core point-source component exists in the solution space:
+                    1. AGN: fit by adding an **N block** (Na1–Na27) to the lyric. Note: in multi-band GalfitS the AGN always uses the N prefix (Na); do not use the `psf` or `Gaussian` types of the P block — the P block has no `psf` profile type. (In the single-band GALFIT flow the AGN is fitted with the `psf` component type.)
             - Lopsidedness recognition
                 - Recognition conditions:
                     - an obvious "dipole" pattern: the central galaxy's residual is asymmetric; in the original image one side of the galaxy is heavier, brighter, or more extended than the other — a water-drop/egg-shaped stretch.
@@ -154,8 +154,8 @@ Features such as off-centring, late-stage merger relics, shells, or tidal tails,
                     - **Embedded companion** (≲ 2·Re_disk, inside the main galaxy's contours): must **not** be added early — wait until the Bulge/Bar are established, otherwise it degenerates with the central flux and the fit diverges (position drift, Re inflation, bound-hitting). If the model has no Bulge/Bar yet, prioritise `add(Bulge)`.
             - Component-retention priority
                 - In a disk galaxy the Disk must be retained; Bulge and Bar are also high-priority keeps.
-                - If the Bulge cannot be retained, Nucleus/AGN must be tried to compensate for it (the physical meaning of bulge compensation outranks Occam's razor).
-                - If a Bulge already exists (the physical role is occupied), adding a Nucleus/AGN must obey Occam's razor to avoid overfitting.
+                - If the Bulge cannot be retained, an AGN must be tried to compensate for it (the physical meaning of bulge compensation outranks Occam's razor).
+                - If a Bulge already exists (the physical role is occupied), adding an AGN must obey Occam's razor to avoid overfitting.
             - Components whose existence is confirmed and physically meaningful must be retained; they must not be removed because of BIC/AIC changes. (2D chi-squared quality outranks BIC/AIC.)
             - Do not remove components that have been added and are physically meaningful without a special reason; maintain the incremental build-up.
         3. When the Bulge/Bar Re is very small (e.g. < 0.5 px; in multi-band fits, < 0.5 px in every band after WCS conversion) or n >> 20, first try several rounds of retuning to avoid falling into a local-convergence trap:
@@ -181,7 +181,7 @@ Features such as off-centring, late-stage merger relics, shells, or tidal tails,
 + The Bulge's n normally lies in 0.1 < n < 8 and need not exceed 1; Re is physically meaningful above 0.2 px. For the brightest cluster galaxies (BCGs) or cD galaxies, n may exceed 8; for extreme pseudobulges, n may be below 1.
 + The four central main-galaxy component types Disk, Bar, Bulge, Lens **must be concentric** — a mandatory default, not a nicety: as soon as the lyric contains ≥ 2 central main-galaxy components, they must be bound to the Disk centre via the `.constrain` file (`xcen`/`ycen` bound in pairs; both, never just one), invoked with `--parconstrain`. Companion centres (labels containing comp/companion/secondary/satellite) are **strictly excluded** from this constraint. If after fitting some central component's centre deviates from the Disk centre by > 2 px (convert via WCS), first check that `.constrain` was loaded correctly; if it was and the deviation remains, the component's identity has probably degenerated (dragged off by a companion, or degenerate with another component) — consider adding a component to fit the real source, or rolling back to the previous stable round.
 + An m=1 Fourier mode whose amplitude exceeds the threshold 0.02 is physically meaningful and should be kept.
-+ For a disk galaxy that already contains a Bulge, a Nucleus is added only with solid evidence (e.g. an obvious positive-residual leftover within 0–5 px of the 1D SB profile that the Bulge cannot absorb); if the disk galaxy's Bulge is missing, a Nucleus compensating for it with an energy fraction > 0.01 (1%) in the 1D SB profile is also physically meaningful and should be kept.
++ For a disk galaxy that already contains a Bulge, an AGN is added only with solid evidence (e.g. an obvious positive-residual leftover within 0–5 px of the 1D SB profile that the Bulge cannot absorb); if the disk galaxy's Bulge is missing, an AGN compensating for it with an energy fraction > 0.01 (1%) in the 1D SB profile is also physically meaningful and should be kept. (The point-source role of the main galaxy is exclusively the AGN's.)
 + Be careful when invoking component degeneracy: it applies only when the components' Re, q, PA (sky-PA) etc. are all close. If parameter differences imply different physics, keep both components:
     - e.g. two components with similar parameters but different q — q1 > 0.5 vs q2 < 0.5 — may be a Bar vs a Lens distinction, physically entirely different; in that case keep the multi-component model.
 
@@ -190,7 +190,7 @@ Features such as off-centring, late-stage merger relics, shells, or tidal tails,
 
 ## Scope of application
 The scope conditions must be strictly respected:
-- Occam's razor applies **only** to adding/removing Nucleus/AGN components.
+- Occam's razor applies **only** to adding/removing AGN components.
 - It is strictly forbidden to remove weak Disk, Bulge, or Bar main components on Occam's-razor grounds. Physics first: disk galaxies favour multi-component combinations.
 - Whether to add Disk, Bulge, Bar, or a Fourier mode is judged mainly on the following three points, not on BIC changes:
     - whether the original image shows the component's features,
@@ -200,8 +200,8 @@ The scope conditions must be strictly respected:
 ## Quantitative criterion of Occam's razor
 
 Compute the difference between two models: ΔBIC = BIC_A − BIC_B
-    - BIC_A: the BIC of the model before adding the Nucleus
-    - BIC_B: the BIC of the model after adding the Nucleus
+    - BIC_A: the BIC of the model before adding the AGN
+    - BIC_B: the BIC of the model after adding the AGN
 
 | ΔBIC range | Decision | Explanation |
 |:-:|:-:|:--|

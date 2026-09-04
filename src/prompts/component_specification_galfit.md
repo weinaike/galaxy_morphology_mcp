@@ -79,7 +79,7 @@ Note (this workflow): the template's `9) b/a` and `10) PA` toggles shown as `0` 
 Note (SingleSersic start): the single-component start is named `singlesersic` (sersic, free n). The moment a second central component is added, the start must be converted to `expdisk` and renamed `disk` (`4)` row = Rs = fitted Re / 1.68; the n row is dropped) — bundled with the first add as its second primitive; a multi-component model with a sersic `disk` is invalid.
 
 ---
-1. psf — (commonly used for an AGN / a star / an extremely compact nucleus)
+1. psf — (commonly used for an AGN / a foreground star / an unresolved companion; the central point-source role of the main galaxy belongs **exclusively** to the AGN, admitted only under the Bulge-Re-collapse rule)
 
 ```
 0) psf                    #  Component type

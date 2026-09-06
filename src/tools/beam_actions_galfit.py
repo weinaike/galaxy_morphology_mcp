@@ -27,6 +27,61 @@ from .render_original import effective_re, EXPDISK_RE_FACTOR
 dotenv.load_dotenv()
 
 
+# ── Branch solution-space restriction (restrict-disk-bulge-bar-agn) ─────────
+# Only Disk (expdisk) / Bulge / Bar / AGN (psf) / singlesersic (+ F1 + fixed
+# sky) are legal on this branch. Companion, Lens, OuterDisk (envelope / 2nd
+# expdisk) and edgedisk are outside the solution space. Enforced mechanically
+# here (check_feedme_file rejects them; the returned VLM markdown is scanned
+# for forbidden candidate actions and annotated) in addition to the prompt-level
+# Restricted Action Space note in beam_action_generation_prompt_galfit.md.
+BRANCH_ALLOWED_COMPONENTS = "disk/bulge/bar/agn(psf)/singlesersic (+F1, fixed sky)"
+BRANCH_FORBIDDEN_NOTICE = (
+    "outside the solution space on branch restrict-disk-bulge-bar-agn "
+    f"(allowed: {BRANCH_ALLOWED_COMPONENTS}; forbidden: Companion/Lens/OuterDisk/edgedisk)"
+)
+_FORBIDDEN_NAME_PREFIXES = (
+    "companion", "comp", "secondary", "satellite",
+    "lens", "outerdisk", "outer_disk", "outer", "envelope",
+)
+# Candidate action patterns targeting a forbidden component. Only scanned in the
+# candidates section of the returned Markdown (after the "# Beam Action
+# Candidates" heading), never in the Phase-1 visual description (diagnostic
+# mentions of lens-type bumps / companion-type blobs stay legal there).
+_FORBIDDEN_ACTION_RE = re.compile(
+    r"add\s*\(\s*(?:an?\s+)?(lens|companion|outerdisk|outer[-_ ]?disk|edgedisk|edge[-_ ]?on[-_ ]?disk)"
+    r"|tune\s*\(\s*(companion|lens|outerdisk|outer[-_ ]?disk|edgedisk)"
+    r"|(?:→|->)\s*edgedisk"
+    r"|split\s*(?:→|->)\s*bar\+lens"
+    r"|bar\+lens\s+split",
+    re.IGNORECASE,
+)
+
+
+def _scan_forbidden_candidates(markdown_text: str) -> list[str]:
+    """Return trimmed candidate-declaration lines that target a forbidden component.
+
+    Scans only the section after the ``# Beam Action Candidates`` heading (or, if
+    that heading is missing, after the first ``## Candidate`` heading) so that
+    Phase-1 diagnostic descriptions of lens/companion residual features do not
+    produce false positives.
+    """
+    if not markdown_text:
+        return []
+    m = re.search(r"(?m)^#\s+Beam Action Candidates", markdown_text)
+    if m:
+        tail = markdown_text[m.end():]
+    else:
+        m2 = re.search(r"(?m)^##\s+Candidate\b", markdown_text)
+        if not m2:
+            return []
+        tail = markdown_text[m2.end():]
+    hits: list[str] = []
+    for line in tail.splitlines():
+        if _FORBIDDEN_ACTION_RE.search(line):
+            hits.append(line.strip())
+    return hits
+
+
 # The shared system message (residual_analysis_message.md) is written for the
 # GalfitS multi-band flow and mandates a true sky-PA convention ("north = 0°,
 # align on the compass"). The single-band beam flow adopts the N=+Y contract
@@ -154,7 +209,7 @@ def generate_galfit_beam_actions(
     comparison_file: Annotated[str, "Absolute path to the 2x3 comparison PNG produced by the parent state's run_galfit call"],
     summary_file: Annotated[str, "Absolute path to the markdown summary produced by the parent state's run_galfit call (only its statistics table is parsed; may be empty)"] = "",
     global_state_description: Annotated[str, "Cross-round stable facts for the stateless VLM, distilled by the orchestrator from working_note.md (NOT the raw note). Fixed schema per workflow_galfit.md 'Generation spec for global_state_description / local_state_description': [Meta (pixel contract)]/[Stage-1 conclusions]/[State ledger (px)]/[Rollback edges]/[Verified basins]/[Refuted hypotheses]/[Budget]. Keep <= ~50 lines."] = "",
-    local_state_description: Annotated[str, "Current-round objective description: parent component inventory C + key params, bound-hit parameters (⚠️ + values vs .cons bounds), residual features, identity anomalies, and orchestrator numeric-rule delegations (companion flux check / disk-Re bottleneck / lens inflation / flat-bulge trigger values). Must NOT suggest candidate directions."] = "",
+    local_state_description: Annotated[str, "Current-round objective description: parent component inventory C + key params, bound-hit parameters (⚠️ + values vs .cons bounds), residual features, identity anomalies, and orchestrator numeric-rule delegations (disk-Re bottleneck / flux-misallocation signals / flat-bulge trigger values). Must NOT suggest candidate directions."] = "",
     branch_id: Annotated[str, "Current beam branch identifier (e.g. 'A', 'B'). Used in candidate action_ids."] = "A",
     parent_label: Annotated[str, "Parent round label inside the branch (e.g. 'A.3'). Used in candidate action_ids."] = "",
     depth: Annotated[int, "Depth of the parent state in the search tree. 1 = after the first fit on the input feedme. Controls candidate count via the prompt: depth=1 → 1-2 candidates (phase-one driven), depth=2 → 2-3, depth>=3 → 2-4."] = 1,
@@ -275,6 +330,25 @@ def generate_galfit_beam_actions(
         return result
 
     assert analysis is not None, "analysis must not be None when error is None"
+
+    # ── Branch solution-space restriction guard ─────────────────────────
+    # The VLM is prompt-restricted to disk/bulge/bar/AGN(+F1/singlesersic), but
+    # slip-throughs happen: annotate any returned candidate that targets a
+    # forbidden component (Companion/Lens/OuterDisk/edgedisk) so the
+    # orchestrator discards it whole instead of transcribing it.
+    forbidden_hits = _scan_forbidden_candidates(analysis)
+    if forbidden_hits:
+        restriction_note = (
+            "\n\n---\n"
+            "# ⚠ Solution-space restriction (branch restrict-disk-bulge-bar-agn)\n"
+            "The candidate action(s) below target a component that is "
+            f"{BRANCH_FORBIDDEN_NOTICE}. The orchestrator MUST discard these candidates "
+            "whole — do NOT transcribe, modify or execute them — and log them in the "
+            "cross-branch decision log as a 'solution-space restriction discard':\n"
+            + "\n".join(f"- {line}" for line in forbidden_hits)
+            + "\n"
+        )
+        analysis = analysis + restriction_note
 
     # ── Persist the candidate list alongside other fitting artefacts ─
     base_name = os.path.splitext(os.path.basename(comparison_file))[0]
@@ -566,6 +640,37 @@ def check_feedme_file(
             "rename it to keep ledger signatures unambiguous."
         )
 
+    # Branch solution-space restriction (restrict-disk-bulge-bar-agn): Companion,
+    # Lens, OuterDisk (envelope / 2nd expdisk) and edgedisk are rejected outright.
+    # Keyed on the semantic `# STRUCTURE:` name (prefix match, catching the
+    # disambiguated suffixes companion2/…) and on the feedme component type.
+    for c in inventory:
+        lname = str(c["name"]).lower()
+        if lname.startswith(_FORBIDDEN_NAME_PREFIXES):
+            errors.append(
+                f"Component '{c['name']}' (number {c['number']}, type '{c['type']}') is "
+                f"{BRANCH_FORBIDDEN_NOTICE} — remove it / revert to a legal inventory "
+                "before fitting."
+            )
+        if str(c["type"]).lower() == "edgedisk":
+            errors.append(
+                f"Component '{c['name']}' (number {c['number']}) has type 'edgedisk' — "
+                f"the edgedisk slot is {BRANCH_FORBIDDEN_NOTICE}; fit an edge-on-looking "
+                "galaxy with the ordinary expdisk Disk with free q."
+            )
+    n_expdisk = sum(1 for c in inventory if str(c["type"]).lower() == "expdisk")
+    if n_expdisk > 1:
+        errors.append(
+            f"{n_expdisk} expdisk components found — the OuterDisk/envelope slot (a second "
+            f"expdisk) is {BRANCH_FORBIDDEN_NOTICE}; at most one Disk (expdisk) is allowed."
+        )
+    n_psf = sum(1 for c in inventory if str(c["type"]).lower() == "psf")
+    if n_psf > 1:
+        errors.append(
+            f"{n_psf} psf components found — the AGN is the sole allowed point-source "
+            f"component; companion-type psf components are {BRANCH_FORBIDDEN_NOTICE}."
+        )
+
     if errors:
         return {
             "status": "failure",
@@ -577,9 +682,8 @@ def check_feedme_file(
 
     # PSF characterisation (available from the FIRST check, before any fit): a 2D
     # Gaussian fit to the feedme's D) PSF image gives FWHM and A_psf = pi*(FWHM/2)^2.
-    # The VLM uses the blob-area / A_psf ratio to decide companion psf-vs-sersic
-    # (see the beam prompt's companion profile-type selection rule); the workflow
-    # also uses FWHM_PSF for the default Re lower bound.
+    # The workflow uses FWHM_PSF for the default Re lower bound (and A_psf enters
+    # the [Meta] line of global_state_description).
     psf_info: dict[str, Any] = {}
     psf_file = paths.get("psf") or None
     if psf_file and os.path.exists(psf_file):
@@ -605,7 +709,7 @@ def check_feedme_file(
             "inventory (px units, PA in the N=+Y contract); use it directly as the source for "
             "beam-state signatures and warm-start backfill. psf_fwhm_px / a_psf_px2 "
             "(when present) characterise the PSF: record them in the working_note header "
-            "and the [Meta] line of global_state_description — the VLM needs A_psf for the "
-            "companion psf-vs-sersic selection rule."
+            "and the [Meta] line of global_state_description (psf_fwhm feeds the default "
+            "Re lower bound)."
         ),
     }

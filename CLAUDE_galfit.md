@@ -15,19 +15,17 @@ All Re / positions / sizes in this mode are **pixels (px)**: a px value read by 
 
 This section is the authoritative definition of the solution space for the single-band GALFIT flow: which components a fitted model may contain, the multiplicity rules, and the hard limits on component parameters. The workflow (`workflow_galfit.md`), the VLM candidate prompt (`beam_action_generation_prompt_galfit.md`) and the best-round verifier all reference this section; on any wording conflict, this section wins.
 
+**🔒 Branch restriction (`restrict-disk-bulge-bar-agn`, dataset-level)**: on this branch the allowed component inventory is **Disk (expdisk) / Bulge / Bar / AGN (psf) / F1 / Single Sersic (+ the fixed sky)**. **Lens, OuterDisk (envelope), Edge-on Disk (`edgedisk`) and Companion are outside the solution space**: no candidate may add, tune, type-switch or otherwise maintain them; `check_feedme_file` rejects any feedme containing them; the orchestrator discards any slip-through candidate and logs it as a "solution-space restriction discard". VLM diagnostic knowledge of these four components is retained (they may be described as unfitted residual context) but is never converted into actions. An edge-on-looking galaxy is fitted with the ordinary `expdisk` Disk with free q.
+
 ### 1. Allowed component inventory and multiplicity
 
 | Slot | feedme type | Multiplicity | Admission condition |
 |---|---|---|---|
 | Disk | `expdisk` | ≤ 1 | any disk galaxy (the default assumption) |
-| Edge-on Disk | `edgedisk` | ≤ 1; mutually exclusive with Disk (replaces it, and takes over its slot in the concentric anchor and the Re chain) | galaxy is edge-on (single-sersic b/a ≲ 0.17 with a dust lane / disk thickness) |
 | Bulge | `sersic` | ≤ 1 | central compact round component |
 | Bar | `sersic` (n = 0.5 fixed) | ≤ 1 | bar signatures (linear / X-shaped quadrupole residuals) |
-| Lens | `sersic` (n < 0.5, q > 0.5) | ≤ 1 | 1D-profile bump path or bar-anomaly path |
-| OuterDisk (envelope) | 2nd `expdisk` or `sersic` (n < 1) | ≤ 1 | outskirts still unfitted after the Disk is established (broad positive 1D residual at r > 2·Re_disk); must satisfy Re_outer > Re_disk; sits **above** the central Re chain, it does not displace it |
 | AGN | `psf` | ≤ 1 | Bulge Re collapsed < 0.2 px (mandatory replacement); 0.2–0.5 px border zone as a competing variant. The AGN is the **sole** allowed central point-source component — any other point-source component name is outside the solution space and rejected |
-| F1 (m=1 Fourier) | appended `F1)` row | ≤ 1 | lopsidedness; only on the Disk / edgedisk (or the single Sersic when no Disk exists); amplitude > 0.02 to retain |
-| Companion | `sersic` or `psf` | 0..N | compact positive-residual blob with an original-image counterpart; \|ΔMag\| ≤ 5 vs the main galaxy; centre always free (never in the concentric chain, never in the Re chain). **Profile-type selection** (beam prompt C3, area rule): `psf` when the blob is unresolved (A_blob ≤ 1.5·A_psf, not elongated), `sersic` when resolved (A_blob ≥ 2.3·A_psf or elongated major/minor ≳ 1.3); border 1.5–2.3 → `psf` default. A `sersic` companion collapsing to Re < 0.2 px switches to `psf` |
+| F1 (m=1 Fourier) | appended `F1)` row | ≤ 1 | lopsidedness; only on the Disk (or the single Sersic when no Disk exists); amplitude > 0.02 to retain |
 | Sky | `sky` | exactly 1 | **never fitted, never a search dimension**: the sky block (value + toggle) is the manually provided setting of the input feedme and is carried **verbatim** into every `_iter{n}.feedme` — never backfilled from converged values, never freed or re-tuned (candidates touching the sky are invalid) |
 | Single Sersic | `sersic` (n free), named `singlesersic` | exactly 1 and nothing else | elliptical terminal state; if it fits q < 0.5, the classification must be revisited (a disk is implied). **Transitions**: single→multi — the first `add(<central component>)` MUST bundle the conversion `tune(singlesersic→disk: expdisk, Rs = fitted Re / 1.68)` (the `disk` name is reserved for the expdisk slot; a multi-component model with a sersic `disk` or a lingering `singlesersic` is invalid — `check_feedme_file` rejects it); multi→single — remove-only transitions leaving one central component may revert `disk → singlesersic` (n free) |
 
@@ -35,14 +33,14 @@ This section is the authoritative definition of the solution space for the singl
 
 | Parameter | Rule |
 |---|---|
-| Re total order | `re_disk > re_lens > re_bar > re_bulge` (existing central components only, strict decrease; OuterDisk sits above re_disk; edgedisk plays the Disk slot) |
-| n (Sérsic) | Disk: none (expdisk, n ≡ 1 by type). Bulge: fixed 4 at depth ≤ 2, free within 0.5–8 at depth ≥ 3. Bar: fixed 0.5, never released. Lens: free, prior < 0.5 (default bounds 0.1–0.6). OuterDisk (sersic variant): free, < 1. Single Sersic: free (overall-concentration observable) |
-| q (b/a) | Disk/edgedisk: free — oblique disk configurations are legal search directions (the expdisk template's default q/PA toggles `0` are NOT used in this workflow; always set `1`). Bulge: prior > 0.5. Bar: prior < 0.4. Lens: prior > 0.5. Every shaped component: default bounds 0.05–1.0 |
-| PA | free for every shaped component; N=+Y convention; bar/lens/disk initial values must come from measured feature directions |
-| Mag | no default bounds (flux reallocation is part of the search); companions within 5 mag of the main galaxy; the zombie threshold (flux < 0.5% of the brightest component) is a dedup criterion only, never a removal ground by itself |
-| Centre (x, y) | K ≥ 2 main-galaxy central components (Disk/edgedisk/Bulge/Bar/Lens/AGN): chained `x,y offset` constraint (anchor toggle `1 1`; GALFIT rewrites subordinates to `2 2`). K ≤ 1: free with a ±2 px default window. Companions: always free with a ±5 px soft window at insertion |
+| Re total order | `re_disk > re_bar > re_bulge` (existing central components only, strict decrease) |
+| n (Sérsic) | Disk: none (expdisk, n ≡ 1 by type). Bulge: fixed 4 at depth ≤ 2, free within 0.5–8 at depth ≥ 3. Bar: fixed 0.5, never released. Single Sersic: free (overall-concentration observable) |
+| q (b/a) | Disk: free — oblique disk configurations are legal search directions (the expdisk template's default q/PA toggles `0` are NOT used in this workflow; always set `1`). Bulge: prior > 0.5. Bar: prior < 0.4. Every shaped component: default bounds 0.05–1.0 |
+| PA | free for every shaped component; N=+Y convention; bar/disk initial values must come from measured feature directions |
+| Mag | no default bounds (flux reallocation is part of the search); the zombie threshold (flux < 0.5% of the brightest component) is a dedup criterion only, never a removal ground by itself |
+| Centre (x, y) | K ≥ 2 main-galaxy central components (Disk/Bulge/Bar/AGN): chained `x,y offset` constraint (anchor toggle `1 1`; GALFIT rewrites subordinates to `2 2`). K ≤ 1: free with a ±2 px default window |
 | Re floors | Bulge Re < 0.2 px → must become `psf`; 0.2–0.5 px → psf competing variant; every shaped component's Re lower bound defaults to `max(0.1, 0.5 × PSF FWHM)` px |
-| F1 | only on the Disk / edgedisk / single Sersic; keep when amplitude > 0.02 and the fit does not degrade |
+| F1 | only on the Disk / single Sersic; keep when amplitude > 0.02 and the fit does not degrade |
 
 ### 3. Mandatory default bound set (every round, merged into `iter{n}.cons`)
 
@@ -56,10 +54,9 @@ GALFIT feedme parameter rows carry no bounds — without a `.cons` the solution 
   <N>   q    0.05 to 1.0               # shaped components only
 # centres: K>=2 central components -> offset chain (no separate window);
 #          K<=1 -> <N> x -2 2 and <N> y -2 2          (relative-to-input +/-2px window)
-#          companions -> <N> x -5 5 and <N> y -5 5    (relative-to-input +/-5px window)
 ```
 
-**🔑 `.cons` numeric-band semantics (empirically determined on this machine's GALFIT 3.0.5; verified 2026-09-02, KILOGAS_296 `cons_test/`)**: a soft-constraint row with **two bare numbers** (`N re 4.0 13.5`, `N q 0.05 1.0`, `N x -1 0.5`) is interpreted as **offsets from the component's INPUT value** — the effective band is `[input−a, input+b]`, NOT an absolute interval; a band written absolute-style with bare numbers is **silently never enforced** (no parse error, no warning). Absolute bands for `re` / `n` / `q` MUST use the `to` keyword form (`N re 4.0 to 13.5`), which IS enforced as written (verification: narrow test bands pinned the fitted values exactly at their bounds). Position windows (K≤1 centres ±2px, companions ±5px) are intentionally relative — write them as bare ±offsets around the input value (`N x -5 5`). Bound-hit diagnostics must always compare against the **effective** band: with the `to` form the written numbers are the effective band; with the bare-number fallback decode `[input−a, input+b]` first.
+**🔑 `.cons` numeric-band semantics (empirically determined on this machine's GALFIT 3.0.5; verified 2026-09-02, KILOGAS_296 `cons_test/`)**: a soft-constraint row with **two bare numbers** (`N re 4.0 13.5`, `N q 0.05 1.0`, `N x -1 0.5`) is interpreted as **offsets from the component's INPUT value** — the effective band is `[input−a, input+b]`, NOT an absolute interval; a band written absolute-style with bare numbers is **silently never enforced** (no parse error, no warning). Absolute bands for `re` / `n` / `q` MUST use the `to` keyword form (`N re 4.0 to 13.5`), which IS enforced as written (verification: narrow test bands pinned the fitted values exactly at their bounds). Position windows (K≤1 centres ±2px) are intentionally relative — write them as bare ±offsets around the input value (`N x -2 2`). Bound-hit diagnostics must always compare against the **effective** band: with the `to` form the written numbers are the effective band; with the bare-number fallback decode `[input−a, input+b]` first.
 
 - FWHM_PSF comes from `fit_statistics.psf_fwhm` (fall back to 1 px when unavailable); expdisk rows are written in Rs (= declared Re / 1.68).
 - **Provenance convention**: these default bounds count as **original** in the bound-hit provenance reporting; candidate-driven tightenings count as **self-imposed**.
@@ -143,27 +140,24 @@ Inside a `.cons` file, parameters must use these English abbreviations:
 
 ## Concentric constraint for main-galaxy central components (mandatory default, not optional) — `.cons` authoring specification
 
-The four main-galaxy central component types Disk, Bar, Bulge, Lens **must be concentric**: as soon as the feedme contains **≥ 2** main-galaxy central components (`# STRUCTURE:` names disk/bulge/bar/lens), they must be bound to a common centre via the `.cons` constraint file — a default hard constraint, not an on-demand option.
+The main-galaxy central component types Disk, Bar, Bulge **must be concentric**: as soon as the feedme contains **≥ 2** main-galaxy central components (`# STRUCTURE:` names disk/bulge/bar), they must be bound to a common centre via the `.cons` constraint file — a default hard constraint, not an on-demand option.
 
 ### 1. The only effective syntax: the chained hard constraint `offset` (empirically verified)
 
 Chain the anchor's and all subordinate central components' GALFIT numbers with `_` and write the **paired** lines (x and y must be bound together; **binding only one is strictly forbidden**). With the anchor (Disk) numbered D and subordinates K1, K2…:
 
 ```text
-# Main-galaxy concentric constraint (anchor = 1 disk, subordinates = 2 bulge, 3 bar, 4 lens)
-D_K1_K2_K3   x   offset
-D_K1_K2_K3   y   offset
+# Main-galaxy concentric constraint (anchor = 1 disk, subordinates = 2 bulge, 3 bar)
+D_K1_K2   x   offset
+D_K1_K2   y   offset
 ```
 
-Concrete example (feedme: 1=disk, 2=bulge, 3=bar, 4=lens, 5=companion, 6=sky):
+Concrete example (feedme: 1=disk, 2=bulge, 3=bar, 4=sky):
 
 ```text
-# Concentric constraint: bulge/bar/lens anchored to disk (comp 1)
- 1_2_3_4     x     offset
- 1_2_3_4     y     offset
-# Companion position pinned to initial estimate (soft ±5px window, RELATIVE to the input value)
- 5           x     -5    5
- 5           y     -5    5
+# Concentric constraint: bulge/bar anchored to disk (comp 1)
+ 1_2_3     x     offset
+ 1_2_3     y     offset
 # (optional) other parameter bounds merged into the same file, e.g. the bulge n range (absolute 'to' form)
  2           n     0.5 to 8
 ```
@@ -171,7 +165,7 @@ Concrete example (feedme: 1=disk, 2=bulge, 3=bar, 4=lens, 5=companion, 6=sky):
 **Accompanying feedme-side operations**:
 - The anchor's (Disk) `1)` toggle **stays `1 1` free** (recommended) — once the constraint takes effect the **group translates jointly** and the centre is optimised by the fitter; the anchor may alternatively be fixed `0 0` (initial value = the parent round's converged centre), pinning the whole group at that coordinate.
 - Subordinates' `1)` toggles stay `1 1` — GALFIT rewrites them to `2 2` (the constrained marker) on loading; no manual edit is needed.
-- The feedme `G)` item points at the constraint file (e.g. `G) iter3.cons`); beam rounds name it `iter{n}.cons`, sharing the directory and number of `_iter{n}.feedme`. **GALFIT loads exactly one constraint file** — all other bounds (re/mag/n ranges, companion position windows) must be merged into that single `.cons`.
+- The feedme `G)` item points at the constraint file (e.g. `G) iter3.cons`); beam rounds name it `iter{n}.cons`, sharing the directory and number of `_iter{n}.feedme`. **GALFIT loads exactly one constraint file** — all other bounds (re/mag/n ranges) must be merged into that single `.cons`.
 
 ### 2. Verification markers that the constraint took effect (check every round)
 
@@ -193,9 +187,9 @@ The following plausible-looking pairwise forms were **tested on this machine's G
 
 The only reliable form is the **chained hard constraint `offset`** above.
 
-### 4. Companion exemption (mandatory)
+### 4. Companion exemption (not applicable on this branch)
 
-A companion's number (`# STRUCTURE:` name containing comp/companion/secondary/satellite) is **strictly forbidden** in the concentric chain — companion centres must stay freely fitted. When adding a companion, pin its position with a **soft window** instead (relative-to-input ±5px; the initial value is the VLM's measured pixel coordinate): `<number>  x  -5  5` and `<number>  y  -5  5` (bare numbers are input-relative offsets — see the `.cons` numeric-band semantics note in the solution-space definition). Anchor choice: prefer the Disk; absent a Disk, the brightest central component.
+On this branch companions are **outside the solution space** (see the branch restriction in the solution-space definition), so no companion exemption applies — the concentric chain covers exactly the main-galaxy central components present. (On unrestricted branches: companion numbers are strictly forbidden in the chain; their centres stay freely fitted with a relative ±5px soft window. Anchor choice: prefer the Disk; absent a Disk, the brightest central component.)
 
 
 ## GALFIT component-type specification (must be strictly observed)
@@ -212,7 +206,7 @@ A companion's number (`# STRUCTURE:` name containing comp/companion/secondary/sa
 - The working note is the core record of the whole beam search and its **single source of truth**: the priority queue Q's contents, the current best s\*, the counters n / stagnation / global_iter_id, and the state ledgers (input ledger + result ledger + rollback edges) are all governed by it — read it before every decision.
 - **Its structure must strictly follow the §Multi-Branch working_note Template of `workflow_galfit.md`** (header with basic information + beam-state snapshot [overwritten] + state ledgers [appended] + branch sections [appended] + failure archive + cross-branch decision log [appended]).
 - Header [mandatory]: the Stage-1 VLM morphology judgement (equivalent to the Round-0 original-image component prediction; the high-probability components must be stated explicitly) and the `detect_bar_lopsidedness` conclusions (bar/lop detected or not, PA (N=+Y convention), b/a; initial guesses only — the fit is the arbiter. An undetected component must be written as "not detected (zero evidence, non-determinative)").
-- Temporary user constraints (if any): recorded verbatim in the working_note header (issue date + lifting condition) and carried in the `[Temporary constraints]` field of every `generate_galfit_beam_actions` `global_state_description` (mechanism and the currently active constraints: see `workflow_galfit.md` §Generation Spec); currently ACTIVE 2026-09-04 — companion exclusion in candidate generation, until revoked by the user.
+- Temporary user constraints (if any): recorded verbatim in the working_note header (issue date + lifting condition) and carried in the `[Temporary constraints]` field of every `generate_galfit_beam_actions` `global_state_description` (mechanism and the currently active constraints: see `workflow_galfit.md` §Generation Spec); currently ACTIVE 2026-09-04 — companion exclusion in candidate generation, until revoked by the user. **Branch note (`restrict-disk-bulge-bar-agn`)**: on this branch the companion exclusion is additionally enforced at the solution-space level (see the solution-space definition), together with Lens / OuterDisk / edgedisk.
 - Each branch-round section [mandatory]:
   - the round's action (action_id and primitives summary) and the `_iter{n}.feedme` / `iter{n}.cons` used;
   - post-fit component types and key parameters (position px, magnitudes, sizes, shape parameters; expdisk annotated with Rs and effective radius Re), reduced_χ² (chisq1d_nu) / BIC (BIC_eff);

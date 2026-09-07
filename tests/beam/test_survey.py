@@ -209,3 +209,15 @@ def test_global_desc_for_blanks_under_ablation(galaxy):
     disabled = global_desc_for(g)
     assert "no_global_state" in disabled and "withheld" in disabled
     assert "Pixel contract" not in disabled
+
+
+# ------------------------------------- single_agent ablation arm
+def test_survey_round_blocked_under_single_agent_arm(galaxy):
+    gdir, _ = galaxy
+    g = BeamGraph.load(str(gdir))
+    g.g.graph["meta"]["ablations"] = {"single_agent": True}
+    g.commit()
+    out = survey_round(str(gdir))          # must fail before any VLM dispatch
+    assert out["status"] == "failure"
+    assert "E_ARM" in out["error"]
+    assert "beam_enqueue_candidates" in out["error"]

@@ -96,6 +96,12 @@ def survey_round(
     except Exception as e:
         return {"status": "failure", "error": f"cannot load beam graph: {e}"}
 
+    if (graph.g.graph.get("meta", {}).get("ablations") or {}).get("single_agent"):
+        return {"status": "failure",
+                "error": "E_ARM: this run is in the single_agent ablation arm — the "
+                         "VLM surveyor is disabled; author the survey response "
+                         "yourself and register it with beam_enqueue_candidates"}
+
     label = state_label or graph.latest_state()
     if not label or label not in graph.g.nodes:
         return {"status": "failure", "error": f"state '{label}' not found in the graph"}

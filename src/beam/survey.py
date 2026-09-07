@@ -26,6 +26,20 @@ from beam.enqueue import ingest
 from beam.vlm_extract import extract_survey_json
 
 
+def global_desc_for(graph) -> str:
+    """Global-state digest, or the ablation-arm marker when disabled.
+
+    Arm ``no_global_state`` (paper ablation): the cross-round digest is
+    withheld from BOTH prompt occurrences — the surveyor must rely on the
+    image, the parameter summary and the current-round supplement only.
+    """
+    if (graph.g.graph.get("meta", {}).get("ablations") or {}).get("no_global_state"):
+        return ("(disabled for this run — ablation arm no_global_state: the "
+                "cross-round state digest is withheld; judge from the image, "
+                "the parameter summary and the current-round supplement only)")
+    return build_global_state_description(graph)
+
+
 def _dispatch(system_prompt: str, turns: list[str], image_path: str):
     """Mirror of generate_galfit_beam_actions' ANALYSIS_MODE dispatch."""
     analysis_mode = os.environ.get("ANALYSIS_MODE", "vlm").lower()
@@ -99,7 +113,7 @@ def survey_round(
                          "re-run run_galfit and beam_record_fit first"}
 
     # ---- digests from the graph
-    global_desc = build_global_state_description(graph)
+    global_desc = global_desc_for(graph)
     local_desc, triggers = build_local_state_description(graph, label,
                                                          local_injections or {})
     queue_digest = build_queue_digest(graph)
@@ -202,6 +216,106 @@ def survey_round(
                            numeric_triggers=triggers)
     graph.age_pending()  # pending entries age while a round passes
     graph.log_decision({"kind": "survey-round", "state": label, "session": session_id,
+                        "enqueued": [e["action_id"] for e in result_ingest.enqueued],
+                        "discarded": result_ingest.discarded})
+    graph.commit()
+
+    return {
+        "status": "success",
+        "state": label,
+        "verdict": verdict,
+        "enqueued": result_ingest.enqueued,
+        "discarded": result_ingest.discarded,
+        "protected_directions": result_ingest.protected,
+        "numeric_triggers": triggers,
+        "queue": [
+            {"action_id": aid, **{k: graph.pending_record(aid).get(k)
+                                  for k in ("parent", "sigma", "score",
+                                            "expected_behavior_tag", "code_flags")}}
+            for aid in graph.pending_queue()
+        ],
+        "next_candidate": graph.next_action(),
+        "best_state": graph.g.graph.get("best_state"),
+        "termination": graph.termination_check(),
+        "session_id": session_id,
+        "candidates_file": md_path,
+    }
+
+
+def orchestrator_round(galaxy_dir: str, response_json: str,
+                       state_label: str = "") -> dict[str, Any]:
+    """Single-agent ablation arm: validate + ingest an orchestrator-authored
+    SurveyResponse (``{"physicality_verdict": {...}, "candidates": [...]}``,
+    the same JSON contract the surveyor returns) with NO VLM call.
+
+    Everything else is identical to survey_round: the mechanical checks still
+    merge into the verdict, the same legality gates (schema + solution-space
+    rules, floors / diversity / aging) apply, and an audit artefact is
+    archived next to the comparison image — so the two arms differ ONLY in
+    who performs the perception + candidate generation. Validation is
+    single-shot: errors are returned for the orchestrator to fix and re-call.
+    """
+    try:
+        from beam.graph import BeamGraph
+
+        graph = BeamGraph.load(galaxy_dir)
+    except Exception as e:
+        return {"status": "failure", "error": f"cannot load beam graph: {e}"}
+
+    label = state_label or graph.latest_state()
+    if not label or label not in graph.g.nodes:
+        return {"status": "failure", "error": f"state '{label}' not found in the graph"}
+    state = graph.state(label)
+
+    try:
+        payload = json.loads(response_json)
+    except json.JSONDecodeError as e:
+        return {"status": "failure", "error": f"E_SCHEMA: response_json is not valid JSON: {e}"}
+    resp, verr = parse_survey_response(payload)
+    if resp is None:
+        return {"status": "failure", "error": f"E_SCHEMA: {verr}"}
+    report = validate_survey(resp, graph, label)
+    if not report.ok:
+        return {"status": "failure", "error": "validation failed (fix the flagged "
+                                              "fields and re-call)",
+                "issues": [{"code": i.code, "message": i.message} for i in report.errors]}
+
+    # verdict + mechanical merge (idempotent if beam_record_fit already set it)
+    vlm_verdict = resp.physicality_verdict.model_dump()
+    graph.apply_verdict(label, vlm_verdict)
+    state = graph.state(label)
+    verdict = state.get("verdict") or vlm_verdict
+
+    # numeric triggers stay code-computed so floors apply identically in both arms
+    _local_desc, triggers = build_local_state_description(graph, label, {})
+
+    session_id = f"orchestrator-{uuid.uuid4().hex[:8]}"
+    comparison = state.get("artifacts", {}).get("comparison_png") or ""
+    md_path = ""
+    if comparison and os.path.exists(comparison):
+        out_base = os.path.splitext(os.path.basename(comparison))[0]
+        md_path = os.path.join(os.path.dirname(os.path.abspath(comparison)),
+                               f"{out_base}_orchestrator_{label}_{uuid.uuid4().hex[:8]}.md")
+        try:
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(f"# orchestrator_round {label} (single-agent arm, no VLM)\n\n"
+                        f"## Verdict (merged: orchestrator + mechanical checks)\n"
+                        f"{json.dumps(verdict, indent=1, default=str)}\n\n"
+                        f"## Orchestrator-provided response\n"
+                        f"{json.dumps(payload, indent=1, default=str)}\n\n"
+                        f"## Mechanical check table (code-computed)\n"
+                        + "".join(f"- [{m.get('severity')}] {m.get('check')}: "
+                                  f"{m.get('detail')}\n"
+                                  for m in (state.get("mech_checks") or [])))
+        except OSError:
+            md_path = ""
+
+    result_ingest = ingest(graph, resp.candidates, session_id=session_id,
+                           parent_label=label,
+                           verdict_fail=(verdict.get("verdict") == "FAIL"),
+                           numeric_triggers=triggers)
+    graph.age_pending()
+    graph.log_decision({"kind": "orchestrator-round", "state": label, "session": session_id,
                         "enqueued": [e["action_id"] for e in result_ingest.enqueued],
                         "discarded": result_ingest.discarded})
     graph.commit()

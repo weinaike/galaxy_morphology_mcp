@@ -71,7 +71,10 @@ class BeamGraph:
     @classmethod
     def init(cls, galaxy_dir: str, root_feedme: str, stage1: dict,
              psf_fwhm_px: float | None = None, a_psf_px2: float | None = None,
-             temporary_constraints: list[dict] | None = None) -> "BeamGraph":
+             temporary_constraints: list[dict] | None = None,
+             beam_width: int | None = None, n_max: int | None = None,
+             stagnation_max: int | None = None,
+             ablations: dict | None = None) -> "BeamGraph":
         g = nx.DiGraph()
         g.graph["schema_version"] = SCHEMA_VERSION
         g.graph["meta"] = {
@@ -79,12 +82,17 @@ class BeamGraph:
             "created_at": _now(),
             "psf_fwhm_px": psf_fwhm_px,
             "a_psf_px2": a_psf_px2,
-            "W": BEAM_WIDTH,
-            "N_max": N_MAX,
-            "stagnation_max": STAGNATION_MAX,
+            "W": int(beam_width) if beam_width else BEAM_WIDTH,
+            "N_max": int(n_max) if n_max else N_MAX,
+            "stagnation_max": int(stagnation_max) if stagnation_max else STAGNATION_MAX,
             "per_combo_cap": PER_COMBO_CAP,
             "g_min": G_MIN,
         }
+        # Ablation arm (paper): persisted in the graph so every later call
+        # (survey_round / record_fit / enqueue) reads the SAME arm — no drift,
+        # and the artefact itself documents which variant produced it.
+        if ablations:
+            g.graph["meta"]["ablations"] = {k: bool(v) for k, v in dict(ablations).items()}
         g.graph["stage1"] = stage1 or {}
         g.graph["temporary_constraints"] = temporary_constraints or []
         g.graph["queue"] = []            # ordered action_ids (pending)
@@ -462,6 +470,11 @@ class BeamGraph:
         metrics = state.get("metrics", {})
         conv_ok = (metrics.get("convergence") or {}).get("flag", "ok") != "sub-converged"
         verdict_pass = not (verdict and verdict.get("verdict") == "FAIL")
+        # ablation arm no_verdict_gate: metric-only best selection — FAIL
+        # rounds may take s* (verdicts are still recorded, so post-hoc
+        # analysis can identify unphysical selections)
+        if (self.g.graph.get("meta", {}).get("ablations") or {}).get("no_verdict_gate"):
+            verdict_pass = True
 
         # mechanical best update: verdict-gated, sub-convergence-gated, BIC-first
         eligible = verdict_pass and conv_ok and _metric_key(metrics) is not None
@@ -798,7 +811,11 @@ class BeamGraph:
         c = self.counters()
         best = self.g.graph.get("best_state")
         on_path = self.best_path_labels()
+        meta = self.g.graph.get("meta", {})
         return {
+            "config": {k: meta.get(k) for k in
+                       ("W", "N_max", "stagnation_max", "per_combo_cap", "g_min")},
+            "ablations": meta.get("ablations", {}),
             "best_state": best,
             "best_metrics": self.state(best).get("metrics", {}) if best else None,
             "best_combo": self.state(best).get("combo_key") if best else None,

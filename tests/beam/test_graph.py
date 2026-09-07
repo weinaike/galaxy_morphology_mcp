@@ -60,6 +60,32 @@ def test_init_creates_root_and_persists(galaxy):
     assert g2.state("A.0")["combo_key"] == "agn+bar+bulge+disk"
 
 
+def test_init_beam_params_and_ablation_arm_persist(galaxy):
+    """Ablation arm (paper): beam params + arm flags live in graph meta and
+    survive persistence — every later call reads the same arm."""
+    g = BeamGraph.init(str(galaxy), str(galaxy / "_iter1.feedme"), stage1={},
+                       beam_width=3, n_max=7, stagnation_max=2,
+                       ablations={"no_global_state": True, "single_agent": True})
+    m = g.g.graph["meta"]
+    assert (m["W"], m["N_max"], m["stagnation_max"]) == (3, 7, 2)
+    assert m["ablations"] == {"no_global_state": True, "single_agent": True}
+
+    g2 = BeamGraph.load(str(galaxy))
+    m2 = g2.g.graph["meta"]
+    assert (m2["W"], m2["N_max"], m2["stagnation_max"]) == (3, 7, 2)
+    assert m2["ablations"]["no_global_state"] is True
+    snap = g2.snapshot()
+    assert snap["config"]["W"] == 3 and snap["config"]["N_max"] == 7
+    assert snap["ablations"]["no_global_state"] is True
+
+
+def test_snapshot_config_defaults_without_ablations(galaxy):
+    g = _init(galaxy)
+    snap = g.snapshot()
+    assert snap["ablations"] == {}
+    assert snap["config"]["W"] == 5 and snap["config"]["g_min"] == 0.3
+
+
 # -------------------------------------------------------------- record fit
 def test_record_first_fit_sets_best(galaxy):
     g = _init(galaxy)
@@ -123,6 +149,25 @@ def test_record_fit_fail_verdict_never_best(galaxy):
     # better BIC but FAIL verdict: must NOT take the best
     assert g.g.graph["best_state"] == "A.1"
     assert any(r["reason"] == "physicality_fail" for r in g.g.graph["refuted_hypotheses"])
+
+
+def test_no_verdict_gate_ablation_arm(galaxy):
+    """Arm no_verdict_gate (paper): metric-only best selection — a FAIL round
+    with better BIC takes s*, but the verdict is still recorded verbatim."""
+    g = _init(galaxy)
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
+    g.g.graph["meta"]["ablations"] = {"no_verdict_gate": True}
+    g.add_pending({"sigma": 0.5, "expected_behavior_tag": "lens_add",
+                   "primitives": [{"op": "add", "structure_name": "lens",
+                                   "component_type": "sersic"}]},
+                  source_session="s2", parent_label="A.1")
+    aid = list(g.g.graph["pending"])[0]
+    label = g.record_fit(_run_result(galaxy, bic_eff=900.0), action_id=aid,
+                         verdict={"verdict": "FAIL", "failed_checks": ["re_inversion"],
+                                  "swap_hint": "none"})
+    assert g.g.graph["best_state"] == label          # FAIL took s* under the arm
+    assert g.state(label)["verdict"]["verdict"] == "FAIL"  # verdict still recorded
+    assert g.counters()["stagnation"] == 0           # best update reset stagnation
 
 
 def test_subconverged_round_is_quarantined(galaxy):

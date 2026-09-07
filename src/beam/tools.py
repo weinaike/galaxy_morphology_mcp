@@ -50,6 +50,19 @@ def beam_init(
                                               "\"text\": \"companion exclusion\", "
                                               "\"forbid_structures\": [\"companion\"], "
                                               "\"active\": true}]"] = "",
+    beam_width: Annotated[int, "Beam width W (queue truncation size); 0 = default 5. "
+                               "Paper sensitivity study: W=1 is the greedy best-first "
+                               "baseline"] = 0,
+    n_max: Annotated[int, "Fit budget N_max; 0 = default 15"] = 0,
+    stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 5"] = 0,
+    ablations_json: Annotated[str, "Optional JSON object selecting the ablation arm for "
+                                   "this run, persisted in graph meta and enforced by "
+                                   "code in every later call: {\"no_global_state\": true} "
+                                   "(withhold the cross-round digest from the surveyor), "
+                                   "{\"no_verdict_gate\": true} (metric-only best "
+                                   "selection, physicality FAIL rounds may take s*), "
+                                   "{\"single_agent\": true} (provenance marker: candidates "
+                                   "come from beam_enqueue_candidates, no VLM)"] = "",
 ) -> dict[str, Any]:
     """Create (or reset) the beam-search state graph for a galaxy.
 
@@ -57,7 +70,9 @@ def beam_init(
     check_feedme_file (whose warnings are returned, not fatal), measures the
     PSF once (FWHM / A_psf feed the default Re floor and the digest [Meta]),
     and persists the graph atomically. Stage-1 conclusions are stored for the
-    per-round digest generation.
+    per-round digest generation. Beam parameters (W / N_max / stagnation_max)
+    and the ablation arm are written to graph meta — the single source of
+    truth every later call reads, so an arm cannot drift mid-run.
     """
     try:
         from beam.graph import BeamGraph
@@ -87,17 +102,31 @@ def beam_init(
             "morphology": stage1_morphology,
             "detect_bar_lopsidedness": _parse_json(stage1_bar_lop_json, {}),
         }
+        ablations = _parse_json(ablations_json, None)
+        if ablations_json and ablations is None:
+            return {"status": "failure", "error": "ablations_json is not valid JSON"}
+        if ablations is not None and not isinstance(ablations, dict):
+            return {"status": "failure", "error": "ablations_json must be a JSON object"}
+
         graph = BeamGraph.init(
             galaxy_dir, root_feedme, stage1=stage1,
             psf_fwhm_px=psf_fwhm_px, a_psf_px2=a_psf_px2,
             temporary_constraints=_parse_json(temporary_constraints_json, []),
+            beam_width=beam_width or None,
+            n_max=n_max or None,
+            stagnation_max=stagnation_max or None,
+            ablations=ablations,
         )
+        meta = graph.g.graph["meta"]
         return {
             "status": "success",
             "graph_file": graph.path,
             "root_state": "A.0",
             "psf_fwhm_px": psf_fwhm_px,
             "a_psf_px2": a_psf_px2,
+            "config": {k: meta.get(k) for k in
+                       ("W", "N_max", "stagnation_max", "per_combo_cap", "g_min")},
+            "ablations": meta.get("ablations", {}),
             "warnings": warnings,
             "message": "beam graph initialised; run the first fit (run_galfit on the root "
                        "feedme) and register it with beam_record_fit (action_id empty)",
@@ -392,5 +421,34 @@ def survey_round(
             directives=directives,
             max_retries=max_retries,
         )
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_enqueue_candidates(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    response_json: Annotated[str, "JSON object following the surveyor contract: "
+                                  "{\"physicality_verdict\": {\"verdict\": \"PASS|FAIL\", "
+                                  "\"failed_checks\": [...], \"swap_hint\": \"none\"}, "
+                                  "\"candidates\": [<candidate objects, 1-4, same shapes "
+                                  "as the beam JSON contract>]} — authored by the "
+                                  "orchestrator (who read the comparison image itself) "
+                                  "in the single-agent ablation arm"],
+    state_label: Annotated[str, "Round label the response refers to (e.g. 'A.2'); "
+                                "empty = the most recently executed state"] = "",
+) -> dict[str, Any]:
+    """Single-agent ablation arm: ingest orchestrator-authored candidates (no VLM).
+
+    Validates the provided JSON with the same schema + solution-space rules
+    and enqueues through the same legality gates (floors / diversity / aging)
+    as survey_round — the two arms differ ONLY in who performs the perception
+    and candidate generation. The verdict is settled on the state with the
+    code-computed mechanical checks merged in (idempotent if already settled
+    via beam_record_fit's verdict_json).
+    """
+    try:
+        from beam.survey import orchestrator_round
+
+        return orchestrator_round(galaxy_dir, response_json, state_label=state_label)
     except Exception as e:
         return {"status": "failure", "error": str(e)}

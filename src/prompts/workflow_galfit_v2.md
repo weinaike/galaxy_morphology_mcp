@@ -50,6 +50,18 @@ you never recompute s\* by hand.
 4. `beam_init(galaxy_dir, root_feedme=_iter1.feedme, stage1_morphology=<judgement>,
    stage1_bar_lop_json=<detect result>)` — validates the feedme, measures the PSF once,
    creates the state graph at `<galaxy_dir>/beam_state/graph.json`.
+   - Optional params (paper ablation arms / configuration studies, persisted in the
+     graph meta so the arm cannot drift mid-run): `beam_width`, `n_max`,
+     `stagnation_max`, and `ablations_json` (a JSON object, e.g.
+     `{"no_global_state": true}` / `{"no_verdict_gate": true}` /
+     `{"single_agent": true}`). Every galaxy of one experiment arm must be
+     initialised with the same flags; the arm is echoed in beam_status and
+     working_note.
+   - Under the `single_agent` arm the surveyor is bypassed: after each
+     `beam_record_fit` the orchestrator itself authors the survey-response JSON
+     (`{physicality_verdict, candidates}` per the beam prompt contract) and
+     registers it with `beam_enqueue_candidates(galaxy_dir, response_json,
+     state_label)` — same validation, same ingest gates, one call, no image input.
 5. `run_galfit(config_file=_iter1.feedme)` — the deterministic first fit.
 6. `beam_record_fit(galaxy_dir, run_galfit_result_json=<the full return dict>)` with
    `action_id` empty.

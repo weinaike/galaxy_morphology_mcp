@@ -1,5 +1,6 @@
 """End-to-end (mocked VLM) tests for survey_round: happy path, retry path,
-retry exhaustion, and FastMCP registration."""
+retry exhaustion, and FastMCP registration. Plus the single-agent ablation
+arm (orchestrator_round) and the no_global_state digest arm."""
 
 import asyncio
 import importlib
@@ -11,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from beam.graph import BeamGraph
-from beam.survey import survey_round
+from beam.survey import global_desc_for, orchestrator_round, survey_round
 
 
 VALID_MD = """Analysis prose.
@@ -143,6 +144,68 @@ def test_fastmcp_registration_includes_survey():
             tools = asyncio.run(mcp_server.app.list_tools())
             names = {t.name for t in tools}
             assert "survey_round" in names
+            assert "beam_enqueue_candidates" in names
         finally:
             if "src" in sys.path:
                 sys.path.remove("src")
+
+
+# ------------------------------------- single-agent ablation arm (no VLM)
+VALID_PAYLOAD = {
+    "physicality_verdict": {"verdict": "PASS",
+                            "failed_checks": ["[note] areas similar"],
+                            "swap_hint": "none"},
+    "candidates": [{
+        "primitives": [{"op": "tune", "tune": {
+            "structure_name": "bulge", "param": "n", "toggle": 1, "value": 2.0,
+            "cons_bounds": {"n": [0.5, 8.0], "re": None, "q": None,
+                            "center_window": None}}}],
+        "physical_motivation": "quadrupole residuals persist at PA~45",
+        "expected_C_prime": "{disk,bulge,bar,agn}",
+        "novelty_claim": "equiv A.1 but n free axis untested",
+        "expected_behavior_tag": "bulge_n_free",
+        "local_benefit_sigma": 0.55,
+    }],
+}
+
+
+def test_orchestrator_round_happy(galaxy):
+    gdir, label = galaxy
+    r = orchestrator_round(str(gdir), json.dumps(VALID_PAYLOAD))
+    assert r["status"] == "success", r.get("error")
+    assert r["verdict"]["verdict"] == "PASS"
+    assert r["best_state"] == label          # verdict settled the best
+    assert len(r["enqueued"]) == 1           # same ingest gates as survey_round
+    assert "floor_n_release" in r["enqueued"][0]["flags"]
+    assert r["session_id"].startswith("orchestrator-")
+    assert r["candidates_file"] and "orchestrator" in r["candidates_file"]
+    g = BeamGraph.load(str(gdir))
+    kinds = [e["kind"] for e in g.g.graph["decision_log"]]
+    assert "orchestrator-round" in kinds
+
+
+def test_orchestrator_round_invalid_payload(galaxy):
+    gdir, _ = galaxy
+    r = orchestrator_round(str(gdir),
+                           '{"physicality_verdict": {"verdict": "MAYBE"}}')
+    assert r["status"] == "failure" and "E_SCHEMA" in r["error"]
+    g = BeamGraph.load(str(gdir))
+    assert not g.pending_queue()             # nothing enqueued on failure
+
+
+def test_orchestrator_round_bad_json(galaxy):
+    gdir, _ = galaxy
+    r = orchestrator_round(str(gdir), "{not json")
+    assert r["status"] == "failure" and "E_SCHEMA" in r["error"]
+
+
+# ------------------------------------- no_global_state ablation arm
+def test_global_desc_for_blanks_under_ablation(galaxy):
+    gdir, _ = galaxy
+    g = BeamGraph.load(str(gdir))
+    normal = global_desc_for(g)
+    assert "Pixel contract" in normal          # digest present by default
+    g.g.graph["meta"]["ablations"] = {"no_global_state": True}
+    disabled = global_desc_for(g)
+    assert "no_global_state" in disabled and "withheld" in disabled
+    assert "Pixel contract" not in disabled

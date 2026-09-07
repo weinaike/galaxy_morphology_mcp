@@ -32,7 +32,18 @@ from tools.bar_lopsidedness_detection import (
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix, re_pix2arcsec
-from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1
+from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1, workflow_galfit_v2
+from beam.tools import (
+    apply_candidate,
+    beam_export_note,
+    beam_grant_repair_budget,
+    beam_init,
+    beam_mark_failure,
+    beam_record_fit,
+    beam_set_constraint,
+    beam_status,
+    survey_round,
+)
 from starlette.responses import Response, JSONResponse
 from dotenv import load_dotenv
 
@@ -58,6 +69,16 @@ def _register_tools_and_prompts():
         app.add_tool(detect_bar_lopsidedness)
         app.add_tool(generate_galfit_beam_actions)
         app.add_tool(check_feedme_file)
+        app.add_tool(beam_init)
+        app.add_tool(beam_record_fit)
+        app.add_tool(beam_mark_failure)
+        app.add_tool(beam_status)
+        app.add_tool(survey_round)
+        app.add_tool(apply_candidate)
+        app.add_tool(beam_export_note)
+        app.add_tool(beam_grant_repair_budget)
+        app.add_tool(beam_set_constraint)
+        app.add_prompt(workflow_galfit_v2)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 
     if has_galfits:

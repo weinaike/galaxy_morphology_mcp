@@ -457,7 +457,7 @@ Stage 3. Science-goal calibration and report writing
   {"best_turn":"<best round's directory name>","components":["<physical components in the best round>"],"galaxy_type":"edge-on/face-on/elliptical"}
   ```
   - `best_turn`: **string**, the best round's subdirectory name under archives/ (e.g. `20260414T093323.c1993a48`) — not the archive path, not the feedme name.
-  - `components`: **array of strings**, one per physical component in the best round, from the fixed vocabulary `[Disk,Bulge,Bar,Agn,Companion,Fourier,SingleSersic,Lens]` (e.g. `["Disk","Bulge","Bar"]`; `Agn` = the AGN point-source component) — objects, nested arrays or ad-hoc names are forbidden.
+  - `components`: **array of strings**, one per physical component in the best round, from the fixed vocabulary `[Disk,Bulge,Bar,Agn,Companion,Fourier,SingleSersic,Lens,OuterDisk]` (e.g. `["Disk","Bulge","Bar"]`; `Agn` = the AGN point-source component) — objects, nested arrays or ad-hoc names are forbidden.
   - `galaxy_type`: **string**, one of `edge-on` / `face-on` / `elliptical`; a disk galaxy with Disk q < 0.3 counts as edge-on.
   - **Additional fields are permitted** (e.g. `chisq1d_nu`, `bic_eff`, `convergence`, `verifier_verdict`, per-component parameter objects) — they enrich the record but must never replace or nest the three required fields (e.g. do not move `best_turn` inside a `locked_round` sub-object).
   - **Self-check before finishing (mandatory)**: re-read the written report, extract the final ```json block, and verify it (i) parses as JSON, (ii) contains `best_turn` (string), `components` (string array) and `galaxy_type` (enum string) verbatim, (iii) sits at the very end of the document; fix and re-verify on any failure.

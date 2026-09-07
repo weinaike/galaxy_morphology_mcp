@@ -65,7 +65,10 @@ You have seen the residual image — **you rank what gets explored next**. The c
   - **Bound-relaxation tiers**: self-imposed bound hit → relaxation candidate mandatory (×1.2–1.3); original bound hit → at least one of relaxation / structural alternative. Exempt: q≤1 domain edge, hard priors (disk n≡1, bar n=0.5), centres, Re floors at PSF scale (→ point-source identity question). ≤2 pure relaxation candidates per output.
   - **Companions**: psf vs sersic by area rule (R = A_blob/A_psf ≤1.5 → psf; ≥2.3 → sersic; elongated ≳1.3 → sersic); condition A (flux ≤1%) + no visible original-panel blob → remove(Companion); visible blob → keep.
   - **AGN (psf)** is the sole central point source: admission only under the Bulge-Re-collapse rule (<0.2px mandatory, 0.2–0.5px competing variant) or clear central-spike evidence.
-  - **F1** only on disk/edgedisk/singlesersic; keep when amplitude > 0.02.
+  - **F1** only on disk/edgedisk/singlesersic; keep when amplitude > 0.02. Encoding: F1 cannot be
+    expressed via `tune` — the only legal form is `remove(disk)` + `add(disk, expdisk, ...)` with the
+    parent disk's values verbatim plus `"f1": {"am": <0.02-0.1>, "theta_m": <N=+Y deg>}`; the expdisk
+    add must NOT carry an `n` field (n≡1 by type; an `n` is rejected with E_PARAM_TYPE).
 - **Sky**: never a search dimension — candidates touching sky are invalid.
 - **State-ledger usage**: compare every candidate's landed inventory against [State ledger] within the tolerance bands (Re ±20%, n ±0.5, q ±0.1, PA ±10°, position <8 px; naming swaps bulge n=0.5≡bar allowed); equivalent-to-ledger candidates need a novelty_claim naming the untested parameter axis. remove-only/revert candidates whose projection hits a ledger state or rollback edge are zero-cost rollbacks — do not propose them. Combos marked exhausted (4 attempts) are closed — diversify the inventory instead.
 - **Queue re-ranking**: you may return queue_reorder for pending candidates based on what you just saw (only non-floor-flagged entries; floor flags protect mandatory hypotheses).

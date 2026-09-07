@@ -225,3 +225,54 @@ def test_below_gmin_branch(monkeypatch, mini_graph):
                                       "value": 12.5}}], sigma=0.4, tag="agn_mag"),
     ], session_id="s1", parent_label=label)
     assert res.discarded and res.discarded[0]["reason"] == "BELOW_GMIN"
+
+
+# ------------------------------------------- defect E: pins vs truncation
+def _fill_queue_with_protected(graph, label, scores):
+    for i, score in enumerate(scores):
+        graph.add_pending({"action_id": f"f{i}", "sigma": 0.6, "score": score,
+                           "primitives": [], "code_flags": {"floor_test": True}},
+                          "s0", label)
+
+
+def test_batch_top_pick_survives_truncation(mini_graph):
+    """Defect E (KILOGAS_228): the freshest survey direction was discarded by
+    QUEUE_TRUNCATION because stale floor/aged entries occupied all W slots."""
+    graph, label = mini_graph
+    _fill_queue_with_protected(graph, label, (0.9, 0.8, 0.7, 0.6, 0.5))
+    res = ingest(graph, [
+        cand([{"op": "add", "add": {"structure_name": "lens", "component_type": "sersic",
+                                    "re_px": 60.0}}], sigma=0.4, tag="fresh_pick"),
+    ], session_id="s1", parent_label=label)
+    q = graph.pending_queue()
+    assert len(q) == 5
+    assert res.enqueued[0]["action_id"] in q          # pinned: survived
+    # the lowest-score protected entry was evicted instead
+    assert graph.g.graph["pending"]["f4"]["status"] == "discarded"
+
+
+def test_queue_reorder_pin_applied_and_persists(mini_graph):
+    """Defect E (KILOGAS_319): queue_reorder was validated but never applied —
+    the eff re-sort buried the surveyor's requested rank-1 entry."""
+    from beam.candidate_schema import QueueReorder
+    from beam.enqueue import _reorder_queue
+
+    graph, label = mini_graph
+    # scores chosen so the pinned reorder target (0.85+0.15) clears the
+    # reorderer's own floor+pin eff (0.75+0.05+0.15) without a tie-break
+    for aid, score in (("older_a", 0.92), ("older_b", 0.88), ("older_c", 0.85)):
+        graph.add_pending({"action_id": aid, "sigma": 0.6, "score": score,
+                           "primitives": []}, "s0", label)
+    _reorder_queue(graph)
+    assert graph.pop_next() == "older_a"
+
+    reorderer = cand([{"op": "tune", "tune": {"structure_name": "bulge", "param": "n",
+                                              "toggle": 1, "value": 4.0}}],
+                     sigma=0.6, tag="reorderer")
+    reorderer.queue_reorder = [QueueReorder(action_id="older_c", new_rank=1)]
+    ingest(graph, [reorderer], session_id="s1", parent_label=label)
+
+    assert graph.pop_next() == "older_c"              # reorder applied
+    graph.age_pending()
+    _reorder_queue(graph)
+    assert graph.pop_next() == "older_c"              # pin survives re-sorts

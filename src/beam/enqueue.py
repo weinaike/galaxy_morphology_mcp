@@ -31,6 +31,10 @@ FLOOR_G = 0.5
 PERSISTENT_G = 0.6
 AGING_BONUS = 0.02
 AGING_CAP = 0.10
+# surveyor rank-1 pin: matches the maximum floor(0.05)+aging(0.10) bonus, so
+# the surveyor's explicit pick leads in ordering while floor entries keep
+# their eviction protection and their base-score priority
+SURVEYOR_PIN_BONUS = 0.15
 
 # weights: dimension 3 (path diversity) x2, cf. workflow §Deduplication & Ranking
 W = [1.0, 1.0, 2.0, 1.0, 1.0]
@@ -186,6 +190,10 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
     }
     direction_history: list[dict] = graph.g.graph.setdefault("direction_history", [])
 
+    # validated queue_reorder requests (pending, non-floor) ride on candidates
+    reorder_reqs = [(qr.action_id, qr.new_rank)
+                    for cand in candidates for qr in (cand.queue_reorder or [])]
+
     for cand in candidates:
         prims = cand.to_plain_primitives()
         disk = next((c for c in parent_inventory if c.get("name") in {"disk", "edgedisk"}), None)
@@ -309,8 +317,27 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
                                   "action_id": action_id, "executed": False})
         queued_directions.add(direction_key)
 
+    # defect E fix: pin this batch's highest-g new candidate (the code-ranked
+    # pick) so queue truncation — stale floors/aged entries occupying all W
+    # slots — cannot silently discard the freshest top direction
+    if result.enqueued:
+        best = max(result.enqueued, key=lambda e: e["g"])
+        graph.g.graph["pending"][best["action_id"]]["surveyor_rank_pin"] = 1
+
     _truncate_queue(graph)
     _reorder_queue(graph)
+    # apply validated queue_reorder requests as persistent pins (defect E:
+    # they were checked but never applied, so the eff re-sort buried them)
+    pending = graph.g.graph.get("pending", {})
+    pinned_any = False
+    for aid, new_rank in reorder_reqs:
+        rec = pending.get(aid)
+        if rec and rec.get("status") == "pending" and not rec.get("code_flags"):
+            rec["surveyor_rank_pin"] = int(new_rank)
+            pinned_any = True
+    if pinned_any:
+        _truncate_queue(graph)
+        _reorder_queue(graph)
     return result
 
 
@@ -344,7 +371,8 @@ def _bound_ctx(graph):
 
 
 def _truncate_queue(graph) -> None:
-    """Keep W entries; floor-flagged candidates are never evicted."""
+    """Keep W entries; floor-flagged and surveyor-pinned candidates are never
+    evicted unless W protected entries overflow (then lowest score goes)."""
     W = int(graph.g.graph["meta"].get("W", 5))
     pending = graph.g.graph.get("pending", {})
     queue = [a for a in graph.g.graph.get("queue", []) if a in pending]
@@ -352,7 +380,8 @@ def _truncate_queue(graph) -> None:
         return
     def rank(aid):
         rec = pending[aid]
-        return (0 if rec.get("code_flags") else 1,
+        protected = bool(rec.get("code_flags")) or bool(rec.get("surveyor_rank_pin"))
+        return (0 if protected else 1,
                 -(rec.get("score") or 0.0),
                 -rec.get("age_counter", 0))
     ordered = sorted(queue, key=rank)
@@ -383,5 +412,7 @@ def _reorder_queue(graph) -> None:
             eff += min(AGING_BONUS * rec.get("age_counter", 0), AGING_CAP)
         if rec.get("code_flags"):
             eff += 0.05
+        if rec.get("surveyor_rank_pin") == 1:
+            eff += SURVEYOR_PIN_BONUS
         return (-eff, aid)
     graph.g.graph["queue"] = sorted(queue, key=order)

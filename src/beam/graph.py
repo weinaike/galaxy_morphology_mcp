@@ -580,6 +580,52 @@ class BeamGraph:
             cur = self.g.nodes[cur].get("parent")
         return labels
 
+    # ------------------------------------------------------------- traversal
+    def traversal(self) -> list[dict]:
+        """The execution-ordered walk through the beam (search trajectory).
+
+        One entry per consumed iter id, ascending: the root state, every
+        fitted state (label, parent, action_in, combo, BIC, verdict, best
+        flag) and — interleaved at their iter position — failed executions
+        (GALFIT crashes have no state node; they appear as kind="failed").
+        """
+        entries: list[dict] = [{
+            "kind": "state", "iter": 0, "label": "A.0", "parent": None,
+            "action": "", "tag": "", "combo": self.state("A.0").get("combo_key"),
+            "bic_eff": None, "verdict": None, "is_best": False,
+        }] if "A.0" in self.g.nodes else []
+        for _label, attrs in self.g.nodes(data=True):
+            if attrs.get("global_iter_id", 0) == 0:
+                continue
+            entries.append({
+                "kind": "state",
+                "iter": int(attrs.get("global_iter_id", 0)),
+                "label": attrs.get("label"),
+                "parent": attrs.get("parent"),
+                "action": attrs.get("action_in", ""),
+                "tag": (self.g.graph.get("pending", {})
+                        .get(attrs.get("action_in", ""), {}) or {})
+                        .get("expected_behavior_tag", ""),
+                "combo": attrs.get("combo_key"),
+                "bic_eff": _metric_key(attrs.get("metrics", {})),
+                "verdict": (attrs.get("verdict") or {}).get("verdict"),
+                "is_best": bool(attrs.get("is_best")),
+            })
+        for aid, rec in self.g.graph.get("pending", {}).items():
+            if rec.get("status") == "failed" and rec.get("iter_id"):
+                entries.append({
+                    "kind": "failed",
+                    "iter": int(rec["iter_id"]),
+                    "label": None,
+                    "parent": rec.get("parent"),
+                    "action": aid,
+                    "tag": rec.get("expected_behavior_tag", ""),
+                    "combo": None, "bic_eff": None, "verdict": "CRASH",
+                    "is_best": False,
+                })
+        entries.sort(key=lambda e: (e["iter"], e["label"] or ""))
+        return entries
+
     # ------------------------------------------------- temporary constraints
     def set_temporary_constraint(self, action: str, text: str,
                                  forbid_structures: list[str] | None = None,
@@ -722,6 +768,7 @@ class BeamGraph:
             "combo_counts": self.combo_counts(),
             "never_executed": self.never_executed_precheck(),
             "refuted": self.g.graph.get("refuted_hypotheses", []),
+            "traversal": self.traversal(),
             "temporary_constraints": [t for t in self.g.graph.get("temporary_constraints", [])
                                       if t.get("active", True)],
             "states": sorted(

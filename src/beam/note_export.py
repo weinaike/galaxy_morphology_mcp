@@ -95,6 +95,19 @@ def build_working_note(g, galaxy_dir: str) -> str:
     lines.append(f"- Termination check: stop={term['stop']}, conditions={term['conditions']}, "
                  f"never-executed blockers={term['never_executed_blockers']}")
 
+    lines.append("")
+    lines.append("### Execution trajectory (traversal order, one row per iter id)")
+    lines.append("| iter | state | parent | action [tag] | combo | BIC_eff | verdict | best |")
+    lines.append("|---|---|---|---|---|---|---|---|")
+    best_marker = "**s\\***"
+    for e in g.traversal():
+        state_txt = e["label"] or "(crash)"
+        action_txt = (f"{e['action']} [{e['tag']}]" if e["action"]
+                      else "(root feedme first fit)" if e["iter"] == 0 else "-")
+        lines.append(f"| {e['iter']} | {state_txt} | {e['parent'] or '-'} | {action_txt} | "
+                     f"{e['combo'] or '-'} | {_fmt(e['bic_eff'])} | {e['verdict'] or '-'} | "
+                     f"{best_marker if e['is_best'] else ''} |")
+
     # ------------------------------------------------------------- state ledgers
     states = sorted(((lbl, a) for lbl, a in g.g.nodes(data=True)
                      if a.get("global_iter_id", 0) > 0),

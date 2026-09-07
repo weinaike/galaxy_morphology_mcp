@@ -263,3 +263,32 @@ def test_atomic_commit_leaves_valid_json(galaxy):
     assert data["directed"] is True
     labels = {n["id"] for n in data["nodes"]}
     assert {"A.0", "A.1"} <= labels
+
+
+# ----------------------------------------------------------------- traversal
+def test_traversal_orders_states_and_crashes(galaxy):
+    """Execution-ordered walk: root first, states by iter id, crashes (no
+    node) interleaved at their consumed iter position."""
+    g = _init(galaxy)
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0),
+                 verdict={"verdict": "PASS"})              # A.1, iter 1
+    # simulate an applied-then-crashed candidate at iter 2 (apply_candidate
+    # consumes the iter id into the counters before the fit runs)
+    g.add_pending({"action_id": "crashy", "sigma": 0.5, "score": 0.5,
+                   "primitives": [], "expected_behavior_tag": "boom"}, "s1", "A.1")
+    rec = g.g.graph["pending"]["crashy"]
+    rec["iter_id"] = 2
+    g.counters()["global_iter_id"] = 2
+    g.mark_failed("crashy", "gaussj: Singular Matrix-2")
+    g.record_fit(_run_result(galaxy, bic_eff=990.0),
+                 verdict={"verdict": "PASS"})              # A.2, iter 3
+
+    t = g.traversal()
+    assert [e["iter"] for e in t] == [0, 1, 2, 3]
+    assert t[0]["label"] == "A.0" and t[0]["action"] == ""
+    assert t[1]["label"] == "A.1" and t[1]["is_best"] is False
+    assert t[2]["kind"] == "failed" and t[2]["verdict"] == "CRASH"
+    assert t[2]["action"] == "crashy" and t[2]["tag"] == "boom"
+    assert t[3]["label"] == "A.2" and t[3]["is_best"] is True
+    # surfaced in the beam_status snapshot as well
+    assert g.snapshot()["traversal"] == t

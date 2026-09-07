@@ -263,3 +263,73 @@ def test_set_constraint_add_is_idempotent(mini_graph):
     graph.set_temporary_constraint("add", "x-exclusion", ["lens"])
     active = [t for t in graph.g.graph["temporary_constraints"] if t.get("active")]
     assert len(active) == 1
+
+
+# --------------------------------------- floor suspension (KILOGAS_296 A.2-c1)
+def _add_floor(graph, parent, aid):
+    return graph.add_pending(
+        {"action_id": aid, "sigma": 0.2, "score": 0.5,
+         "code_flags": {"floor_n_release": True},
+         "primitives": [{"op": "tune", "tune": {"structure_name": "bulge",
+                                                "param": "n", "toggle": 1}}]},
+        "s1", parent)
+
+
+def _hit_stagnation(graph):
+    graph.counters()["stagnation"] = int(
+        graph.g.graph["meta"].get("stagnation_max", 5))
+
+
+def test_stagnation_suspended_by_pending_floor(mini_graph):
+    graph, label = mini_graph
+    graph.add_pending({"action_id": "plain_head", "sigma": 0.5, "score": 0.9,
+                       "primitives": []}, "s1", label)
+    _add_floor(graph, label, "floor_nrel")  # queue position 2, below the head
+    _hit_stagnation(graph)
+    term = graph.termination_check()
+    assert "stagnation" in term["conditions"]
+    assert term["suspended_by_floor"] is True and term["stop"] is False
+    assert term["floor_blockers"] == ["floor_nrel"]
+    # the mandatory floor outranks the plain queue head
+    assert graph.next_action() == "floor_nrel"
+
+
+def test_floor_suspension_lifts_after_execution(mini_graph):
+    graph, label = mini_graph
+    graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": []})  # settle best
+    graph.add_pending({"action_id": "plain_tail", "sigma": 0.5, "score": 0.4,
+                       "primitives": []}, "s1", label)  # keep the queue non-empty
+    aid = _add_floor(graph, label, "floor_nrel")
+    _hit_stagnation(graph)
+    assert graph.termination_check()["suspended_by_floor"] is True
+    graph.record_fit({
+        "input_param_file": graph.state(label)["artifacts"]["feedme"],
+        "output_param_file": graph.state(label)["artifacts"]["galfit_nn"],
+        "image_file": "cmp.png", "summary_file": "s.md",
+        "round_status_file": "r.json",
+        "fit_statistics": {"bic_eff": 2000.0, "convergence": {"flag": "ok"}},
+    }, action_id=aid, verdict={"verdict": "PASS"})  # BIC-worse PASS: stagnation stays
+    term = graph.termination_check()
+    assert term["suspended_by_floor"] is False and term["floor_blockers"] == []
+    assert term["stop"] is True and "stagnation" in term["conditions"]
+
+
+def test_budget_exhaustion_beats_floor(mini_graph):
+    graph, label = mini_graph
+    _add_floor(graph, label, "floor_nrel")
+    _hit_stagnation(graph)
+    graph.g.graph["meta"]["N_max"] = graph.n_total()  # budget_left -> 0
+    term = graph.termination_check()
+    assert "budget_exhausted" in term["conditions"]
+    assert term["suspended_by_floor"] is False and term["stop"] is True
+
+
+def test_stagnation_stop_without_floor_unchanged(mini_graph):
+    graph, label = mini_graph
+    graph.add_pending({"action_id": "plain_head", "sigma": 0.5, "score": 0.9,
+                       "code_flags": {"diversity": True},
+                       "primitives": []}, "s1", label)
+    _hit_stagnation(graph)
+    term = graph.termination_check()
+    assert term["stop"] is True and term["suspended_by_floor"] is False
+    assert graph.next_action() == "plain_head"  # plain queue-head behaviour

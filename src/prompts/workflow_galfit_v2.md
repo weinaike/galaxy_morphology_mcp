@@ -86,6 +86,12 @@ Rules:
   the listed never-executed inventory before stopping — take `next_candidate` as usual;
   if the queue cannot express it, use `survey_round(directives=...)` asking the surveyor
   for that inventory.
+- `termination.suspended_by_floor == true`: the stagnation stop is suspended while a
+  mandatory floor candidate (`floor_*` code_flags: n-release, bar direction, disk-Re
+  bottleneck, lens relax-D) is still pending — `next_candidate` already points at the
+  queue's highest-ranked floor entry; execute the floors until the suspension lifts.
+  This guarantees the lock's parameter criterion never rests on an untested mandatory
+  direction. Budget exhaustion still stops unconditionally.
 - **Temporary user constraints** (e.g. "companion exclusion until revoked") are enforced
   by code ONLY when registered: `beam_set_constraint(galaxy_dir, action="add",
   text="<constraint>", forbid_structures_json='["companion"]')` at issue time;

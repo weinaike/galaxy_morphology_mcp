@@ -220,7 +220,7 @@ def survey_round(
                                             "expected_behavior_tag", "code_flags")}}
             for aid in graph.pending_queue()
         ],
-        "next_candidate": graph.pop_next(),
+        "next_candidate": graph.next_action(),
         "best_state": graph.g.graph.get("best_state"),
         "termination": graph.termination_check(),
         "session_id": session_id,

@@ -94,6 +94,9 @@ def build_working_note(g, galaxy_dir: str) -> str:
     term = g.termination_check()
     lines.append(f"- Termination check: stop={term['stop']}, conditions={term['conditions']}, "
                  f"never-executed blockers={term['never_executed_blockers']}")
+    if term.get("suspended_by_floor"):
+        lines.append(f"- Stagnation stop suspended by unexecuted mandatory floor "
+                     f"candidates: {term['floor_blockers']} (execute them before locking)")
 
     lines.append("")
     lines.append("### Execution trajectory (traversal order, one row per iter id)")

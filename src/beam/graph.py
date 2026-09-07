@@ -717,6 +717,25 @@ class BeamGraph:
         return int(self.g.graph["meta"].get("N_max", N_MAX)) \
             + int(rb.get("granted", 0)) - self.n_total()
 
+    def floor_blockers(self) -> list[str]:
+        """Pending candidates carrying a mandatory floor flag, queue-ordered.
+
+        ``floor_*`` code_flags (set by enqueue.ingest) mark hypotheses the
+        workflow declares mandatory (n-release, bar direction, disk-Re
+        bottleneck, lens relax-D). The stagnation stop is suspended while
+        one remains unexecuted, so a lock never rests on an untested
+        mandatory direction (KILOGAS_296 A.2-c1 edge case).
+        """
+        out = []
+        for aid in self.pending_queue():
+            rec = self.g.graph.get("pending", {}).get(aid)
+            if not rec or rec.get("status") != "pending":
+                continue
+            flags = rec.get("code_flags") or {}
+            if any(str(k).startswith("floor_") and v for k, v in flags.items()):
+                out.append(aid)
+        return out
+
     def termination_check(self) -> dict:
         """Step-2 termination + never-executed precheck (hard gate).
 
@@ -724,6 +743,11 @@ class BeamGraph:
         proposed inventory has never been executed and budget remains (the
         precheck's option (a); option (b), a recorded direct refutation,
         removes the blocker from proposal_counts by hand in stage 4).
+
+        Independently, the ``stagnation`` condition is suspended while a
+        mandatory floor candidate is still pending and budget remains (the
+        never-executed precheck is combo-based and cannot see candidate-level
+        floors). ``budget_exhausted`` / ``queue_empty`` always stop.
         """
         meta = self.g.graph.get("meta", {})
         self._ensure_repair_budget()
@@ -737,16 +761,38 @@ class BeamGraph:
         if int(self.counters().get("stagnation", 0)) >= int(meta.get("stagnation_max", STAGNATION_MAX)):
             conditions.append("stagnation")
         blockers = self.never_executed_precheck()
+        floors = self.floor_blockers()
         left = self.budget_left()
         suspended = bool(conditions) and bool(blockers) and left > 0
+        floor_suspended = ("stagnation" in conditions) and bool(floors) and left > 0
         return {
-            "stop": bool(conditions) and not suspended,
+            "stop": bool(conditions) and not suspended and not floor_suspended,
             "conditions": conditions,
             "suspended_by_never_executed": suspended,
             "never_executed_blockers": blockers,
+            "suspended_by_floor": floor_suspended,
+            "floor_blockers": floors,
             "budget_left": left,
             "repair_budget": dict(rb),
         }
+
+    def next_action(self) -> str | None:
+        """Queue head, or the highest-ranked floor candidate during suspension.
+
+        While the stagnation stop is suspended by unexecuted mandatory floors,
+        the next action to execute is the queue's highest-scored floor entry
+        (not the plain queue head), so the mandatory direction is discharged
+        first and the stop takes effect immediately afterwards.
+        """
+        q = self.pending_queue()
+        if not q:
+            return None
+        if self.termination_check().get("suspended_by_floor"):
+            floors = set(self.floor_blockers())
+            for aid in q:
+                if aid in floors:
+                    return aid
+        return q[0]
 
     def snapshot(self) -> dict:
         c = self.counters()

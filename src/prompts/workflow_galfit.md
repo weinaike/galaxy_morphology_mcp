@@ -1,7 +1,7 @@
 
 You must strictly follow this workflow when carrying out galaxy fitting analysis.
 Focus on fitting the physical components of galaxies — disk, bulge, edge-on disk, bar, AGN, lopsidedness, companions, lens — adding model components driven by residual features; higher-order residual features may be left unfitted.
-All image analysis and fitting execution must use the tools in galmcp. Use of any 4_5v_mcp tools is strictly forbidden.
+All image analysis and fitting execution must use the tools in galmcp. Use of any 4_5v_mcp tools is strictly forbidden — **sole exception**: under the `single_agent` ablation arm (beam_init `ablations_json={"single_agent": true}`), the orchestrator performs perception itself and MAY use `4_5v_mcp.analyze_image` to view comparison/original PNGs (image reading only; all fitting still goes through galmcp).
 The system-level specifications, the Physicality Verdict of `generate_galfit_beam_actions`, and the audit results of the `best-round-verifier` subagent are binding; altering them on your own is strictly forbidden.
 
 ## N=+Y Convention (global PA convention of this workflow; hard requirement)

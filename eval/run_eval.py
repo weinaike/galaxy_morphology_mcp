@@ -63,7 +63,13 @@ from eval.evaluate_action import (
 
 def load_model_and_processor(model_path, adapter_path=None, use_4bit=True):
     """加载 Qwen2.5-VL base 模型，可选加载 LoRA adapter。"""
-    from transformers import AutoProcessor, AutoModelForVision2Seq
+    from transformers import AutoProcessor
+    try:
+        # Current Transformers name, including Qwen3-VL support.
+        from transformers import AutoModelForImageTextToText as AutoVLM
+    except ImportError:
+        # Backward compatibility with the existing Qwen2.5-VL environment.
+        from transformers import AutoModelForVision2Seq as AutoVLM
     from peft import PeftModel
 
     print(f"加载 base 模型: {model_path}")
@@ -75,7 +81,7 @@ def load_model_and_processor(model_path, adapter_path=None, use_4bit=True):
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_quant_type="nf4",
         )
-    model = AutoModelForVision2Seq.from_pretrained(model_path, **kwargs)
+    model = AutoVLM.from_pretrained(model_path, **kwargs)
 
     # 如果有 adapter 且非空且不是 "none"，则加载
     if adapter_path and adapter_path.lower() != "none":

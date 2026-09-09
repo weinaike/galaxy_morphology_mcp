@@ -1,0 +1,54 @@
+### Learnability upper bound: continue full SFT on the best raw-reward action
+### per frozen state. This is a diagnostic branch from Qwen3 Galaxy Full-SFT.
+
+### model
+model_name_or_path: /mnt/si00237244jv/default/models/qwen3_vl-8b-galaxy-full-sft-v1
+trust_remote_code: true
+image_max_pixels: 262144
+image_min_pixels: 16384
+video_max_pixels: 16384
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+freeze_language_model: false
+deepspeed: examples/deepspeed/ds_z3_offload_config.json
+
+### dataset
+dataset_dir: /mnt/si00237244jv/default/GalDecomp_Gen/train/llamafactory/data_reward_best_qwen3vl_v1
+dataset: galaxy_reward_best_train
+eval_dataset: galaxy_reward_best_val
+template: qwen3_vl_nothink
+cutoff_len: 12288
+overwrite_cache: true
+preprocessing_num_workers: 8
+dataloader_num_workers: 4
+
+### output
+output_dir: /mnt/si00237244jv/default/models/qwen3_vl-8b-galaxy-reward-best-full-sft-v1
+logging_steps: 1
+save_steps: 50
+save_total_limit: 2
+plot_loss: true
+overwrite_output_dir: false
+save_only_model: false
+report_to: none
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-5
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+bf16: true
+gradient_checkpointing: true
+ddp_timeout: 180000000
+
+### eval
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 50

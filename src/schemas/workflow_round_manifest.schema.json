@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/workflow_round_manifest/1.0",
+  "title": "Workflow Round Manifest",
+  "description": "Mode-specific explicit references for one single-band or multi-band workflow round.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "workflow_mode", "round_id", "object_id", "config_file",
+    "result_files", "summary_file", "comparison_png", "bands"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "workflow_mode": {"enum": ["single-band", "multi-band"]},
+    "round_id": {"type": "string", "minLength": 1},
+    "object_id": {"type": "string", "minLength": 1},
+    "config_file": {"type": "string", "minLength": 1},
+    "result_files": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "summary_file": {"type": "string", "minLength": 1},
+    "comparison_png": {"type": ["string", "null"]},
+    "working_note_file": {"type": ["string", "null"]},
+    "constraint_files": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "parameter_file": {"type": ["string", "null"]},
+    "parameter_files": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "bands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["band", "science_fits", "science_hdu", "result_fits", "result_hdus", "fit_region"],
+        "properties": {
+          "band": {"type": "string", "minLength": 1},
+          "science_fits": {"type": "string", "minLength": 1},
+          "science_hdu": {"type": "integer", "minimum": 0},
+          "sigma_fits": {"type": ["string", "null"]},
+          "sigma_hdu": {"type": ["integer", "null"], "minimum": 0},
+          "mask_fits": {"type": ["string", "null"]},
+          "mask_hdu": {"type": ["integer", "null"], "minimum": 0},
+          "psf_fits": {"type": ["string", "null"]},
+          "psf_hdu": {"type": ["integer", "null"], "minimum": 0},
+          "result_fits": {"type": "string", "minLength": 1},
+          "result_hdus": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["original_hdu", "model_hdu", "residual_hdu"],
+            "properties": {
+              "original_hdu": {"type": "integer", "minimum": 0},
+              "model_hdu": {"type": "integer", "minimum": 0},
+              "residual_hdu": {"type": "integer", "minimum": 0}
+            }
+          },
+          "pixscale_arcsec": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "fit_region": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 0},
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "validation": {"type": "object"}
+        }
+      }
+    }
+  }
+}

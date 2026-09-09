@@ -11,7 +11,13 @@
 - **AGN / 致密核**：Profile type 选用 N 块。**每个波段各自用 WCS 把 Re 转成 px 后必须全部 < 0.2 px** 才能替换为 PSF/AGN；任意一个波段 Re ≥ 0.2 px 则保持 Sersic（不要因 Re 触到 lyric 下界就切换，应放宽下界重新拟合）。
 - **偏心 / Lopsidedness**：将 Disk 的 profile 从 `sersic` 改为 `sersic_f`，启用 m=1 模式（详见下文）。
 - 如果星系已有一个 Disk 成分，而外围（outskirt）残差仍有系统性正残差，可添加第二个 Disk（sersic, n < 1, Re 较大），以捕捉延展结构。
-- **仅关注盘、核球、侧视盘、棒、AGN 核、偏心（Disk 上的 m=1 Fourier 模式）这六种物理成分**，其他残差特征可以选择保留不拟合。
+- **关注盘、核球、侧视盘、棒、AGN 核、偏心（Disk 上的 m=1 Fourier 模式）、伴星系和 Lens**，其他残差特征可以选择保留不拟合。Edge-on Disk 本次不进入优化范围；Lens 允许多波段 workflow 按结构化候选自动提出和执行。
+
+### Lens 的多波段动作边界
+
+- Lens 使用低 n 的 `sersic` Profile，初始 `Re` 位于 Disk 与 Bar 之间，`q > 0.5`。
+- Lens 的新增必须由规则候选生成，并由 `workflow_action_preflight`、参数健康检查、`EVALUATE_REFIT` 和 `best-round-verifier` 逐步审计。
+- Agent／VLM 只能提供候选内的 `parameter_plan`，不能直接写 lyric；新增每轮只能执行一个结构动作。
 
 ## 多波段融合判据（Bar）
 
@@ -141,3 +147,8 @@ GalfitS 的参数格式为 `[initial_value, min, max, step, vary]`，其中 `var
 
 - **优先调初始值**：当拟合异常时，调初始值的优先级高于增加约束
 - 评估 Re 时务必通过 WCS 换算为 pixel 后再判断，不要直接用 arcsec 值与像素比较
+
+### 单 Sersic 与 Disk 的区分
+
+- 首轮未标注的单个 `Sersic` 仅表示当前拟合 profile，不自动代表 Disk。
+- 只有 component analysis 明确确认后才建立 Disk 语义；建立后 Disk 的 `n` 必须固定为 1，不以固定后的 BIC、reduced chi-square 或残差是否改善为条件。

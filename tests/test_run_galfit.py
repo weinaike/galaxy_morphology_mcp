@@ -60,7 +60,7 @@ class TestCreateComparisonPng:
 
     def test_create_comparison_basic(self, real_galfit_output):
         """Test basic comparison PNG creation with real galaxy data."""
-        result = create_comparison_png(real_galfit_output)
+        result, _ = create_comparison_png(real_galfit_output)
 
         assert result is not None
         assert result.endswith("_comparison.png")
@@ -71,7 +71,7 @@ class TestCreateComparisonPng:
         """Test comparison PNG with real sigma normalization."""
         sigma_file = str(test_data_dir / "NGC1097_sigma2014.fits")
 
-        result = create_comparison_png(real_galfit_output, sigma_file=sigma_file)
+        result, _ = create_comparison_png(real_galfit_output, sigma_file=sigma_file)
         assert result is not None
         assert os.path.exists(result)
 
@@ -79,13 +79,13 @@ class TestCreateComparisonPng:
         """Test comparison PNG with real mask overlay."""
         mask_file = str(test_data_dir / "NGC1097.1.finmask_nonan.fits")
 
-        result = create_comparison_png(real_galfit_output, mask_file=mask_file)
+        result, _ = create_comparison_png(real_galfit_output, mask_file=mask_file)
         assert result is not None
         assert os.path.exists(result)
 
     def test_create_comparison_with_all(self, real_galfit_output, test_data_dir):
         """Test comparison PNG with real sigma, mask, fit_region, and param_file."""
-        result = create_comparison_png(
+        result, _ = create_comparison_png(
             real_galfit_output,
             sigma_file=str(test_data_dir / "NGC1097_sigma2014.fits"),
             mask_file=str(test_data_dir / "NGC1097.1.finmask_nonan.fits"),
@@ -97,7 +97,7 @@ class TestCreateComparisonPng:
 
     def test_create_comparison_with_fit_region(self, real_galfit_output):
         """Test comparison PNG with explicit fit_region for coordinate display."""
-        result = create_comparison_png(
+        result, _ = create_comparison_png(
             real_galfit_output,
             fit_region=FIT_REGION,
         )
@@ -106,7 +106,7 @@ class TestCreateComparisonPng:
 
     def test_create_comparison_with_param_file(self, real_galfit_output, test_data_dir):
         """Test comparison PNG with real feedme for component contour overlay."""
-        result = create_comparison_png(
+        result, _ = create_comparison_png(
             real_galfit_output,
             param_file=str(test_data_dir / "NGC1097.feedme"),
         )
@@ -115,7 +115,7 @@ class TestCreateComparisonPng:
 
     def test_create_comparison_mask_cropping(self, real_galfit_output, test_data_dir):
         """Test that real mask (full-frame) is correctly cropped to match FITS dimensions."""
-        result = create_comparison_png(
+        result, _ = create_comparison_png(
             real_galfit_output,
             mask_file=str(test_data_dir / "NGC1097.1.finmask_nonan.fits"),
             fit_region=FIT_REGION,
@@ -128,12 +128,12 @@ class TestCreateComparisonPng:
         invalid_file = tmp_path / "invalid.fits"
         invalid_file.write_text("not a fits file")
 
-        result = create_comparison_png(str(invalid_file))
+        result, _ = create_comparison_png(str(invalid_file))
         assert result is None
 
     def test_create_comparison_missing_sigma_mask(self, real_galfit_output, tmp_path):
         """Test with non-existent sigma and mask files (should still succeed)."""
-        result = create_comparison_png(
+        result, _ = create_comparison_png(
             real_galfit_output,
             sigma_file=str(tmp_path / "nonexistent_sigma.fits"),
             mask_file=str(tmp_path / "nonexistent_mask.fits"),
@@ -154,7 +154,7 @@ class TestCreateComparisonPng:
         fits_out = result.get("optimized_fits_file")
         assert fits_out and os.path.exists(fits_out)
 
-        png = create_comparison_png(
+        png, _ = create_comparison_png(
             fits_out,
             sigma_file=str(test_data_dir / "NGC1097_sigma2014.fits"),
             mask_file=str(test_data_dir / "NGC1097.1.finmask_nonan.fits"),

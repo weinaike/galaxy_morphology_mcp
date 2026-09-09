@@ -101,23 +101,93 @@ def _trace(
     }
 
 
+def _complete_action(
+    action: dict[str, Any] | None,
+    *,
+    traces: list[dict[str, Any]],
+    termination_checks: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if action is None:
+        return None
+    completed = dict(action)
+    action_type = completed.get("action_type")
+    last_rule = traces[-1].get("rule_id", "decision") if traces else "decision"
+    if action_type == "KEEP_AND_CONTINUE":
+        completed.setdefault(
+            "continuation_reason",
+            f"Rule evaluation {last_rule} requires another evidence-changing round.",
+        )
+        completed.setdefault("next_step", "Collect the missing fit or residual evidence and re-analyze.")
+        completed.setdefault("next_transition", "COLLECT_EVIDENCE")
+        completed.setdefault("collector_id", "refresh_numeric_and_vlm_evidence")
+        completed.setdefault(
+            "evidence_targets",
+            ["fit_convergence_summary", "residual_profile", "parameter_health"],
+        )
+    if action_type == "PROPOSE_REPLACE":
+        completed.setdefault("target_model_label", completed.get("replace_from"))
+    if action_type == "CONVERGED":
+        completed.setdefault("termination_checks", termination_checks)
+    return completed
+
+
 def _decision(
     *,
     round_id: str,
     state: str,
-    action: dict[str, Any],
+    action: dict[str, Any] | None,
     traces: list[dict[str, Any]],
     evidence_refs: dict[str, Any] | None,
     thresholds: RuleThresholds,
+    raw_action: dict[str, Any] | None = None,
+    candidate_actions: list[dict[str, Any]] | None = None,
+    workflow_status: str | None = None,
+    termination_checks: list[dict[str, Any]] | None = None,
     refit_evaluation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    checks = termination_checks or []
+    resolved_action = _complete_action(
+        action,
+        traces=traces,
+        termination_checks=checks,
+    )
+    raw = _complete_action(
+        raw_action if raw_action is not None else action,
+        traces=traces,
+        termination_checks=checks,
+    )
+    status = workflow_status or (
+        "CONVERGED"
+        if resolved_action and resolved_action.get("action_type") == "CONVERGED"
+        else "STOPPED_NEEDS_REVIEW"
+        if resolved_action and resolved_action.get("action_type") == "INCONCLUSIVE"
+        else "CONTINUE"
+    )
+    normalized_candidates = []
+    for candidate in candidate_actions or []:
+        item = dict(candidate)
+        item["action"] = _complete_action(
+            item["action"],
+            traces=traces,
+            termination_checks=checks,
+        )
+        normalized_candidates.append(item)
+
     artifact: dict[str, Any] = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "round_id": round_id,
         "rules_version": "component-rules@v1",
         "thresholds_version": thresholds.version,
         "state": state,
-        "action": action,
+        "action": resolved_action,
+        "raw_decision": {
+            "state": state,
+            "action": raw,
+            "rule_trace": traces,
+        },
+        "candidate_actions": normalized_candidates,
+        "workflow_status": status,
+        "termination_checks": checks,
         "rule_trace": traces,
         "evidence_refs": {
             "numeric_evidence": None,
@@ -125,6 +195,15 @@ def _decision(
             **(evidence_refs or {}),
         },
     }
+    if status == "STOPPED_NEEDS_REVIEW":
+        artifact["automation"] = {
+            "policy_version": "rules@v1",
+            "resolution": "rule_terminated",
+            "original_action_type": "INCONCLUSIVE",
+            "resolved_rule_id": traces[-1].get("rule_id") if traces else None,
+            "reason": "No safe executable action was available from the current evidence.",
+            "needs_review": True,
+        }
     if refit_evaluation is not None:
         artifact["refit_evaluation"] = refit_evaluation
     validate(artifact, "decision_artifact")
@@ -135,6 +214,8 @@ def _disk_rule(
     numeric: dict[str, Any],
     vlm: dict[str, Any],
     thresholds: RuleThresholds,
+    *,
+    promotion_target: str | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     extent = _first_value(numeric, "source_extent_psf_ratio")
     geometry = _first_value(numeric, "outer_isophote_geometry") or {}
@@ -155,7 +236,24 @@ def _disk_rule(
     numeric_disk_support = n1 and n2 and n3
 
     if (n1 and (n2 or n3) and disk_label) or (numeric_disk_support and neutral_label):
-        return {"action_type": "PROPOSE_ADD", "component": "disk"}, _trace(
+        action_type = (
+            "PROMOTE_SINGLE_SERSIC_TO_DISK"
+            if promotion_target
+            else "PROPOSE_ADD"
+        )
+        action = {
+            "action_type": action_type,
+            "component": "disk",
+        }
+        if promotion_target:
+            action.update(
+                {
+                    "target_model_label": promotion_target,
+                    "semantic_transition": "single_sersic_to_disk",
+                    "reason_code": "DISK_CONFIRMED_SINGLE_SERSIC_PROMOTION",
+                }
+            )
+        return action, _trace(
             "DISK_N1_N2_N3_V1",
             "SATISFIED",
             inputs=(
@@ -163,8 +261,9 @@ def _disk_rule(
                 "outer_isophote_geometry",
                 "single_sersic_n",
                 "outer_residual_systematic",
-                "central",
-            ),
+            "central",
+            *(() if not promotion_target else ("single_sersic_profile",)),
+        ),
     )
     if n1 and not n2 and not n3 and n_unbound and n_value >= thresholds.spheroid_n_min:
         return {"action_type": "KEEP_AND_CONTINUE"}, _trace(
@@ -445,77 +544,510 @@ def _lens_rule(
     )
 
 
+def _feature_record(numeric: dict[str, Any], name: str) -> dict[str, Any] | None:
+    matches = [
+        item for item in numeric.get("features", []) if item.get("name") == name
+    ]
+    return matches[0] if matches else None
+
+
+def _candidate(
+    rule_id: str,
+    priority: int,
+    action: dict[str, Any],
+    *,
+    status: str = "DEFERRED",
+    detail: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "rule_id": rule_id,
+        "priority": priority,
+        "status": status,
+        "action": action,
+        "detail": detail,
+    }
+
+
+def _parameter_refit_candidates(
+    numeric: dict[str, Any],
+    components: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    candidates: list[dict[str, Any]] = []
+    traces: list[dict[str, Any]] = []
+    fixed = _first_value(numeric, "required_fixed_parameter_health")
+    if isinstance(fixed, list):
+        for item in fixed:
+            role = item.get("component")
+            if item.get("parameter") == "n" and role in components and item.get("satisfied") is False:
+                target = item.get("model_label")
+                expected = item.get("expected_value")
+                if target and expected is not None:
+                    action = {
+                        "action_type": "REFIT_PARAMETERS",
+                        "reason_code": f"{role.upper()}_N_NOT_FIXED",
+                        "parameter_changes": [
+                            {
+                                "target_model_label": target,
+                                "parameter": "n",
+                                "operation": "FIX_VALUE",
+                                "value": expected,
+                                "reason": f"{role} n must satisfy the existing model specification",
+                            }
+                        ],
+                    }
+                    candidates.append(_candidate("REQUIRED_FIXED_PARAMETER_V1", 1, action))
+                    traces.append(
+                        _trace(
+                            "REQUIRED_FIXED_PARAMETER_V1",
+                            "SATISFIED",
+                            inputs=(str(target), "n"),
+                        )
+                    )
+    center = _first_value(numeric, "center_constraint_health")
+    if isinstance(center, list):
+        reference = next(
+            (item for item in center if item.get("is_reference") is True),
+            None,
+        )
+        reference_label = reference.get("model_label") if reference else None
+        for item in center:
+            if item.get("is_reference") is True:
+                continue
+            offset = item.get("offset_from_reference")
+            invalid = item.get("constraint_present") is False or (
+                isinstance(offset, (int, float)) and offset != 0
+            )
+            if invalid and item.get("model_label") and reference_label:
+                action = {
+                    "action_type": "REFIT_PARAMETERS",
+                    "reason_code": "CENTER_CONSTRAINT_MISSING",
+                    "parameter_changes": [
+                        {
+                            "target_model_label": item["model_label"],
+                            "parameter": "x,y",
+                            "operation": "LINK_CENTER",
+                            "reference_model_label": reference_label,
+                        }
+                    ],
+                }
+                candidates.append(_candidate("CENTER_CONSTRAINT_V1", 1, action))
+                traces.append(
+                    _trace(
+                        "CENTER_CONSTRAINT_V1",
+                        "SATISFIED",
+                        inputs=(str(item["model_label"]), str(reference_label)),
+                    )
+                )
+    health = _first_value(numeric, "component_parameter_health")
+    if isinstance(health, list):
+        for component in health:
+            role = component.get("component")
+            if role not in components:
+                continue
+            for item in component.get("parameters", []):
+                if item.get("at_boundary") is not True:
+                    continue
+                target = component.get("model_label")
+                parameter = item.get("parameter")
+                if not target or not parameter:
+                    continue
+                if item.get("vary") is False:
+                    operation = "REMOVE_NONREQUIRED_CONSTRAINT"
+                    change = {
+                        "target_model_label": target,
+                        "parameter": parameter,
+                        "operation": operation,
+                        "reason": "A non-required fixed parameter is at its configured boundary",
+                    }
+                else:
+                    operation = "SET_BOUNDS"
+                    change = {
+                        "target_model_label": target,
+                        "parameter": parameter,
+                        "operation": operation,
+                        "lower": item.get("lower"),
+                        "upper": item.get("upper"),
+                        "reason": "Parameter health reports an active boundary hit",
+                    }
+                action = {
+                    "action_type": "REFIT_PARAMETERS",
+                    "reason_code": "PARAMETER_BOUNDARY_HIT",
+                    "parameter_changes": [change],
+                }
+                candidates.append(_candidate("PARAMETER_HEALTH_V1", 1, action))
+                traces.append(
+                    _trace(
+                        "PARAMETER_HEALTH_V1",
+                        "SATISFIED",
+                        inputs=(str(target), str(parameter)),
+                    )
+                )
+    if "fourier_m1" in components:
+        targets = _first_value(numeric, "required_fixed_parameter_health")
+        target_labels = [
+            item.get("target_model_labels", [])
+            for item in targets or []
+            if item.get("parameter") == "fourier_m1_target"
+        ]
+        if target_labels and not target_labels[0]:
+            action = {
+                "action_type": "REFIT_PARAMETERS",
+                "reason_code": "FOURIER_M1_TARGET_MISSING",
+                "parameter_changes": [
+                    {
+                        "target_model_label": "disk",
+                        "parameter": "profile",
+                        "operation": "SET_INITIAL",
+                        "value": "sersic_f",
+                        "reason": "Fourier m=1 must be attached to the Disk profile",
+                    }
+                ],
+            }
+            candidates.append(_candidate("FOURIER_M1_TARGET_V1", 1, action))
+            traces.append(_trace("FOURIER_M1_TARGET_V1", "SATISFIED", inputs=("disk",)))
+    return candidates, traces
+
+
+def _remove_candidates(
+    numeric: dict[str, Any],
+    components: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    candidates: list[dict[str, Any]] = []
+    traces: list[dict[str, Any]] = []
+    local = _first_value(numeric, "component_local_residual_facts")
+    facts = local if isinstance(local, list) else []
+    if not facts:
+        return candidates, traces
+    protected = {"disk", "edge_on_disk", "agn"}
+    for fact in facts:
+        role = fact.get("component")
+        target = fact.get("model_label")
+        if role not in components or not target:
+            continue
+        if role in protected:
+            traces.append(
+                _trace(
+                    "REMOVE_PROTECTION_V1",
+                    "NOT_APPLICABLE",
+                    inputs=(role, target),
+                )
+            )
+            continue
+        if role == "bar" and fact.get("diffraction_psf_conflict") is True:
+            traces.append(
+                _trace(
+                    "BAR_DIFFRACTION_CONFLICT_V1",
+                    "INCONCLUSIVE",
+                    inputs=(target,),
+                    detail="diffraction_psf conflict is not a removal decision.",
+                )
+            )
+            continue
+        issue = any(
+            fact.get(name) is True
+            for name in (
+                "parameter_boundary",
+                "degenerate",
+                "position_drift",
+                "negative_residual",
+                "overfit",
+                "role_conflict",
+            )
+        )
+        if fact.get("support_evidence") is False and fact.get("data_quality_ok") is True and issue:
+            action = {
+                "action_type": "PROPOSE_REMOVE",
+                "component": role,
+                "target_model_label": target,
+                "reason_code": "COMPONENT_SUPPORT_FALSE",
+            }
+            candidates.append(_candidate("COMPONENT_REMOVE_V1", 3, action))
+            traces.append(
+                _trace(
+                    "COMPONENT_REMOVE_V1",
+                    "SATISFIED",
+                    inputs=(role, target),
+                )
+            )
+    return candidates, traces
+
+
+def _termination_checks(
+    numeric: dict[str, Any],
+    components: set[str],
+    traces: list[dict[str, Any]],
+    has_structural_candidate: bool,
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+
+    fit = _first_value(numeric, "fit_convergence_summary")
+    if isinstance(fit, dict) and fit.get("fit_succeeded") is True:
+        checks.append({"check_id": "FIT_CONVERGENCE", "status": "PASS"})
+    elif isinstance(fit, dict) and fit.get("fit_succeeded") is False:
+        checks.append({"check_id": "FIT_CONVERGENCE", "status": "FAIL"})
+    else:
+        checks.append({"check_id": "FIT_CONVERGENCE", "status": "UNAVAILABLE"})
+
+    residual = _first_value(numeric, "absolute_residual_quality")
+    if isinstance(residual, dict):
+        clean = residual.get("one_d_clean") is True and residual.get("central_elongation") is False
+        checks.append(
+            {
+                "check_id": "ABSOLUTE_RESIDUAL",
+                "status": "PASS" if clean else "FAIL",
+                "detail": "Current absolute residual quality",
+            }
+        )
+    else:
+        checks.append({"check_id": "ABSOLUTE_RESIDUAL", "status": "UNAVAILABLE"})
+
+    parameter_health = _first_value(numeric, "component_parameter_health")
+    if isinstance(parameter_health, list) and parameter_health:
+        healthy = all(
+            isinstance(item.get("value"), (int, float))
+            and item.get("at_boundary") is not True
+            for component in parameter_health
+            for item in component.get("parameters", [])
+            if item.get("value") is not None
+        )
+        checks.append(
+            {
+                "check_id": "PARAMETER_HEALTH",
+                "status": "PASS" if healthy else "FAIL",
+            }
+        )
+    else:
+        checks.append({"check_id": "PARAMETER_HEALTH", "status": "UNAVAILABLE"})
+
+    center = _first_value(numeric, "center_constraint_health")
+    if isinstance(center, list) and center:
+        healthy = all(
+            item.get("is_reference") is True
+            or (
+                item.get("constraint_present") is True
+                and item.get("offset_from_reference") == 0
+            )
+            for item in center
+        )
+        checks.append(
+            {
+                "check_id": "CENTER_CONSTRAINT",
+                "status": "PASS" if healthy else "FAIL",
+            }
+        )
+    else:
+        checks.append({"check_id": "CENTER_CONSTRAINT", "status": "UNAVAILABLE"})
+
+    required = _first_value(numeric, "required_fixed_parameter_health")
+    required_items = [
+        item for item in required or []
+        if item.get("parameter") != "fourier_m1_target"
+        and item.get("component") in components
+    ]
+    if "fourier_m1" in components:
+        required_items.extend(
+            item for item in required or [] if item.get("parameter") == "fourier_m1_target"
+        )
+    if required_items and all(item.get("satisfied") is True for item in required_items):
+        checks.append({"check_id": "REQUIRED_FIXED_PARAMETERS", "status": "PASS"})
+    else:
+        checks.append(
+            {
+                "check_id": "REQUIRED_FIXED_PARAMETERS",
+                "status": "UNAVAILABLE" if not required_items else "FAIL",
+            }
+        )
+
+    inconclusive = any(item.get("outcome") == "INCONCLUSIVE" for item in traces)
+    checks.append(
+        {
+            "check_id": "RULES_COMPLETE",
+            "status": "PASS"
+            if not has_structural_candidate and not inconclusive
+            else "FAIL",
+        }
+    )
+    checks.append(
+        {
+            "check_id": "NO_HIGH_PRIORITY_INCONCLUSIVE",
+            "status": "PASS" if not inconclusive else "FAIL",
+        }
+    )
+    return checks
+
+
+def _select_candidates(
+    candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    if not candidates:
+        return None, []
+    ordered = sorted(
+        enumerate(candidates),
+        key=lambda item: (item[1]["priority"], item[0]),
+    )
+    selected_index = ordered[0][0]
+    result = []
+    for index, candidate in enumerate(candidates):
+        item = dict(candidate)
+        item["status"] = "SELECTED" if index == selected_index else (
+            "INCONCLUSIVE"
+            if candidate["action"].get("action_type") == "INCONCLUSIVE"
+            else "DEFERRED"
+        )
+        result.append(item)
+    return candidates[selected_index]["action"], result
+
+
 def decide_proposal(
     *,
     round_id: str,
     numeric_evidence: dict[str, Any],
     vlm_evidence: dict[str, Any],
     current_components: Iterable[str],
+    current_profile: Iterable[Mapping[str, Any]] | None = None,
     evidence_refs: dict[str, Any] | None = None,
     thresholds: RuleThresholds | None = None,
 ) -> dict[str, Any]:
-    """Return exactly one deterministic proposal without executing it."""
+    """Evaluate every applicable rule, then select one proposal action."""
 
     thresholds = thresholds or RuleThresholds()
     validate(numeric_evidence, "numeric_evidence")
     validate(vlm_evidence, "vlm_evidence")
     if numeric_evidence["round_id"] != round_id or vlm_evidence["round_id"] != round_id:
         raise ValueError("round_id must match both evidence artifacts")
+    traces: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    components = set(current_components)
+    profile = [dict(item) for item in (current_profile or [])]
+    unclassified_sersic = [
+        item for item in profile
+        if str(item.get("model_type", item.get("type", ""))).lower() in {"sersic", "sersic_f"}
+        and str(item.get("semantic_label", "unclassified")).lower()
+        in {"unclassified", "single_sersic", "none", ""}
+    ]
+    promotion_target = (
+        str(unclassified_sersic[0].get("component_id") or unclassified_sersic[0].get("model_label"))
+        if len(unclassified_sersic) == 1
+        else None
+    )
     if vlm_evidence["parse_status"] != "OK":
-        return _decision(
-            round_id=round_id,
-            state="PROPOSE",
-            action={"action_type": "INCONCLUSIVE"},
-            traces=[
-                _trace(
-                    "VLM_UNAVAILABLE_V1",
-                    "INCONCLUSIVE",
-                    detail=f"VLM parse status: {vlm_evidence['parse_status']}",
-                )
-            ],
-            evidence_refs=evidence_refs,
-            thresholds=thresholds,
+        traces.append(
+            _trace(
+                "VLM_UNAVAILABLE_V1",
+                "INCONCLUSIVE",
+                detail=f"VLM parse status: {vlm_evidence['parse_status']}; VLM-dependent rules remain inconclusive.",
+            )
         )
 
-    components = set(current_components)
-    ordered_rules: list[tuple[bool, Any]] = [
-        (not ({"disk", "edge_on_disk"} & components), _disk_rule),
-        ("disk" in components and "edge_on_disk" not in components, _edge_on_rule),
+    refit_candidates, refit_traces = _parameter_refit_candidates(numeric_evidence, components)
+    candidates.extend(refit_candidates)
+    traces.extend(refit_traces)
+    remove_candidates, remove_traces = _remove_candidates(numeric_evidence, components)
+    candidates.extend(remove_candidates)
+    traces.extend(remove_traces)
+
+    ordered_rules: list[tuple[int, bool, Any]] = [
+        (4, not ({"disk", "edge_on_disk"} & components), _disk_rule),
+        (3, "disk" in components and "edge_on_disk" not in components, _edge_on_rule),
         (
+            4,
             not ({"bulge", "agn", "compact_central_source_candidate"} & components),
             _central_source_rule,
         ),
-        ("bar" not in components and bool({"disk", "edge_on_disk"} & components), _bar_rule),
-        ("lens" not in components and "bar" in components, _lens_rule),
-        ("fourier_m1" not in components and bool({"disk", "edge_on_disk"} & components), _m1_rule),
-        ("companion" not in components, _companion_rule),
+        (4, "bar" not in components and bool({"disk", "edge_on_disk"} & components), _bar_rule),
+        (4, "lens" not in components and "bar" in components, _lens_rule),
+        (4, "fourier_m1" not in components and bool({"disk", "edge_on_disk"} & components), _m1_rule),
+        (4, "companion" not in components, _companion_rule),
     ]
-    traces: list[dict[str, Any]] = []
-    for applicable, rule in ordered_rules:
+    for priority, applicable, rule in ordered_rules:
         if not applicable:
             continue
         if rule is _m1_rule:
-            action, trace = rule(numeric_evidence, thresholds)
+            rule_action, trace = rule(numeric_evidence, thresholds)
         else:
-            action, trace = rule(numeric_evidence, vlm_evidence, thresholds)
+            if rule is _disk_rule:
+                rule_action, trace = rule(
+                    numeric_evidence,
+                    vlm_evidence,
+                    thresholds,
+                    promotion_target=promotion_target,
+                )
+            else:
+                rule_action, trace = rule(numeric_evidence, vlm_evidence, thresholds)
         traces.append(trace)
-        if action is not None:
-            return _decision(
-                round_id=round_id,
-                state="PROPOSE",
-                action=action,
-                traces=traces,
-                evidence_refs=evidence_refs,
-                thresholds=thresholds,
+        if rule_action is not None:
+            candidates.append(
+                _candidate(
+                    trace["rule_id"],
+                    priority,
+                    rule_action,
+                )
             )
 
+    structural_candidates = [
+        item for item in candidates
+        if item["action"].get("action_type") in {
+            "PROPOSE_ADD", "PROPOSE_REMOVE", "PROPOSE_REPLACE",
+            "PROMOTE_SINGLE_SERSIC_TO_DISK", "REFIT_PARAMETERS"
+        }
+    ]
+    inconclusive = any(
+        item.get("outcome") == "INCONCLUSIVE" for item in traces
+    )
+    selected, candidate_artifact = _select_candidates(candidates)
+    if selected is None:
+        checks = _termination_checks(
+            numeric_evidence,
+            components,
+            traces,
+            bool(structural_candidates),
+        )
+        if all(item["status"] == "PASS" for item in checks):
+            selected = {
+                "action_type": "CONVERGED",
+                "reason_code": "ALL_TERMINATION_GATES_PASS",
+            }
+            candidate_artifact = []
+        elif inconclusive:
+            selected = {"action_type": "INCONCLUSIVE"}
+            candidate_artifact = []
+        else:
+            selected = {
+                "action_type": "KEEP_AND_CONTINUE",
+                "continuation_reason": "No structural candidate is actionable, but termination gates are not complete.",
+                "next_step": "Collect the missing fit, constraint or residual evidence and re-analyze.",
+                "next_transition": "COLLECT_EVIDENCE",
+                "evidence_targets": [
+                    "fit_convergence_summary",
+                    "residual_profile",
+                    "parameter_health",
+                ],
+            }
+            candidate_artifact = []
+    else:
+        checks = _termination_checks(
+            numeric_evidence,
+            components,
+            traces,
+            bool(structural_candidates),
+        )
     return _decision(
         round_id=round_id,
         state="PROPOSE",
-        action={"action_type": "KEEP_AND_CONTINUE"},
+        action=selected,
+        raw_action=selected,
         traces=traces or [_trace("NO_APPLICABLE_RULE_V1", "NOT_APPLICABLE")],
+        candidate_actions=candidate_artifact,
         evidence_refs=evidence_refs,
         thresholds=thresholds,
+        workflow_status=(
+            "CONVERGED"
+            if selected.get("action_type") == "CONVERGED"
+            else "STOPPED_NEEDS_REVIEW"
+            if selected.get("action_type") == "INCONCLUSIVE"
+            else "CONTINUE"
+        ),
+        termination_checks=checks,
     )
 
 
@@ -524,74 +1056,195 @@ def evaluate_refit(
     round_id: str,
     component: str,
     refit_evaluation: dict[str, Any],
+    candidate_action_type: str | None = None,
+    candidate_reason_code: str | None = None,
     evidence_refs: dict[str, Any] | None = None,
     thresholds: RuleThresholds | None = None,
 ) -> dict[str, Any]:
-    """Accept, reject or defer one completed refit using deterministic gates."""
+    """Evaluate one completed refit with operation-aware gates."""
 
     thresholds = thresholds or RuleThresholds()
-    required = ("fit_converged", "residual_improved", "parameters_physical")
-    missing = [name for name in required if name not in refit_evaluation]
+    evaluation = dict(refit_evaluation)
+    if "residual_outcome" not in evaluation:
+        legacy = evaluation.get("residual_improved")
+        evaluation["residual_outcome"] = {
+            "yes": "improved",
+            "no": "worse",
+            "inconclusive": "inconclusive",
+        }.get(legacy, "inconclusive")
+    evaluation.pop("residual_improved", None)
+    action_type = candidate_action_type or evaluation.get("candidate_action_type") or "PROPOSE_ADD"
+    evaluation["candidate_action_type"] = action_type
+    if candidate_reason_code:
+        evaluation["reason_code"] = candidate_reason_code
+    mandatory_disk_n = (
+        candidate_reason_code in {
+            "DISK_N_NOT_FIXED",
+            "DISK_CONFIRMED_SINGLE_SERSIC_PROMOTION",
+        }
+        and action_type in {"REFIT_PARAMETERS", "PROMOTE_SINGLE_SERSIC_TO_DISK"}
+    )
+    required = ("fit_converged", "residual_outcome", "parameters_physical")
+    missing = [name for name in required if name not in evaluation]
     if missing:
         raise ValueError(f"refit_evaluation missing fields: {', '.join(missing)}")
 
     traces: list[dict[str, Any]] = []
-    gate_values = [refit_evaluation[name] for name in required]
-    if "inconclusive" in gate_values:
+    gate_values = [evaluation[name] for name in required]
+    if mandatory_disk_n:
+        mandatory_gates = ("fit_converged", "parameters_physical")
+        if any(evaluation[name] == "inconclusive" for name in mandatory_gates):
+            traces.append(
+                _trace(
+                    "MANDATORY_DISK_N_SPEC_V1",
+                    "INCONCLUSIVE",
+                    inputs=mandatory_gates,
+                    detail=(
+                        "Disk n=1 is required after Disk confirmation; fit quality "
+                        "is recorded but is not a rejection gate."
+                    ),
+                )
+            )
+            action = {"action_type": "INCONCLUSIVE"}
+        elif any(evaluation[name] == "no" for name in mandatory_gates):
+            failed = [name for name in mandatory_gates if evaluation[name] == "no"]
+            traces.append(
+                _trace(
+                    "MANDATORY_DISK_N_SPEC_V1",
+                    "NOT_SATISFIED",
+                    inputs=mandatory_gates,
+                    unmet=failed,
+                    detail=(
+                        "The mandatory Disk n=1 refit still requires a converged, "
+                        "physical result."
+                    ),
+                )
+            )
+            action = {"action_type": "REJECT_REFIT", "component": component}
+        elif evaluation.get("boundary_hits") or evaluation.get("degeneracy_warnings"):
+            health_inputs = tuple(
+                evaluation.get("boundary_hits", [])
+                + evaluation.get("degeneracy_warnings", [])
+            )
+            traces.append(
+                _trace(
+                    "MANDATORY_DISK_N_SPEC_V1",
+                    "NOT_SATISFIED",
+                    inputs=health_inputs,
+                    detail="The mandatory refit produced a parameter-health warning.",
+                )
+            )
+            action = {"action_type": "REJECT_REFIT", "component": component}
+        else:
+            traces.append(
+                _trace(
+                    "MANDATORY_DISK_N_SPEC_V1",
+                    "SATISFIED",
+                    inputs=mandatory_gates,
+                    detail=(
+                        "Disk n=1 is a specification requirement; residual, BIC and "
+                        "reduced-chisq changes are retained for audit only."
+                    ),
+                )
+            )
+            action = {"action_type": "ACCEPT_REFIT", "component": component}
+    elif "inconclusive" in gate_values:
         traces.append(_trace("REFIT_PRIMARY_GATES_V1", "INCONCLUSIVE", inputs=required))
         action = {"action_type": "INCONCLUSIVE"}
-    elif "no" in gate_values:
-        failed = [name for name in required if refit_evaluation[name] == "no"]
+    elif "no" in gate_values or evaluation["residual_outcome"] == "worse":
+        failed = [
+            name for name in required
+            if evaluation[name] == "no"
+        ]
+        if evaluation["residual_outcome"] == "worse":
+            failed.append("residual_outcome")
         traces.append(
             _trace("REFIT_PRIMARY_GATES_V1", "NOT_SATISFIED", inputs=required, unmet=failed)
         )
         action = {"action_type": "REJECT_REFIT", "component": component}
-    elif refit_evaluation.get("boundary_hits"):
+    elif evaluation.get("boundary_hits") or evaluation.get("degeneracy_warnings"):
         traces.append(
             _trace(
-                "REFIT_BOUNDARY_GATE_V1",
+                "REFIT_HEALTH_GATE_V1",
                 "NOT_SATISFIED",
-                inputs=tuple(refit_evaluation["boundary_hits"]),
+                inputs=tuple(
+                    evaluation.get("boundary_hits", [])
+                    + evaluation.get("degeneracy_warnings", [])
+                ),
             )
         )
         action = {"action_type": "REJECT_REFIT", "component": component}
     else:
-        traces.append(_trace("REFIT_PRIMARY_GATES_V1", "SATISFIED", inputs=required))
-        optional_components = {"agn", "compact_central_source_candidate", "companion", "lens"}
-        if component in optional_components:
-            bic = refit_evaluation.get("bic")
-            if not bic or not bic.get("comparable", False):
-                traces.append(_trace("OPTIONAL_COMPONENT_BIC_GATE_V1", "INCONCLUSIVE"))
-                action = {"action_type": "INCONCLUSIVE"}
-            elif bic["bic_gain"] < thresholds.optional_bic_gain:
+        accepted_residual = (
+            evaluation["residual_outcome"] in {"improved", "equivalent"}
+            and (
+                action_type != "PROPOSE_ADD"
+                or evaluation["residual_outcome"] == "improved"
+            )
+        )
+        if not accepted_residual:
+            traces.append(
+                _trace(
+                    "REFIT_RESIDUAL_GATE_V1",
+                    "NOT_SATISFIED",
+                    inputs=("residual_outcome",),
+                )
+            )
+            action = {"action_type": "REJECT_REFIT", "component": component}
+        else:
+            traces.append(_trace("REFIT_PRIMARY_GATES_V1", "SATISFIED", inputs=required))
+            optional_components = {
+                "agn", "compact_central_source_candidate", "companion", "lens"
+            }
+            if action_type == "PROPOSE_ADD" and component in optional_components:
+                bic = evaluation.get("bic")
+                if not bic or not bic.get("comparable", False):
+                    traces.append(_trace("OPTIONAL_COMPONENT_BIC_GATE_V1", "INCONCLUSIVE"))
+                    action = {"action_type": "INCONCLUSIVE"}
+                elif bic["bic_gain"] < thresholds.optional_bic_gain:
+                    traces.append(
+                        _trace(
+                            "OPTIONAL_COMPONENT_BIC_GATE_V1",
+                            "NOT_SATISFIED",
+                            detail=(
+                                f"BIC_gain={bic['bic_gain']:.6g} < "
+                                f"{thresholds.optional_bic_gain:.6g}"
+                            ),
+                        )
+                    )
+                    action = {"action_type": "REJECT_REFIT", "component": component}
+                else:
+                    traces.append(_trace("OPTIONAL_COMPONENT_BIC_GATE_V1", "SATISFIED"))
+                    action = {"action_type": "ACCEPT_REFIT", "component": component}
+            else:
                 traces.append(
                     _trace(
-                        "OPTIONAL_COMPONENT_BIC_GATE_V1",
-                        "NOT_SATISFIED",
-                        detail=(
-                            f"BIC_gain={bic['bic_gain']:.6g} < "
-                            f"{thresholds.optional_bic_gain:.6g}"
-                        ),
+                        "PRIMARY_COMPONENT_PHYSICAL_GATE_V1",
+                        "SATISFIED",
                     )
                 )
-                action = {"action_type": "REJECT_REFIT", "component": component}
-            else:
-                traces.append(_trace("OPTIONAL_COMPONENT_BIC_GATE_V1", "SATISFIED"))
                 action = {"action_type": "ACCEPT_REFIT", "component": component}
-        else:
-            bic = refit_evaluation.get("bic")
-            detail = None
-            if bic and bic.get("comparable") and bic.get("bic_gain", 0) < 0:
-                detail = "Primary structure accepted on physical and residual gates despite BIC loss."
-            traces.append(_trace("PRIMARY_COMPONENT_PHYSICAL_GATE_V1", "SATISFIED", detail=detail))
-            action = {"action_type": "ACCEPT_REFIT", "component": component}
 
+    candidate = {
+        "rule_id": "REFIT_EVALUATION_V1",
+        "priority": 1,
+        "status": "SELECTED",
+        "action": action,
+        "detail": action_type,
+    }
     return _decision(
         round_id=round_id,
         state="EVALUATE_REFIT",
         action=action,
+        raw_action=action,
+        candidate_actions=[candidate],
         traces=traces,
         evidence_refs=evidence_refs,
         thresholds=thresholds,
-        refit_evaluation=refit_evaluation,
+        workflow_status=(
+            "STOPPED_NEEDS_REVIEW"
+            if action.get("action_type") == "INCONCLUSIVE"
+            else "CONTINUE"
+        ),
+        refit_evaluation=evaluation,
     )

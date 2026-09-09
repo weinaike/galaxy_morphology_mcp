@@ -27,6 +27,8 @@
         "action_type": {
           "enum": [
             "PROPOSE_ADD", "PROPOSE_REPLACE", "PROPOSE_REMOVE",
+            "PROMOTE_SINGLE_SERSIC_TO_DISK",
+            "PROMOTE_SINGLE_SERSIC_TO_DISK",
             "REFIT_PARAMETERS", "KEEP_AND_CONTINUE", "CONVERGED", "INCONCLUSIVE",
             "ACCEPT_REFIT", "REJECT_REFIT"
           ]
@@ -60,15 +62,20 @@
         },
         "resolved_state": {
           "enum": ["resolved", "unresolved", "inconclusive", null]
-        }
+        },
+        "semantic_transition": {"enum": ["single_sersic_to_disk", null]}
       },
       "allOf": [
         {
-          "if": {"properties": {"action_type": {"enum": ["PROPOSE_ADD", "PROPOSE_REMOVE", "ACCEPT_REFIT", "REJECT_REFIT"]}}},
+          "if": {"properties": {"action_type": {"enum": ["PROPOSE_ADD", "PROPOSE_REMOVE", "PROMOTE_SINGLE_SERSIC_TO_DISK", "ACCEPT_REFIT", "REJECT_REFIT"]}}},
           "then": {
             "properties": {"component": {"type": "string"}},
             "required": ["component"]
           }
+        },
+        {
+          "if": {"properties": {"action_type": {"const": "PROMOTE_SINGLE_SERSIC_TO_DISK"}}},
+          "then": {"required": ["component", "target_model_label", "semantic_transition"]}
         },
         {
           "if": {"properties": {"action_type": {"const": "PROPOSE_REPLACE"}}},

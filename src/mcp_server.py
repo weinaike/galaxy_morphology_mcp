@@ -20,6 +20,20 @@ from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
+from tools.workflow_lifecycle import (
+    build_workflow_round_manifest,
+    workflow_capabilities,
+    workflow_propose_round,
+    workflow_resolve_round,
+    record_workflow_fit_lifecycle,
+    workflow_analysis_artifact,
+    workflow_action_config,
+    workflow_action_preflight,
+    workflow_evaluate_refit,
+    workflow_complete_candidate,
+    workflow_verify_best_round,
+    workflow_lock_best_round,
+)
 from tools.fourier_mode_analysis import fourier_mode_analysis
 from tools.bar_lopsidedness_detection import (
     detect_bar_lopsidedness,
@@ -46,6 +60,24 @@ def _register_tools_and_prompts():
     """Conditionally register tools and prompts based on environment variables."""
     has_galfit = bool(os.getenv("GALFIT_BIN"))
     has_galfits = bool(os.getenv("GALFITS_BIN"))
+    workflow_pilot = os.getenv("COMPONENT_ANALYSIS_WORKFLOW_PILOT", "0").lower() in {
+        "1", "true", "yes"
+    }
+
+    if workflow_pilot and (has_galfit or has_galfits):
+        app.add_tool(workflow_capabilities)
+        app.add_tool(build_workflow_round_manifest)
+        app.add_tool(workflow_propose_round)
+        app.add_tool(workflow_resolve_round)
+        app.add_tool(workflow_analysis_artifact)
+        app.add_tool(workflow_action_preflight)
+        app.add_tool(workflow_action_config)
+        app.add_tool(workflow_evaluate_refit)
+        app.add_tool(workflow_complete_candidate)
+        app.add_tool(workflow_verify_best_round)
+        app.add_tool(workflow_lock_best_round)
+        app.add_tool(record_workflow_fit_lifecycle)
+        logger.info("Registered structured workflow bridge (pilot switch is enabled)")
 
     if has_galfit:
         app.add_tool(run_galfit)

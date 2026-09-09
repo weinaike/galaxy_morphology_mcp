@@ -85,6 +85,17 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 ## Galfit 执行规范
 - 执行 Galfit 优化，必须使用 galmcp 中的run_galfit工具， 不能直接使用用bash工具执行 galfit 命令行。因为 run_galfit 工具会自动处理一些后续的分析步骤（如残差图生成、参数解析等），直接调用 galfit 可能会导致后续流程无法
 
+## 结构化 Workflow pilot 规范
+
+- 只有 `COMPONENT_ANALYSIS_WORKFLOW_PILOT=1` 显式开启 workflow pilot 时，才消费结构化 workflow bridge；未开启时保留现有单波段流程，不由 proposal-only shadow 接管拟合。
+- 每轮使用 `build_workflow_round_manifest` 登记当前 feedme、`run_galfit` 返回的 result FITS、summary、comparison PNG 和 Working Note 的明确路径，禁止用 glob 或文件名推断轮次。
+- `decision_artifact.resolved_decision` 是唯一机器动作来源；`raw_decision`、`component_analysis` Markdown 和 Working Note 仅用于解释与审计。Agent／VLM 只能在规则候选内排序、解释证据和提供结构化 `parameter_plan`，不得直接写 feedme 或执行拟合。
+- 通过 `workflow_action_preflight` 和 `workflow_action_config` 生成新的 `_iterN` feedme，原始 feedme 不得修改。生成后仍必须调用现有 MCP `run_galfit`，不得在 shell 中运行 GALFIT。
+- MCP 返回后立即调用 `record_workflow_fit_lifecycle`，保存 raw／resolved decision、候选和执行 action、拟合结果、refit verdict、对象级 `PolicyState`、`needs_review` 和下一步。
+- 每个实际执行的候选拟合都必须调用 `workflow_evaluate_refit`，由确定性证据返回 `ACCEPT_REFIT`、`REJECT_REFIT` 或 `STOPPED_NEEDS_REVIEW`；不得从 Working Note 推断结果。
+- 一轮最多执行一个结构动作。`PROPOSE_REMOVE` 在真实局部残差事实和 remove pilot 通过前只能 review-only；Edge-on Disk 不在本次优化范围内；`CONVERGED` 后必须调用逻辑工具 `workflow_verify_best_round`，再用 `workflow_lock_best_round` 提交 verifier artifact 引用，不能提交字符串状态或直接调用客户端 subagent 落锁。
+- `STOPPED_NEEDS_REVIEW` 只停止自动成分决策循环。已有有效拟合时完成报告并标记 `COMPLETED_WITH_REVIEW`、`UNLOCKED`；没有有效拟合时标记 `FAILED_NEEDS_REVIEW`，不得伪装成收敛。
+
 
 
 # Working Note 的撰写规范
@@ -152,7 +163,6 @@ G) galaxy.cons      # Parameter constraint file (empty string)
   - 两个轮次的差异仅在 F1时，F1 成分的 amplitude 大于 阈值 0.02 就可以保留,选择包含 F1 成分的轮次。
 
 ### 落锁强制审计（enforcement）
-上述六维标准在执行中容易被遗漏，因此**正式锁定最优轮次之前，必须调用 subagent `best-round-verifier`**（定义见 `.claude/agents/best-round-verifier.md`）对候选轮做独立、机械、可追溯的校验：
-- 该 subagent 为**只读审计**，按上述六个维度逐条核查并给出证据，返回 `verdict: PASS|FAIL`。
-- `FAIL` → 严禁落锁，按其"阻断性问题"清单修复后重拟、复审至 `PASS`；`PASS`（含 WARN）方可落锁。
-- 工作流（`workflow_galfit` / `workflow_galfits`）的阶段三锁定步骤已内嵌此审计门。
+正式锁定最优轮次之前，必须调用共享逻辑工具 `workflow_verify_best_round`。它读取 workflow manifest、lifecycle、拟合产物和 component analysis 证据，生成 `workflow-verifier@v1` artifact；客户端只能提交 schema 约束的 `verifier_assessment`，不能直接提交 `PASS`。
+- verifier artifact 的 `verdict=PASS` 且 `lockable=true` 后，才能调用 `workflow_lock_best_round`，并且只能传入 verifier artifact 文件引用。
+- `FAIL` 或 `INCONCLUSIVE` 都禁止落锁；`STOPPED_NEEDS_REVIEW` 永远保持 `UNLOCKED`。Claude Code 的 `.claude/agents/best-round-verifier.md` 只是该共享 verifier 的调用包装层，不保留第二套判定逻辑。

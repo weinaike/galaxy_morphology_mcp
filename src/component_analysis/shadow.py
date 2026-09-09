@@ -12,7 +12,12 @@ from schemas import validate
 
 from .artifact_adapter import extract_numeric_evidence_from_manifest
 from .candidate_overlay import create_candidate_overlay
-from .policy import PolicyState, decide_proposal_with_policy
+from .policy import (
+    PolicyState,
+    decide_proposal_with_policy,
+    record_decision_state,
+    save_policy_state,
+)
 from .vlm import (
     build_vlm_prompt,
     make_unavailable_vlm_evidence,
@@ -144,6 +149,51 @@ def _fingerprint(*artifacts: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _artifact_to_workflow_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """Adapt the frozen artifact manifest to the shared workflow service."""
+    bands = []
+    for band in manifest["bands"]:
+        bands.append(
+            {
+                "band": band["band"],
+                "science_fits": band["science_fits"],
+                "science_hdu": band["science_hdu"],
+                "sigma_fits": None,
+                "sigma_hdu": band["sigma_hdu"],
+                "mask_fits": None,
+                "mask_hdu": band["mask_hdu"],
+                "psf_fits": band.get("psf_fits"),
+                "psf_hdu": band.get("psf_hdu"),
+                "result_fits": band["result_fits"],
+                "result_hdus": {
+                    "original_hdu": band["original_hdu"],
+                    "model_hdu": band["model_hdu"],
+                    "residual_hdu": band["residual_hdu"],
+                },
+                "pixscale_arcsec": band["pixscale_arcsec"],
+                "fit_region": band["fit_region"],
+                "validation": band.get("validation", {}),
+            }
+        )
+    workflow = {
+        "schema_version": "1.0",
+        "workflow_mode": "multi-band",
+        "round_id": manifest["round_id"],
+        "object_id": manifest.get("galaxy_id") or manifest["round_id"],
+        "config_file": manifest["lyric_file"],
+        "result_files": [item["result_fits"] for item in bands],
+        "summary_file": manifest["summary_file"],
+        "comparison_png": manifest.get("comparison_png"),
+        "working_note_file": None,
+        "constraint_files": [],
+        "parameter_file": None,
+        "parameter_files": [],
+        "bands": bands,
+    }
+    validate(workflow, "workflow_round_manifest")
+    return workflow
+
+
 def _write_json(output_dir: Path, name: str, artifact: dict[str, Any]) -> str:
     path = output_dir / name
     path.write_text(
@@ -169,124 +219,45 @@ def run_shadow_round(
     existing numeric-only degradation path.
     """
     validate(manifest, "artifact_manifest")
-    round_id = manifest["round_id"]
-    output_path = Path(output_dir).expanduser().resolve() if output_dir else None
-    manifest_ref = (
-        str(output_path / "manifest.json")
-        if output_path
-        else manifest["lyric_file"]
-    )
-    numeric = extract_numeric_evidence_from_manifest(
-        manifest,
-        manifest_ref=manifest_ref,
+    from .decision_service import build_workflow_proposal, resolve_workflow_proposal
+
+    workflow_manifest = _artifact_to_workflow_manifest(manifest)
+    proposal = build_workflow_proposal(
+        workflow_manifest,
+        output_dir=output_dir,
+        vlm_callback=vlm_callback,
+        current_components=current_components,
         isophote_cache=isophote_cache,
+        previous_round_ref=(policy_state.last_decision_ref if policy_state else None),
     )
-    if output_path:
-        output_path.mkdir(parents=True, exist_ok=True)
-        _write_json(output_path, "manifest.json", manifest)
-        numeric_ref = _write_json(output_path, "numeric_evidence.json", numeric)
-    else:
-        manifest_ref = manifest["lyric_file"]
-        numeric_ref = f"memory:{round_id}:numeric_evidence"
-
-    prompt = build_vlm_prompt(round_id=round_id, numeric_evidence=numeric)
-    prompt_ref = None
-    if output_path:
-        prompt_ref = output_path / "vlm_prompt.txt"
-        prompt_ref.write_text(prompt, encoding="utf-8")
-
-    vlm_image = manifest.get("comparison_png")
-    overlay_ref: str | None = None
-    if output_path and manifest.get("comparison_png"):
-        overlay_ref = create_candidate_overlay(
-            manifest,
-            numeric,
-            output_path / "candidate_overlay.png",
-        )
-        vlm_image = overlay_ref
-
-    vlm_error: str | None = None
-    raw_response: str | None = None
-    model_id = getattr(vlm_callback, "model_id", None)
-    if vlm_callback is None:
-        vlm = make_unavailable_vlm_evidence(
-            round_id=round_id,
-            status="REFUSED",
-            model_id=model_id,
-        )
-        vlm_error = "VLM callback not configured; numeric-only shadow run"
-    elif not vlm_image:
-        vlm = make_unavailable_vlm_evidence(round_id=round_id, status="PARSE_FAILED")
-        vlm_error = "comparison_png and candidate overlay are missing from the manifest"
-    else:
-        try:
-            raw_response = vlm_callback(vlm_image, prompt)
-            vlm, vlm_error = parse_vlm_response(
-                raw_response,
-                round_id=round_id,
-                numeric_evidence=numeric,
-                model_id=model_id,
-            )
-        except TimeoutError:
-            vlm = make_unavailable_vlm_evidence(
-                round_id=round_id,
-                status="TIMEOUT",
-                model_id=model_id,
-            )
-            vlm_error = "VLM callback timed out"
-        except PermissionError:
-            vlm = make_unavailable_vlm_evidence(
-                round_id=round_id,
-                status="REFUSED",
-                model_id=model_id,
-            )
-            vlm_error = "VLM callback was refused"
-
-    if output_path:
-        raw_ref = output_path / "vlm_response.raw.json"
-        raw_ref.write_text(raw_response or "", encoding="utf-8")
-        vlm_ref = _write_json(output_path, "vlm_evidence.json", vlm)
-    else:
-        vlm_ref = f"memory:{round_id}:vlm_evidence"
-
-    components = (
-        set(current_components)
-        if current_components is not None
-        else _components_from_lyric(manifest["lyric_file"])
+    state = policy_state if policy_state is not None else PolicyState(
+        object_id=workflow_manifest["object_id"]
     )
-    decision = decide_proposal_with_policy(
-        round_id=round_id,
-        numeric_evidence=numeric,
-        vlm_evidence=vlm,
-        current_components=components,
-        state=policy_state or PolicyState(),
-        evidence_fingerprint=_fingerprint(numeric, vlm),
-        evidence_refs={
-            "numeric_evidence": numeric_ref,
-            "vlm_evidence": vlm_ref,
-            "manifest": manifest_ref,
-            "previous_round": None,
-        },
+    resolved = resolve_workflow_proposal(
+        proposal,
+        state=state,
+        output_dir=output_dir,
     )
-    validate(decision, "decision_artifact")
-    if output_path:
-        decision_ref = _write_json(output_path, "decision_artifact.json", decision)
-    else:
-        decision_ref = f"memory:{round_id}:decision_artifact"
-
+    provider = proposal["provider"]
+    output_path = Path(output_dir).expanduser().resolve() if output_dir else None
     return {
+        "shadow_mode": "proposal_only",
         "manifest": manifest,
-        "numeric_evidence": numeric,
-        "vlm_evidence": vlm,
-        "decision_artifact": decision,
-        "vlm_error": vlm_error,
+        "numeric_evidence": proposal["numeric_evidence"],
+        "vlm_evidence": proposal["vlm_evidence"],
+        "decision_artifact": resolved["decision"],
+        "policy_state": resolved["policy_state"],
+        "vlm_error": provider.get("error"),
+        "vlm_attempts": provider.get("attempts", []),
         "output_dir": str(output_path) if output_path else None,
         "artifact_refs": {
-            "manifest": manifest_ref,
-            "numeric_evidence": numeric_ref,
-            "vlm_evidence": vlm_ref,
-            "decision_artifact": decision_ref,
-            "prompt": str(prompt_ref) if prompt_ref else None,
-            "candidate_overlay": overlay_ref,
+            "manifest": proposal["manifest_ref"],
+            "numeric_evidence": resolved["decision"].get("evidence_refs", {}).get("numeric_evidence"),
+            "vlm_evidence": resolved["decision"].get("evidence_refs", {}).get("vlm_evidence"),
+            "decision_artifact": resolved["decision_ref"],
+            "prompt": provider.get("prompt_ref"),
+            "candidate_overlay": str(output_path / "candidate_overlay.png") if output_path and (output_path / "candidate_overlay.png").is_file() else None,
+            "policy_state": resolved["state_ref"],
+            "vlm_attempts": str(output_path / "vlm_response.attempts.json") if output_path else None,
         },
     }

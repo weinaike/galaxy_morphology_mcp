@@ -9,7 +9,10 @@ from .artifact_adapter import (
     RESULT_HDU,
     build_manifest,
     extract_numeric_evidence_from_manifest,
+    extract_numeric_evidence_from_workflow_manifest,
     load_band_arrays,
+    load_workflow_band_arrays,
+    workflow_fit_components,
 )
 from .derived import (
     derive_fit_features,
@@ -37,6 +40,9 @@ from .policy import (
     apply_policy,
     decide_proposal_with_policy,
     evaluate_refit_with_policy,
+    load_policy_state,
+    record_decision_state,
+    save_policy_state,
 )
 from .provider import OpenAICompatibleVLM
 from .candidate_overlay import create_candidate_overlay
@@ -50,6 +56,33 @@ from .vlm import (
     parse_vlm_response,
 )
 from .shadow import run_shadow_round
+from .decision_service import build_workflow_proposal, resolve_workflow_proposal
+from .refit_comparator import compare_refit_artifacts, normalize_fit_result
+from .verifier import VERIFIER_VERSION, lock_best_round, verify_best_round
+from .workflow_bridge import (
+    MULTI_BAND,
+    SINGLE_BAND,
+    WORKFLOW_BRIDGE_VERSION,
+    WORKFLOW_LIFECYCLE_VERSION,
+    apply_action_to_config,
+    build_workflow_analysis_artifact,
+    build_multi_band_workflow_manifest,
+    build_single_band_workflow_manifest,
+    build_lifecycle_record,
+    complete_workflow_candidate,
+    copy_config_for_action,
+    evaluate_workflow_refit,
+    next_config_path,
+    prepare_mcp_fit_call,
+    preflight_action,
+    record_fit_lifecycle,
+    validate_agent_recommendation,
+)
+def workflow_capabilities():
+    """Load the MCP capability wrapper lazily to avoid an import cycle."""
+    from tools.workflow_lifecycle import workflow_capabilities as _workflow_capabilities
+
+    return _workflow_capabilities()
 
 __all__ = [
     "BandArrays",
@@ -74,6 +107,9 @@ __all__ = [
     "detect_local_peaks",
     "evaluate_refit",
     "evaluate_refit_with_policy",
+    "load_policy_state",
+    "record_decision_state",
+    "save_policy_state",
     "extract_numeric_evidence",
     "measure_aperture_snr",
     "measure_azimuthal_modes",
@@ -87,6 +123,32 @@ __all__ = [
     "merge_wcs_candidate_regions",
     "summarize_isophote_profile",
     "extract_numeric_evidence_from_manifest",
+    "extract_numeric_evidence_from_workflow_manifest",
     "load_band_arrays",
+    "load_workflow_band_arrays",
+    "workflow_fit_components",
     "run_shadow_round",
+    "WORKFLOW_BRIDGE_VERSION",
+    "WORKFLOW_LIFECYCLE_VERSION",
+    "apply_action_to_config",
+    "build_workflow_analysis_artifact",
+    "build_multi_band_workflow_manifest",
+    "build_single_band_workflow_manifest",
+    "build_lifecycle_record",
+    "complete_workflow_candidate",
+    "copy_config_for_action",
+    "evaluate_workflow_refit",
+    "next_config_path",
+    "prepare_mcp_fit_call",
+    "preflight_action",
+    "record_fit_lifecycle",
+    "validate_agent_recommendation",
+    "workflow_capabilities",
+    "build_workflow_proposal",
+    "resolve_workflow_proposal",
+    "compare_refit_artifacts",
+    "normalize_fit_result",
+    "VERIFIER_VERSION",
+    "verify_best_round",
+    "lock_best_round",
 ]

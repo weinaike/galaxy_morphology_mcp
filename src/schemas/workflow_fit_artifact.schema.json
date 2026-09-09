@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/workflow_fit_artifact/1.0",
+  "title": "Normalized Workflow Fit Artifact",
+  "description": "Mode-neutral artifact contract normalized from an existing MCP fitting result.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "workflow_mode", "status", "valid", "config_file",
+    "result_files", "summary_files", "comparison_png", "bands"
+  ],
+  "properties": {
+    "schema_version": {"const": "workflow-fit-artifact@v1"},
+    "workflow_mode": {"enum": ["single-band", "multi-band"]},
+    "status": {"enum": ["success", "failure", "incomplete"]},
+    "valid": {"type": "boolean"},
+    "config_file": {"type": ["string", "null"]},
+    "result_files": {"type": "array", "items": {"type": "string"}},
+    "summary_files": {"type": "array", "items": {"type": "string"}},
+    "comparison_png": {"type": ["string", "null"]},
+    "parameter_file": {"type": ["string", "null"]},
+    "parameter_files": {"type": "array", "items": {"type": "string"}},
+    "constraint_files": {"type": "array", "items": {"type": "string"}},
+    "bands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["band", "result_fits", "result_hdus"],
+        "properties": {
+          "band": {"type": "string", "minLength": 1},
+          "result_fits": {"type": "string", "minLength": 1},
+          "result_hdus": {"type": "object"}
+        }
+      }
+    },
+    "missing_fields": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -158,6 +158,7 @@ def _parse_lyric(path: str) -> tuple[str | None, list[dict[str, Any]]]:
             {
                 "band": str(values[2]),
                 "science": image,
+                "sigma": list(values[3]) if 3 in values else ["none", 0],
                 "psf": psf,
                 "mask": mask,
                 "fitting_area": float(values[8]),
@@ -175,7 +176,9 @@ def _parse_profile_definitions(path: str) -> list[dict[str, Any]]:
     content = Path(path).read_text(encoding="utf-8")
     profiles: dict[str, dict[str, Any]] = {}
     pattern = re.compile(r"^P([a-z])(\d+)\)\s*(.+?)\s*$")
-    for raw_line in content.splitlines():
+    lines = content.splitlines()
+    for index, raw_line in enumerate(lines):
+        inline_comment = raw_line.split("#", 1)[1].strip() if "#" in raw_line else ""
         line = raw_line.split("#", 1)[0].strip()
         match = pattern.match(line)
         if not match:
@@ -189,7 +192,19 @@ def _parse_profile_definitions(path: str) -> list[dict[str, Any]]:
                 value = ast.literal_eval(raw_value)
             except (SyntaxError, ValueError):
                 value = raw_value
-        profiles.setdefault(prefix, {})[field] = value
+        profile = profiles.setdefault(prefix, {})
+        profile[field] = value
+        if inline_comment:
+            existing = str(profile.get("comments", ""))
+            profile["comments"] = (
+                f"{existing}\n{inline_comment}" if existing else inline_comment
+            )
+        elif "comments" not in profile:
+            profile["comments"] = "\n".join(
+                previous.strip()
+                for previous in lines[max(0, index - 8) : index]
+                if previous.strip().startswith("#")
+            )
 
     result: list[dict[str, Any]] = []
     for prefix in sorted(profiles):
@@ -201,6 +216,19 @@ def _parse_profile_definitions(path: str) -> list[dict[str, Any]]:
                 "name": str(values[1]),
                 "type": str(values[2]),
                 "n_config": values.get(6),
+                "parameter_configs": {
+                    name: values.get(field)
+                    for field, name in {
+                        3: "x",
+                        4: "y",
+                        5: "re",
+                        6: "n",
+                        7: "pa",
+                        8: "q",
+                    }.items()
+                    if values.get(field) is not None
+                },
+                "comments": values.get("comments", ""),
             }
         )
     return result
@@ -222,33 +250,136 @@ def _parse_summary_values(path: str) -> dict[str, float]:
     return values
 
 
+def _parse_fit_summary(path: str) -> dict[str, Any]:
+    metrics: dict[str, Any] = {"bands": []}
+    band_pattern = re.compile(
+        r"^#\s+image number:\s+\d+\s+band:\s+(\S+)\s+"
+        r"chisq:\s+\[([^]]+)\]\s+dof:\s+\[([^]]+)\]\s+"
+        r"reduced chisq:\s+\[([^]]+)\]"
+    )
+    for raw_line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        try:
+            if line.startswith("# chisq:"):
+                metrics["chisq"] = float(line.split(":", 1)[1].strip())
+            elif line.startswith("# reduced chisq:"):
+                metrics["reduced_chisq"] = float(line.split(":", 1)[1].strip())
+            elif line.startswith("# BIC:"):
+                metrics["bic"] = float(line.split(":", 1)[1].strip())
+            else:
+                match = band_pattern.match(line)
+                if match:
+                    band, chisq, dof, reduced = match.groups()
+                    metrics["bands"].append(
+                        {
+                            "band": band,
+                            "chisq": float(chisq),
+                            "dof": float(dof),
+                            "reduced_chisq": float(reduced),
+                            "fit_succeeded": all(
+                                np.isfinite(float(value))
+                                for value in (chisq, dof, reduced)
+                            ),
+                        }
+                    )
+        except (TypeError, ValueError):
+            metrics.setdefault("parse_errors", []).append(line)
+    return metrics
+
+
+def _profile_component(name: str, profile_type: str, comments: str) -> str | None:
+    text = f"{name} {profile_type} {comments}".lower().replace("-", "_")
+    for token, component in (
+        ("edge_on_disk", "edge_on_disk"),
+        ("edgeondisk", "edge_on_disk"),
+        ("nucleus", "agn"),
+        ("compact", "compact_central_source_candidate"),
+        ("companion", "companion"),
+        ("neighbor", "companion"),
+        ("bulge", "bulge"),
+        ("bar", "bar"),
+        ("lens", "lens"),
+        ("disk", "disk"),
+    ):
+        if token in text:
+            return component
+    return None
+
+
+def _parameter_health(
+    *,
+    profile: Mapping[str, Any],
+    name: str,
+    value: float | None,
+) -> dict[str, Any]:
+    config = profile.get("parameter_configs", {}).get(name)
+    record: dict[str, Any] = {
+        "parameter": name,
+        "value": value,
+        "lower": None,
+        "upper": None,
+        "step": None,
+        "vary": None,
+        "at_boundary": None,
+        "source": "gssummary" if value is not None else "unavailable",
+    }
+    if isinstance(config, (list, tuple)) and len(config) >= 5:
+        try:
+            initial, lower, upper, step = map(float, config[:4])
+            vary = bool(config[4])
+        except (TypeError, ValueError):
+            return record
+        tolerance = max(abs(step), 1e-3)
+        record.update(
+            {
+                "initial": initial,
+                "lower": lower,
+                "upper": upper,
+                "step": step,
+                "vary": vary,
+                "at_boundary": (
+                    value is not None
+                    and (abs(value - lower) <= tolerance or abs(value - upper) <= tolerance)
+                ),
+                "source": "lyric+gssummary",
+            }
+        )
+    return record
+
 def _fit_components(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     parameters = _parse_summary_values(manifest["summary_file"])
     result: list[dict[str, Any]] = []
     for profile in _parse_profile_definitions(manifest["lyric_file"]):
         name = profile["name"]
+        parameter_values = {
+            "x": parameters.get(f"{name}_xcen"),
+            "y": parameters.get(f"{name}_ycen"),
+            "re": parameters.get(f"{name}_Re"),
+            "n": parameters.get(f"{name}_n"),
+            "pa": parameters.get(f"{name}_ang"),
+            "q": parameters.get(f"{name}_axrat"),
+        }
+        parameter_health = [
+            _parameter_health(profile=profile, name=parameter, value=value)
+            for parameter, value in parameter_values.items()
+        ]
+        n_health = next(
+            item for item in parameter_health if item["parameter"] == "n"
+        )
         component = {
             "name": name,
             "type": profile["type"],
-            "re": parameters.get(f"{name}_Re"),
-            "n": parameters.get(f"{name}_n"),
-            "ba": parameters.get(f"{name}_axrat"),
-            "pa": parameters.get(f"{name}_ang"),
-            "n_at_boundary": False,
+            "component": _profile_component(name, profile["type"], profile["comments"]),
+            "model_label": name,
+            "re": parameter_values["re"],
+            "n": parameter_values["n"],
+            "ba": parameter_values["q"],
+            "pa": parameter_values["pa"],
+            "x": parameter_values["x"],
+            "y": parameter_values["y"],
+            "parameter_health": parameter_health,
+            "n_at_boundary": n_health["at_boundary"] is True,
         }
-        n_config = profile.get("n_config")
-        n_value = component["n"]
-        if (
-            isinstance(n_config, (list, tuple))
-            and len(n_config) >= 5
-            and isinstance(n_value, (int, float))
-            and bool(n_config[4])
-        ):
-            lower, upper, step = map(float, n_config[1:4])
-            tolerance = max(abs(step), 1e-3)
-            component["n_at_boundary"] = (
-                abs(n_value - lower) <= tolerance or abs(n_value - upper) <= tolerance
-            )
         result.append(component)
     return result
 
@@ -529,6 +660,283 @@ def load_band_arrays(manifest: dict[str, Any]) -> list[BandArrays]:
     return arrays
 
 
+def _read_workflow_hdu(
+    fits: Any,
+    path: str,
+    hdu: int,
+    *,
+    field: str,
+) -> np.ndarray:
+    with fits.open(path, memmap=False) as hdul:
+        if hdu >= len(hdul) or hdul[hdu].data is None:
+            raise ValueError(f"{field} HDU {hdu} is unavailable: {path}")
+        data = np.asarray(hdul[hdu].data, dtype=float)
+    if data.ndim != 2:
+        raise ValueError(f"{field} must be a two-dimensional image: {path}[{hdu}]")
+    return data
+
+
+def _crop_workflow_array(
+    data: np.ndarray,
+    fit_region: list[int],
+    target_shape: tuple[int, int],
+    *,
+    field: str,
+) -> np.ndarray:
+    """Crop full-frame workflow inputs to the explicit zero-based fit region."""
+    if data.shape == target_shape:
+        return data
+    if len(fit_region) != 4:
+        raise ValueError(f"{field} fit_region must contain four coordinates")
+    x0, x1, y0, y1 = (int(value) for value in fit_region)
+    if x0 < 0 or y0 < 0 or x1 <= x0 or y1 <= y0:
+        raise ValueError(f"{field} fit_region is invalid: {fit_region}")
+    expected_shape = (y1 - y0, x1 - x0)
+    if expected_shape != target_shape or x1 > data.shape[1] or y1 > data.shape[0]:
+        raise ValueError(
+            f"{field} shape does not match result or explicit fit region: "
+            f"data={data.shape}, result={target_shape}, fit_region={fit_region}"
+        )
+    cropped = data[y0:y1, x0:x1]
+    if cropped.shape != target_shape:
+        raise ValueError(f"{field} crop shape does not match result: {cropped.shape}")
+    return cropped
+
+
+def load_workflow_band_arrays(manifest: dict[str, Any]) -> list[BandArrays]:
+    """Load arrays from the single/multi-band workflow manifest.
+
+    The workflow manifest keeps result HDUs nested and permits missing sigma or
+    mask files. Missing uncertainty is preserved as ``None`` so downstream
+    SNR-based facts become UNAVAILABLE instead of being computed from a
+    fabricated noise plane.
+    """
+    validate(manifest, "workflow_round_manifest")
+    fits, WCS = _require_fits()
+    bands = manifest["bands"]
+    names = [str(item["band"]) for item in bands]
+    if len(names) != len(set(names)):
+        raise ValueError("workflow manifest contains duplicate band names")
+    if manifest.get("result_files") != [item["result_fits"] for item in bands]:
+        raise ValueError("workflow result_files order does not match bands order")
+
+    arrays: list[BandArrays] = []
+    for index, band in enumerate(bands):
+        result_hdus = band["result_hdus"]
+        original = _read_workflow_hdu(
+            fits, band["result_fits"], result_hdus["original_hdu"],
+            field=f"bands[{index}].original",
+        )
+        residual = _read_workflow_hdu(
+            fits, band["result_fits"], result_hdus["residual_hdu"],
+            field=f"bands[{index}].residual",
+        )
+        model = _read_workflow_hdu(
+            fits, band["result_fits"], result_hdus["model_hdu"],
+            field=f"bands[{index}].model",
+        )
+        if original.shape != residual.shape or original.shape != model.shape:
+            raise ValueError(f"bands[{index}] result HDU shapes do not match")
+
+        sigma = None
+        if band.get("sigma_fits") is not None:
+            sigma = _read_workflow_hdu(
+                fits, band["sigma_fits"], int(band["sigma_hdu"]),
+                field=f"bands[{index}].sigma",
+            )
+        elif band.get("sigma_hdu") is not None:
+            sigma = _read_workflow_hdu(
+                fits, band["result_fits"], int(band["sigma_hdu"]),
+                field=f"bands[{index}].sigma",
+            )
+        if sigma is not None:
+            sigma = _crop_workflow_array(
+                sigma,
+                band["fit_region"],
+                original.shape,
+                field=f"bands[{index}] sigma",
+            )
+
+        mask = None
+        if band.get("mask_fits") is not None:
+            mask = _read_workflow_hdu(
+                fits, band["mask_fits"], int(band["mask_hdu"]),
+                field=f"bands[{index}].mask",
+            ) > 0
+        elif band.get("mask_hdu") is not None:
+            mask = _read_workflow_hdu(
+                fits, band["result_fits"], int(band["mask_hdu"]),
+                field=f"bands[{index}].mask",
+            ) > 0
+        if mask is not None:
+            mask = _crop_workflow_array(
+                mask,
+                band["fit_region"],
+                original.shape,
+                field=f"bands[{index}] mask",
+            )
+
+        psf = None
+        if band.get("psf_fits") is not None:
+            psf = _read_workflow_hdu(
+                fits, band["psf_fits"], int(band["psf_hdu"]),
+                field=f"bands[{index}].psf",
+            )
+
+        with fits.open(band["science_fits"], memmap=False) as science_hdul:
+            science_hdu = int(band["science_hdu"])
+            if science_hdu >= len(science_hdul) or science_hdul[science_hdu].data is None:
+                raise ValueError(f"bands[{index}] science HDU is unavailable")
+            science_data = np.asarray(science_hdul[science_hdu].data)
+            if science_data.ndim != 2:
+                raise ValueError(f"bands[{index}] science must be two-dimensional")
+            science_data = _crop_workflow_array(
+                science_data,
+                band["fit_region"],
+                original.shape,
+                field=f"bands[{index}] science",
+            )
+            header = science_hdul[science_hdu].header
+            try:
+                candidate_wcs = WCS(header)
+                wcs = candidate_wcs if candidate_wcs.has_celestial else None
+            except (ValueError, IndexError):
+                wcs = None
+            try:
+                pa_v3_deg = float(header["PA_V3"])
+                if not np.isfinite(pa_v3_deg):
+                    pa_v3_deg = None
+            except (KeyError, TypeError, ValueError):
+                pa_v3_deg = None
+
+        arrays.append(
+            BandArrays(
+                band=band["band"],
+                original=original,
+                residual=residual,
+                sigma=sigma,
+                psf=psf,
+                mask=mask,
+                source_file=band["result_fits"],
+                original_hdu=result_hdus["original_hdu"],
+                residual_hdu=result_hdus["residual_hdu"],
+                psf_file=band.get("psf_fits"),
+                psf_hdu=band.get("psf_hdu"),
+                pixscale_arcsec=band.get("pixscale_arcsec"),
+                pa_v3_deg=pa_v3_deg,
+                wcs=wcs,
+            )
+        )
+    return arrays
+
+
+def _single_workflow_components(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
+    from tools.parse_feedme import parse_components
+
+    parameter_file = manifest.get("parameter_file") or manifest["config_file"]
+    parsed = parse_components(parameter_file)
+    physical = [item for item in parsed if item.get("type") != "const"]
+    result: list[dict[str, Any]] = []
+    for index, component in enumerate(physical):
+        profile_type = str(component.get("type", "")).lower()
+        if profile_type in {"expdisk", "disk"}:
+            semantic = "disk"
+        elif profile_type in {"devauc", "sersic_b", "sersic_r"}:
+            semantic = "bulge"
+        elif profile_type in {"ferrer", "ferrer2"}:
+            semantic = "bar"
+        elif profile_type in {"psf", "moffat"}:
+            semantic = "agn"
+        else:
+            semantic = None
+        result.append({
+            **component,
+            "name": f"obj{index}",
+            "model_label": f"obj{index}",
+            "component": semantic,
+            "parameter_health": [],
+            "n_at_boundary": False,
+        })
+    return result
+
+
+def workflow_fit_components(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return fitted component facts for either workflow mode."""
+    validate(dict(manifest), "workflow_round_manifest")
+    if manifest["workflow_mode"] == "multi-band":
+        return _fit_components({
+            "lyric_file": manifest["config_file"],
+            "summary_file": manifest["summary_file"],
+        })
+    return _single_workflow_components(manifest)
+
+
+def _parse_workflow_summary(path: str) -> dict[str, Any]:
+    metrics = _parse_fit_summary(path)
+    if metrics.get("bands") or any(
+        key in metrics for key in ("chisq", "reduced_chisq", "bic")
+    ):
+        return metrics
+    content = Path(path).read_text(encoding="utf-8")
+    patterns = {
+        "reduced_chisq": r"reduced chi-squared\):\s*([-+0-9.eE]+)",
+        "bic": r"(?:2D\s+)?BIC:\s*([-+0-9.eE]+)",
+    }
+    for key, pattern in patterns.items():
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            try:
+                metrics[key] = float(match.group(1))
+            except ValueError:
+                pass
+    return metrics
+
+
+def extract_numeric_evidence_from_workflow_manifest(
+    manifest: dict[str, Any],
+    *,
+    manifest_ref: str | None = None,
+    isophote_cache: MutableMapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the shared numeric and derived layers on a workflow manifest."""
+    arrays = load_workflow_band_arrays(manifest)
+    primitive = extract_numeric_evidence(
+        round_id=manifest["round_id"],
+        manifest_ref=manifest_ref or manifest["config_file"],
+        bands=arrays,
+    )
+    validation_by_band = [
+        {"band": band["band"], **band.get("validation", {})}
+        for band in manifest.get("bands", [])
+    ]
+    fit_summary = _parse_workflow_summary(manifest["summary_file"])
+    fit_health = {
+        "summary": fit_summary,
+        "bands": validation_by_band,
+        "fit_succeeded": bool(
+            all(
+                item.get("hdu_layout_valid", True) is not False
+                and item.get("shape_consistent", True) is not False
+                for item in validation_by_band
+            )
+            and Path(manifest["summary_file"]).is_file()
+        ),
+    }
+    for quality in primitive.get("band_quality", []):
+        match = next(
+            (item for item in validation_by_band if item["band"] == quality["band"]),
+            None,
+        )
+        quality["fit_succeeded"] = fit_health["fit_succeeded"] if match else None
+    return derive_rule_features(
+        primitive,
+        arrays,
+        fit_components=workflow_fit_components(manifest),
+        fit_health=fit_health,
+        isophote_cache=isophote_cache,
+    )
+
+
 def extract_numeric_evidence_from_manifest(
     manifest: dict[str, Any],
     *,
@@ -542,9 +950,30 @@ def extract_numeric_evidence_from_manifest(
         manifest_ref=manifest_ref or manifest["lyric_file"],
         bands=arrays,
     )
+    fit_summary = _parse_fit_summary(manifest["summary_file"])
+    validation_by_band = [
+        {"band": band["band"], **band.get("validation", {})}
+        for band in manifest.get("bands", [])
+    ]
+    fit_health = {
+        "summary": fit_summary,
+        "bands": validation_by_band,
+        "fit_succeeded": bool(
+            np.isfinite(fit_summary.get("reduced_chisq", np.nan))
+            and validation_by_band
+            and all(
+                item.get("hdu_layout_valid") is True
+                and item.get("shape_consistent") is True
+                and item.get("finite_pixel_fraction", 0.0) is not None
+                and item.get("finite_pixel_fraction", 0.0) > 0
+                for item in validation_by_band
+            )
+        ),
+    }
     return derive_rule_features(
         primitive,
         arrays,
         fit_components=_fit_components(manifest),
+        fit_health=fit_health,
         isophote_cache=isophote_cache,
     )

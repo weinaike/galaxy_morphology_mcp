@@ -36,15 +36,12 @@ def test_run_galfits_reuses_valid_timestamp_workflow_directory(tmp_path):
         result = asyncio.run(run_galfits(str(config_file)))
 
     assert result["status"] == "success"
+    assert result["input_param_file"] == str(config_file.resolve())
     assert Path(result["workplace"]) == workplace_dir
     assert (workplace_dir / "run.log").exists()
     assert sorted(p.name for p in output_dir.iterdir()) == [workplace_dir.name]
 
-    fitting_log = galaxy_dir / "fitting_log.md"
-    assert fitting_log.exists()
-    fitting_log_text = fitting_log.read_text(encoding="utf-8")
-    assert f"output/{workplace_dir.name}/{config_file.name}" in fitting_log_text
-    assert f"output/{workplace_dir.name}/result.gssummary" in fitting_log_text
+    assert result["summary_files"] == [str(workplace_dir / "result.gssummary")]
 
 
 def test_run_galfits_reuses_nearest_output_parent_as_workflow_root(tmp_path):

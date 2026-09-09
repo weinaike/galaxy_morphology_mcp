@@ -783,6 +783,7 @@ async def run_galfits(
         result = {
             "status": "failure",
             "error": f"GalfitS failed with return code {proc.returncode}",
+            "input_param_file": os.path.abspath(config_file),
             "workplace": workplace_dir,
             "command": cmd,
             "log": log,
@@ -805,6 +806,7 @@ async def run_galfits(
 
     return {
         "status": "success",
+        "input_param_file": os.path.abspath(config_file),
         "message": f"GalfitS completed successfully for {config_file}. Output files:\n"
         f"- summary_files : .gssummary files contain fitting parameters, χ² statistics, and model components for all bands\n"
         f"- imagefit_pngs : PNG visualizations showing observed data, model fits, and residuals for all image bands\n"
@@ -882,6 +884,7 @@ async def run_galfits_sed_fitting(
         }
     return {
         "status": "success",
+        "new_lyric_file": new_lyric_file,
         "message": f"SED fitting completed successfully. New lyric file for image-sed fitting generated: {new_lyric_file}"
     }    
 

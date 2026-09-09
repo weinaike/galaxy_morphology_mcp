@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/workflow_batch_manifest/1.0",
+  "title": "Workflow Batch Manifest",
+  "description": "Immutable input manifest for a client-independent workflow batch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "batch_id", "generated_at", "workflow_mode", "root_dir", "run_dir", "versions", "options", "objects"],
+  "properties": {
+    "schema_version": {"const": "workflow-batch-manifest@v1"},
+    "batch_id": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "minLength": 1},
+    "workflow_mode": {"enum": ["single-band", "multi-band"]},
+    "root_dir": {"type": "string", "minLength": 1},
+    "run_dir": {"type": "string", "minLength": 1},
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runner", "schema", "workflow_bridge", "decision_service", "prompt"],
+      "properties": {
+        "runner": {"type": "string", "minLength": 1},
+        "schema": {"type": "string", "minLength": 1},
+        "workflow_bridge": {"type": "string", "minLength": 1},
+        "decision_service": {"type": "string", "minLength": 1},
+        "prompt": {"type": "string", "minLength": 1}
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pilot_enabled", "use_vlm", "resume"],
+      "properties": {
+        "pilot_enabled": {"type": "boolean"},
+        "use_vlm": {"type": "boolean"},
+        "resume": {"type": "boolean"},
+        "timeout_sec": {"type": "number", "exclusiveMinimum": 0},
+        "retries": {"type": "integer", "minimum": 0},
+        "resource_profile": {"type": "string", "minLength": 1},
+        "object_id": {"type": ["string", "null"]},
+        "max_objects": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["object_id", "galaxy_dir", "config_file", "bands", "input_files", "preflight_status", "issues"],
+        "properties": {
+          "object_id": {"type": "string", "minLength": 1},
+          "galaxy_dir": {"type": "string", "minLength": 1},
+          "config_file": {"type": ["string", "null"]},
+          "bands": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "input_files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "role", "sha256"],
+              "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "role": {"type": "string", "minLength": 1},
+                "sha256": {"type": ["string", "null"]}
+              }
+            }
+          },
+          "preflight_status": {"enum": ["READY", "PREFLIGHT_FAILED"]},
+          "issues": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    }
+  }
+}

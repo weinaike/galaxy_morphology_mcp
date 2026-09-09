@@ -134,6 +134,7 @@ def test_edge_on_low_q_trial_replaces_disk():
         "action_type": "PROPOSE_REPLACE",
         "replace_from": "disk",
         "replace_to": "edge_on_disk",
+        "target_model_label": "disk",
     }
     assert decision["automation"]["resolution"] == "trial_fit"
 
@@ -175,16 +176,18 @@ def test_bar_diffraction_conflict_conservative_keep():
     decision = decide(
         [STRONG_BAR], [obs("diffraction_psf", confidence=0.9)], components={"disk"}, state=state
     )
-    assert decision["action"] == {"action_type": "KEEP_AND_CONTINUE"}
-    assert decision["automation"]["resolution"] == "conservative_keep"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
+    assert decision["automation"]["resolution"] == "rule_terminated"
     assert state.trials_used == 0
 
 
 def test_trial_budget_exhausted_falls_back_conservative():
     state = PolicyState(trial_budget=0)
     decision = decide([EXTENT, GEOMETRY], state=state)
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
-    assert decision["automation"]["resolution"] == "conservative_keep"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
+    assert decision["automation"]["resolution"] == "rule_terminated"
     assert state.trials_used == 0
 
 
@@ -192,7 +195,9 @@ def test_rejected_component_not_retried():
     state = PolicyState()
     state.rejected_components.add("disk")
     decision = decide([EXTENT, GEOMETRY], state=state)
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
+    assert decision["automation"]["resolution"] == "rule_terminated"
     assert state.trials_used == 0
 
 
@@ -201,10 +206,10 @@ def test_repeated_inconclusive_terminates_question():
     first = decide([EXTENT, GEOMETRY], state=state, fingerprint="fp1")
     assert first["automation"]["resolution"] == "trial_fit"
     second = decide([EXTENT, GEOMETRY], state=state, fingerprint="fp1")
-    assert second["automation"]["resolution"] == "conservative_keep"
+    assert second["automation"]["resolution"] == "rule_terminated"
     assert "DISK_AMBIGUOUS_EVIDENCE_V1" in state.terminated_rules
     third = decide([EXTENT, GEOMETRY], state=state, fingerprint="fp2")
-    assert third["automation"]["resolution"] == "conservative_keep"
+    assert third["automation"]["resolution"] == "rule_terminated"
 
 
 # ---------------------------------------------------------------------------
@@ -289,3 +294,107 @@ def test_clear_proposal_passes_through():
     assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "disk"}
     assert "automation" not in decision
     assert state.trials_used == 0
+
+
+# ---------------------------------------------------------------------------
+# v1.1 action reachability and raw/resolved state
+# ---------------------------------------------------------------------------
+
+
+def test_parameter_boundary_emits_refit_parameters():
+    state = PolicyState()
+    decision = decide([
+        feat("health", "component_parameter_health", [{
+            "model_label": "disk1",
+            "component": "disk",
+            "parameters": [{
+                "parameter": "re",
+                "value": 10.0,
+                "at_boundary": True,
+                "vary": True,
+                "lower": 1.0,
+                "upper": 10.0,
+            }],
+        }], source={"band": None}),
+    ], components={"disk"}, state=state)
+    assert decision["action"]["action_type"] == "REFIT_PARAMETERS"
+    assert decision["action"]["parameter_changes"][0]["operation"] == "SET_BOUNDS"
+    assert decision["candidate_actions"][0]["status"] == "SELECTED"
+
+
+def test_unsupported_bar_emits_propose_remove():
+    decision = decide([
+        feat("local", "component_local_residual_facts", [{
+            "model_label": "bar1",
+            "component": "bar",
+            "support_evidence": False,
+            "data_quality_ok": True,
+            "role_conflict": True,
+        }], source={"band": None}),
+    ], components={"disk", "bar"})
+    assert decision["action"] == {
+        "action_type": "PROPOSE_REMOVE",
+        "component": "bar",
+        "target_model_label": "bar1",
+        "reason_code": "COMPONENT_SUPPORT_FALSE",
+    }
+
+
+def test_all_termination_gates_emit_converged():
+    features = [
+        feat("fit", "fit_convergence_summary", {"fit_succeeded": True}, source={"band": None}),
+        feat("residual", "absolute_residual_quality", {
+            "one_d_clean": True,
+            "central_elongation": False,
+        }, source={"band": None}),
+        feat("health", "component_parameter_health", [{
+            "model_label": "disk1",
+            "component": "disk",
+            "parameters": [{"parameter": "re", "value": 10.0, "at_boundary": False}],
+        }], source={"band": None}),
+        feat("center", "center_constraint_health", [{
+            "model_label": "disk1",
+            "component": "disk",
+            "is_reference": True,
+            "constraint_present": True,
+            "offset_from_reference": 0.0,
+        }], source={"band": None}),
+        feat("fixed", "required_fixed_parameter_health", [{
+            "model_label": "disk1",
+            "component": "disk",
+            "parameter": "n",
+            "satisfied": True,
+        }], source={"band": None}),
+    ]
+    decision = decide(features, components={"disk"})
+    assert decision["action"]["action_type"] == "CONVERGED"
+    assert len(decision["termination_checks"]) >= 7
+
+
+def test_refit_acceptance_is_operation_aware():
+    decision = evaluate_refit_with_policy(
+        round_id="r2",
+        component="bar",
+        candidate_action_type="PROPOSE_REMOVE",
+        refit_evaluation=gates(residual="yes", residual_outcome="equivalent"),
+        state=PolicyState(),
+    )
+    assert decision["action"] == {"action_type": "ACCEPT_REFIT", "component": "bar"}
+    assert decision["refit_evaluation"]["candidate_action_type"] == "PROPOSE_REMOVE"
+    assert decision["refit_evaluation"]["residual_outcome"] == "equivalent"
+
+
+def test_vlm_success_also_persists_raw_evidence_view():
+    decision = decide([PEAKS], observations=[obs("independent_source", "candidate_1")])
+    assert decision["evidence_views"]["vlm"]["parse_status"] == "OK"
+    assert decision["evidence_views"]["vlm"]["observations"][0]["target_id"] == "candidate_1"
+    assert decision["evidence_views"]["numeric_only"]["parse_status"] == "NOT_RUN"
+
+
+def test_vlm_retry_preserves_both_evidence_views():
+    decision = decide([EXTENT, GEOMETRY, RESIDUAL_OUTER], state=PolicyState(), parse_status="PARSE_FAILED")
+    assert decision["action"]["action_type"] == "PROPOSE_ADD"
+    assert decision["automation"]["resolution"] == "numeric_only_retry"
+    assert decision["evidence_views"]["vlm"]["parse_status"] == "PARSE_FAILED"
+    assert decision["evidence_views"]["numeric_only"]["parse_status"] == "OK"
+    assert decision["evidence_views"]["numeric_only"]["action"]["action_type"] == "PROPOSE_ADD"

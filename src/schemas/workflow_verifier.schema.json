@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/workflow_verifier/1.0",
+  "title": "Workflow Verifier Artifact",
+  "description": "Deterministic verifier result used by the structured best-round lock gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "workflow_mode", "object_id", "round_id", "verdict", "lockable",
+    "hard_gates", "assessment_status", "verifier_assessment", "evidence_refs", "generated_by"
+  ],
+  "properties": {
+    "schema_version": {"const": "workflow-verifier@v1"},
+    "workflow_mode": {"enum": ["single-band", "multi-band"]},
+    "object_id": {"type": "string", "minLength": 1},
+    "round_id": {"type": "string", "minLength": 1},
+    "verdict": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+    "lockable": {"type": "boolean"},
+    "hard_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_integrity", "parameter_health", "constraint_integrity", "comparable_metrics", "lifecycle_integrity"],
+      "properties": {
+        "artifact_integrity": {"$ref": "#/$defs/gate"},
+        "parameter_health": {"$ref": "#/$defs/gate"},
+        "constraint_integrity": {"$ref": "#/$defs/gate"},
+        "comparable_metrics": {"$ref": "#/$defs/gate"},
+        "lifecycle_integrity": {"$ref": "#/$defs/gate"}
+      }
+    },
+    "assessment_status": {"enum": ["COMPLETE", "MISSING", "INCONCLUSIVE", "FAILED"]},
+    "verifier_assessment": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/assessment"}
+      ]
+    },
+    "evidence_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workflow_manifest", "lifecycle", "fit_artifact", "component_analysis"],
+      "properties": {
+        "workflow_manifest": {"type": "string", "minLength": 1},
+        "lifecycle": {"type": "string", "minLength": 1},
+        "fit_artifact": {"type": "string", "minLength": 1},
+        "component_analysis": {"type": "string", "minLength": 1},
+        "baseline_manifest": {"type": ["string", "null"]},
+        "baseline_fit_artifact": {"type": ["string", "null"]}
+      }
+    },
+    "generated_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "workflow-verifier"},
+        "version": {"const": "workflow-verifier@v1"}
+      }
+    }
+  },
+  "$defs": {
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "dimensions", "rationale", "evidence_refs", "client", "model", "prompt_version"],
+      "properties": {
+        "schema_version": {"const": "verifier-assessment@v1"},
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validation", "components", "fit", "physical", "parameters", "metrics"],
+          "properties": {
+            "validation": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+            "components": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+            "fit": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+            "physical": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+            "parameters": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+            "metrics": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]}
+          }
+        },
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "client": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "version": {"type": "string", "minLength": 1}
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "version": {"type": "string", "minLength": 1}
+          }
+        },
+        "prompt_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence_refs", "detail"],
+      "properties": {
+        "status": {"enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+        "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "detail": {"type": "string", "minLength": 1, "maxLength": 2000}
+      }
+    }
+  }
+}

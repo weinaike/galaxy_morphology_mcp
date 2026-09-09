@@ -97,6 +97,52 @@ def test_prompt_is_versioned_label_only_and_does_not_leak_coordinates():
     assert "只输出一个 JSON 对象" in prompt
 
 
+
+def test_prompt_limits_each_request_to_sparse_target_batch():
+    numeric = copy.deepcopy(numeric_fixture())
+    numeric["features"][0]["candidate_regions"] = [
+        {"region_id": f"candidate_{index}", "band": "f200w", "x_pix": 1.0, "y_pix": 2.0, "local_snr": 8.0}
+        for index in range(1, 7)
+    ]
+    prompt = build_vlm_prompt(
+        round_id="r1",
+        numeric_evidence=numeric,
+        target_ids=("central", "candidate_1", "candidate_2", "candidate_3"),
+        retry_variant=1,
+    )
+    assert "candidate_4" not in prompt
+    with pytest.raises(ValueError):
+        build_vlm_prompt(
+            round_id="r1",
+            numeric_evidence=numeric,
+            target_ids=("central", "candidate_1", "candidate_2", "candidate_3", "candidate_4"),
+        )
+
+
+def test_duplicate_numeric_targets_are_deduplicated():
+    numeric = copy.deepcopy(numeric_fixture())
+    numeric["features"].append(copy.deepcopy(numeric["features"][0]))
+    assert allowed_target_ids(numeric) == ("central", "candidate_1")
+
+
+def test_overlong_notes_are_fail_closed():
+    payload = response_fixture([observation("uncertain", notes="x" * 241)])
+    evidence, error = parse(payload)
+    assert evidence["parse_status"] == "PARSE_FAILED"
+    assert "notes exceeds" in error
+
+
+def test_retry_target_subset_is_validated():
+    payload = response_fixture([observation("uncertain", target_id="candidate_1")])
+    evidence, error = parse_vlm_response(
+        json.dumps(payload),
+        round_id="r1",
+        numeric_evidence=numeric_fixture(),
+        allowed_targets={"central"},
+    )
+    assert evidence["parse_status"] == "PARSE_FAILED"
+    assert "not issued by the numeric layer" in error
+
 def test_valid_response_is_wrapped_with_controlled_metadata():
     payload = response_fixture(
         [

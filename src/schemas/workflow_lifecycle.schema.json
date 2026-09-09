@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/workflow_lifecycle/1.0",
+  "title": "Workflow Lifecycle Record",
+  "description": "Replayable state and handoff record for one workflow round.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "bridge_version", "lifecycle_version", "workflow_mode",
+    "object_id", "round_id", "manifest_ref", "raw_decision", "resolved_decision",
+    "policy_state", "fit_result", "fit_completion_status", "best_round_status",
+    "needs_review", "next_step", "downstream_handoff", "action_summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "bridge_version": {"type": "string", "minLength": 1},
+    "lifecycle_version": {"const": "workflow-lifecycle@v1"},
+    "workflow_mode": {"enum": ["single-band", "multi-band"]},
+    "object_id": {"type": "string", "minLength": 1},
+    "round_id": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string"},
+    "manifest_ref": {"type": "string", "minLength": 1},
+    "raw_decision": {"type": "object"},
+    "resolved_decision": {"type": "object"},
+    "policy_state": {"type": "object"},
+    "fit_result": {
+      "type": "object",
+      "required": ["valid", "refs", "raw"],
+      "properties": {
+        "valid": {"type": "boolean"},
+        "refs": {"type": "object"},
+        "raw": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "fit_completion_status": {
+      "enum": ["FIT_AVAILABLE", "COMPLETED_WITH_REVIEW", "FAILED_NEEDS_REVIEW"]
+    },
+    "best_round_status": {
+      "enum": ["UNLOCKED", "PENDING_VERIFIER", "VERIFIED", "LOCKED"]
+    },
+    "needs_review": {"type": "boolean"},
+    "next_step": {"type": "string", "minLength": 1},
+    "downstream_handoff": {
+      "type": "object",
+      "required": [
+        "image_result_available", "sed_joint_eligible", "best_round_status",
+        "preserve_sed_joint_logic"
+      ],
+      "properties": {
+        "image_result_available": {"type": "boolean"},
+        "sed_joint_eligible": {"type": "boolean"},
+        "best_round_status": {"type": "string"},
+        "preserve_sed_joint_logic": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "action_summary": {
+      "type": "object",
+      "required": [
+        "raw_action_type", "resolved_action_type", "candidate_action_types",
+        "executed_action_type", "refit_verdict", "fallback", "needs_review"
+      ],
+      "properties": {
+        "raw_action_type": {"type": ["string", "null"]},
+        "resolved_action_type": {"type": ["string", "null"]},
+        "candidate_action_types": {"type": "array", "items": {"type": "string"}},
+        "executed_action_type": {"type": ["string", "null"]},
+        "refit_verdict": {"type": ["string", "null"]},
+        "fallback": {"type": ["string", "null"]},
+        "needs_review": {"type": "boolean"},
+        "config_written": {"type": "boolean"},
+        "action_validated": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

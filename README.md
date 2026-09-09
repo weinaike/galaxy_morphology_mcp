@@ -213,12 +213,24 @@ visualRAG 是一个**在线残差检索服务**，为 `component_analysis` 的 `
 
 ### 落锁前强制审计（best-round-verifier）
 
-正式锁定"最优轮次"之前，工作流（`workflow_galfit` / `workflow_galfits`）的阶段三会调用只读 subagent **`best-round-verifier`**（定义见 `.claude/agents/best-round-verifier.md`），对候选轮按**成分 / 拟合 / 物理 / 参数 / 校验 / 指标**六个维度做独立、机械、可追溯的审计，返回 `PASS | FAIL`：
+正式锁定"最优轮次"之前，工作流（`workflow_galfit` / `workflow_galfits`）的阶段三会调用逻辑工具 `workflow_verify_best_round`，读取结构化 lifecycle、拟合产物和 component analysis 证据，生成 `workflow-verifier@v1` artifact。Claude Code 的 `best-round-verifier`（定义见 `.claude/agents/best-round-verifier.md`）只是该共享 verifier 的可读包装层。
 
-- `FAIL` → 严禁落锁，按"阻断性问题"清单修复后重拟、复审至 `PASS`；
-- `PASS`（含 `WARN`）→ 方可落锁。
+- 客户端只能提交 schema 约束的 `verifier_assessment`，不能直接提交 `PASS`；缺失或 `INCONCLUSIVE` assessment 时不能落锁。
+- 只有 verifier artifact 的 `verdict=PASS` 且 `lockable=true`，才能把该 artifact 文件引用传给 `workflow_lock_best_round`。锁定工具会核验 artifact、lifecycle、对象和轮次一致性，并原子更新对象级 state／lifecycle。
+- `FAIL` 或 `INCONCLUSIVE` → 严禁落锁；`STOPPED_NEEDS_REVIEW` 即使已有有效拟合也保持 `UNLOCKED`。
 
 审计细则与工作流约束详见 `AGENTS.md`。
+
+### 跨智能体结构化 Workflow 契约
+
+结构化 workflow 面向任何能够调用 MCP 并读写 server 可见文件的客户端，不要求 Claude Code、Codex 或某个 named subagent。客户端接入后先调用 `workflow_capabilities`，确认 `workflow_modes`、schema 版本和 server readiness，再按以下逻辑工具顺序执行：
+
+`build_workflow_round_manifest` → `workflow_propose_round` → `workflow_resolve_round` → `workflow_action_preflight`／`workflow_action_config` → 现有 `run_galfit` 或 `run_galfits_image_fitting` → `workflow_complete_candidate`／`record_workflow_fit_lifecycle` → `workflow_verify_best_round` → `workflow_lock_best_round`。
+
+- 单波段的真实拟合入口仍是 `run_galfit`，多波段的真实 image fit 入口仍是 `run_galfits_image_fitting`；bridge 不新增 GALFIT／GalfitS subprocess executor。
+- 所有路径使用 server 可访问的绝对路径；manifest 必须显式列出每个 result FITS、HDU、summary、comparison、sigma／mask／PSF 和 band order，禁止依赖客户端 glob 猜测。
+- `stdio` 使用 `python -m mcp_server --transport stdio`，streamable HTTP 使用 `python -m mcp_server --transport http --host <host> --port <port> --path /mcp`。客户端应通过 MCP 的工具列表或 `workflow_capabilities` 检查实际可见工具。
+- 结构化 pilot 仍由 `COMPONENT_ANALYSIS_WORKFLOW_PILOT=1` 显式控制，默认开关不变；没有该开关时，现有 workflow 不被 bridge 接管。
 
 ## 项目结构
 

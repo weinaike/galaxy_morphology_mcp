@@ -23,9 +23,13 @@ class FakeCompletions:
         return SimpleNamespace(
             choices=[
                 SimpleNamespace(
-                    message=SimpleNamespace(content='{"parse_status":"OK"}')
+                    message=SimpleNamespace(content='{"parse_status":"OK"}'),
+                    finish_reason="stop",
                 )
-            ]
+            ],
+            usage=SimpleNamespace(
+                model_dump=lambda: {"prompt_tokens": 4, "completion_tokens": 3}
+            ),
         )
 
 
@@ -46,6 +50,11 @@ def test_openai_compatible_callback_sends_inline_image_and_json_mode(tmp_path):
     )
 
     assert callback(str(image), "return JSON") == '{"parse_status":"OK"}'
+    assert callback.last_response_metadata == {
+        "response_bytes": len('{"parse_status":"OK"}'.encode("utf-8")),
+        "finish_reason": "stop",
+        "token_usage": {"prompt_tokens": 4, "completion_tokens": 3},
+    }
     request = client.chat.completions.kwargs
     assert request["model"] == "gemini-test"
     assert request["temperature"] == 0

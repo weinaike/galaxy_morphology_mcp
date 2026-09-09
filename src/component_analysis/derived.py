@@ -163,6 +163,12 @@ def evaluate_bar_psf_veto(
             "psf_veto_reason": "fitted convolution PSF is unavailable",
             "psf_veto_diagnostics": diagnostics,
         }
+    if band.sigma is None:
+        return {
+            "psf_veto": None,
+            "psf_veto_reason": "sigma image is unavailable",
+            "psf_veto_diagnostics": diagnostics,
+        }
 
     center = band.center or (
         (band.original.shape[1] - 1) / 2.0,
@@ -279,6 +285,187 @@ def measure_radial_residual_systematic(
     )
 
 
+def _component_key(component: Mapping[str, Any]) -> str:
+    return str(
+        component.get("component")
+        or component.get("name")
+        or ""
+    ).lower()
+
+
+def _component_facts(
+    components: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    physical = [item for item in components if item.get("type") != "const"]
+    parameter_health = [
+        {
+            "model_label": item.get("model_label") or item.get("name"),
+            "component": _component_key(item) or None,
+            "parameters": item.get("parameter_health", []),
+        }
+        for item in physical
+    ]
+
+    pairs: list[dict[str, Any]] = []
+    for index, first in enumerate(physical):
+        for second in physical[index + 1 :]:
+            re_first = first.get("re")
+            re_second = second.get("re")
+            q_first = first.get("ba")
+            q_second = second.get("ba")
+            pa_first = first.get("pa")
+            pa_second = second.get("pa")
+            x_first = first.get("x")
+            x_second = second.get("x")
+            y_first = first.get("y")
+            y_second = second.get("y")
+            pair = {
+                "first_model_label": first.get("model_label") or first.get("name"),
+                "second_model_label": second.get("model_label") or second.get("name"),
+                "first_component": _component_key(first) or None,
+                "second_component": _component_key(second) or None,
+                "same_profile_type": first.get("type") == second.get("type"),
+                "center_distance": (
+                    float(np.hypot(x_first - x_second, y_first - y_second))
+                    if all(
+                        isinstance(value, (int, float))
+                        for value in (x_first, x_second, y_first, y_second)
+                    )
+                    else None
+                ),
+                "re_ratio": (
+                    float(re_first / re_second)
+                    if all(isinstance(value, (int, float)) for value in (re_first, re_second))
+                    and re_second != 0
+                    else None
+                ),
+                "q_difference": (
+                    float(abs(q_first - q_second))
+                    if all(isinstance(value, (int, float)) for value in (q_first, q_second))
+                    else None
+                ),
+                "pa_difference": (
+                    float(abs((pa_first - pa_second + 90.0) % 180.0 - 90.0))
+                    if all(isinstance(value, (int, float)) for value in (pa_first, pa_second))
+                    else None
+                ),
+            }
+            pairs.append(pair)
+
+    reference = physical[0] if physical else None
+    center_health: list[dict[str, Any]] = []
+    for component in physical:
+        values = {item["parameter"]: item for item in component.get("parameter_health", [])}
+        x_value = component.get("x")
+        y_value = component.get("y")
+        x_health = values.get("x", {})
+        y_health = values.get("y", {})
+        center_health.append(
+            {
+                "model_label": component.get("model_label") or component.get("name"),
+                "component": _component_key(component) or None,
+                "x": x_value,
+                "y": y_value,
+                "x_vary": x_health.get("vary"),
+                "y_vary": y_health.get("vary"),
+                "is_reference": component is reference,
+                "constraint_present": (
+                    True
+                    if component is reference
+                    else (
+                        x_health.get("vary") is False
+                        and y_health.get("vary") is False
+                        and all(
+                            isinstance(value, (int, float))
+                            for value in (
+                                x_value,
+                                y_value,
+                                reference.get("x") if reference else None,
+                                reference.get("y") if reference else None,
+                            )
+                        )
+                        and x_value == reference.get("x")
+                        and y_value == reference.get("y")
+                    )
+                ),
+                "offset_from_reference": (
+                    float(np.hypot(x_value - reference.get("x"), y_value - reference.get("y")))
+                    if reference is not None
+                    and component is not reference
+                    and all(
+                        isinstance(value, (int, float))
+                        for value in (
+                            x_value,
+                            y_value,
+                            reference.get("x"),
+                            reference.get("y"),
+                        )
+                    )
+                    else 0.0
+                    if component is reference
+                    else None
+                ),
+            }
+        )
+
+    required_fixed: list[dict[str, Any]] = []
+    for component in physical:
+        values = {
+            item["parameter"]: item
+            for item in component.get("parameter_health", [])
+        }
+        n_health = values.get("n", {})
+        role = _component_key(component)
+        expected = 1.0 if role == "disk" else 0.5 if role == "bar" else None
+        if expected is not None:
+            value = component.get("n")
+            required_fixed.append(
+                {
+                    "model_label": component.get("model_label") or component.get("name"),
+                    "component": role,
+                    "parameter": "n",
+                    "expected_value": expected,
+                    "value": value,
+                    "vary": n_health.get("vary"),
+                    "satisfied": (
+                        isinstance(value, (int, float))
+                        and abs(value - expected) <= 1e-6
+                        and n_health.get("vary") is False
+                    ),
+                }
+            )
+    disk_fourier_targets = [
+        item.get("model_label") or item.get("name")
+        for item in physical
+        if _component_key(item) == "disk"
+        and str(item.get("type", "")).lower() == "sersic_f"
+    ]
+    required_fixed.append(
+        {
+            "parameter": "fourier_m1_target",
+            "expected_component": "disk",
+            "target_model_labels": disk_fourier_targets,
+            "satisfied": len(disk_fourier_targets) <= 1,
+        }
+    )
+
+    return {
+        "component_parameter_health": _measurement(parameter_health),
+        "component_degeneracy_facts": _measurement(pairs),
+        "center_constraint_health": _measurement(center_health),
+        "required_fixed_parameter_health": _measurement(required_fixed),
+        "constraint_inventory": _measurement(
+            [
+                {
+                    "model_label": item.get("model_label") or item.get("name"),
+                    "parameters": item.get("parameter_health", []),
+                }
+                for item in physical
+            ]
+        ),
+    }
+
+
 def derive_fit_features(components: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """Derive rule-facing measurements from parsed GalfitS component parameters."""
 
@@ -297,7 +484,7 @@ def derive_fit_features(components: Sequence[Mapping[str, Any]]) -> dict[str, di
                 }
             )
 
-    by_name = {str(item.get("name", "")).lower(): item for item in physical}
+    by_name = {_component_key(item): item for item in physical}
     disk = by_name.get("disk")
     bar = by_name.get("bar")
     bar_parameters = _measurement(status="UNAVAILABLE", quality_flags=("other",))
@@ -510,12 +697,20 @@ def _central_measurements(
         if band.mask is None
         else np.asarray(band.mask, dtype=bool)
     )
-    snr = measure_aperture_snr(
-        band.residual,
-        band.sigma,
-        center=center,
-        radius=psf_fwhm,
-        mask=mask,
+    snr = (
+        measure_aperture_snr(
+            band.residual,
+            band.sigma,
+            center=center,
+            radius=psf_fwhm,
+            mask=mask,
+        )
+        if band.sigma is not None
+        else {
+            "status": "UNAVAILABLE",
+            "value": None,
+            "quality_flags": ["sigma_missing"],
+        }
     )
     yy, xx = np.indices(band.residual.shape, dtype=float)
     local_mask = mask | (np.hypot(xx - center[0], yy - center[1]) > 3.0 * psf_fwhm)
@@ -579,6 +774,8 @@ def _local_original_contrast_snr(band: BandArrays, region: Mapping[str, Any]) ->
     distance = np.hypot(xx - x, yy - y)
     core = distance <= radius
     annulus = (distance >= 2.0 * radius) & (distance <= 4.0 * radius)
+    if band.sigma is None:
+        return None
     excluded = ~np.isfinite(band.original) | ~np.isfinite(band.sigma) | (band.sigma <= 0)
     if band.mask is not None:
         excluded |= np.asarray(band.mask, dtype=bool)
@@ -645,6 +842,7 @@ def derive_rule_features(
     bands: Sequence[BandArrays],
     *,
     fit_components: Sequence[Mapping[str, Any]] = (),
+    fit_health: Mapping[str, Any] | None = None,
     candidate_match_arcsec: float = 0.1,
     isophote_cache: MutableMapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -734,7 +932,7 @@ def derive_rule_features(
                 outer_radius=outer_radius,
                 mask=band.mask,
             )
-            if inner_radius < outer_radius
+            if band.sigma is not None and inner_radius < outer_radius
             else _measurement(status="UNAVAILABLE", quality_flags=("other",))
         )
         if band.band in passed_bands and radial["status"] == "AVAILABLE":
@@ -835,6 +1033,53 @@ def derive_rule_features(
     original_matches, match_summary = _candidate_facts(result, bands)
     m1_confusion = _measurement(any(original_matches.values()) or _mask_asymmetric(bands))
     fit_features = derive_fit_features(fit_components)
+    component_facts = _component_facts(fit_components)
+    if fit_health is None:
+        fit_convergence = _measurement(
+            status="UNAVAILABLE",
+            quality_flags=("fit_not_converged",),
+        )
+    else:
+        fit_summary = fit_health.get("summary", {})
+        fit_convergence = _measurement(
+            {
+                "fit_succeeded": fit_health.get("fit_succeeded"),
+                "overall_chisq": fit_summary.get("chisq"),
+                "overall_reduced_chisq": fit_summary.get("reduced_chisq"),
+                "bic": fit_summary.get("bic"),
+                "bands": fit_health.get("bands", []),
+            }
+        )
+
+    radial_available = len(radial_values) == len(passed_bands) and bool(passed_bands)
+    absolute_residual = (
+        _measurement(
+            {
+                "available_band_count": len(passed_bands),
+                "radial_profile_count": len(radial_values),
+                "one_d_systematic": any(
+                    item.get("systematic") is True for item in radial_values
+                ),
+                "one_d_clean": not any(
+                    item.get("systematic") is True for item in radial_values
+                ),
+                "central_m2_amplitude": residual_m2.get("value"),
+                "central_elongation": central_elongation.get("value"),
+            }
+        )
+        if radial_available
+        else _measurement(status="UNAVAILABLE", quality_flags=("other",))
+    )
+    local_residual_values = [
+        item.get("local_residual_facts")
+        for item in fit_components
+        if item.get("local_residual_facts") is not None
+    ]
+    local_residual = (
+        _measurement(local_residual_values)
+        if local_residual_values
+        else _measurement(status="UNAVAILABLE", quality_flags=("other",))
+    )
 
     aggregate_features = [
         _derived_feature("aggregate_source_extent", "source_extent_psf_ratio", extent),
@@ -882,6 +1127,46 @@ def derive_rule_features(
             "aggregate_extended_positive_residual",
             "extended_positive_residual",
             extended_positive,
+        ),
+        _derived_feature(
+            "aggregate_fit_convergence",
+            "fit_convergence_summary",
+            fit_convergence,
+        ),
+        _derived_feature(
+            "aggregate_component_parameter_health",
+            "component_parameter_health",
+            component_facts["component_parameter_health"],
+        ),
+        _derived_feature(
+            "aggregate_component_degeneracy",
+            "component_degeneracy_facts",
+            component_facts["component_degeneracy_facts"],
+        ),
+        _derived_feature(
+            "aggregate_center_constraint",
+            "center_constraint_health",
+            component_facts["center_constraint_health"],
+        ),
+        _derived_feature(
+            "aggregate_required_fixed",
+            "required_fixed_parameter_health",
+            component_facts["required_fixed_parameter_health"],
+        ),
+        _derived_feature(
+            "aggregate_constraint_inventory",
+            "constraint_inventory",
+            component_facts["constraint_inventory"],
+        ),
+        _derived_feature(
+            "aggregate_absolute_residual",
+            "absolute_residual_quality",
+            absolute_residual,
+        ),
+        _derived_feature(
+            "aggregate_component_local_residual",
+            "component_local_residual_facts",
+            local_residual,
         ),
     ]
     result["features"].extend(aggregate_features + per_band_features)

@@ -14,7 +14,9 @@ import jsonschema
 
 from schemas import load_schema, validate
 
-PROMPT_VERSION = "component-analysis-vlm@v1.2"
+PROMPT_VERSION = "component-analysis-vlm@v1.3"
+MAX_OBSERVATIONS_PER_REQUEST = 4
+MAX_NOTES_LENGTH = 240
 
 _OBSERVATION_PROPERTIES = load_schema("vlm_evidence")["properties"]["observations"][
     "items"
@@ -66,12 +68,30 @@ def build_vlm_prompt(
     *,
     round_id: str,
     numeric_evidence: dict[str, Any],
+    target_ids: tuple[str, ...] | list[str] | None = None,
+    retry_variant: int = 0,
 ) -> str:
     """Build the versioned label-only prompt for one comparison image."""
     if numeric_evidence.get("round_id") != round_id:
         raise ValueError("numeric evidence round_id does not match requested round")
 
-    target_ids = allowed_target_ids(numeric_evidence)
+    allowed_targets = allowed_target_ids(numeric_evidence)
+    requested_targets = tuple(
+        target_ids or allowed_targets[:MAX_OBSERVATIONS_PER_REQUEST]
+    )
+    if not requested_targets:
+        raise ValueError("target_ids must not be empty")
+    if len(set(requested_targets)) != len(requested_targets):
+        raise ValueError("target_ids must be unique")
+    unknown = set(requested_targets) - set(allowed_targets)
+    if unknown:
+        raise ValueError(
+            f"target_ids were not issued by numeric layer: {sorted(unknown)}"
+        )
+    if len(requested_targets) > MAX_OBSERVATIONS_PER_REQUEST:
+        raise ValueError(
+            f"target_ids exceeds per-request limit {MAX_OBSERVATIONS_PER_REQUEST}"
+        )
     contract = {
         "schema_version": "1.0",
         "round_id": round_id,
@@ -92,8 +112,10 @@ def build_vlm_prompt(
             "你负责数值层 candidate overlay 的受控形态标注，不负责成分增删决策。",
             f"prompt_version: {PROMPT_VERSION}",
             f"round_id: {round_id}",
-            "只能描述数值层已经给出的 target_id："
-            + json.dumps(target_ids, ensure_ascii=False),
+            "只能描述本次请求给出的 target_id；没有可靠视觉证据时可以省略："
+            + json.dumps(requested_targets, ensure_ascii=False),
+            f"本次最多输出 {MAX_OBSERVATIONS_PER_REQUEST} 条 observation；不要为未列出的 target 输出内容。",
+            f"retry_variant: {retry_variant}; 如果证据不足，输出 observations=[]。",
             "label 只能取以下新方案枚举值（历史兼容标签不在此列表）："
             + json.dumps(CONTROLLED_LABELS, ensure_ascii=False),
             "quality_flags 只能取以下枚举值："
@@ -119,7 +141,7 @@ def build_vlm_prompt(
             ),
             "只输出一个 JSON 对象，不要使用 Markdown 代码块，"
             "不要在 JSON 前后添加文字。",
-            "输出结构如下；observations 可以为空，notes 只能记录简短视觉歧义，"
+            f"输出结构如下；observations 可以为空，notes 最多 {MAX_NOTES_LENGTH} 个字符，只能记录简短视觉歧义，"
             "不能包含动作、坐标或参数：",
             json.dumps(contract, ensure_ascii=False, indent=2),
         )
@@ -193,6 +215,7 @@ def parse_vlm_response(
     round_id: str,
     numeric_evidence: dict[str, Any],
     model_id: str | None = None,
+    allowed_targets: set[str] | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     """Parse strict model JSON and downgrade invalid output to PARSE_FAILED.
 
@@ -201,7 +224,7 @@ def parse_vlm_response(
     """
     if numeric_evidence.get("round_id") != round_id:
         raise ValueError("numeric evidence round_id does not match requested round")
-    targets = set(allowed_target_ids(numeric_evidence))
+    targets = allowed_targets or set(allowed_target_ids(numeric_evidence))
 
     def failed(message: str) -> tuple[dict[str, Any], str]:
         return (
@@ -238,6 +261,12 @@ def parse_vlm_response(
         return failed("VLM response round_id does not match requested round")
     if evidence["parse_status"] != "OK":
         return evidence, f"VLM response status is {evidence['parse_status']}"
+    for observation in evidence["observations"]:
+        notes = observation.get("notes")
+        if isinstance(notes, str) and len(notes) > MAX_NOTES_LENGTH:
+            return failed(
+                f"VLM observation notes exceeds {MAX_NOTES_LENGTH} characters"
+            )
 
     semantic_error = _semantic_error(evidence, targets)
     if semantic_error is not None:

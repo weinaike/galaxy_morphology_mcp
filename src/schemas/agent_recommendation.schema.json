@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/agent-recommendation/1.0",
+  "title": "Bounded Agent Recommendation",
+  "description": "A client recommendation that may rank server-generated candidates but cannot create execution authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "recommended_rule_id",
+    "candidate_priorities",
+    "rationale",
+    "evidence_refs",
+    "uncertainty"
+  ],
+  "properties": {
+    "schema_version": {"const": "agent-recommendation@v1"},
+    "recommended_rule_id": {"type": "string", "minLength": 1},
+    "candidate_priorities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "priority"],
+        "properties": {
+          "rule_id": {"type": "string", "minLength": 1},
+          "priority": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "rationale": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "uncertainty": {"enum": ["low", "medium", "high", "unknown"]},
+    "suggested_action": {"type": ["object", "null"]},
+    "parameter_plan": {"type": ["object", "null"]}
+  }
+}

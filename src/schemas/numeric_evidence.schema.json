@@ -60,7 +60,7 @@
             "type": "array",
             "items": {
               "enum": [
-                "low_snr", "high_mask_fraction", "psf_undersampled", "psf_missing",
+                "low_snr", "high_mask_fraction", "psf_undersampled", "psf_missing", "sigma_missing",
                 "fit_not_converged", "wcs_invalid", "unit_unknown", "saturated",
                 "edge_truncated", "nan_in_region", "other"
               ]

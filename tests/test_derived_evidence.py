@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from component_analysis.derived import _component_facts
 from component_analysis import (
     BandArrays,
     derive_fit_features,
@@ -184,3 +185,40 @@ def test_fit_features_report_single_sersic_and_bar_disk_relation():
         "re_bar_over_re_disk": 0.4,
         "q_bar": 0.3,
     }
+
+
+
+def test_component_facts_preserve_same_center_fixed_constraint():
+    facts = _component_facts([
+        {
+            "model_label": "disk1",
+            "component": "disk",
+            "type": "expdisk",
+            "x": 10.0,
+            "y": 11.0,
+            "n": 1.0,
+            "parameter_health": [
+                {"parameter": "x", "vary": True, "at_boundary": False},
+                {"parameter": "y", "vary": True, "at_boundary": False},
+                {"parameter": "n", "vary": False, "at_boundary": False},
+            ],
+        },
+        {
+            "model_label": "bar1",
+            "component": "bar",
+            "type": "sersic",
+            "x": 10.0,
+            "y": 11.0,
+            "n": 0.5,
+            "parameter_health": [
+                {"parameter": "x", "vary": False, "at_boundary": False},
+                {"parameter": "y", "vary": False, "at_boundary": False},
+                {"parameter": "n", "vary": False, "at_boundary": False},
+            ],
+        },
+    ])
+    center = facts["center_constraint_health"]["value"]
+    assert center[1]["constraint_present"] is True
+    assert center[1]["offset_from_reference"] == 0.0
+    assert facts["required_fixed_parameter_health"]["value"][0]["satisfied"] is True
+    assert facts["component_degeneracy_facts"]["value"][0]["center_distance"] == 0.0

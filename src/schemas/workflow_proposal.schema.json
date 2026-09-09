@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/workflow_proposal/1.0",
+  "title": "Workflow Proposal",
+  "description": "Replayable evidence package and raw rule proposal before policy resolution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workflow_mode",
+    "object_id",
+    "round_id",
+    "manifest_ref",
+    "numeric_evidence",
+    "vlm_evidence",
+    "evidence_fingerprint",
+    "rule_decision",
+    "raw_decision",
+    "candidate_actions",
+    "rule_trace",
+    "termination_checks",
+    "current_components",
+    "provider"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "workflow_mode": {
+      "enum": [
+        "single-band",
+        "multi-band"
+      ]
+    },
+    "object_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "round_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "manifest_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "numeric_evidence": {
+      "type": "object"
+    },
+    "vlm_evidence": {
+      "type": "object"
+    },
+    "evidence_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rule_decision": {
+      "type": "object"
+    },
+    "raw_decision": {
+      "type": "object"
+    },
+    "candidate_actions": {
+      "type": "array"
+    },
+    "rule_trace": {
+      "type": "array"
+    },
+    "termination_checks": {
+      "type": "array"
+    },
+    "current_components": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "current_profile": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "predicted_components": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confirmed_components": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "round0_detection": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "timing": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "workflow-vlm-timing@v1"
+        },
+        "round_id": {
+          "type": "string"
+        },
+        "model_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "ended_at": {
+          "type": "string"
+        },
+        "duration_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "attempts": {
+          "type": "array"
+        },
+        "fallback_status": {
+          "type": "string"
+        },
+        "timing_log_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "round_id",
+        "duration_s",
+        "attempts",
+        "fallback_status"
+      ],
+      "additionalProperties": false
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "attempts"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "USED",
+            "REFUSED",
+            "TIMEOUT",
+            "PARSE_FAILED",
+            "DISABLED"
+          ]
+        },
+        "model_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": "array"
+        },
+        "raw_response_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "response_bytes": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "finish_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token_usage": {}
+      }
+    }
+  }
+}

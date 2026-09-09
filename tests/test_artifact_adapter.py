@@ -12,6 +12,7 @@ from component_analysis import (  # noqa: E402
     extract_numeric_evidence_from_manifest,
     load_band_arrays,
     run_shadow_round,
+    PolicyState,
 )
 from schemas import validate  # noqa: E402
 
@@ -246,3 +247,107 @@ def test_shadow_runner_preserves_raw_controlled_vlm_response(tmp_path):
     assert result["vlm_evidence"]["model_id"] == "test-vlm"
     assert (output_dir / "vlm_response.raw.json").read_text() == raw
     assert result["vlm_evidence"]["parse_status"] == "OK"
+
+
+def test_shadow_runner_retries_malformed_json_once_and_preserves_attempts(tmp_path):
+    lyric, summary, comparison, _ = _write_round(tmp_path)
+    manifest = build_manifest(
+        round_dir=tmp_path,
+        lyric_file=lyric,
+        summary_file=summary,
+        comparison_png=comparison,
+    )
+    valid = json.dumps({
+        "schema_version": "1.0",
+        "round_id": manifest["round_id"],
+        "parse_status": "OK",
+        "observations": [],
+    })
+    responses = iter(["{ malformed", valid])
+    calls = []
+
+    def callback(image_path, prompt):
+        calls.append((image_path, prompt))
+        return next(responses)
+
+    output_dir = tmp_path / "shadow_retry"
+    result = run_shadow_round(
+        manifest,
+        output_dir=output_dir,
+        vlm_callback=callback,
+        current_components={"disk"},
+    )
+
+    assert len(calls) == 2
+    assert result["vlm_evidence"]["parse_status"] == "OK"
+    attempts = json.loads(
+        (output_dir / "vlm_response.attempts.json").read_text(encoding="utf-8")
+    )["attempts"]
+    assert [item["parse_status"] for item in attempts] == ["PARSE_FAILED", "OK"]
+    assert attempts[0]["raw_response"] == "{ malformed"
+    assert (output_dir / "policy_state.json").is_file()
+
+
+def test_shadow_runner_uses_numeric_fallback_after_two_parse_failures(tmp_path):
+    lyric, summary, comparison, _ = _write_round(tmp_path)
+    manifest = build_manifest(
+        round_dir=tmp_path,
+        lyric_file=lyric,
+        summary_file=summary,
+        comparison_png=comparison,
+    )
+    calls = []
+
+    def callback(image_path, prompt):
+        calls.append(image_path)
+        return "{ malformed"
+
+    output_dir = tmp_path / "shadow_numeric_fallback"
+    result = run_shadow_round(
+        manifest,
+        output_dir=output_dir,
+        vlm_callback=callback,
+        current_components={"disk"},
+    )
+
+    assert len(calls) == 2
+    assert result["vlm_evidence"]["parse_status"] == "PARSE_FAILED"
+    assert result["decision_artifact"]["automation"]["resolution"] == "numeric_only_retry"
+    assert result["decision_artifact"]["raw_decision"]["action"]["action_type"] == "REFIT_PARAMETERS"
+    attempts = json.loads(
+        (output_dir / "vlm_response.attempts.json").read_text(encoding="utf-8")
+    )["attempts"]
+    assert [item["attempt"] for item in attempts] == [1, 2]
+    assert all(item["raw_response"] == "{ malformed" for item in attempts)
+
+
+
+def test_shadow_state_carries_previous_round_reference(tmp_path):
+    lyric, summary, comparison, _ = _write_round(tmp_path)
+    manifest = build_manifest(
+        round_dir=tmp_path,
+        lyric_file=lyric,
+        summary_file=summary,
+        comparison_png=comparison,
+        round_id="object-r1",
+    )
+    state = PolicyState(object_id="obj170")
+    first_dir = tmp_path / "shadow_state_1"
+    second_dir = tmp_path / "shadow_state_2"
+    first = run_shadow_round(
+        manifest,
+        output_dir=first_dir,
+        current_components={"disk"},
+        policy_state=state,
+    )
+    second = run_shadow_round(
+        manifest,
+        output_dir=second_dir,
+        current_components={"disk"},
+        policy_state=state,
+    )
+    assert second["decision_artifact"]["evidence_refs"]["previous_round"] == str(
+        (first_dir / "decision_artifact.json").resolve()
+    )
+    assert second["policy_state"]["object_id"] == "obj170"
+    assert second["policy_state"]["last_round_id"] == "object-r1"

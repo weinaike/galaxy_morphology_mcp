@@ -29,6 +29,7 @@ class OpenAICompatibleVLM:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
         self.model_id = model or os.getenv("OPENAI_MODEL", "gpt-4o")
+        self.last_response_metadata: dict[str, Any] = {}
         if not self.api_key and client is None:
             raise ValueError(
                 "OPENAI_API_KEY is required for the shadow VLM callback"
@@ -70,7 +71,7 @@ class OpenAICompatibleVLM:
                     }
                 ],
                 temperature=0,
-                max_tokens=4096,
+                max_tokens=2048,
                 response_format={"type": "json_object"},
             )
         except Exception as exc:
@@ -90,5 +91,27 @@ class OpenAICompatibleVLM:
         except (AttributeError, IndexError, KeyError) as exc:
             raise ValueError("VLM provider returned no message content") from exc
         if not isinstance(content, str) or not content.strip():
+            self.last_response_metadata = {
+                "response_bytes": 0,
+                "finish_reason": "unavailable",
+                "token_usage": "unavailable",
+            }
             raise ValueError("VLM provider returned an empty message")
+        usage = getattr(response, "usage", None)
+        usage_value: Any = "unavailable"
+        if usage is not None:
+            if hasattr(usage, "model_dump"):
+                usage_value = usage.model_dump()
+            elif hasattr(usage, "dict"):
+                usage_value = usage.dict()
+            elif isinstance(usage, dict):
+                usage_value = usage
+            else:
+                usage_value = str(usage)
+        choice = response.choices[0]
+        self.last_response_metadata = {
+            "response_bytes": len(content.encode("utf-8")),
+            "finish_reason": getattr(choice, "finish_reason", "unavailable"),
+            "token_usage": usage_value,
+        }
         return content

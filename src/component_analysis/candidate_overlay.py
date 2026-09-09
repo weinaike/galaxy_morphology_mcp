@@ -63,12 +63,24 @@ def create_candidate_overlay(
     resulting image and candidate IDs in the prompt, never coordinate text.
     The source comparison PNG is not modified.
     """
-    validate(manifest, "artifact_manifest")
+    if manifest.get("workflow_mode") in {"single-band", "multi-band"}:
+        validate(manifest, "workflow_round_manifest")
+        overlay_manifest = dict(manifest)
+        overlay_manifest["bands"] = [
+            {
+                **band,
+                **band["result_hdus"],
+            }
+            for band in manifest["bands"]
+        ]
+    else:
+        validate(manifest, "artifact_manifest")
+        overlay_manifest = manifest
     validate(numeric_evidence, "numeric_evidence")
     if manifest["round_id"] != numeric_evidence["round_id"]:
         raise ValueError("manifest and numeric evidence round_id do not match")
 
-    bands = manifest["bands"]
+    bands = overlay_manifest["bands"]
     regions_by_band = _regions_by_band(numeric_evidence)
     output = Path(output_path).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

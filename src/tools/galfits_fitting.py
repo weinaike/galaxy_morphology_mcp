@@ -12,6 +12,7 @@ from astropy.cosmology import Planck18 as cosmo
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 __all__ = ["ImageFitting", "PureSEDFitting", "ImageSEDFitting"]
 
@@ -319,7 +320,7 @@ def ImageFitting(
     args = args or []
     if isinstance(args, str):
         args = [args]
-    command = ["python", "-m", "galfits.galfitS", "--config", f'{lyric_file}', '--workplace', f'{workplace}'] + args
+    command = [sys.executable, "-m", "galfits.galfitS", "--config", f'{lyric_file}', '--workplace', f'{workplace}'] + args
     try:
         cpi = subprocess.run(
             command,
@@ -613,4 +614,3 @@ if __name__ == '__main__':
 
     # result = ImageSEDFitting(lyric_file=new_lyric_file, workplace=workplace + "_2", args=args)
     # print(result)
-

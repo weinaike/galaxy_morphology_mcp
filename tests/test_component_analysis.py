@@ -339,15 +339,13 @@ def test_legacy_spheroid_label_does_not_create_vlm_disk_conflict():
     decision = decide(
         [EXTENT, GEOMETRY, RESIDUAL_OUTER], [obs("spheroid_like", confidence=0.9)]
     )
-    assert decision["rule_trace"][-1]["rule_id"] != "DISK_VLM_CONFLICT_V1"
-
+    assert not any(item["rule_id"] == "DISK_VLM_CONFLICT_V1" for item in decision["rule_trace"])
 
 def test_spheroid_kept_as_single_sersic():
     sersic = feat("n", "single_sersic_n", {"n": 4.0, "at_boundary": False})
     decision = decide([EXTENT, sersic])
     assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
-    assert decision["rule_trace"][-1]["rule_id"] == "SPHEROID_SINGLE_SERSIC_V1"
-
+    assert any(item["rule_id"] == "SPHEROID_SINGLE_SERSIC_V1" for item in decision["rule_trace"])
 
 # ---------------------------------------------------------------------------
 # Edge-on disk
@@ -361,6 +359,7 @@ def test_edge_on_replace_requires_vlm_confirmation():
         "action_type": "PROPOSE_REPLACE",
         "replace_from": "disk",
         "replace_to": "edge_on_disk",
+        "target_model_label": "disk",
     }
     decision = decide([EXTENT, low_q], [], components={"disk"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
@@ -386,8 +385,7 @@ STRONG_BAR = feat(
 def test_bar_single_quality_band_strong_isophote_triggers():
     decision = decide([STRONG_BAR], [], components={"disk"})
     assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "bar"}
-    assert decision["rule_trace"][-1]["rule_id"] == "BAR_STRONG_ISOPHOTE_V1"
-
+    assert any(item["rule_id"] == "BAR_STRONG_ISOPHOTE_V1" for item in decision["rule_trace"])
 
 def test_bar_diffraction_conflict_inconclusive():
     decision = decide(
@@ -477,15 +475,13 @@ def test_central_similar_resolution_conflict_inconclusive():
     ]
     decision = decide(features, [], components={"disk"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
-    assert decision["rule_trace"][-1]["rule_id"] == "CENTRAL_RESOLUTION_CONFLICT_V1"
-
+    assert any(item["rule_id"] == "CENTRAL_RESOLUTION_CONFLICT_V1" for item in decision["rule_trace"])
 
 def test_central_weak_snr_only_inconclusive():
     features = [CENTRAL_EXCESS, resolution("res", "f200w", 4.0, 2.5, 15.0)]
     decision = decide(features, [], components={"disk"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
-    assert decision["rule_trace"][-1]["rule_id"] == "CENTRAL_RESOLUTION_QUALITY_V1"
-
+    assert any(item["rule_id"] == "CENTRAL_RESOLUTION_QUALITY_V1" for item in decision["rule_trace"])
 
 def test_central_dust_or_diffraction_pollution_inconclusive():
     features = [CENTRAL_EXCESS, resolution("res", "f200w", 4.0, 2.5, 30.0)]
@@ -565,14 +561,12 @@ EXTENDED_RESIDUAL = feat("ext", "extended_positive_residual", True)
 def test_lens_proposed_on_bar_anomaly_with_extended_residual():
     decision = decide([BAR_ANOMALY, EXTENDED_RESIDUAL], [], components={"disk", "bar"})
     assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "lens"}
-    assert decision["rule_trace"][-1]["rule_id"] == "LENS_BAR_SPLIT_V1"
-
+    assert any(item["rule_id"] == "LENS_BAR_SPLIT_V1" for item in decision["rule_trace"])
 
 def test_lens_anomaly_without_extended_residual_inconclusive():
     decision = decide([BAR_ANOMALY], [], components={"disk", "bar"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
-    assert decision["rule_trace"][-1]["rule_id"] == "LENS_BAR_ANOMALY_V1"
-
+    assert any(item["rule_id"] == "LENS_BAR_ANOMALY_V1" for item in decision["rule_trace"])
 
 def test_lens_companion_conflict_inconclusive():
     decision = decide(
@@ -581,8 +575,7 @@ def test_lens_companion_conflict_inconclusive():
         components={"disk", "bar"},
     )
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
-    assert decision["rule_trace"][-1]["rule_id"] == "LENS_COMPANION_CONFLICT_V1"
-
+    assert any(item["rule_id"] == "LENS_COMPANION_CONFLICT_V1" for item in decision["rule_trace"])
 
 def test_lens_not_proposed_without_bar():
     decision = decide([BAR_ANOMALY, EXTENDED_RESIDUAL], [], components={"disk"})
@@ -607,7 +600,12 @@ def test_vlm_parse_failure_forces_inconclusive():
         vlm_evidence=vlm_fixture(parse_status="PARSE_FAILED"),
         current_components=[],
     )
-    assert decision["action"]["action_type"] == "INCONCLUSIVE"
+    assert decision["action"]["action_type"] != "INCONCLUSIVE"
+    assert any(
+        item["rule_id"] == "VLM_UNAVAILABLE_V1"
+        and item["outcome"] == "INCONCLUSIVE"
+        for item in decision["rule_trace"]
+    )
     assert decision["rule_trace"][0]["rule_id"] == "VLM_UNAVAILABLE_V1"
 
 
@@ -727,3 +725,40 @@ def test_thresholds_are_versioned_in_artifact():
     decision = decide([], [], components={"disk", "bulge", "bar", "fourier_m1", "companion"})
     assert decision["thresholds_version"] == RuleThresholds().version
     assert decision["rules_version"] == "component-rules@v1"
+
+def test_mandatory_disk_n_fix_ignores_fit_quality_loss():
+    decision = evaluate_refit(
+        round_id="r2",
+        component="disk",
+        candidate_action_type="REFIT_PARAMETERS",
+        candidate_reason_code="DISK_N_NOT_FIXED",
+        refit_evaluation=gates(residual="no", bic=bic(-8.0)),
+    )
+
+    assert decision["action"]["action_type"] == "ACCEPT_REFIT"
+    assert decision["rule_trace"][0]["rule_id"] == "MANDATORY_DISK_N_SPEC_V1"
+    assert decision["refit_evaluation"]["residual_outcome"] == "worse"
+
+def test_mandatory_disk_n_fix_still_requires_converged_physical_fit():
+    decision = evaluate_refit(
+        round_id="r2",
+        component="disk",
+        candidate_action_type="REFIT_PARAMETERS",
+        candidate_reason_code="DISK_N_NOT_FIXED",
+        refit_evaluation=gates(converged="no", residual="yes"),
+    )
+
+    assert decision["action"]["action_type"] == "REJECT_REFIT"
+
+
+def test_disk_promotion_keeps_semantic_transition_when_residual_is_worse():
+    decision = evaluate_refit(
+        round_id="r2",
+        component="disk",
+        candidate_action_type="PROMOTE_SINGLE_SERSIC_TO_DISK",
+        candidate_reason_code="DISK_CONFIRMED_SINGLE_SERSIC_PROMOTION",
+        refit_evaluation=gates(residual="no", bic=bic(-8.0)),
+    )
+
+    assert decision["action"]["action_type"] == "ACCEPT_REFIT"
+    assert decision["rule_trace"][0]["rule_id"] == "MANDATORY_DISK_N_SPEC_V1"

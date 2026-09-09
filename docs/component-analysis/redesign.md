@@ -1,7 +1,7 @@
 # 成分分析模块重构方案
 
 > 面向：星系拟合 workflow 中 `analyze_multiband_components`（阶段二步骤 2）的成分增删决策模块
-> 状态：v9（2026-08-24），三层架构与本轮规则边界已确认；第十一节开放问题已全部裁定为 v1 默认规则（待评测校准），Lens 保留入白名单、「Nucleus 代偿 Bulge」废弃；四类 artifact schema 已冻结 v1.0（见 `src/schemas/`）；新增第四节「INCONCLUSIVE 自动化消解策略」，流程全自动运行、人工复核改为事后批量审查；Bar 的 PSF 否决采用三态，未完成方向相关性评估时不得投强证据；JWST0716 人工复核后的 VLM 契约状态、Edge-on Disk 暂缓范围、中心源方案 B 和候选 overlay 输入契约已记录
+> 状态：v11（2026-08-27），三层架构、决策逻辑 v1.1 和 workflow bridge 边界已确认；结构化 action、raw/resolved decision、对象级 PolicyState、生命周期记录和单／多波段配置适配器已实现并通过聚焦测试。真实 GALFIT／GalfitS 闭环、`EVALUATE_REFIT` 真实样本和正式 workflow pilot 尚未完成；四类历史 artifact schema v1.0 保持冻结；Edge-on Disk 不在本轮优化范围，`diffraction_psf` 按科学家讨论摘要第七节执行。
 > 核对范围：`workflow_galfits.md`、`component_specification_galfits.md`、`residual_analysis.py`、`bar_lopsidedness_core.py`、`best-round-verifier.md`、jwst0709/0710/0716 拟合产物
 
 ---
@@ -192,9 +192,7 @@ VLM 输出严格 JSON：
 
 本轮可以直接修复且不改变科学判据的契约缺口：prompt 必须明确 `evidence_regions` 为可选字符串数组；每个元素严格使用 `band:panel:region_id`，无法可靠定位时返回空数组。该修复只提高结构化输出的可解析性，不改变标签、规则或阈值。
 
-以下一项仍会改变证据优先级，待科学家裁定：
-
-1. 待科学家裁定：`diffraction_psf` 是否必须绑定 band、panel 和尺度，以及它与逐波段数值 PSF 检查冲突时的优先级。建议只允许空间与波段相匹配的 VLM 衍射证据否决局部数值证据，但最终优先级需要科学判据确认。
+`diffraction_psf` 的证据优先级已由科学家讨论摘要第七节确认：只有 band、panel、region 和结构尺度匹配时才可否决局部数值证据；实际 PSF 模板方向检查优先于 VLM 衍射判断；一个波段的衍射结构不能全局否决其他波段的 Bar 或中心源候选。
 
 已裁定并实施的候选定位契约：候选区域使用数值层生成的 `candidate_N` overlay 映射到 comparison evidence。坐标和标记只由数值层生成，VLM 只接收候选 ID，不接收自由文本坐标；原始 comparison PNG 不覆盖。
 
@@ -225,6 +223,10 @@ INCONCLUSIVE
 ```
 
 每次最多输出一个改变成分结构的动作，并附带机器可读的 rule ID、输入证据和未满足条件。
+
+### 2026-08-26 动作可达性审计与 2026-08-27 bridge 实现
+
+此前代码只执行 proposal-only 的单轮 `PROPOSE`，因此 2026-08-20 的动作分布不能代表完整工作流。当前已补齐决策 artifact v1.1、全规则候选和 policy 消解、对象级状态、`REFIT_PARAMETERS`／`PROPOSE_REMOVE`／`CONVERGED`、workflow round manifest、单／多波段 action adapter 和 lifecycle contract。`PROPOSE_REMOVE` 仍保持 review-only，实际配置写入和拟合执行仍由 Agent 调用既有 MCP 工具，尚未宣称真实闭环或正式 workflow 已接管。
 
 ---
 
@@ -716,4 +718,4 @@ FWHM_int = sqrt(max(FWHM_obs^2 - FWHM_psf^2, 0))
 3. `compact central source candidate` 的 P 块采用小 Re Sérsic；升级 N 块 AGN 的条件暂不展开，维持“仅独立 AGN 证据时使用 N 块”。
 4. Bulge 与 `compact central source candidate` 的分界按第六节可分辨尺度门执行（`FWHM_int >= 0.5×FWHM_psf` 且 `SNR >= 20`），阈值进入规则配置，由 dev set 注入-恢复实验校准。
 5. 旧规范两项 OPEN 经验裁定（2026-08-13）：Lens 认定规则保留，Lens 升入正式白名单（第八类，见第六节第 8 小节，按可选成分 BIC 门管理）；「Nucleus 代偿 Bulge、物理意义优先于奥卡姆」废弃，中心源统一走可分辨尺度门分流。
-6. 拟合流程全自动（2026-08-13 裁定）：`INCONCLUSIVE` 不设人工阻塞环节，按第四节自动化消解策略（试拟合仲裁／保守兜底／纯数值降级）消解并留痕，人工复核改为事后批量审查 `needs_review` 标志。
+6. `INCONCLUSIVE` 按第四节自动化消解策略（试拟合仲裁／保守兜底／纯数值降级）消解并留痕；有界 fallback 仍无法安全继续时进入 `STOPPED_NEEDS_REVIEW`。该状态停止自动成分循环，但已有有效拟合时仍完成报告及多波段 SED／Image-SED handoff，标记 `COMPLETED_WITH_REVIEW`、`UNLOCKED`；人工复核仍通过 `needs_review` 进行事后审查。

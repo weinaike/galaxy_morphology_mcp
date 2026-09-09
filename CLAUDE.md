@@ -3,10 +3,23 @@
 
 1. **ALWAYS read files first** before making any modifications
 2. **NEVER modify the original .lyric file** — write new configs with `_iter{n}` suffix in the galaxy's main directory
-3. **Use `/skill galfits-manual`** to access complete GalfitS parameter documentation before editing configs
+3. Use the repository's component specification and the server's logical tool descriptions before editing configs. A client-specific skill may provide convenience documentation, but it is not a workflow prerequisite.
 4. **Only use `--fit_method ES`** to run GalfitS
-5. **NEVER assume pixel scales** — always use `mcp__galmcp__re_arcsec2pix` to convert arcsec to pixels via FITS WCS headers. Do not use hardcoded values like 0.031"/px or 0.063"/px, as images may be drizzle-resampled at different scales.
+5. **NEVER assume pixel scales** — always use the logical `re_arcsec2pix` MCP tool to convert arcsec to pixels via FITS WCS headers. Do not use hardcoded values like 0.031"/px or 0.063"/px, as images may be drizzle-resampled at different scales.
 6. **NEVER use `--readsummary`** to carry parameters between rounds. It uses `astropy.ascii.read` which only parses the `# free parameters:` section, silently missing any parameter that was `vary=0` in the previous round — even if you flip it to `vary=1` in the new config. Instead, manually extract the fitted values from the previous round's `.gssummary` and write them as the `initial_value` of the corresponding parameters in the new `.lyric` file. This keeps each config self-contained and the fit reproducible from the lyric alone.
+
+## Structured Workflow Pilot
+
+The structured workflow bridge is consumed only when `COMPONENT_ANALYSIS_WORKFLOW_PILOT=1` is explicitly enabled. It does not replace the existing GalfitS MCP fitting tools or start a second fitting executor.
+
+- Register each image round with `build_workflow_round_manifest` using explicit lyric, per-band result FITS/HDU, gssummary, comparison PNG, PSF, mask, and band-order references. Do not infer a round with glob or filename guessing.
+- `decision_artifact.resolved_decision` is the sole machine action source. Markdown, Working Note, and Agent/VLM prose are explanation and audit evidence only.
+- The Agent/VLM may rank policy candidates, explain evidence conflicts, and provide a structured `parameter_plan`; it may not write lyric text, invent an action outside the candidate set, or bypass a policy veto.
+- Use `workflow_action_preflight` and `workflow_action_config` to create a new lyric. Run `check_lyric_file` before the existing `run_galfits_image_fitting` MCP tool. Keep `extra_args=["--fit_method", "ES"]` and never use `--readsummary`.
+- After each MCP result, call `record_workflow_fit_lifecycle` with raw/resolved decisions, action summary, fit result, refit verdict, `PolicyState`, and downstream handoff.
+- After each executed image candidate, call `workflow_evaluate_refit`; consume its structured `ACCEPT_REFIT`, `REJECT_REFIT`, or `STOPPED_NEEDS_REVIEW` result instead of inferring a refit verdict from the Working Note.
+- `PROPOSE_REMOVE` remains review-only until its real local residual facts and remove pilot pass. Edge-on Disk is outside this redesign. `CONVERGED` requires `workflow_verify_best_round` to produce a lockable verifier artifact, followed by `workflow_lock_best_round` with that artifact reference.
+- `STOPPED_NEEDS_REVIEW` stops only the automatic component loop. With a valid image result, finish the Image report and mark `FIT_AVAILABLE`, `UNLOCKED`, `needs_review=true`, `sed_joint_eligible=false`; without a valid result, mark `FAILED_NEEDS_REVIEW`. In both cases SED and Image-SED remain `NOT_RUN`.
 
 ---
 
@@ -73,6 +86,7 @@ The only allowed exception is the all-zero unused-slot convention `[0, 0, 0, 0, 
 | Bar | Sersic, **n=0.5 fixed** | q = 0.2-0.4, PA from image |
 | Edge-on Disk | edgeondisk | Pa5 = R_s (scale-length), Pa6 = h_s (scale-height), Pa7 = PA, Pa8 unused/fixed |
 | AGN/Nucleus | PSF (only when Re < 0.2 px in ALL bands) or Sersic | x, y, mag only |
+| Lens | low-n Sersic | Re between Disk and Bar, q > 0.5; multi-band automatic action is allowed |
 
 ### Edge-on Disk Selection Rule
 
@@ -115,6 +129,8 @@ obj195/
     - The position unit for all galaxy components in the Lyric file is arcsec; unit conversion from pixels to arcsec is therefore required beforehand. This conversion must be executed externally using the mcp tool rather than being calculated manually.
     - Generally, companion galaxies are physically smaller and less luminous than the main (host) galaxy. When configuring fitting components for a companion galaxy in a .lyric file, you must set a significantly tighter upper boundary for its effective radius ($R_e$) compared to that of the main galaxy . Use the main galaxy's $R_e$ as a reference prior to prevent the companion's parameters from expanding unreasonably or disrupting the host galaxy's fitting convergence.
 - `run_galfits` automatically creates output directories; do NOT manually create directories
+
+For the structured pilot, `workflow_action_config` is the only config-writing entrypoint for an action. The original lyric remains unchanged, and every generated lyric must pass `check_lyric_file` before fitting. A valid image fit with `STOPPED_NEEDS_REVIEW` is a review-complete handoff, not a license to lock the best round. The logical `workflow_verify_best_round` and `workflow_lock_best_round` tools are the only structured lock path; the `mcp__galmcp__...` names below are client-specific aliases/examples only.
 
 ---
 
@@ -169,7 +185,7 @@ Classify galaxy morphology from original image using VLM.
 
 ## SKILL Reference
 
-Use `/skill galfits-manual` to access the complete GalfitS documentation.
+Use the repository component specification and the server's logical tool descriptions to access the complete GalfitS documentation. `/skill galfits-manual` is optional client-side help, not a required workflow dependency.
 
 | Edit Task | SKILL Reference |
 |-----------|-----------------|

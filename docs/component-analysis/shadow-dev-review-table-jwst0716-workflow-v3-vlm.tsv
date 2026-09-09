@@ -1,0 +1,117 @@
+object_id	round_id	source_components	expert_final_components	relation_to_expert_final	action_type	raw_action_type	workflow_status	needs_review	action_component	artifact_dir
+104	20260716_175416_obj_104	disk	agn,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/104_20260716_175416_obj_104
+104	20260716_180334_obj_104_iter2	bulge,disk	agn,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/104_20260716_180334_obj_104_iter2
+104	20260716_182152_obj_104_iter4	disk	agn,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/104_20260716_182152_obj_104_iter4
+104	20260716_182718_obj_104_iter5	agn,disk	agn,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/104_20260716_182718_obj_104_iter5
+104	20260716_183809_obj_104_iter6	disk,fourier_m1	agn,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/104_20260716_183809_obj_104_iter6
+1071	20260716_193225_obj_1071	disk	bar,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1071_20260716_193225_obj_1071
+1071	20260716_194051_obj_1071_iter2	disk,fourier_m1	bar,disk,fourier_m1	missing_one	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	bar	/tmp/jwst0716-workflow-v3-vlm-shard1/1071_20260716_194051_obj_1071_iter2
+1071	20260716_194911_obj_1071_iter3	bulge,disk,fourier_m1	bar,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1071_20260716_194911_obj_1071_iter3
+1071	20260716_195552_obj_1071_iter4	agn,bar,disk,fourier_m1	bar,disk,fourier_m1	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1071_20260716_195552_obj_1071_iter4
+1071	20260716_200158_obj_1071_iter5	bar,disk,fourier_m1	bar,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1071_20260716_200158_obj_1071_iter5
+1118	20260716_210552_obj_1118	disk	agn,bar,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1118_20260716_210552_obj_1118
+1118	20260716_211727_obj_1118_iter2	companion,disk,fourier_m1	agn,bar,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1118_20260716_211727_obj_1118_iter2
+1182	20260716_230143_obj_1182_iter1	disk	bulge,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/1182_20260716_230143_obj_1182_iter1
+1182	20260716_231252_obj_1182_iter2	bulge,disk,fourier_m1	bulge,companion,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/1182_20260716_231252_obj_1182_iter2
+1182	20260716_232223_obj_1182_iter3	bar,bulge,disk	bulge,companion,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/1182_20260716_232223_obj_1182_iter3
+1182	20260717_002406_obj_1182_iter9	bulge,disk	bulge,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/1182_20260717_002406_obj_1182_iter9
+133	20260717_005859_obj_133	disk	edge_on_disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/133_20260717_005859_obj_133
+1398	20260717_035415_obj_1398	disk	bulge,disk	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1398_20260717_035415_obj_1398
+1398	20260717_040038_obj_1398_iter2	bulge,disk	bulge,disk	exact	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard1/1398_20260717_040038_obj_1398_iter2
+1398	20260717_040813_obj_1398_iter3	bar,bulge,disk	bulge,disk	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1398_20260717_040813_obj_1398_iter3
+1398	20260717_041513_obj_1398_iter4	bulge,disk	bulge,disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1398_20260717_041513_obj_1398_iter4
+1429	20260717_044425_obj_1429	disk	bulge,disk	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1429_20260717_044425_obj_1429
+1429	20260717_045153_obj_1429_iter2	bulge,disk	bulge,disk	exact	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	companion	/tmp/jwst0716-workflow-v3-vlm-shard2/1429_20260717_045153_obj_1429_iter2
+1429	20260717_050010_obj_1429_iter3	bulge,companion,disk	bulge,disk	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1429_20260717_050010_obj_1429_iter3
+1446	20260717_062349_obj_1446	disk	edge_on_disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/1446_20260717_062349_obj_1446
+1502	20260717_074352_obj_1502	disk	bulge,disk	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/1502_20260717_074352_obj_1502
+1502	20260717_075057_obj_1502_iter2	disk,fourier_m1	bulge,disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/1502_20260717_075057_obj_1502_iter2
+1502	20260717_075859_obj_1502_iter3	bulge,disk	bulge,disk	exact	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	bar	/tmp/jwst0716-workflow-v3-vlm-shard0/1502_20260717_075859_obj_1502_iter3
+1502	20260717_080610_obj_1502_iter4	bar,bulge,disk	bulge,disk	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/1502_20260717_080610_obj_1502_iter4
+1502	20260717_081358_obj_1502_iter5	bulge,disk	bulge,disk	exact	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	bar	/tmp/jwst0716-workflow-v3-vlm-shard0/1502_20260717_081358_obj_1502_iter5
+1525	20260717_084658_obj_1525	disk	edge_on_disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1525_20260717_084658_obj_1525
+1574	20260717_104329_obj_1574	disk	bar,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1574_20260717_104329_obj_1574
+1574	20260717_105439_obj_1574_iter2	bar,disk,fourier_m1	bar,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1574_20260717_105439_obj_1574_iter2
+1574	20260717_110450_obj_1574_iter3	bar,bulge,disk,fourier_m1	bar,disk,fourier_m1	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1574_20260717_110450_obj_1574_iter3
+1574	20260717_111659_obj_1574_iter4	bar,disk,fourier_m1	bar,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1574_20260717_111659_obj_1574_iter4
+163	20260717_124329_obj_163	disk	bulge,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_124329_obj_163
+163	20260717_125519_obj_163_iter2	disk,fourier_m1	bulge,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_125519_obj_163_iter2
+163	20260717_130428_obj_163_iter3	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_130428_obj_163_iter3
+163	20260717_131319_obj_163_iter4	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_131319_obj_163_iter4
+163	20260717_131744_obj_163_iter5	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_131744_obj_163_iter5
+163	20260717_132629_obj_163_iter6	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_132629_obj_163_iter6
+163	20260717_133518_obj_163_iter7	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_133518_obj_163_iter7
+163	20260717_133925_obj_163_iter8	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_133925_obj_163_iter8
+163	20260717_135455_obj_163_iter9	bar,bulge,disk,fourier_m1	bulge,disk,fourier_m1	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/163_20260717_135455_obj_163_iter9
+1639	20260717_144328_obj_1639	disk	agn,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/1639_20260717_144328_obj_1639
+1639	20260717_145129_obj_1639_iter2	agn,bulge	agn,disk,fourier_m1	mixed_difference	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	disk	/tmp/jwst0716-workflow-v3-vlm-shard0/1639_20260717_145129_obj_1639_iter2
+170	20260717_153356_obj_170	disk	bulge,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard1/170_20260717_153356_obj_170
+170	20260717_154445_obj_170_iter2	bulge,disk	bulge,disk,fourier_m1	missing_one	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard1/170_20260717_154445_obj_170_iter2
+170	20260717_155340_obj_170_iter3	bulge,disk	bulge,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/170_20260717_155340_obj_170_iter3
+170	20260717_160304_obj_170_iter4	bulge,disk	bulge,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/170_20260717_160304_obj_170_iter4
+170	20260717_161120_obj_170_iter5	bulge,disk	bulge,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/170_20260717_161120_obj_170_iter5
+170	20260717_162232_obj_170_iter6	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard1/170_20260717_162232_obj_170_iter6
+1803	20260717_164902_obj_1803	disk	bulge,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard2/1803_20260717_164902_obj_1803
+1803	20260717_165859_obj_1803_iter2	disk,fourier_m1	bulge,disk,fourier_m1	missing_one	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	bulge	/tmp/jwst0716-workflow-v3-vlm-shard2/1803_20260717_165859_obj_1803_iter2
+1803	20260717_170946_obj_1803_iter3	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	companion	/tmp/jwst0716-workflow-v3-vlm-shard2/1803_20260717_170946_obj_1803_iter3
+1803	20260717_172017_obj_1803_iter4	agn,bulge,disk,fourier_m1	bulge,disk,fourier_m1	extra_or_conflicting	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard2/1803_20260717_172017_obj_1803_iter4
+1803	20260717_174809_obj_1803_iter7	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard2/1803_20260717_174809_obj_1803_iter7
+1803	20260717_180819_obj_1803_iter9	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard2/1803_20260717_180819_obj_1803_iter9
+1803	20260717_181250_obj_1803_iter10	bulge,disk,fourier_m1	bulge,disk,fourier_m1	exact	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard2/1803_20260717_181250_obj_1803_iter10
+1825	20260717_184712_obj_1825	disk	companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/1825_20260717_184712_obj_1825
+1825	20260717_185442_obj_1825_iter2	bulge,disk,fourier_m1	companion,disk,fourier_m1	mixed_difference	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard3/1825_20260717_185442_obj_1825_iter2
+1825	20260717_190207_obj_1825_iter3	disk,fourier_m1	companion,disk,fourier_m1	missing_one	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard3/1825_20260717_190207_obj_1825_iter3
+1831	20260717_193341_obj_1831	disk	bulge,companion,disk	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/1831_20260717_193341_obj_1831
+1831	20260717_194119_obj_1831_iter2	companion,disk,fourier_m1	bulge,companion,disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/1831_20260717_194119_obj_1831_iter2
+1831	20260717_194744_obj_1831_iter3	bulge,companion,disk,fourier_m1	bulge,companion,disk	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/1831_20260717_194744_obj_1831_iter3
+1833	20260717_211408_obj_1833_iter1	disk	bar,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1833_20260717_211408_obj_1833_iter1
+1833	20260717_212121_obj_1833_iter2	disk,fourier_m1	bar,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1833_20260717_212121_obj_1833_iter2
+1833	20260717_213002_obj_1833_iter3	bulge,disk	bar,companion,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1833_20260717_213002_obj_1833_iter3
+1833	20260717_213710_obj_1833_iter4	bar,disk	bar,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1833_20260717_213710_obj_1833_iter4
+1833	20260717_214540_obj_1833_iter5	bar,disk	bar,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/1833_20260717_214540_obj_1833_iter5
+1845	20260717_224500_obj_1845	disk	disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1845_20260717_224500_obj_1845
+1845	20260717_225348_obj_1845_iter2	disk,fourier_m1	disk,fourier_m1	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1845_20260717_225348_obj_1845_iter2
+1845	20260717_230118_obj_1845_iter3	bulge,disk,fourier_m1	disk,fourier_m1	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/1845_20260717_230118_obj_1845_iter3
+186	20260718_001654_obj_186	disk	edge_on_disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/186_20260718_001654_obj_186
+186	20260718_003935_obj_186_iter4	bulge,edge_on_disk	edge_on_disk	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/186_20260718_003935_obj_186_iter4
+205	20260718_013112_obj_205	disk	bulge,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard0/205_20260718_013112_obj_205
+205	20260718_014006_obj_205_iter2	agn,disk,fourier_m1	bulge,companion,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/205_20260718_014006_obj_205_iter2
+216	20260718_023900_obj_216_iter2	disk	disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/216_20260718_023900_obj_216_iter2
+216	20260718_024421_obj_216_iter3	disk,fourier_m1	disk	extra_or_conflicting	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	companion	/tmp/jwst0716-workflow-v3-vlm-shard1/216_20260718_024421_obj_216_iter3
+2185	20260718_042010_obj_2185	disk	disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/2185_20260718_042010_obj_2185
+2185	20260718_042426_obj_2185_iter2	disk	disk	exact	CONVERGED	CONVERGED	CONVERGED	False		/tmp/jwst0716-workflow-v3-vlm-shard2/2185_20260718_042426_obj_2185_iter2
+2185	20260718_042954_obj_2185_iter3	disk,fourier_m1	disk	extra_or_conflicting	CONVERGED	CONVERGED	CONVERGED	False		/tmp/jwst0716-workflow-v3-vlm-shard2/2185_20260718_042954_obj_2185_iter3
+2758	20260718_044529_obj_2758_iter1	disk	disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/2758_20260718_044529_obj_2758_iter1
+2758	20260718_044959_obj_2758_iter2	disk	disk	exact	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	fourier_m1	/tmp/jwst0716-workflow-v3-vlm-shard3/2758_20260718_044959_obj_2758_iter2
+2758	20260718_045400_obj_2758_iter3	disk	disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/2758_20260718_045400_obj_2758_iter3
+2758	20260718_045928_obj_2758_iter4	bulge,disk	disk	extra_or_conflicting	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/2758_20260718_045928_obj_2758_iter4
+28	20260718_052329_obj_28	disk	edge_on_disk	mixed_difference	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard0/28_20260718_052329_obj_28
+28	20260718_054906_obj_28_iter4	bulge,edge_on_disk	edge_on_disk	extra_or_conflicting	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard0/28_20260718_054906_obj_28_iter4
+287	20260718_062018_obj_287	disk	agn,companion,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/287_20260718_062018_obj_287
+287	20260718_062636_obj_287_iter2	bulge,disk,fourier_m1	agn,companion,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/287_20260718_062636_obj_287_iter2
+314	20260718_074647_obj_314	disk	bulge,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/314_20260718_074647_obj_314
+314	20260718_075213_obj_314_iter2	disk,fourier_m1	bulge,disk,fourier_m1	missing_one	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	bar	/tmp/jwst0716-workflow-v3-vlm-shard2/314_20260718_075213_obj_314_iter2
+314	20260718_075709_obj_314_iter3	bulge,disk	bulge,disk,fourier_m1	missing_one	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	bar	/tmp/jwst0716-workflow-v3-vlm-shard2/314_20260718_075709_obj_314_iter3
+314	20260718_080429_obj_314_iter4	bulge,disk	bulge,disk,fourier_m1	missing_one	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	bar	/tmp/jwst0716-workflow-v3-vlm-shard2/314_20260718_080429_obj_314_iter4
+314	20260718_080841_obj_314_iter5	bar,disk	bulge,disk,fourier_m1	mixed_difference	NONE	INCONCLUSIVE	STOPPED_NEEDS_REVIEW	True		/tmp/jwst0716-workflow-v3-vlm-shard2/314_20260718_080841_obj_314_iter5
+317	20260718_090623_obj_317	disk	bar,bulge,disk	missing_multiple	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard3/317_20260718_090623_obj_317
+317	20260718_091303_obj_317_iter2	bulge,disk	bar,bulge,disk	missing_one	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard3/317_20260718_091303_obj_317_iter2
+317	20260718_091830_obj_317_iter3	bar,disk	bar,bulge,disk	missing_one	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard3/317_20260718_091830_obj_317_iter3
+317	20260718_092522_obj_317_iter4	agn,bulge,disk	bar,bulge,disk	mixed_difference	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard3/317_20260718_092522_obj_317_iter4
+317	20260718_093115_obj_317_iter5	bulge,disk	bar,bulge,disk	missing_one	REFIT_PARAMETERS	INCONCLUSIVE	CONTINUE	True		/tmp/jwst0716-workflow-v3-vlm-shard3/317_20260718_093115_obj_317_iter5
+317	20260718_093621_obj_317_iter6	bulge,disk	bar,bulge,disk	missing_one	PROPOSE_ADD	INCONCLUSIVE	CONTINUE	True	companion	/tmp/jwst0716-workflow-v3-vlm-shard3/317_20260718_093621_obj_317_iter6
+331	20260718_114403_obj_331	disk	bar,bulge,disk	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/331_20260718_114403_obj_331
+331	20260718_115818_obj_331_iter2	bulge,disk	bar,bulge,disk	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/331_20260718_115818_obj_331_iter2
+331	20260718_120506_obj_331_iter3	bar,bulge,disk	bar,bulge,disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/331_20260718_120506_obj_331_iter3
+331	20260718_121215_obj_331_iter4	bar,bulge,disk	bar,bulge,disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/331_20260718_121215_obj_331_iter4
+331	20260718_122015_obj_331_iter5	bar,bulge,disk	bar,bulge,disk	exact	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/331_20260718_122015_obj_331_iter5
+331	20260718_122733_obj_331_iter6	bulge,disk	bar,bulge,disk	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/331_20260718_122733_obj_331_iter6
+331	20260718_123831_obj_331_iter7	bulge,disk,fourier_m1	bar,bulge,disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard0/331_20260718_123831_obj_331_iter7
+345	20260718_132226_obj_345	disk	bar,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/345_20260718_132226_obj_345
+345	20260718_132845_obj_345_iter2	bulge,disk	bar,disk,fourier_m1	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/345_20260718_132845_obj_345_iter2
+345	20260718_134229_obj_345_iter4	disk	bar,disk,fourier_m1	missing_multiple	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/345_20260718_134229_obj_345_iter4
+345	20260718_140458_obj_345_iter7	disk,fourier_m1	bar,disk,fourier_m1	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard1/345_20260718_140458_obj_345_iter7
+350	20260718_144939_obj_350	disk	edge_on_disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard2/350_20260718_144939_obj_350
+365	20260718_164258_obj_365_iter1	disk	bulge,disk	missing_one	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/365_20260718_164258_obj_365_iter1
+365	20260718_165125_obj_365_iter2	disk,fourier_m1	bulge,disk	mixed_difference	REFIT_PARAMETERS	REFIT_PARAMETERS	CONTINUE	False		/tmp/jwst0716-workflow-v3-vlm-shard3/365_20260718_165125_obj_365_iter2
+365	20260718_170012_obj_365_iter3	bulge,disk,fourier_m1	bulge,disk	extra_or_conflicting	PROPOSE_ADD	PROPOSE_ADD	CONTINUE	False	companion	/tmp/jwst0716-workflow-v3-vlm-shard3/365_20260718_170012_obj_365_iter3

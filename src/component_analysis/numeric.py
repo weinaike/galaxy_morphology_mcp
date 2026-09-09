@@ -31,7 +31,7 @@ class BandArrays:
     band: str
     original: np.ndarray
     residual: np.ndarray
-    sigma: np.ndarray
+    sigma: np.ndarray | None
     psf: np.ndarray | None
     mask: np.ndarray | None = None
     center: tuple[float, float] | None = None
@@ -644,13 +644,23 @@ def extract_numeric_evidence(
     for band_data in bands:
         original = _as_2d_float(band_data.original, "original")
         residual = _as_2d_float(band_data.residual, "residual")
-        sigma = _as_2d_float(band_data.sigma, "sigma")
-        if residual.shape != original.shape or sigma.shape != original.shape:
+        sigma = (
+            None
+            if band_data.sigma is None
+            else _as_2d_float(band_data.sigma, "sigma")
+        )
+        if residual.shape != original.shape or (
+            sigma is not None and sigma.shape != original.shape
+        ):
             raise ValueError("original, residual and sigma shapes must match")
         mask = _matching_mask(original.shape, band_data.mask)
         center = band_data.center or _default_center(original.shape)
-        finite = np.isfinite(original) & np.isfinite(residual) & np.isfinite(sigma)
-        valid = finite & ~mask & (sigma > 0)
+        finite = np.isfinite(original) & np.isfinite(residual)
+        if sigma is not None:
+            finite &= np.isfinite(sigma)
+            valid = finite & ~mask & (sigma > 0)
+        else:
+            valid = finite & ~mask
         valid_fraction = float(np.count_nonzero(valid) / valid.size)
         mask_fraction = float(np.count_nonzero(mask) / mask.size)
 
@@ -673,12 +683,20 @@ def extract_numeric_evidence(
         aperture_radius = (
             central_aperture_scale * psf_fwhm if psf_fwhm is not None else 1.0
         )
-        central_snr = measure_aperture_snr(
-            residual,
-            sigma,
-            center=center,
-            radius=aperture_radius,
-            mask=mask,
+        central_snr = (
+            measure_aperture_snr(
+                residual,
+                sigma,
+                center=center,
+                radius=aperture_radius,
+                mask=mask,
+            )
+            if sigma is not None
+            else {
+                "status": "UNAVAILABLE",
+                "value": None,
+                "quality_flags": ["sigma_missing"],
+            }
         )
 
         prefix = band_data.band
@@ -732,14 +750,18 @@ def extract_numeric_evidence(
             ]
         )
 
-        peaks = detect_local_peaks(
-            residual,
-            sigma,
-            band=prefix,
-            mask=mask,
-            threshold_snr=peak_snr_threshold,
-            center=center,
-            center_exclusion_radius=aperture_radius,
+        peaks = (
+            detect_local_peaks(
+                residual,
+                sigma,
+                band=prefix,
+                mask=mask,
+                threshold_snr=peak_snr_threshold,
+                center=center,
+                center_exclusion_radius=aperture_radius,
+            )
+            if sigma is not None
+            else []
         )
         for peak in peaks:
             # IDs are global within one evidence artifact; band-local IDs would
@@ -767,6 +789,8 @@ def extract_numeric_evidence(
         )
         undersampled = psf_fwhm is not None and psf_fwhm < 2.0
         reasons: list[str] = []
+        if sigma is None:
+            reasons.append("sigma unavailable")
         if psf_fwhm is None:
             reasons.append("PSF unavailable")
         if undersampled:

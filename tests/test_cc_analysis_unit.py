@@ -1,6 +1,7 @@
 """Unit tests for the cc_analysis module."""
 
 import os
+import importlib.util
 import unittest
 from unittest.mock import patch
 
@@ -8,6 +9,9 @@ from tools.cc_analysis import (
     _get_agent_model,
     run_component_analysis_cc,
 )
+
+
+_CLAUDE_AGENT_SDK_AVAILABLE = importlib.util.find_spec("claude_agent_sdk") is not None
 
 
 class TestCcAnalysis(unittest.TestCase):
@@ -39,6 +43,7 @@ class TestCcAnalysis(unittest.TestCase):
 
     @patch("tools.cc_analysis._run_async",
            side_effect=_close_coro_return("Great analysis!"))
+    @unittest.skipUnless(_CLAUDE_AGENT_SDK_AVAILABLE, "optional claude-agent-sdk is not installed")
     def test_run_component_analysis_cc_success(self, mock_run_async):
         analysis, error = run_component_analysis_cc(
             system_prompt="system",
@@ -52,6 +57,7 @@ class TestCcAnalysis(unittest.TestCase):
 
     @patch("tools.cc_analysis._run_async",
            side_effect=_close_coro_return("  "))
+    @unittest.skipUnless(_CLAUDE_AGENT_SDK_AVAILABLE, "optional claude-agent-sdk is not installed")
     def test_run_component_analysis_cc_empty_response(self, mock_run_async):
         analysis, error = run_component_analysis_cc(
             system_prompt="system",
@@ -64,6 +70,7 @@ class TestCcAnalysis(unittest.TestCase):
 
     @patch("tools.cc_analysis._run_async",
            side_effect=_close_coro_raise(Exception("SDK error")))
+    @unittest.skipUnless(_CLAUDE_AGENT_SDK_AVAILABLE, "optional claude-agent-sdk is not installed")
     def test_run_component_analysis_cc_exception(self, mock_run_async):
         analysis, error = run_component_analysis_cc(
             system_prompt="system",
@@ -76,6 +83,7 @@ class TestCcAnalysis(unittest.TestCase):
 
     @patch("tools.cc_analysis._run_async",
            side_effect=_close_coro_return("Multi-turn result"))
+    @unittest.skipUnless(_CLAUDE_AGENT_SDK_AVAILABLE, "optional claude-agent-sdk is not installed")
     def test_run_component_analysis_cc_multi_prompts(self, mock_run_async):
         analysis, error = run_component_analysis_cc(
             system_prompt="system",

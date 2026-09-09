@@ -224,10 +224,19 @@ VALID_DECISION_EVALUATE = {
 
 
 def test_all_schemas_load_and_are_valid_draft202012():
+    expected_versions = {
+        "agent_recommendation": "agent-recommendation@v1",
+        "workflow_batch_manifest": "workflow-batch-manifest@v1",
+        "workflow_fit_artifact": "workflow-fit-artifact@v1",
+        "verifier_assessment": "verifier-assessment@v1",
+        "workflow_verifier": "workflow-verifier@v1",
+    }
     for name in SCHEMA_NAMES:
         schema = load_schema(name)
         jsonschema.Draft202012Validator.check_schema(schema)
-        assert schema["properties"]["schema_version"]["const"] == "1.0"
+        assert schema["properties"]["schema_version"]["const"] == expected_versions.get(
+            name, "1.0"
+        )
 
 
 def test_load_unknown_schema_raises():
@@ -484,3 +493,79 @@ def test_decision_inconclusive_needs_no_component():
     ok = copy.deepcopy(VALID_DECISION_PROPOSE)
     ok["action"] = {"action_type": "INCONCLUSIVE"}
     validate(ok, "decision_artifact")
+
+
+# ---------------------------------------------------------------------------
+# decision_artifact v1.1 action contract
+# ---------------------------------------------------------------------------
+
+
+def _v11_decision(action, *, workflow_status="CONTINUE", state="PROPOSE", raw_action=None):
+    return {
+        "schema_version": "1.1",
+        "round_id": "r-v11",
+        "rules_version": "component-rules@v1",
+        "thresholds_version": "thresholds@v1",
+        "state": state,
+        "action": action,
+        "raw_decision": {
+            "state": state,
+            "action": raw_action if raw_action is not None else action,
+            "rule_trace": copy.deepcopy(VALID_DECISION_PROPOSE["rule_trace"]),
+        },
+        "candidate_actions": [],
+        "workflow_status": workflow_status,
+        "rule_trace": copy.deepcopy(VALID_DECISION_PROPOSE["rule_trace"]),
+        "evidence_refs": copy.deepcopy(VALID_DECISION_PROPOSE["evidence_refs"]),
+        "termination_checks": [],
+        **(
+            {"automation": {
+                "policy_version": "automation-policy@v1",
+                "resolution": "rule_terminated",
+                "original_action_type": "INCONCLUSIVE",
+                "needs_review": True,
+            }}
+            if workflow_status == "STOPPED_NEEDS_REVIEW"
+            else {}
+        ),
+    }
+
+
+def test_v11_action_specific_contracts_pass():
+    validate(_v11_decision({
+        "action_type": "KEEP_AND_CONTINUE",
+        "continuation_reason": "missing evidence",
+        "next_step": "collect another fit",
+    }), "decision_artifact")
+    validate(_v11_decision(None, workflow_status="STOPPED_NEEDS_REVIEW"), "decision_artifact")
+    validate(_v11_decision({
+        "action_type": "PROPOSE_REMOVE",
+        "component": "bar",
+        "target_model_label": "bar1",
+    }), "decision_artifact")
+    validate(_v11_decision({
+        "action_type": "REFIT_PARAMETERS",
+        "parameter_changes": [{
+            "target_model_label": "disk1",
+            "parameter": "n",
+            "operation": "FIX_VALUE",
+            "value": 1.0,
+        }],
+    }), "decision_artifact")
+
+
+def test_v11_action_specific_requirements_are_enforced():
+    bad = _v11_decision({"action_type": "PROPOSE_REMOVE", "component": "bar"})
+    with pytest.raises(jsonschema.ValidationError):
+        validate(bad, "decision_artifact")
+    bad = _v11_decision({"action_type": "REFIT_PARAMETERS", "parameter_changes": []})
+    with pytest.raises(jsonschema.ValidationError):
+        validate(bad, "decision_artifact")
+    bad = _v11_decision({"action_type": "KEEP_AND_CONTINUE"})
+    with pytest.raises(jsonschema.ValidationError):
+        validate(bad, "decision_artifact")
+
+
+def test_v11_schema_is_selected_explicitly_and_v10_remains_default():
+    assert load_schema("decision_artifact", "1.1")["$id"].endswith("/1.1")
+    assert load_schema("decision_artifact")["$id"].endswith("/1.0")

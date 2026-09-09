@@ -134,3 +134,14 @@ result = run_shadow_round(
 - Bar 的三态 PSF 否决已实现。候选 Bar 尺度环带中的实际卷积 PSF 与原图／残差 `m=6` 轴方向相符时记录 `psf_veto=true`；显著测量且错向时记录 `false`；PSF 谐波、图像谐波或覆盖率未过质量门时记录 `null`。`PA_V3` 作为 science header 元数据保留，但不使用未经验证的固定角度旋转 PSF。
 - 真实 VLM provider 已接入 callback。VLM 断供、认证失败或严格 JSON 解析失败仍会记录对应状态，并按规范走纯数值降级；只有 `parse_status=OK` 才能作为完整的新旧方案科学对照的一部分。
 - 七波段逐波段等照度拟合当前运行时间较长，后续 benchmark 需要记录性能并决定是否缓存中间表。
+
+
+## v2 proposal-only 输出
+
+决策逻辑补齐后的结果使用独立文件名保存，不覆盖 2026-08-20 的历史 numeric-only 或完整 VLM 结果：
+
+docs/component-analysis/shadow-dev-results-jwst0716-vlm-actions-v2.json
+docs/component-analysis/shadow-dev-review-table-jwst0716-vlm-actions-v2.tsv
+docs/component-analysis/shadow-dev-action-coverage-jwst0716-v2.md
+
+v2 runner 按 object_id 复用一个 PolicyState，按历史轮次顺序处理，并保存 action、raw_decision、candidate_actions、workflow_status、termination_checks、automation 和对象级状态快照。action=null 表示 policy 终止且需要复核，不再伪装成普通 KEEP。所有上述运行均为 shadow_mode=proposal_only，不执行候选动作、GALFIT、EVALUATE_REFIT 或正式 workflow 锁定。

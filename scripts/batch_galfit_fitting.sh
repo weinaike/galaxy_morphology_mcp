@@ -550,7 +550,7 @@ PY
         if [ "$is_rate_limit" = true ]; then
             echo "Warning: transient API failure or rate limiting (attempt $attempt/$max_retries)."
             if [ $attempt -lt $max_retries ]; then
-                backoff=$((120 * (1 << (attempt - 1))))
+                backoff=$((1080 * (1 << (attempt - 1))))
                 [ $backoff -gt $backoff_cap ] && backoff=$backoff_cap
                 echo "  Waiting ${backoff}s, then resuming session $session_id ..."
                 sleep "$backoff"

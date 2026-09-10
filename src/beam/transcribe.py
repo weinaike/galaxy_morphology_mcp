@@ -28,7 +28,8 @@ EXPDISK_FACTOR = 1.68
 
 ROW_RE = re.compile(r"^(\s*)([0-9]+|F\d|B\d|C0|Z)\)\s*(.*)$")
 STRUCTURE_COMMENT_RE = re.compile(r"^#\s*STRUCTURE:\s*(\S+)", re.IGNORECASE)
-COMPONENT_NO_RE = re.compile(r"^#\s*Component(?:\s+number)?\s*:?\s*(\d+)", re.IGNORECASE)
+COMPONENT_NO_RE = re.compile(
+    r"^#\s*(?:Component|Object)(?:\s+number)?\s*:?\s*(\d+)", re.IGNORECASE)
 CENTRAL_STRUCTURES = {"disk", "edgedisk", "bulge", "bar", "lens"}
 # Chain membership: the four central types PLUS the outer envelope — the
 # offset chain locks INPUT relative positions, so every main-galaxy member

@@ -82,7 +82,8 @@ Options:
   --fallback-model <model>    Fallback model on overload (optional)
   --budget <USD>              Per-galaxy cost cap (optional)
   --timeout <sec>             Per-galaxy timeout (default: 10800 = 3h; SIGKILL 60s after)
-  --retries <n>               Max retries on rate limiting (default: 5)
+  --retries <n>               Max rate-limit rests; each rests a fixed 18 min
+                              (default: 10, i.e. give up after 3 h of rate limiting)
   --continue-on-limit         On exhausted rate-limit retries, record the failure and
                               move on instead of aborting the whole batch
   --force                     Re-process completed galaxies (a NEW report is required)
@@ -144,8 +145,8 @@ fallback_model=""
 max_budget=""
 mcp_config=""
 timeout_sec=10800      # per-galaxy timeout (3 h)
-max_retries=5          # max retries on rate limiting
-backoff_cap=600        # retry backoff cap (seconds)
+max_retries=10         # max rate-limit rests (each a fixed 18 min wait)
+rl_wait=1080           # fixed rest after each rate-limit hit (seconds; 18 min)
 force=false
 continue_on_limit=false
 prompt_extra_file=""
@@ -312,7 +313,7 @@ echo "  Model: $model"
 [ -n "$fallback_model" ] && echo "  Fallback model: $fallback_model"
 [ -n "$max_budget" ]     && echo "  Per-galaxy budget cap: \$${max_budget}"
 echo "  Per-galaxy timeout: ${timeout_sec}s ($((timeout_sec/3600))h$(((timeout_sec%3600)/60))m), SIGKILL 60s after expiry"
-echo "  Rate-limit retries: up to ${max_retries}, backoff cap ${backoff_cap}s, same-session resume"
+echo "  Rate-limit handling: fixed $((${rl_wait}/60)) min rest per hit, up to ${max_retries} rests ($((${max_retries}*${rl_wait}/60)) min = 3 h), same-session resume"
 echo "  On exhausted rate-limit retries: $([ "$continue_on_limit" = true ] && echo 'skip galaxy and continue' || echo 'abort the batch')"
 echo "  Force re-run: $force"
 echo ""
@@ -454,18 +455,22 @@ PY
     fi
 
     attempt=0
+    rl_rests=0          # rate-limit rests taken so far (fixed 18 min each)
     galaxy_done=false
     galaxy_failed_reason=""
     last_log=""
 
-    while [[ $attempt -lt $max_retries ]]; do
+    # The loop is bounded by explicit breaks only: non-rate-limit failures
+    # and timeouts do not retry; rate limiting is governed by the separate
+    # rl_rests counter (max_retries rests of a fixed rl_wait each).
+    while true; do
         attempt=$((attempt + 1))
 
         log_file="${dir_name}/${galaxy_name}_${session_id}_attempt${attempt}.log"
         result_json="${dir_name}/${galaxy_name}_${session_id}_attempt${attempt}.json"
         last_log="$log_file"
 
-        echo "[Attempt $attempt/$max_retries] galaxy: $galaxy_name | arm: $arm | session: $session_id | log: $log_file"
+        echo "[Attempt $attempt] galaxy: $galaxy_name | arm: $arm | session: $session_id | rl-rests: $rl_rests/$max_retries | log: $log_file"
 
         # Pre-create the log files to avoid a tail race.
         : > "$log_file"
@@ -548,16 +553,12 @@ PY
         fi
 
         if [ "$is_rate_limit" = true ]; then
-            echo "Warning: transient API failure or rate limiting (attempt $attempt/$max_retries)."
-            if [ $attempt -lt $max_retries ]; then
-                backoff=$((1080 * (1 << (attempt - 1))))
-                [ $backoff -gt $backoff_cap ] && backoff=$backoff_cap
-                echo "  Waiting ${backoff}s, then resuming session $session_id ..."
-                sleep "$backoff"
-                continue
-            else
+            # Give up only when the rest budget is already spent: at most
+            # max_retries (10) rests of a fixed rl_wait (18 min) each, i.e.
+            # 3 h of rate limiting before abandoning this galaxy.
+            if [ $rl_rests -ge $max_retries ]; then
                 echo "============================================================"
-                echo "Galaxy $dir_name failed $max_retries consecutive times on transient API failures / rate limiting!"
+                echo "Galaxy $dir_name still rate-limited after $max_retries rests ($((${max_retries}*${rl_wait}/60)) min = 3 h), giving up!"
                 echo "Log: $log_file"
                 echo "============================================================"
                 galaxy_failed_reason="rate_limit_exhausted"
@@ -570,6 +571,10 @@ PY
                 echo -e "${galaxy_name}\t${arm}\t${session_id}\t${attempt}\t${galaxy_failed_reason}\t${last_log}" >> "$mapping_file"
                 exit 1
             fi
+            rl_rests=$((rl_rests + 1))
+            echo "Warning: rate limited (attempt $attempt). Resting a fixed ${rl_wait}s ($((${rl_wait}/60)) min) [rest $rl_rests/$max_retries], then resuming session $session_id ..."
+            sleep "$rl_wait"
+            continue
         fi
 
         # Fallback: if the first --resume fails because the stored session no

@@ -24,7 +24,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-EXPDISK_FACTOR = 1.68
+from beam.cons_decode import EXPDISK_FACTOR, re_floor_px
 
 ROW_RE = re.compile(r"^(\s*)([0-9]+|F\d|B\d|C0|Z)\)\s*(.*)$")
 STRUCTURE_COMMENT_RE = re.compile(r"^#\s*STRUCTURE:\s*(\S+)", re.IGNORECASE)
@@ -237,7 +237,7 @@ def build_cons(blocks: list[Block], numbers: dict[str, int], *,
         lines.append(f" {chain}   y   offset")
 
     # ---- default bound set (every non-sky component) + tightenings
-    re_floor = 0.1 if psf_fwhm_px is None else max(0.1, 0.5 * psf_fwhm_px)
+    re_floor = re_floor_px(psf_fwhm_px)  # max(0.1, 0.1 × PSF FWHM) — see cons_decode
     side = _region_side(fit_region)
     re_cap = 0.5 * side if side else 500.0
 

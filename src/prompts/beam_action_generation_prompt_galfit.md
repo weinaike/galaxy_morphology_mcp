@@ -268,7 +268,7 @@ The final component set of the main galaxy (companions excluded) belongs to one 
 - Re total order `re_disk > re_lens > re_bar > re_bulge` (existing central components only, strict decrease; OuterDisk sits above re_disk; edgedisk plays the Disk slot);
 - n: Bar 0.5 fixed; Bulge fixed 4 at depth≤2 or free 0.5–8 at depth≥3; Lens free < 0.5 (default bounds 0.1–0.6); OuterDisk (sersic variant) free < 1; the Disk is expdisk (no n);
 - q: priors Bar < 0.4, Lens > 0.5, Bulge > 0.5; Disk/edgedisk q and PA are **free** parameters (oblique disk configurations are legal directions; the expdisk template's default q/PA toggles 0 are not used in this workflow); every shaped component bounded 0.05–1.0;
-- Re lower bound `max(0.1, 0.5 × PSF FWHM)` px; upper bound half the fit-region side length; Bulge Re < 0.2 px → `psf` (0.2–0.5 px: psf competing variant);
+- Re lower bound `max(0.1, 0.1 × PSF FWHM)` px (≈0.2–0.4 px, inside/near the psf-competing zone); upper bound half the fit-region side length; Bulge Re < 0.2 px → `psf` (0.2–0.5 px: psf competing variant); a bulge pinned at the Re floor is at the resolution limit — treat it as a psf-competing-variant question, not a failed premise;
 - companion |ΔMag| ≤ 5 vs the main galaxy;
 - the sky is **fixed** to the manually provided ADU setting of the input feedme (carried verbatim every round) — it is not a search dimension: **never generate candidates that free, tune or re-fit the sky**;
 - The orchestrator enforces these as a **default `.cons` bound set every round** (re / n / q rows; expdisk rows in Rs) — bound-hit reports in local_state_description therefore cover re/n/q/x,y for every component; the defaults count as "original" bounds and candidate-driven tightenings as "self-imposed" in the provenance reporting.

@@ -119,8 +119,8 @@ def test_warm_start_backfill_and_sky_verbatim(parent, tmp_path):
     cons = _read(out_c)
     assert "1_2   x   offset" in cons and "1_2   y   offset" in cons
     # default bounds present, 'to' form; expdisk band written in Rs
-    assert "1   re   1.1905 to 88.3929" in cons  # [2,148.5]/1.68
-    assert "2   re   2.0000 to 148.5000" in cons
+    assert "1   re   0.2381 to 88.3929" in cons  # [0.4,148.5]/1.68 (floor = 0.1*FWHM)
+    assert "2   re   0.4000 to 148.5000" in cons
     assert "2   n    0.1000 to 8.0000" in cons
     assert "q    0.0500 to 1.0000" in cons
 

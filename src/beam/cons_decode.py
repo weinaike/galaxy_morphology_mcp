@@ -43,7 +43,23 @@ CONS_PARAM_ALIASES = {
 # from provenance logic but still scannable).
 SCANNABLE_PARAMS = {"re", "n", "q", "mag", "pa", "x", "y"}
 
+# expdisk .cons re rows bound the scale length Rs = Re / 1.68 (transcribe writes
+# the whole band divided by this factor) — the floor must convert with it.
+EXPDISK_FACTOR = 1.68
+
 _BLOCK_START_RE = re.compile(r"^\s*0\)\s*(\S+)")
+
+
+def re_floor_px(psf_fwhm_px: float | None) -> float:
+    """The mandatory Re floor (solution-space S3): max(0.1, 0.1 × PSF FWHM) px.
+
+    Single source of truth shared by transcribe (writing ``iter{n}.cons``) and
+    the bound-hit scan (provenance reference + PSF-floor exemption). Kept at
+    0.1×FWHM (~0.2–0.4 px for typical PSFs) so a collapsing bulge can reach the
+    0.2–0.5 px psf-competing-variant zone; a component pinned here is at the
+    resolution limit — a point-source identity question, not a premise failure.
+    """
+    return 0.1 if psf_fwhm_px is None else max(0.1, 0.1 * psf_fwhm_px)
 
 
 @dataclass
@@ -89,7 +105,7 @@ class BoundContext:
     def default_band(self, param: str, *, companion: bool = False) -> tuple[float, float] | None:
         """The mandatory default bound set (solution-space definition S3)."""
         if param == "re":
-            lo = 0.1 if self.psf_fwhm_px is None else max(0.1, 0.5 * self.psf_fwhm_px)
+            lo = re_floor_px(self.psf_fwhm_px)
             if self.fit_region is None:
                 return None
             side = max(
@@ -289,8 +305,10 @@ def scan_bound_hits(
 
     Criterion (workflow d.ii): |fitted - bound| <= 2% * |bound|. Unbounded
     parameters never hit. Standing exemptions are flagged, not suppressed:
-    q upper at the 1.0 domain edge; Re lower bounds at the PSF scale (<= 1 px);
-    the bar n hard prior.
+    q upper at the 1.0 domain edge; Re pinned at the mandatory Re floor
+    (max(0.1, 0.1 × PSF FWHM) px, in Rs units for expdisk rows — a
+    point-source identity question, not relaxable and not a premise failure
+    regardless of the band's provenance); the bar n hard prior.
     """
     hits: list[BoundHit] = []
     companion_names = ("comp", "companion", "secondary", "satellite")
@@ -309,7 +327,13 @@ def scan_bound_hits(
             continue
         name = fit.get("name") or str(number)
         is_companion = any(tag in str(name).lower() for tag in companion_names)
-        provenance = _provenance(row, band, ctx, is_companion)
+        ctype = str((fit.get("type") or inp.get("type") or "")).lower()
+        is_exp_row = row.param == "re" and ctype == "expdisk"
+        # expdisk re rows are written in Rs — convert the band back to Re units
+        # for the provenance comparison so default expdisk bands are not
+        # mislabelled self-imposed against the Re-unit default set.
+        prov_band = (band[0] * EXPDISK_FACTOR, band[1] * EXPDISK_FACTOR) if is_exp_row else band
+        provenance = _provenance(row, prov_band, ctx, is_companion)
         direction = ""
         if abs(fitted_value - band[1]) <= hit_rel_tol * max(abs(band[1]), 1e-9):
             direction = "upper"
@@ -320,8 +344,18 @@ def scan_bound_hits(
         exempt, note = False, ""
         if row.param == "q" and direction == "upper" and band[1] >= 1.0:
             exempt, note = True, "q<=1 domain edge: not relaxable"
-        if row.param == "re" and direction == "lower" and band[0] <= 1.0:
-            exempt, note = True, "PSF-scale Re floor: point-source identity question, not relaxable"
+        if row.param == "re" and direction == "lower":
+            # PSF-scale Re floor: the pin sits at the mandatory (non-relaxable)
+            # floor — a point-source identity question, never a candidate
+            # premise failure. Applies to every shaped component regardless of
+            # the band's provenance (a tightened upper edge must not reclassify
+            # a floor pin as hard). expdisk rows are written in Rs, so convert
+            # the floor to the row's units before comparing.
+            floor = re_floor_px(ctx.psf_fwhm_px)
+            if is_exp_row:
+                floor /= EXPDISK_FACTOR
+            if abs(band[0] - floor) <= 1e-6 + 0.01 * abs(floor):
+                exempt, note = True, "PSF-scale Re floor: point-source identity question, not relaxable"
         if row.param == "n" and "bar" in str(name).lower():
             exempt, note = True, "bar n=0.5 hard prior: not relaxable"
         hits.append(

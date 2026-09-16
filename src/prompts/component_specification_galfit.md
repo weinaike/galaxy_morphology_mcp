@@ -135,7 +135,7 @@ Constraints are the safety net that stops the optimiser from "running away", but
   - Sérsic index n: the parameter most prone to running away. For genuine galaxy structure, physically sensible n lies roughly in 0.1–8.0; enforce that range.
   - Axis ratio b/a: constrain to 0.05–1.0 so a low-SNR disk cannot be crushed into a physically meaningless infinitely thin line.
 
-Note (this workflow): in the single-band beam flow these recommended bounds are not optional — the orchestrator writes them as the **mandatory default bound set** every round, merged into `iter{n}.cons`; see the solution-space definition in CLAUDE.md (which also fixes the Re floor at `max(0.1, 0.5 × PSF FWHM)` px and the Re cap at half the fit-region side).
+Note (this workflow): in the single-band beam flow these recommended bounds are not optional — the orchestrator writes them as the **mandatory default bound set** every round, merged into `iter{n}.cons`; see the solution-space definition in CLAUDE.md (which also fixes the Re floor at `max(0.1, 0.1 × PSF FWHM)` px and the Re cap at half the fit-region side).
 
 ```text
 # Component/    parameter   constraint    Comment

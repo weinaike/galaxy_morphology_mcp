@@ -32,7 +32,8 @@ Check set (each grounded in a KILOGAS_319 round where the VLM applied it):
   bound_pin       hard  a non-exempt bound hit whose band is self-imposed
                         (candidate tightening: the candidate premise failed);
                         original/default-band pins and standing exemptions
-                        (q<=1 domain edge, PSF-scale Re floor, bar n prior)
+                        (q<=1 domain edge, Re pinned at the mandatory
+                        PSF-scale Re floor — any provenance, bar n prior)
                         are notes
   zombie          note  flux < 0.5% of the brightest (dedup criterion only)
   priors          note  bulge q < 0.5 / lens q < 0.5 prior violations

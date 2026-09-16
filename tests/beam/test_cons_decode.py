@@ -156,7 +156,7 @@ def test_provenance_default_vs_tightened(tmp_path):
     cons = _write(
         tmp_path,
         "iter2.cons",
-        "1  re  2.0 to 148.5\n2  q  0.05 to 1.0\n3  re  0.1 to 9.0\n",
+        "1  re  0.2381 to 88.3929\n2  q  0.05 to 1.0\n3  re  0.1 to 9.0\n",
     )
     decoded = decode_cons_file(cons)
     inputs = {
@@ -165,13 +165,14 @@ def test_provenance_default_vs_tightened(tmp_path):
         3: _comp("bar", "sersic", re=8.9),
     }
     fitted = {
-        1: _comp("disk", "expdisk", re=147.0),
+        1: _comp("disk", "expdisk", re=88.0),
         2: _comp("bulge", "sersic", ba=0.99),
         3: _comp("bar", "sersic", re=8.9),
     }
     ctx = BoundContext(psf_fwhm_px=4.0, fit_region=(1, 297, 1, 297))
     hits = {(h.comp_number, h.param): h for h in scan_bound_hits(decoded, inputs, fitted, ctx)}
-    # region side 297 -> default re cap 148.5 -> the 148.5 row is "original"
+    # the expdisk row is written in Rs ([0.4,148.5]/1.68) but compared against
+    # the Re-unit default after conversion -> the default band row is "original"
     assert hits[(1, "re")].provenance == "original"
     # q at the 1.0 domain edge is a standing exemption (flagged, not relaxable)
     assert hits[(2, "q")].exempt is True
@@ -180,14 +181,48 @@ def test_provenance_default_vs_tightened(tmp_path):
 
 
 def test_psf_scale_re_floor_exemption(tmp_path):
-    cons = _write(tmp_path, "iter3.cons", "2  re  0.5 to 12.0\n")
+    """A Re pin at the mandatory floor (0.1×FWHM = 0.4 px here) is exempt even
+    when the band's upper edge was tightened by the candidate (provenance
+    self-imposed) — the floor pin is a point-source identity question, not a
+    premise failure (Plate0535 A.6-class regression)."""
+    cons = _write(tmp_path, "iter3.cons", "2  re  0.4 to 12.0\n")
     decoded = decode_cons_file(cons)
-    inputs = {1: _comp("disk", "expdisk"), 2: _comp("bulge", "sersic", re=0.5)}
-    fitted = {1: _comp("disk", "expdisk"), 2: _comp("bulge", "sersic", re=0.5)}
+    inputs = {1: _comp("disk", "expdisk"), 2: _comp("bulge", "sersic", re=0.4)}
+    fitted = {1: _comp("disk", "expdisk"), 2: _comp("bulge", "sersic", re=0.4)}
     ctx = BoundContext(psf_fwhm_px=4.0, fit_region=(1, 297, 1, 297))
     hits = scan_bound_hits(decoded, inputs, fitted, ctx)
     assert len(hits) == 1 and hits[0].exempt is True
+    assert hits[0].provenance == "self-imposed"  # exempt overrides provenance
     assert "PSF-scale" in hits[0].note
+
+
+def test_re_floor_exemption_expdisk_rs_units(tmp_path):
+    """expdisk re rows are written in Rs — the floor is compared in the row's
+    units (0.4/1.68 = 0.2381) so a disk pinned at the floor is exempt too."""
+    cons = _write(tmp_path, "iter6.cons", "1  re  0.2381 to 88.3929\n")
+    decoded = decode_cons_file(cons)
+    inputs = {1: _comp("disk", "expdisk", re=0.2381)}
+    fitted = {1: _comp("disk", "expdisk", re=0.2381)}
+    ctx = BoundContext(psf_fwhm_px=4.0, fit_region=(1, 297, 1, 297))
+    hits = scan_bound_hits(decoded, inputs, fitted, ctx)
+    assert len(hits) == 1 and hits[0].exempt is True
+    assert hits[0].direction == "lower"
+    assert "PSF-scale" in hits[0].note
+
+
+def test_re_self_imposed_lower_above_floor_not_exempt(tmp_path):
+    """A pin at a candidate-tightened lower bound ABOVE the floor (Plate0556
+    A.13-class: [2,10] with floor 0.4) stays a hard self-imposed bound hit —
+    relaxing to the floor is a genuine repair there."""
+    cons = _write(tmp_path, "iter7.cons", "2  re  2.0 to 10.0\n")
+    decoded = decode_cons_file(cons)
+    inputs = {2: _comp("bulge", "sersic", re=2.0)}
+    fitted = {2: _comp("bulge", "sersic", re=2.0)}
+    ctx = BoundContext(psf_fwhm_px=4.0, fit_region=(1, 297, 1, 297))
+    hits = scan_bound_hits(decoded, inputs, fitted, ctx)
+    assert len(hits) == 1
+    assert hits[0].exempt is False
+    assert hits[0].provenance == "self-imposed"
 
 
 def test_bar_n_prior_exemption(tmp_path):

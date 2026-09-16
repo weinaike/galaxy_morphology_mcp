@@ -180,7 +180,7 @@ def test_projection_param_revert_and_bound_restore():
     from beam.cons_decode import BoundContext
 
     tune = {"op": "tune", "structure_name": "disk", "param": None, "value": None,
-            "cons_bounds": {"re": (2.0, 148.5), "n": None, "q": None}}
+            "cons_bounds": {"re": (0.4, 148.5), "n": None, "q": None}}  # default band (floor 0.1*FWHM)
     ctx = BoundContext(psf_fwhm_px=4.0, fit_region=(1, 297, 1, 297))
     proj2 = project_closed_form(parent, [tune], bound_ctx=ctx)
     assert proj2 is not None and proj2.kind == "bound-restore"

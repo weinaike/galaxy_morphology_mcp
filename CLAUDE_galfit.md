@@ -41,7 +41,7 @@ This section is the authoritative definition of the solution space for the singl
 | PA | free for every shaped component; N=+Y convention; bar/lens/disk initial values must come from measured feature directions |
 | Mag | no default bounds (flux reallocation is part of the search); companions within 5 mag of the main galaxy; the zombie threshold (flux < 0.5% of the brightest component) is a dedup criterion only, never a removal ground by itself |
 | Centre (x, y) | K ≥ 2 main-galaxy central components (Disk/edgedisk/Bulge/Bar/Lens/AGN): chained `x,y offset` constraint (anchor toggle `1 1`; GALFIT rewrites subordinates to `2 2`). K ≤ 1: free with a ±2 px default window. Companions: always free with a ±5 px soft window at insertion |
-| Re floors | Bulge Re < 0.2 px → must become `psf`; 0.2–0.5 px → psf competing variant; every shaped component's Re lower bound defaults to `max(0.1, 0.5 × PSF FWHM)` px |
+| Re floors | Bulge Re < 0.2 px → must become `psf`; 0.2–0.5 px → psf competing variant; every shaped component's Re lower bound defaults to `max(0.1, 0.1 × PSF FWHM)` px (≈0.2–0.4 px — deliberately inside/near the psf-competing zone so a collapsing bulge can reach it); a pin AT the floor is a point-source identity question (note-level, exempt from the bound-pin veto regardless of band provenance), while a pin at a self-imposed lower bound above the floor remains a hard bound-hit |
 | F1 | only on the Disk / edgedisk / single Sersic; keep when amplitude > 0.02 and the fit does not degrade |
 
 ### 3. Mandatory default bound set (every round, merged into `iter{n}.cons`)
@@ -51,7 +51,7 @@ GALFIT feedme parameter rows carry no bounds — without a `.cons` the solution 
 ```text
 # Default bounds for component <N> (every non-sky component, every round)
 # Absolute bands MUST use the 'to' keyword form (see the semantics note below)
-  <N>   re   max(0.1, 0.5*FWHM_PSF) to <half the fit-region side length>   # expdisk: the row bounds Rs
+  <N>   re   max(0.1, 0.1*FWHM_PSF) to <half the fit-region side length>   # expdisk: the row bounds Rs
   <N>   n    0.1 to 8                  # sersic components only
   <N>   q    0.05 to 1.0               # shaped components only
 # centres: K>=2 central components -> offset chain (no separate window);
@@ -64,7 +64,7 @@ GALFIT feedme parameter rows carry no bounds — without a `.cons` the solution 
 - FWHM_PSF comes from `fit_statistics.psf_fwhm` (fall back to 1 px when unavailable); expdisk rows are written in Rs (= declared Re / 1.68).
 - **Provenance convention**: these default bounds count as **original** in the bound-hit provenance reporting; candidate-driven tightenings count as **self-imposed**.
 - Candidate Re triplets may tighten `re` beyond the defaults; they may not widen past the default cap unless the candidate explicitly declares that intent.
-- Standing exemptions (consistent with the bound-relaxation rule): the q upper bound (1.0 is the domain edge) and hard physical priors (Bar n = 0.5) are not relaxable bound-hits.
+- Standing exemptions (consistent with the bound-relaxation rule): the q upper bound (1.0 is the domain edge), hard physical priors (Bar n = 0.5), and **Re pins at the mandatory Re floor** (the floor is not relaxable; the pin is a point-source identity question — exempt **regardless of band provenance**, expdisk rows compared in Rs) are not relaxable bound-hits. A pin at a self-imposed lower bound *above* the floor is a normal hard bound-hit (relaxation can genuinely repair it).
 
 ## Adding constraints
 GALFIT's parameter-constraint file (usually suffixed `.cons`) is the central tool for curing unbalanced component flux allocation and runaway parameters.

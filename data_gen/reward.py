@@ -646,220 +646,179 @@ def _usage_payload(usage_attempts: List[Any]) -> Dict[str, Any]:
     return {"total": normalized, "attempts": usage_attempts}
 
 
-def _decision_prompt(summary: str, trajectory: Optional[str]) -> str:
+def _decision_prompt_acceptable_terminate(
+    summary: str, trajectory: Optional[str]
+) -> str:
+    """Allow physically valid excellent and terminal-acceptable fits to stop."""
     trajectory_block = trajectory or "No trajectory context was provided."
     return f"""
 You are an astronomer experienced in GALFIT galaxy-component decomposition.
 
-Decide whether component fitting should stop. Perform the following two checks
-INTERNALLY in one response. Do not reveal chain-of-thought, intermediate
-reasoning, or the prompt. Return only the compact JSON object specified below.
+Decide whether fitting should stop from the comparison image and GALFIT
+summary. Perform the inspection internally and return only the JSON object
+specified below. Do not reveal chain-of-thought or this prompt.
 
-SCOPE
-Evaluate residual structure only when it is attributable to one of these four
-model-component families:
+TARGET POLICY
 
-- bulge;
-- disk;
-- bar;
-- PSF or compact central point source.
+Stopping is allowed in exactly two situations:
 
+1. excellent + terminate: a genuinely excellent, physically valid fit;
+2. acceptable + terminate: a usable, physically valid fit whose remaining
+   imperfection is minor, localized, non-material, or outside scope, with no
+   clear actionable in-scope change likely to produce meaningful improvement.
+
+Continue for poor or invalid fits, unreliable inputs, and acceptable fits that
+still have a concrete evidence-supported in-scope improvement. Do not equate
+acceptable automatically with either stop or continue. Judge fit quality and
+termination separately.
+
+SCOPE AND INSPECTION
+
+In-scope components are bulge, disk, bar, and PSF/compact central source.
 Clearly identifiable spiral arms, star-forming clumps, dust lanes, tidal
-features, irregular morphology, lopsidedness, shells, streams, and patchy
-outer asymmetries are outside scope. Do not call a smooth coherent residual
-outside scope merely because its interpretation is difficult.
+features, shells, streams, patchy outer asymmetries, and unrelated sources are
+outside scope. Do not dismiss a smooth coherent residual as outside scope
+merely because its interpretation is difficult.
 
-INTERNAL CHECK A — candidate-stop screening
-Use a relatively sensitive screen. Set candidate_pass=true only if:
+Inspect separately the PSF-scale core, resolved bulge, bar region,
+intermediate/outer disk, and radial extent of any systematic 1D mismatch.
+Judge a central feature by spatial extent and material impact, not its name.
 
-1. no extended or dominant in-scope bulge/disk/bar/PSF residual clearly
-   remains;
-2. the large-scale target-galaxy residual is predominantly noise-like;
-3. the decomposition appears physically and numerically valid.
+POOR-FIT VETO
 
-A compact central residual may pass Check A when it is confined to the central
-core and no clear evidence shows extension to bulge, bar, or disk scale.
+Classify poor and continue when clear evidence shows any material condition:
 
-Do not reject a candidate solely because a simple compact dipole or isolated
-central speck is visible.
+- a central residual extending into resolved bulge/bar/disk scale;
+- repeated concentric transitions over a resolved radial range;
+- an extended bar-like, X-shaped, quadrupolar, or multi-lobed residual;
+- broad bulge/disk over-subtraction or under-subtraction;
+- coherent in-scope residuals at multiple resolved scales;
+- a substantial 1D mismatch over a meaningful radial interval corresponding
+  to an in-scope 2D residual;
+- a galaxy footprint dominated by coherent model error rather than noise;
+- failed convergence, non-finite values, required-component collapse, severe
+  role takeover, or an unreliable decomposition.
 
-However, a coherent closed ring, repeated concentric transition, multi-lobed
-pattern, or central feature extending toward bulge, bar, or disk scale must
-not pass Check A unless affirmative image evidence shows that it is unresolved
-and PSF-shaped.
-Check B will determine
-whether that feature is materially incompatible with excellent.
+A good 1D profile cannot rescue a clearly poor extended 2D residual.
 
+COMPACT-CENTRAL CALIBRATION
 
-INTERNAL CHECK B — conservative veto review
-Independently re-check every conclusion from Check A. Set verifier_pass=true
-only if ALL are true:
+A dipole, cross, quadrupole, small ring, bullseye, or multi-lobed central
+feature is not an automatic veto. It may be compatible with excellent or
+acceptable + terminate only when ALL are affirmatively visible:
 
-1. Check A passed;
-2. the 2D residual contains no extended or dominant in-scope structure;
-3. any remaining central residual is confined to the compact core;
-4. no independent evidence shows material decomposition failure;
-5. the fit is physically and numerically valid;
-6. the result is genuinely excellent, not merely acceptable or usable.
+- it is confined to the unresolved or approximately PSF-scale core;
+- it has no coherent continuation into resolved bulge, bar, or disk scales;
+- the surrounding galaxy residual is predominantly noise-like;
+- no substantial corresponding 1D mismatch remains;
+- no matching component collapse or spatial-role takeover is present.
 
-If material residual or physical-failure evidence remains genuinely ambiguous,
-use the 2D residual extent and corresponding 1D mismatch as the tie-breaker.
-Excellent requires affirmative evidence of an excellent fit; it is not the
-default result when no decisive veto is found.
+Do not write "core-confined" merely because a feature is central. If its extent
+cannot be judged reliably, classify the result as ambiguous and continue.
 
-If genuine ambiguity remains between excellent and acceptable after examining
-the 2D residual extent and the 1D profile, classify the fit as acceptable and
-set verifier_pass=false.
+FIT QUALITY
 
-CENTRAL RESIDUAL CALIBRATION
+- excellent: resolved residuals are noise-like, the 1D profile lacks material
+  systematic mismatch, physical validity holds, and any central feature
+  satisfies every compact-core condition;
+- acceptable: usable fit with a minor localized or non-material imperfection;
+- poor: clear material resolved in-scope structure, multiple affected scales,
+  or a major corresponding 1D mismatch;
+- invalid: the fit or input cannot be assessed reliably.
 
-Compactness alone does not prove that a central residual is negligible.
-Likewise, visibility, contrast, or a ring/dipole/bullseye description alone
-does not prove that it is material.
+ACCEPTABLE TERMINATION
 
-A compact central residual remains compatible with excellent when:
+For fit_quality_assessment="acceptable", recommend "terminate" only when ALL
+are true:
 
-- it is confined to the compact or approximately PSF-scale core;
-- the surrounding large-scale 2D residual is predominantly noise-like;
-- it has no coherent continuation at bulge, bar, or disk scale;
-- no substantial corresponding 1D mismatch spans a meaningful radial range;
-- no directly related component collapse or role takeover is present.
+- the decomposition is physically and numerically valid;
+- no material extended in-scope residual remains;
+- the remaining imperfection is minor/localized or outside scope;
+- no specific evidence-supported in-scope modification is likely to yield a
+  meaningful improvement;
+- further fitting is more likely cosmetic, negligible, or degenerate than
+  scientifically meaningful.
 
-Downgrade to acceptable or worse when affirmative evidence shows that the
-central residual is material. Such evidence includes:
+Recommend "continue" when the image or summary supports a concrete in-scope
+improvement, such as restoring/adding a required component, correcting
+component-scale structure, or resolving a material parameter failure. Put the
+specific action in next_action. Do not invent an action from morphology alone.
 
-- clear extension beyond the compact core to bulge, bar, or disk scale;
-- a coherent closed ring or repeated concentric transition with visibly
-  resolved radial extent;
-- another accompanying extended in-scope residual;
-- a substantial matching 1D profile mismatch;
-- a directly corresponding component collapse or role takeover.
+PHYSICAL VALIDITY
 
-A simple compact dipole, asymmetric positive-negative pair, or isolated
-central speck is not an automatic veto. When the image cannot distinguish
-between an unresolved PSF-scale artifact and a materially resolved structure,
-use the large-scale 2D residual and the 1D profile as the deciding evidence.
+Invalidity requires direct severe evidence: failed convergence, non-finite
+values, required-component collapse, clear role takeover, or an extreme
+parameter with a matching component-scale residual. A low/fixed Sersic index,
+similar radii or angles, tied centers, overlap, one warning, one unusual
+parameter, or a compact central artifact is insufficient alone.
 
+TWO INTERNAL CHECKS
 
-MISSING-COMPONENT INFERENCE
+Check A: set candidate_pass=true only if the poor veto is absent and the fit is
+a plausible excellent or terminal-acceptable candidate.
 
-Do not infer a missing bulge, bar, disk, or PSF solely from a compact central
-ring, dipole, bullseye, quadrupole, X-shaped, or multi-lobed appearance.
+Check B: independently test the strongest reason to continue. Set
+verifier_pass=true only if the fit is valid and either excellent, or acceptable
+with no evidence-supported actionable in-scope improvement. Verify spatial
+extent using both the 2D residual and corresponding 1D radial range.
 
-A missing-component interpretation requires affirmative supporting evidence
-that the residual extends to the spatial scale of that component, or a
-substantial matching 1D mismatch, or direct parameter evidence that the
-intended component is absent or collapsed.
-
-A speculative component interpretation must not by itself downgrade an
-otherwise excellent fit.
-
-
-MANDATORY VETOES
-Continue fitting for any of the following:
-
-- an extended bulge-scale mismatch;
-- a galaxy-scale disk mismatch;
-- an extended bar, boxy, X-shaped, quadrupole, elongated, elliptical, or
-  coherent radial residual attributable to an in-scope component;
-- a central residual extending materially beyond the compact core;
-- multiple coherent in-scope residual scales;
-- poor residual quality;
-- failed convergence, non-finite values, required-component collapse,
-  uninterpretable boundary failure, severe multi-property degeneracy, or
-  unreliable contamination/masking;
-- evidence that the fit is only acceptable rather than excellent, including a
-  coherent central structure whose materiality cannot be confidently excluded.
-
-
-
-PHYSICAL-VALIDITY CALIBRATION
-
-Do not declare physical invalidity solely from:
-
-- a fixed or low Sérsic index;
-- similar or equal component radii;
-- similar position angles;
-- tied centres;
-- component overlap;
-- a single boundary warning;
-- one unusual parameter;
-- any combination consisting only of a low or fixed Sérsic index, similar
-  component radii, and a compact central residual.
-
-These protected features remain insufficient even when a compact central
-residual is also visible. Mere coexistence between a parameter feature and a
-residual is not proof of causation.
-
-Classify physical_validity_assessment as invalid only when there is direct,
-severe, and material evidence of at least one of the following:
-
-- failed convergence or non-finite values;
-- required-component collapse;
-- a component taking over another component's spatial role;
-- an extreme or boundary-hit parameter accompanied by a directly matching
-  residual on the scale assigned to that component;
-- multiple independent severe parameter failures that mutually support a
-  specific degeneracy.
-
-A residual may justify acceptable or poor fit quality without proving
-physical invalidity. Evaluate residual quality separately from physical
-validity.
-
-
-Similar component radii or scale lengths do not establish collapse,
-redundancy, or role takeover. Severe degeneracy requires mutually supporting
-evidence from multiple component properties, such as size, profile shape,
-axis ratio, orientation, flux contribution, and spatial role.
-
-A weak or low-flux component is not automatically a failed component. It
-prevents stopping only when that component is required for the intended
-bulge/disk/bar/PSF decomposition and its loss makes the decomposition
-materially incomplete or misleading.
-
-Do not allow a protected parameter feature to amplify an otherwise compact,
-non-material residual into a physical-validity failure.
-
-EVIDENCE PRIORITY
-The 2D residual is primary. The 1D profile is secondary. A good 1D profile
-cannot rescue a poor 2D residual. A 1D mismatch should veto only when it spans
-a meaningful radial range and agrees with an extended in-scope 2D residual.
-
-FINAL LOGIC
+FINAL DECISION
 
 Set is_stop=1 only when ALL are true:
 
-- candidate_pass is true;
-- verifier_pass is true;
-- fit_quality_assessment is exactly "excellent";
-- physical_validity_assessment is exactly "valid";
-- veto_type is exactly "none";
-- extended_in_scope_residual is false;
-- clear_physical_failure is false.
+- candidate_pass=true and verifier_pass=true;
+- fit_quality_assessment is "excellent" or "acceptable";
+- recommended_termination_status="terminate";
+- physical_validity_assessment="valid";
+- veto_type="none";
+- extended_in_scope_residual=false;
+- clear_physical_failure=false;
+- has_actionable_in_scope_improvement=false.
 
 Otherwise set is_stop=0.
 
-FIELD CONSISTENCY
+CONSISTENCY
 
-- If candidate_pass=false, verifier_pass must be false and is_stop must be 0.
-- If verifier_pass=false, is_stop must be 0.
-- If is_stop=1, veto_type must be "none".
-- If is_stop=0, veto_type must identify the strongest applicable veto and
-  must not be "none".
-- If physical_validity_assessment="invalid",
-  clear_physical_failure must be true and veto_type must be
-  "physical_invalidity".
-- If extended_in_scope_residual=true, is_stop must be 0.
+- acceptable may terminate or continue according to actionability;
+- poor/invalid must continue;
+- terminate requires no actionable improvement and next_action=null;
+- actionable improvement requires continue, is_stop=0, and non-empty
+  next_action;
+- candidate_pass=false or verifier_pass=false requires is_stop=0;
+- is_stop=1 requires veto_type="none";
+- is_stop=0 requires a veto other than "none";
+- extended_in_scope_residual=true requires is_stop=0;
+- invalid physical validity requires clear_physical_failure=true,
+  veto_type="physical_invalidity", and is_stop=0.
 
-Use one short, image-specific reason of no more than two sentences.
-For is_stop=0, state the strongest veto evidence. For is_stop=1, state why no
-material extended in-scope residual or physical failure remains. Do not provide
-recommendations or a long explanation.
+Use veto_type="acceptable_not_excellent" only for acceptable + continue with
+a concrete remaining improvement. For acceptable + terminate use "none".
 
-Allowed fit quality: invalid, poor, acceptable, excellent.
-Allowed physical validity: valid, invalid.
-Allowed veto type: none, acceptable_not_excellent, extended_residual,
-poor_residual, physical_invalidity, unreliable_input.
+OUTPUT
+
+Return exactly one JSON object without markdown fences:
+
+{{
+  "candidate_pass": true or false,
+  "verifier_pass": true or false,
+  "is_stop": 0 or 1,
+  "confidence": number from 0.0 to 1.0,
+  "fit_quality_assessment": "invalid" or "poor" or "acceptable" or "excellent",
+  "recommended_termination_status": "continue" or "terminate",
+  "has_actionable_in_scope_improvement": true or false,
+  "next_action": "short concrete action" or null,
+  "physical_validity_assessment": "valid" or "invalid",
+  "veto_type": "none" or "acceptable_not_excellent" or "extended_residual" or "poor_residual" or "physical_invalidity" or "unreliable_input",
+  "extended_in_scope_residual": true or false,
+  "clear_physical_failure": true or false,
+  "parameter_evidence": ["zero to three short observable facts"],
+  "residual_evidence": ["zero to three short observable facts"],
+  "reason": "one or two short image-specific sentences"
+}}
+
+For stop, explain why the fit is excellent or why an acceptable residual is
+non-material and non-actionable. For continue, state the strongest veto or
+specific actionable improvement.
 
 ## GALFIT summary markdown
 
@@ -869,7 +828,6 @@ poor_residual, physical_invalidity, unreliable_input.
 
 {trajectory_block}
 """.strip()
-
 
 
 def _call_json_once_per_attempt(
@@ -966,7 +924,7 @@ def is_stop(
         raise ValueError("Pass api_key or set OPENAI_API_KEY")
 
     judgment, raw_response, usage = _call_json_once_per_attempt(
-        prompt=_decision_prompt(summary, trajectory),
+        prompt=_decision_prompt_acceptable_terminate(summary, trajectory),
         image_path=str(image_path),
         api_key=resolved_api_key,
         model_name=model_name,
@@ -978,7 +936,7 @@ def is_stop(
         json_parse_retries=json_parse_retries,
     )
 
-    warnings: List[str] = []
+        warnings: List[str] = []
     candidate_pass = _safe_bool(judgment.get("candidate_pass"), False)
     verifier_pass = _safe_bool(judgment.get("verifier_pass"), False)
     model_is_stop = _safe_binary(judgment.get("is_stop"), 0)
@@ -1005,11 +963,42 @@ def is_stop(
     physical_failure = _safe_bool(
         judgment.get("clear_physical_failure"), True
     )
+    recommended_termination_status = str(
+        judgment.get("recommended_termination_status", "continue")
+    ).strip().lower()
+    if recommended_termination_status not in {"continue", "terminate"}:
+        recommended_termination_status = "continue"
+        warnings.append(
+            "unknown recommended termination status was normalized to continue"
+        )
+    has_actionable_improvement = _safe_bool(
+        judgment.get("has_actionable_in_scope_improvement"), True
+    )
+    next_action_value = judgment.get("next_action")
+    next_action = (
+        str(next_action_value).strip()
+        if next_action_value is not None and str(next_action_value).strip()
+        else None
+    )
+    if recommended_termination_status == "terminate" and has_actionable_improvement:
+        warnings.append(
+            "terminate with actionable improvement was normalized to continue"
+        )
+        recommended_termination_status = "continue"
+    if recommended_termination_status == "terminate" and next_action is not None:
+        warnings.append("terminate with next_action was normalized to continue")
+        recommended_termination_status = "continue"
+    if has_actionable_improvement and next_action is None:
+        warnings.append("actionable improvement without next_action was normalized")
+
+    quality_allows_stop = quality in {"acceptable", "excellent"}
     consistent_stop = (
         candidate_pass
         and verifier_pass
         and model_is_stop == 1
-        and quality == "excellent"
+        and quality_allows_stop
+        and recommended_termination_status == "terminate"
+        and not has_actionable_improvement
         and validity == "valid"
         and veto_type == "none"
         and not extended
@@ -1034,7 +1023,11 @@ def is_stop(
 
     if final_is_stop:
         stop_type = "successful_termination"
-        stop_reason = "excellent_fit"
+        stop_reason = (
+            "excellent_fit"
+            if quality == "excellent"
+            else "acceptable_fit_no_actionable_improvement"
+        )
     else:
         stop_type = "continue_fitting"
         if validity == "invalid" or physical_failure:
@@ -1045,6 +1038,14 @@ def is_stop(
             stop_reason = "fit_not_acceptable"
 
     reason = str(judgment.get("reason", "")).strip()
+    parameter_evidence = judgment.get("parameter_evidence", [])
+    if not isinstance(parameter_evidence, list):
+        parameter_evidence = [str(parameter_evidence)] if parameter_evidence else []
+    residual_evidence = judgment.get("residual_evidence", [])
+    if not isinstance(residual_evidence, list):
+        residual_evidence = [str(residual_evidence)] if residual_evidence else []
+    if not residual_evidence and reason:
+        residual_evidence = [reason]
 
     # Compatibility aliases let the existing two-stage evaluator inspect the
     # two internal checks without causing a second model request.
@@ -1056,12 +1057,14 @@ def is_stop(
         "confidence_gate_applied": confidence_gate_applied,
         "fit_quality_assessment": quality,
         "physical_validity_assessment": validity,
+        "recommended_termination_status": recommended_termination_status,
         "stop_type": stop_type,
         "stop_reason": stop_reason,
-        "has_concrete_next_action": False,
-        "next_action": None,
-        "parameter_evidence": [],
-        "residual_evidence": [reason] if reason else [],
+        "has_concrete_next_action": has_actionable_improvement,
+        "has_actionable_in_scope_improvement": has_actionable_improvement,
+        "next_action": next_action,
+        "parameter_evidence": parameter_evidence,
+        "residual_evidence": residual_evidence,
         "reason": reason,
         "consistency_warnings": warnings,
         "candidate_pass": candidate_pass,

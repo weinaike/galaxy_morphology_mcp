@@ -37,6 +37,30 @@ Check set (each grounded in a KILOGAS_319 round where the VLM applied it):
                         are notes
   zombie          note  flux < 0.5% of the brightest (dedup criterion only)
   priors          note  bulge q < 0.5 / lens q < 0.5 prior violations
+
+Expert-round-2 additions (thresholds validated by the offline replay over
+dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
+  onion           hard  2Re ellipse nesting outerdisk > disk > lens > bar >
+                        bulge (non-crossing, sampled over position angles);
+                        skipped when disk q < 0.3 or the disk slot is edgedisk
+                        (edge-on: nesting undefined), and per-pair when the
+                        inner is a bulge rounder than the outer by > 0.25
+                        (a round bulge sits laterally wider than a flat bar —
+                        the normal configuration, not a violation)
+  shape_order     hard  q_bar >= q_lens when both exist (a bar must be more
+                        elongated than the lens it sits inside)
+  profile_prior   hard  lens n >= 0.6 (not a lens profile; 0.5-0.6 note);
+                        outerdisk (sersic variant) n >= 1.0;
+                        lens flat degeneration: n <= 0.1 AND Re >= 0.9 x its
+                        .cons re cap (the KILOGAS lens-inflation signature)
+  mu0_order       hard  central surface brightness (analytic): mu0_bulge >=
+                        mu0_disk, mu0_bar > mu0_disk/0.90 (bar may be fainter
+                        only within the 0.90 tolerance), mu0_agn >= mu0_bulge
+                        (psf peak via the A_psf proxy)
+  flux_share      hard  f_lens >= f_bar (a lens must not outshine its bar)
+                  note  bar flux fraction outside 10-40%; lens outside 5-35%
+  shape_prior     hard  bulge q < 0.4 (0.4-0.5 stays a note); lens q <= 0.5;
+                        bar q in (0.5, 0.6] becomes a note (round-bar watch)
 """
 
 from __future__ import annotations
@@ -54,12 +78,31 @@ RE_RANK = {"bulge": 0, "bar": 1, "lens": 2, "disk": 3, "edgedisk": 3, "outerdisk
 CENTRAL_CHAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk"}
 
 BAR_Q_HARD_MAX = 0.6
+BAR_Q_NOTE_MAX = 0.5
+BULGE_Q_HARD_MIN = 0.4
+BULGE_Q_NOTE_MIN = 0.5
+LENS_Q_HARD_MIN = 0.5
+LENS_N_HARD_MIN = 0.6
+LENS_N_NOTE_MIN = 0.5
+OUTERDISK_N_HARD_MAX = 1.0
 THIN_LINE_Q = 0.05
 CONCENTRIC_TOL_PX = 2.0
 DEGENERACY_RATIO = 0.95
 RE_CHAIN_EPS_PX = 0.01
 # containment tolerance: ignore sub-pixel overshoot at the panel edge
 CONTAIN_TOL_PX = 2.0
+# onion nesting (expert round 2, replay-validated rule B)
+ONION_TOL = 0.02
+ONION_SKIP_Q = 0.3          # edge-on regime: nesting undefined
+ONION_BULGE_MISMATCH = 0.25  # round bulge in a flat bar/lens: normal config
+# lens flat degeneration
+FLAT_N_MAX = 0.1 + 1e-3
+CAP_FRAC = 0.90
+# central surface brightness ordering
+MU0_BAR_TOL = 0.90
+# flux-share windows (fractions of the total model light)
+BAR_FLUX_WIN = (0.10, 0.40)
+LENS_FLUX_WIN = (0.05, 0.35)
 
 
 def _f(v) -> float | None:
@@ -69,6 +112,83 @@ def _f(v) -> float | None:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+_LN10 = math.log(10.0)
+
+
+def _sersic_mu0(mag: float, re: float, n: float) -> float | None:
+    """Analytic central surface brightness of a Sersic profile (zeropoint-free:
+    only differences between components are used). None when n < 0.5 — the
+    k ~ 2n - 1/3 + 4/(405n) approximation is invalid for flatter profiles."""
+    if n < 0.5 or re <= 0:
+        return None
+    k = 2.0 * n - 1.0 / 3.0 + 4.0 / (405.0 * n)
+    if k <= 0.05:
+        return None
+    mu_e = mag + 5.0 * math.log10(re) + 2.5 * math.log10(
+        2.0 * math.pi * n * math.exp(k) / k ** (2.0 * n))
+    return mu_e - 2.5 * k / _LN10
+
+
+def _comp_mu0(c: dict, a_psf: float | None) -> float | None:
+    """Central surface brightness of one fitted component; the psf peak uses
+    the A_psf proxy (total flux spread over one PSF area)."""
+    mag, t = _f(c.get("mag")), (c.get("type") or "").lower()
+    if mag is None:
+        return None
+    if t == "psf":
+        return mag + 2.5 * math.log10(a_psf) if a_psf else None
+    if t == "expdisk":
+        rs = _f(c.get("re"))
+        return mag + 5.0 * math.log10(rs) + 2.5 * math.log10(2.0 * math.pi) if rs else None
+    n, re = _f(c.get("n")), _f(c.get("re_effective"))
+    if t == "sersic" and n and re:
+        return _sersic_mu0(mag, re, n)
+    return None
+
+
+def _ellipse_r(theta_deg: float, a: float, b: float, pa_deg: float) -> float:
+    """Radius of an ellipse (semi-axes a >= b, major-axis PA) along the
+    direction theta_deg (degrees from +Y, N=+Y contract)."""
+    d = math.radians(theta_deg - pa_deg)
+    den = math.hypot(b * math.cos(d), a * math.sin(d))
+    return a * b / den if den > 0 else math.inf
+
+
+_ONION_ANGLES = list(range(0, 180, 2))  # degrees, 2-degree steps
+
+
+def _cons_re_caps(graph, state: dict) -> dict[int, float]:
+    """Effective .cons re-band upper edge per component number (used by the
+    lens flat-degeneration check); {} when the artefacts are unavailable."""
+    artifacts = state.get("artifacts", {})
+    feedme = artifacts.get("feedme")
+    if not feedme or not os.path.exists(feedme):
+        return {}
+    try:
+        from tools.parse_feedme import parse_feedme
+
+        cons_rel = parse_feedme(feedme).get("constraint")
+    except Exception:
+        return {}
+    if not cons_rel or str(cons_rel).lower() == "none":
+        return {}
+    cons_file = cons_rel if os.path.isabs(cons_rel) else \
+        os.path.join(os.path.dirname(feedme), cons_rel)
+    from beam.cons_decode import decode_cons_file, effective_band, number_components
+
+    inputs = number_components(feedme)
+    caps: dict[int, float] = {}
+    for row in decode_cons_file(cons_file).numeric_rows():
+        if row.param != "re" or not row.is_single_component:
+            continue
+        num = int(row.comp_spec)
+        iv = (inputs.get(num) or {}).get("re")
+        band = effective_band(row, iv) if iv is not None else None
+        if band:
+            caps[num] = band[1]
+    return caps
 
 
 def scan_state_bound_hits(graph, state: dict) -> list[dict]:
@@ -149,12 +269,23 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
         if name == "bar" and q > BAR_Q_HARD_MAX:
             checks.append({"severity": "hard", "check": "axis_ratio",
                            "detail": f"bar q={q:g} > {BAR_Q_HARD_MAX:g} (axis-ratio hard limit)"})
-        if name == "bulge" and q < 0.5:
-            checks.append({"severity": "note", "check": "prior",
-                           "detail": f"bulge q={q:g} < 0.5 prior (bar/lens confusion risk)"})
-        if name == "lens" and q < 0.5:
-            checks.append({"severity": "note", "check": "prior",
-                           "detail": f"lens q={q:g} < 0.5 prior (lens requires q > 0.5)"})
+        elif name == "bar" and q > BAR_Q_NOTE_MAX:
+            checks.append({"severity": "note", "check": "shape_prior",
+                           "detail": f"bar q={q:g} in (0.5,0.6] (round-bar watch: "
+                                     "bar/lens identity confusion risk)"})
+        if name == "bulge":
+            if q < BULGE_Q_HARD_MIN:
+                checks.append({"severity": "hard", "check": "shape_prior",
+                               "detail": f"bulge q={q:g} < {BULGE_Q_HARD_MIN:g} "
+                                         "(not a bulge: bar/lens/sliver identity question)"})
+            elif q < BULGE_Q_NOTE_MIN:
+                checks.append({"severity": "note", "check": "prior",
+                               "detail": f"bulge q={q:g} < {BULGE_Q_NOTE_MIN:g} prior "
+                                         "(bar/lens confusion risk)"})
+        if name == "lens" and q <= LENS_Q_HARD_MIN:
+            checks.append({"severity": "hard", "check": "shape_prior",
+                           "detail": f"lens q={q:g} <= {LENS_Q_HARD_MIN:g} "
+                                     "(lens requires q > 0.5)"})
 
     # ---- containment (hard): 2*Re leaves the fit region from the centre
     if region:
@@ -227,6 +358,120 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                      f"{h.get('direction')} bound "
                                      f"[{band[0]:g},{band[1]:g}] "
                                      f"({h.get('provenance')} band)"})
+
+    # ---- onion nesting (hard; expert round 2, replay-validated rule B):
+    # 2Re ellipses of the central chain must not cross. Skipped for edge-on
+    # disks (q < 0.3 or the edgedisk slot); per-pair exempted when the inner
+    # is a rounder bulge inside a flat bar/lens (the normal configuration).
+    by = {c["name"]: c for c in main_shaped if c.get("name") in CENTRAL_CHAIN}
+    if "edgedisk" not in by:
+        dq = _f(by["disk"].get("q")) if "disk" in by else None
+        if dq is None or dq >= ONION_SKIP_Q:
+            onion_chain = [n for n in ("outerdisk", "disk", "lens", "bar", "bulge")
+                           if n in by]
+            for outer, inner in zip(onion_chain, onion_chain[1:]):
+                co, ci = by[outer], by[inner]
+                qo, qi = _f(co.get("q")), _f(ci.get("q"))
+                if inner == "bulge" and qo is not None and qi is not None \
+                        and qi - qo > ONION_BULGE_MISMATCH:
+                    continue
+                ao = _f(co.get("re_effective"))
+                ai = _f(ci.get("re_effective"))
+                if not ao or not ai:
+                    continue
+                bo, bi = (qo or 1.0) * ao, (qi or 1.0) * ai
+                po = _f(co.get("pa")) or 0.0
+                pi = _f(ci.get("pa")) or 0.0
+                worst = max(_ellipse_r(t, ai, bi, pi) / _ellipse_r(t, ao, bo, po)
+                            for t in _ONION_ANGLES)
+                if worst > 1.0 + ONION_TOL:
+                    checks.append({"severity": "hard", "check": "onion",
+                                   "detail": f"{inner} 2*Re ellipse pokes out of "
+                                             f"{outer} (max radius ratio {worst:.2f}; "
+                                             f"q_{inner}={qi or 1:g}, q_{outer}={qo or 1:g})"})
+
+    # ---- shape order (hard): a bar must be more elongated than its lens
+    bar_c, lens_c = by.get("bar"), by.get("lens")
+    if bar_c and lens_c:
+        qb, ql = _f(bar_c.get("q")), _f(lens_c.get("q"))
+        if qb is not None and ql is not None and qb >= ql:
+            checks.append({"severity": "hard", "check": "shape_order",
+                           "detail": f"q_bar={qb:g} >= q_lens={ql:g} "
+                                     "(a bar must be flatter than the lens)"})
+
+    # ---- profile priors (hard): lens/outerdisk n; lens flat degeneration
+    if lens_c:
+        ln = _f(lens_c.get("n"))
+        lre = _f(lens_c.get("re_effective"))
+        if ln is not None:
+            if ln >= LENS_N_HARD_MIN:
+                checks.append({"severity": "hard", "check": "profile_prior",
+                               "detail": f"lens n={ln:g} >= {LENS_N_HARD_MIN:g} "
+                                         "(not a lens profile: identity question)"})
+            elif ln >= LENS_N_NOTE_MIN:
+                checks.append({"severity": "note", "check": "profile_prior",
+                               "detail": f"lens n={ln:g} in [0.5,0.6) (lens prior is n < 0.5)"})
+        if ln is not None and lre is not None:
+            cap = _cons_re_caps(graph, state).get(lens_c.get("number"))
+            if cap and ln <= FLAT_N_MAX and lre >= CAP_FRAC * cap:
+                checks.append({"severity": "hard", "check": "profile_prior",
+                               "detail": f"lens flat degeneration: n={ln:g} at the floor "
+                                         f"AND Re={lre:g}px >= 0.9*re_max({cap:g}px) "
+                                         "(the lens-inflation signature: it wants to be a "
+                                         "flat extended envelope, not a lens)"})
+    outer_c = by.get("outerdisk")
+    if outer_c and (outer_c.get("type") or "") == "sersic":
+        on = _f(outer_c.get("n"))
+        if on is not None and on >= OUTERDISK_N_HARD_MAX:
+            checks.append({"severity": "hard", "check": "profile_prior",
+                           "detail": f"outerdisk n={on:g} >= 1.0 (outer envelope "
+                                     "must be n < 1)"})
+
+    # ---- mu0 ordering (hard; analytic central surface brightness)
+    a_psf = _f(meta.get("a_psf_px2"))
+    m_disk = _comp_mu0(by["disk"], a_psf) if "disk" in by else None
+    m_bulge = _comp_mu0(by["bulge"], a_psf) if "bulge" in by else None
+    m_bar = _comp_mu0(by["bar"], a_psf) if "bar" in by else None
+    agn = next((c for c in inv if c.get("name") == "agn"), None)
+    m_agn = _comp_mu0(agn, a_psf) if agn else None
+    if m_bulge is not None and m_disk is not None and m_bulge >= m_disk:
+        checks.append({"severity": "hard", "check": "mu0_order",
+                       "detail": f"mu0_bulge={m_bulge:.2f} >= mu0_disk={m_disk:.2f} "
+                                 "(central surface-brightness inversion: flux "
+                                 "misallocation or bulge/disk identity swap)"})
+    if m_agn is not None and m_bulge is not None and m_agn >= m_bulge:
+        checks.append({"severity": "hard", "check": "mu0_order",
+                       "detail": f"mu0_agn={m_agn:.2f} >= mu0_bulge={m_bulge:.2f} "
+                                 "(the AGN peak is not the brightest central source "
+                                 "— A_psf proxy)"})
+    if m_bar is not None and m_disk is not None and m_bar > m_disk / MU0_BAR_TOL:
+        checks.append({"severity": "hard", "check": "mu0_order",
+                       "detail": f"mu0_bar={m_bar:.2f} > mu0_disk/{MU0_BAR_TOL:g}="
+                                 f"{m_disk / MU0_BAR_TOL:.2f} (bar far fainter than "
+                                 "the disk at centre — diffuse-bar identity question)"})
+
+    # ---- flux share: fractions of the total model light
+    lum_list = [10.0 ** (-0.4 * _f(c.get("mag")))
+                for c in inv if _f(c.get("mag")) is not None]
+    named_lum = {c.get("name"): 10.0 ** (-0.4 * _f(c.get("mag")))
+                 for c in inv if c.get("name") in ("bar", "lens")
+                 and _f(c.get("mag")) is not None}
+    tot = sum(lum_list)
+    if tot > 0 and named_lum:
+        fb = named_lum.get("bar", 0.0) / tot
+        fl = named_lum.get("lens", 0.0) / tot
+        if "bar" in named_lum and not (BAR_FLUX_WIN[0] <= fb <= BAR_FLUX_WIN[1]):
+            checks.append({"severity": "note", "check": "flux_share",
+                           "detail": f"bar flux fraction {fb * 100:.1f}% outside "
+                                     f"{BAR_FLUX_WIN[0] * 100:.0f}-{BAR_FLUX_WIN[1] * 100:.0f}%"})
+        if "lens" in named_lum and not (LENS_FLUX_WIN[0] <= fl <= LENS_FLUX_WIN[1]):
+            checks.append({"severity": "note", "check": "flux_share",
+                           "detail": f"lens flux fraction {fl * 100:.1f}% outside "
+                                     f"{LENS_FLUX_WIN[0] * 100:.0f}-{LENS_FLUX_WIN[1] * 100:.0f}%"})
+        if "bar" in named_lum and "lens" in named_lum and fl >= fb:
+            checks.append({"severity": "hard", "check": "flux_share",
+                           "detail": f"lens flux fraction {fl * 100:.1f}% >= bar "
+                                     f"{fb * 100:.1f}% (a lens must not outshine its bar)"})
 
     # ---- zombies (note only — never a removal ground by itself)
     for z in state.get("zombies", []) or []:

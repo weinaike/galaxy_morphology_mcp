@@ -25,6 +25,80 @@ from beam.digest import (
 from beam.enqueue import ingest
 from beam.vlm_extract import extract_survey_json
 
+# required-candidate semantics of the numeric triggers: when the trigger
+# holds, the mapped candidate family is REQUIRED (or an explicit waiver in
+# physical_motivation) — a silent omission is logged and fed back into the
+# NEXT round's supplement for self-correction (workflow d.ii absence rule;
+# Plate0300 incident: lens_relax_d held, no path-D candidate, and the expert
+# annotation later showed the true lens Re=18.5 hidden behind the
+# self-imposed 17 px cap).
+_WAIVER_MARKERS = ("waiv", "not applicable", "inapplicable")
+
+
+def _lens_re_cap(graph, label: str) -> float | None:
+    state = graph.state(label)
+    lens = next((c for c in state.get("inventory", [])
+                 if (c.get("name") or "").lower() == "lens"), None)
+    if not lens or not lens.get("number"):
+        return None
+    band = (state.get("cons_effective") or {}).get(f"{lens['number']}.re")
+    return band[1] if band else None
+
+
+def _is_lens_relax_candidate(cand, cap: float | None) -> bool:
+    """True path-D relaxation: the proposed re band's upper edge EXCEEDS the
+    current cap (a tightened band is path A, not D)."""
+    for p in cand.to_plain_primitives():
+        if p.get("op") != "tune" or (p.get("structure_name") or "").lower() != "lens":
+            continue
+        band = (p.get("cons_bounds") or {}).get("re")
+        if band and band[1] and cap and band[1] > cap + 1e-6:
+            return True
+    return False
+
+
+def _candidate_absence_watchdog(graph, resp, triggers: dict, label: str,
+                                session_id: str) -> list[str]:
+    """Log + queue for self-correction every fired trigger whose required
+    candidate family is absent without an explicit waiver."""
+    from beam.enqueue import _is_bar_direction
+
+    watch = {
+        "lens_relax_d": {
+            "classify": lambda c: _is_lens_relax_candidate(c, _lens_re_cap(graph, label)),
+            "describe": "path-D lens re_max relaxation (tune(lens, re_max = hit x 1.3))",
+            "waiver_kw": ("relax", "re_max", "path d", "cap"),
+        },
+        "flat_bulge_bar": {
+            "classify": _is_bar_direction,
+            "describe": "a Bar-direction candidate (tune(Bulge->Bar) / add(Bar))",
+            "waiver_kw": ("bar",),
+        },
+    }
+    notes: list[str] = []
+    if not triggers:
+        return notes
+    motivations = " ".join(c.physical_motivation or "" for c in resp.candidates).lower()
+    waived = any(m in motivations for m in _WAIVER_MARKERS)
+    for trig, spec in watch.items():
+        if not triggers.get(trig):
+            continue
+        if any(spec["classify"](c) for c in resp.candidates):
+            continue
+        if waived and any(k in motivations for k in spec["waiver_kw"]):
+            continue
+        note = (f"Previous-round candidate-absence notice (objective fact): trigger "
+                f"'{trig}' held but no {spec['describe']} was proposed and no waiver "
+                f"was stated (state {label}). Under new evidence either generate the "
+                f"candidate or file the explicit waiver in physical_motivation.")
+        notes.append(note)
+        graph.log_decision({"kind": "vlm-candidate-absence", "state": label,
+                            "session": session_id, "missing": trig,
+                            "describe": spec["describe"]})
+    if notes:
+        graph.g.graph.setdefault("survey_notes", []).extend(notes)
+    return notes
+
 
 def global_desc_for(graph) -> str:
     """Global-state digest, or the ablation-arm marker when disabled.
@@ -220,6 +294,8 @@ def survey_round(
                            parent_label=label,
                            verdict_fail=(verdict.get("verdict") == "FAIL"),
                            numeric_triggers=triggers)
+    absence_notes = _candidate_absence_watchdog(graph, resp, triggers, label,
+                                                session_id)
     graph.age_pending()  # pending entries age while a round passes
     graph.log_decision({"kind": "survey-round", "state": label, "session": session_id,
                         "enqueued": [e["action_id"] for e in result_ingest.enqueued],
@@ -234,6 +310,7 @@ def survey_round(
         "discarded": result_ingest.discarded,
         "protected_directions": result_ingest.protected,
         "numeric_triggers": triggers,
+        "absence_notices": absence_notes,
         "queue": [
             {"action_id": aid, **{k: graph.pending_record(aid).get(k)
                                   for k in ("parent", "sigma", "score",
@@ -320,6 +397,8 @@ def orchestrator_round(galaxy_dir: str, response_json: str,
                            parent_label=label,
                            verdict_fail=(verdict.get("verdict") == "FAIL"),
                            numeric_triggers=triggers)
+    absence_notes = _candidate_absence_watchdog(graph, resp, triggers, label,
+                                                session_id)
     graph.age_pending()
     graph.log_decision({"kind": "orchestrator-round", "state": label, "session": session_id,
                         "enqueued": [e["action_id"] for e in result_ingest.enqueued],
@@ -334,6 +413,7 @@ def orchestrator_round(galaxy_dir: str, response_json: str,
         "discarded": result_ingest.discarded,
         "protected_directions": result_ingest.protected,
         "numeric_triggers": triggers,
+        "absence_notices": absence_notes,
         "queue": [
             {"action_id": aid, **{k: graph.pending_record(aid).get(k)
                                   for k in ("parent", "sigma", "score",

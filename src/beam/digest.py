@@ -231,6 +231,16 @@ def build_local_state_description(g, state_label: str,
                        ("orchestrator_note", "orchestrator note")):
         lines.append(f"  - {label}: {injected.get(key, 'not assessed')}")
 
+    # ---- consume-once absence notices queued by the previous round's
+    # candidate-absence watchdog (survey.py): facts for self-correction,
+    # never direction mandates beyond the trigger rules already in the prompt
+    pending_notes = g.g.graph.get("survey_notes") or []
+    if pending_notes:
+        lines.append("")
+        for nt in pending_notes:
+            lines.append(f"  {nt}")
+        g.g.graph["survey_notes"] = []
+
     return "\n".join(lines), triggers
 
 

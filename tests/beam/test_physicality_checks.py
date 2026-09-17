@@ -224,3 +224,50 @@ def test_flux_duplicate_companion_names_counted():
     # disk L=2.512, others 1 each: tot=5.512, f_bar=0.181 (inside window, no note)
     checks = _checks(comps)
     assert not _has(checks, "flux_share", "note", "bar flux fraction")
+
+
+# --------------------------------------------- administrative disable switch
+def test_disable_mech_checks_env(monkeypatch):
+    # NOTE: the _checks dict helper collapses same-(check,severity) entries and
+    # this fixture fires TWO mu0_order/hard entries (bulge + bar) — assert on
+    # the raw list instead.
+    def _raw(comps):
+        st = {"inventory": comps, "artifacts": {}}
+        return [(c["check"], c["severity"], c["detail"])
+                for c in compute_mech_checks(_G({}), st)]
+
+    def _present(raw, check, severity="hard", substr=""):
+        return any(ck == check and sev == severity and substr in d
+                   for ck, sev, d in raw)
+
+    # inventory that fires mu0_order(hard, twice), flux_share hard + note,
+    # re_chain(hard)
+    inv = [
+        _comp("disk", "expdisk", re=2.0, mag=14.0, q=0.8),   # compact bright disk
+        _comp("bulge", q=0.8, re=2.5, n=1.0, mag=20.0),      # mu0_bulge >= mu0_disk
+        _comp("lens", q=0.7, re=7.0, n=0.3, mag=16.8),       # re >= disk Re_eff, bright
+        _comp("bar", q=0.35, re=4.0, n=0.5, mag=21.0),       # faint: f_bar ~0.15%, fl >= fb
+    ]
+    monkeypatch.delenv("GALMCP_DISABLE_MECH_CHECKS", raising=False)
+    base = _raw(inv)
+    assert _present(base, "mu0_order", "hard", "mu0_bulge")
+    assert _present(base, "flux_share", "hard", "lens flux fraction")
+    assert _present(base, "flux_share", "note", "bar flux fraction")
+    assert _present(base, "re_chain", "hard", "re inversion")
+
+    # production setting: whole mu0_order family + flux_share hard severity only
+    monkeypatch.setenv("GALMCP_DISABLE_MECH_CHECKS", "mu0_order,flux_share:hard")
+    disabled = _raw(inv)
+    assert not any(ck == "mu0_order" for ck, _, _ in disabled)
+    assert not _present(disabled, "flux_share", "hard")
+    assert _present(disabled, "flux_share", "note", "bar flux fraction")  # notes kept
+    assert _present(disabled, "re_chain", "hard", "re inversion")         # others intact
+
+    # bare family name disables both severities
+    monkeypatch.setenv("GALMCP_DISABLE_MECH_CHECKS", "flux_share")
+    gone = _raw(inv)
+    assert not any(ck == "flux_share" for ck, _, _ in gone)
+
+    # unknown family names are ignored (warned once), nothing disabled
+    monkeypatch.setenv("GALMCP_DISABLE_MECH_CHECKS", "bogus_family")
+    assert _present(_raw(inv), "mu0_order", "hard", "mu0_bulge")

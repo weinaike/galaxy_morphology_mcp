@@ -61,6 +61,13 @@ dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
                   note  bar flux fraction outside 10-40%; lens outside 5-35%
   shape_prior     hard  bulge q < 0.4 (0.4-0.5 stays a note); lens q <= 0.5;
                         bar q in (0.5, 0.6] becomes a note (round-bar watch)
+
+Administrative disable switch (temporary experimentation): the env var
+``GALMCP_DISABLE_MECH_CHECKS`` holds a comma-separated list of check families
+to drop from the table — a bare family name disables all its severities,
+``<family>:hard`` / ``<family>:note`` only that severity. Filtering happens at
+the single choke point ``compute_mech_checks``, so the merge, the record_fit
+fail-safe and the prompt digest never see disabled entries.
 """
 
 from __future__ import annotations
@@ -68,6 +75,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import sys
 
 from beam.signature import normalize_inventory
 
@@ -103,6 +111,52 @@ MU0_BAR_TOL = 0.90
 # flux-share windows (fractions of the total model light)
 BAR_FLUX_WIN = (0.10, 0.40)
 LENS_FLUX_WIN = (0.05, 0.35)
+
+# ---- administrative disable switch (GALMCP_DISABLE_MECH_CHECKS) -----------
+DISABLE_ENV = "GALMCP_DISABLE_MECH_CHECKS"
+_MECH_CHECK_NAMES = frozenset({
+    "re_chain", "axis_ratio", "containment", "concentric", "degeneracy",
+    "bound_pin", "onion", "shape_order", "profile_prior", "mu0_order",
+    "flux_share", "shape_prior", "prior", "zombie", "internal",
+})
+_warned_unknown: set[str] = set()
+_disable_announced = False
+
+
+def _disabled_checks() -> dict[str, set[str]]:
+    """{check_name: {severities to drop}} from the env var ({} = none).
+
+    Tokens are comma-separated; a bare ``<family>`` disables all severities,
+    ``<family>:hard`` / ``<family>:note`` only that severity. Unknown family
+    names warn once (typo guard) and are ignored.
+    """
+    global _disable_announced
+    raw = (os.environ.get(DISABLE_ENV) or "").strip()
+    out: dict[str, set[str]] = {}
+    if not raw:
+        return out
+    for token in raw.replace(";", ",").replace(" ", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        name, _, sev = token.partition(":")
+        name = name.strip().lower()
+        if name not in _MECH_CHECK_NAMES:
+            if name not in _warned_unknown:
+                _warned_unknown.add(name)
+                print(f"[physicality] WARNING: unknown check family '{name}' in "
+                      f"{DISABLE_ENV} (valid: {', '.join(sorted(_MECH_CHECK_NAMES))})",
+                      file=sys.stderr)
+            continue
+        sev = sev.strip().lower()
+        sevs = {sev} if sev in {"hard", "note"} else {"hard", "note"}
+        out.setdefault(name, set()).update(sevs)
+    if out and not _disable_announced:
+        _disable_announced = True
+        desc = ", ".join(f"{n}({'/'.join(sorted(s))})" for n, s in sorted(out.items()))
+        print(f"[physicality] NOTE: mech-check families disabled by "
+              f"{DISABLE_ENV}: {desc}", file=sys.stderr)
+    return out
 
 
 def _f(v) -> float | None:
@@ -478,6 +532,14 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
         checks.append({"severity": "note", "check": "zombie",
                        "detail": f"{z}: flux < 0.5% of the brightest component "
                                  "(zombie flag — dedup criterion only)"})
+
+    # ---- administrative disable filter (GALMCP_DISABLE_MECH_CHECKS): drop
+    # the configured families before anything consumes the table (merge,
+    # record_fit fail-safe, prompt digest).
+    disabled = _disabled_checks()
+    if disabled:
+        checks = [c for c in checks
+                  if c.get("severity") not in disabled.get(c.get("check"), ())]
 
     return checks
 

@@ -936,7 +936,7 @@ def is_stop(
         json_parse_retries=json_parse_retries,
     )
 
-        warnings: List[str] = []
+    warnings: List[str] = []
     candidate_pass = _safe_bool(judgment.get("candidate_pass"), False)
     verifier_pass = _safe_bool(judgment.get("verifier_pass"), False)
     model_is_stop = _safe_binary(judgment.get("is_stop"), 0)

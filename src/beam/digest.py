@@ -29,7 +29,13 @@ def _fmt(v, digits=4):
 
 def _comp_line(c: dict) -> str:
     name = c.get("name") or "?"
-    parts = [f"Re={_fmt(c.get('re_effective'))}px"]
+    re_eff = c.get("re_effective")
+    if re_eff is None and c.get("re") is not None:
+        # raw parse_components shape: 're' is the 4) row value (Rs for
+        # expdisk/edgedisk) — display the effective radius (px contract)
+        re_eff = c["re"] * (1.68 if (c.get("type") or "").lower()
+                            in ("expdisk", "edgedisk") else 1.0)
+    parts = [f"Re={_fmt(re_eff)}px"]
     if c.get("mag") is not None:
         parts.append(f"M={_fmt(c.get('mag'), 4)}")
     if c.get("n") is not None:

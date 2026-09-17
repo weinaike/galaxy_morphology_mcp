@@ -402,6 +402,16 @@ class BeamGraph:
 
         if verdict is not None:
             self.apply_verdict(label, verdict, parent_label=parent_label)
+        elif any(c.get("severity") == "hard" for c in mech):
+            # Fail-safe (KILOGAS_231 2026-09-16 incident): a driver that never
+            # settles verdicts (no survey_round, no verdict_json) must not be
+            # able to bypass the physicality gate — mech-hard entries alone
+            # settle FAIL here, exactly what merge_verdict would produce after
+            # any surveyor call. States without mech-hard stay unsettle-pending
+            # until survey_round runs.
+            self.apply_verdict(label, {"verdict": "FAIL", "failed_checks": [],
+                                       "swap_hint": "none"},
+                               parent_label=parent_label)
         self.commit()
         return label
 

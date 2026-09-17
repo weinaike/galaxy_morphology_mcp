@@ -76,6 +76,7 @@ Glob inside `locked_round_dir` and verify:
 | The file exists but is empty or contains only error messages | → **WARN** |
 | The file exists with valid residual analysis (single-band beam additionally requires that round's working_note verdict = **PASS**) | → PASS |
 | single-band beam: the beam_actions file exists, but that round's Physicality Verdict in working_note is **FAIL** or missing | → **FAIL** (a physically-FAIL-vetoed round must not be the best round; a missing verdict record counts as incomplete verification) |
+| **In-graph verdict check (single-band beam, mandatory when `beam_state/graph.json` exists)**: read the locked round's node in `beam_state/graph.json` — its `verdict.verdict` must be **PASS** and the graph's `best_state` must equal the locked round's label (or the locked round must be `is_best`). `verdict: null` / a mech-veto FAIL / `best_state: null` | → **FAIL** (the physicality gate was bypassed — verdicts were never settled, e.g. the driver skipped `survey_round`; the run must settle verdicts and re-select before locking). A `beam_status` "warnings" list mentioning "verdict gate bypassed" or "no admissible best state" is conclusive FAIL evidence. |
 
 > `component_analysis` output lives in the **same directory** as the comparison PNG, named `<comparison_base>_component_analysis[_<session_id>].md`; `generate_galfit_beam_actions` output likewise, named `<comparison_base>_beam_actions_<branch>[_<session_id>].md`.
 

@@ -67,6 +67,25 @@ def test_beam_init_missing_paths(tmp_path):
     assert r["status"] == "failure"
 
 
+def test_beam_record_fit_auto_fails_on_mech_hard(galaxy):
+    """KILOGAS_231 incident regression: a driver that never settles verdicts
+    (no survey_round, no verdict_json) must not bypass the physicality gate —
+    a state carrying mech-hard entries is auto-settled FAIL at record time."""
+    # make the fixture bar round (q=0.75 > 0.6) so a hard mech check surely fires
+    fitted = galaxy / "galfit.01"
+    fitted.write_text(fitted.read_text().replace("9) 0.3699", "9) 0.7500"),
+                      encoding="utf-8")
+    beam_init(str(galaxy), str(galaxy / "_iter1.feedme"))
+    res = json.dumps(_run_result(galaxy))
+    rr = beam_record_fit(str(galaxy), res)  # no verdict_json
+    st = beam_status(str(galaxy))
+    node = next(s for s in st["states"] if s["label"] == "A.1")
+    assert node["verdict"] == "FAIL"
+    assert rr["is_best"] is False
+    assert st["best_state"] is None
+    assert any("no admissible best state" in w for w in st.get("warnings", []))
+
+
 def test_beam_record_fit_rejects_bad_payload(galaxy):
     beam_init(str(galaxy), str(galaxy / "_iter1.feedme"))
     r = beam_record_fit(str(galaxy), "not json")

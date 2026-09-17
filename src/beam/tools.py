@@ -384,6 +384,37 @@ def beam_status(
         snap = graph.snapshot()
         snap["status"] = "success"
         snap["termination"] = graph.termination_check()
+        # verdict-gate health warnings (KILOGAS_231 2026-09-16 incident: a
+        # driver that never settles verdicts bypasses the physicality gate)
+        warnings = []
+
+        def _has_fit(s):
+            return (s.get("bic") is not None
+                    or (s.get("metrics") or {}).get("bic_eff") is not None)
+
+        fitted = [s for s in snap.get("states", []) if _has_fit(s)]
+
+        def _settled(s):
+            v = s.get("verdict")
+            if isinstance(v, dict):
+                return bool(v.get("verdict"))
+            return bool(v)  # snapshot form: verdict is a plain string
+
+        unsettled = [s.get("label") for s in fitted if not _settled(s)]
+        if unsettled:
+            warnings.append(
+                f"verdict gate bypassed: {len(unsettled)} fitted state(s) without "
+                f"a settled Physicality Verdict ({', '.join(map(str, unsettled[:6]))}"
+                f"{'…' if len(unsettled) > 6 else ''}) — call survey_round after "
+                "every beam_record_fit (the single_agent arm uses "
+                "beam_enqueue_candidates instead)")
+        if fitted and not snap.get("best_state"):
+            warnings.append(
+                "no admissible best state (best_state is null): no verdict-PASS "
+                "round exists yet — locking is forbidden; settle the pending "
+                "states' verdicts first")
+        if warnings:
+            snap["warnings"] = warnings
         return snap
     except Exception as e:
         return {"status": "failure", "error": str(e)}

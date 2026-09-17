@@ -567,12 +567,42 @@ def _refute_matches(tag: str, name: str, param: str | None) -> bool:
     return False
 
 
+def _disambiguate_companion_names(resp: SurveyResponse,
+                                  parent_inventory: list[dict]) -> None:
+    """Companion slots are 0..N (solution-space multiplicity), but a second
+    add naturally reuses the name 'companion' — which the strict
+    duplicate-name check would discard (Plate0300 incident: the brighter
+    companion candidate add_companion_114_93 was dropped with
+    'E_APPLY: duplicate structure name: companion'). Auto-index colliding
+    companion-family names to the next free sibling (companion2, companion3,
+    ...). Mechanical disambiguation only — position/type/parameters stay
+    verbatim (the VLM's physical intent is unchanged)."""
+    taken = {str(c.get("name") or "").lower() for c in parent_inventory}
+    for cand in resp.candidates:
+        for prim in cand.primitives:
+            if getattr(prim, "op", "") != "add":
+                continue
+            name = (prim.add.structure_name or "").lower()
+            if not name:
+                continue
+            if _COMPANION_RE.match(name) and name in taken:
+                base = _slot(name)              # canonical 'companion'
+                i = 2
+                while f"{base}{i}" in taken:
+                    i += 1
+                prim.add.structure_name = f"{base}{i}"
+                taken.add(prim.add.structure_name)
+            else:
+                taken.add(name)  # two companion adds inside one candidate
+
+
 def validate_survey(resp: SurveyResponse, graph, state_label: str) -> ValidationReport:
     """Full-survey validation: per-candidate solution-space checks + survey-level
     counts/tag-uniqueness/queue_reorder sanity."""
     issues: list[Issue] = []
     state = graph.state(state_label)
     parent_inventory = state.get("inventory", [])
+    _disambiguate_companion_names(resp, parent_inventory)
     depth = int(state.get("depth", 1))
     combo_counts = graph.combo_counts()
     cap = int(graph.g.graph["meta"].get("per_combo_cap", 4))

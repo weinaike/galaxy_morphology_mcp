@@ -337,3 +337,120 @@ def test_traversal_orders_states_and_crashes(galaxy):
     assert t[3]["label"] == "A.2" and t[3]["is_best"] is True
     # surfaced in the beam_status snapshot as well
     assert g.snapshot()["traversal"] == t
+
+
+# ---------------------------------------- Plate0295 incident 2026-09-17
+def test_combo_counts_exclude_subconverged(galaxy):
+    """Cap accounting follows the Refutation validity rule: a [sub-converged]
+    round is not a counted attempt, so a corrected re-run stays legal."""
+    g = _init(galaxy)
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
+    combo = g.state("A.1")["combo_key"]
+    g.add_pending({"sigma": 0.4,
+                   "primitives": [{"op": "tune", "structure_name": "bulge",
+                                   "param": "n", "value": 2.0, "toggle": 1}]},
+                  source_session="s", parent_label="A.1")
+    aid = g.pending_queue()[0]
+    g.record_fit(_run_result(galaxy, bic_eff=1010.0, conv_flag="sub-converged"),
+                 action_id=aid)
+    assert g.combo_counts().get(combo) == 1                # valid rounds only
+    assert g.combo_counts(valid_only=False).get(combo) == 2  # every fit that ran
+    # the precheck still sees the combo as executed (a fit did run)
+    assert all(e["combo"] != combo for e in g.never_executed_precheck())
+
+
+def test_floor_discharge_after_valid_execution(galaxy):
+    """Regression (Plate0295 A.12): a floor-flagged pending candidate must not
+    suspend termination once the SAME combo has a valid (convergence ok)
+    executed round testing the SAME floor hypothesis; a sub-converged round
+    does not discharge it."""
+    g = _init(galaxy)
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
+    n_release = [{"op": "tune", "structure_name": "bulge",
+                  "param": "n", "value": 4.0, "toggle": 1}]
+    g.add_pending({"sigma": 0.3, "code_flags": {"floor_n_release": True},
+                   "primitives": n_release},
+                  source_session="s", parent_label="A.1")
+    floor_aid = g.pending_queue()[0]
+    assert g.floor_blockers() == [floor_aid]
+
+    # executor round lands sub-converged: floor must stay armed
+    g.add_pending({"sigma": 0.3, "primitives": n_release},
+                  source_session="s2", parent_label="A.1")
+    sub_aid = g.pending_queue()[-1]
+    g.record_fit(_run_result(galaxy, bic_eff=1005.0, conv_flag="sub-converged"),
+                 action_id=sub_aid)
+    assert g.floor_blockers() == [floor_aid]
+    assert g.pending_record(floor_aid)["status"] == "pending"
+
+    # a valid n-release on the same combo discharges the floor
+    g.add_pending({"sigma": 0.3, "primitives": n_release},
+                  source_session="s3", parent_label="A.1")
+    ok_aid = g.pending_queue()[-1]
+    g.record_fit(_run_result(galaxy, bic_eff=1002.0), action_id=ok_aid)
+    assert g.floor_blockers() == []
+    rec = g.pending_record(floor_aid)
+    assert rec["status"] == "discarded"
+    assert "FLOOR_SATISFIED" in rec["discard_reason"]
+    kinds = [e["kind"] for e in g.g.graph["decision_log"]]
+    assert "floor-discharge" in kinds
+    # stagnation is not bumped by the discharge itself
+    assert g.counters()["stagnation"] == 0
+
+
+def test_floor_disk_re_discharge_requires_growth(galaxy):
+    """floor_disk_re is satisfied only by a valid executed round that GREW
+    the disk Re past its own parent's value — a shrink tune must leave the
+    floor armed (parent_re=None would weaken the predicate to any re tune)."""
+    g = _init(galaxy)
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
+    disk = next(c for c in g.state("A.1")["inventory"]
+                if c.get("name") in {"disk", "edgedisk"})
+    # effective Re (the raw inventory stores Rs for expdisk/edgedisk)
+    re0_raw = disk.get("re_effective")
+    if re0_raw is None:
+        re0_raw = disk.get("re")
+        if (disk.get("type") or "").lower() in ("expdisk", "edgedisk") \
+                and re0_raw is not None:
+            re0_raw = float(re0_raw) * 1.68
+    re0 = float(re0_raw)
+
+    def re_tune(value):
+        return [{"op": "tune", "structure_name": "disk",
+                 "param": "re_px", "value": value, "toggle": 1}]
+
+    g.add_pending({"sigma": 0.4, "code_flags": {"floor_disk_re": True},
+                   "primitives": re_tune(re0 * 1.3)},
+                  source_session="s", parent_label="A.1")
+    floor_aid = g.pending_queue()[0]
+    assert g.floor_blockers() == [floor_aid]
+
+    # valid executed round that SHRANK the disk Re: floor must stay armed
+    g.add_pending({"sigma": 0.4, "primitives": re_tune(re0 * 0.7)},
+                  source_session="s2", parent_label="A.1")
+    shrink_aid = g.pending_queue()[-1]
+    g.record_fit(_run_result(galaxy, bic_eff=1005.0), action_id=shrink_aid)
+    assert g.floor_blockers() == [floor_aid]
+    assert g.pending_record(floor_aid)["status"] == "pending"
+
+    # window case: for an expdisk parent the raw inventory stores Rs, but a
+    # Re-units tune in (Rs, Re) is a TRUE SHRINK of the effective radius —
+    # it must NOT discharge the floor (the naive Rs comparison would)
+    is_exp = (disk.get("type") or "").lower() in ("expdisk", "edgedisk")
+    if is_exp:
+        rs0 = float(disk.get("re"))
+        window_val = rs0 * 1.3          # between Rs and Re = Rs*1.68
+        g.add_pending({"sigma": 0.4, "primitives": re_tune(window_val)},
+                      source_session="s2b", parent_label="A.1")
+        window_aid = g.pending_queue()[-1]
+        g.record_fit(_run_result(galaxy, bic_eff=1006.0), action_id=window_aid)
+        assert g.floor_blockers() == [floor_aid], \
+            "a tune inside (Rs, Re) is a true shrink — floor must stay armed"
+
+    # valid executed round that GREW the disk Re: floor discharged
+    g.add_pending({"sigma": 0.4, "primitives": re_tune(re0 * 1.3)},
+                  source_session="s3", parent_label="A.1")
+    grow_aid = g.pending_queue()[-1]
+    g.record_fit(_run_result(galaxy, bic_eff=1002.0), action_id=grow_aid)
+    assert g.floor_blockers() == []
+    assert "FLOOR_SATISFIED" in g.pending_record(floor_aid)["discard_reason"]

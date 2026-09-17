@@ -699,18 +699,32 @@ class BeamGraph:
         return [label for label, attrs in self.g.nodes(data=True)
                 if attrs.get("global_iter_id", 0) > 0]
 
-    def combo_counts(self) -> dict[str, int]:
+    def combo_counts(self, valid_only: bool = True) -> dict[str, int]:
+        """Executed attempts per combination (cap accounting).
+
+        valid_only=True (default, per-combination attempt cap): [sub-converged]
+        rounds are excluded — the Refutation validity rule declares the
+        optimiser never explored, so the attempt never happened and a
+        corrected re-run must remain legal (KILOGAS_432/353, Plate0295
+        A.10→A.11 chain). valid_only=False counts every fit that ran
+        (used by never_executed_precheck: a sub-converged round still
+        proves the inventory was executed).
+        """
         counts: dict[str, int] = {}
         for _label, attrs in self.g.nodes(data=True):
             if attrs.get("global_iter_id", 0) == 0:
                 continue
+            if valid_only:
+                conv = ((attrs.get("metrics") or {}).get("convergence") or {}).get("flag")
+                if conv == "sub-converged":
+                    continue
             key = attrs.get("combo_key", "?")
             counts[key] = counts.get(key, 0) + 1
         return counts
 
     def never_executed_precheck(self) -> list[dict]:
         """Inventories proposed >=2 times but never executed (termination gate)."""
-        executed = set(self.combo_counts())
+        executed = set(self.combo_counts(valid_only=False))
         out = []
         for key, count in self.g.graph.get("proposal_counts", {}).items():
             if count >= 2 and key not in executed:
@@ -748,7 +762,16 @@ class BeamGraph:
         bottleneck, lens relax-D). The stagnation stop is suspended while
         one remains unexecuted, so a lock never rests on an untested
         mandatory direction (KILOGAS_296 A.2-c1 edge case).
+
+        Discharge rule (Plate0295 incident 2026-09-17): a floor is
+        SATISFIED — and its pending candidate auto-discarded — once the
+        same inventory already has a valid (convergence ok) executed round
+        testing the same floor hypothesis. Re-running a mandatory
+        experiment on a combo that has already validly run it burns budget
+        without new information (A.12: n-release re-executed after A.11
+        had already provided the valid release on the same combo).
         """
+        self._discharge_satisfied_floors()
         out = []
         for aid in self.pending_queue():
             rec = self.g.graph.get("pending", {}).get(aid)
@@ -758,6 +781,95 @@ class BeamGraph:
             if any(str(k).startswith("floor_") and v for k, v in flags.items()):
                 out.append(aid)
         return out
+
+    def _discharge_satisfied_floors(self) -> None:
+        """Auto-discard floor-flagged pending candidates whose mandatory
+        hypothesis already has a valid executed test on the same inventory.
+
+        Satisfaction = an executed pending record whose target state has
+        convergence flag 'ok', the same hypothesized combo, and primitives
+        matching the same floor predicate (the same experiment, not merely
+        the same inventory). Idempotent; commits only when it discharged
+        something. Floor-flagged records keep their queue eviction
+        protection until discharged here.
+        """
+        from beam.enqueue import FLOOR_PREDICATES
+        from beam.signature import (
+            apply_primitives_to_inventory,
+            combo_identity,
+        )
+
+        pending = self.g.graph.get("pending", {})
+        executed: list[tuple[str | None, list[dict], float | None]] = []
+        for rec in pending.values():
+            if rec.get("status") != "executed":
+                continue
+            target = rec.get("target_state") or ""
+            if target not in self.g.nodes:
+                continue
+            node = self.state(target)
+            conv = ((node.get("metrics") or {}).get("convergence") or {}).get("flag")
+            if conv != "ok":
+                continue
+            # the executed round's OWN parent disk Re: floor_disk_re must
+            # only be satisfied by a growth tune, never a shrink
+            executed.append((node.get("combo_key"), rec.get("primitives", []),
+                             self._inventory_disk_re(rec.get("parent") or "")))
+
+        discharged = False
+        for aid in self.pending_queue():
+            rec = pending.get(aid)
+            if not rec or rec.get("status") != "pending":
+                continue
+            floor_flags = [str(k) for k, v in (rec.get("code_flags") or {}).items()
+                           if str(k).startswith("floor_") and v]
+            if not floor_flags:
+                continue
+            parent = self.state(rec.get("parent") or "")
+            hypo, _err = apply_primitives_to_inventory(
+                parent.get("inventory", []) if parent else [],
+                rec.get("primitives", []))
+            combo = combo_identity(hypo) if hypo is not None else None
+            for flag in floor_flags:
+                pred = FLOOR_PREDICATES.get(flag)
+                if pred is None:
+                    continue
+                if any(c == combo and pred(prims, parent_re=pre)
+                       for c, prims, pre in executed):
+                    self.mark_discarded(
+                        aid, f"FLOOR_SATISFIED: {flag} already validly tested "
+                             f"on combo {combo}", bump_stagnation=False)
+                    self.log_decision({"kind": "floor-discharge", "action_id": aid,
+                                       "floor": flag, "combo": combo})
+                    discharged = True
+                    break
+        if discharged:
+            self.commit()
+
+    def _inventory_disk_re(self, label: str) -> float | None:
+        """Effective Re (px) of the disk/edgedisk slot in a state's fitted
+        inventory, for floor_disk_re growth-vs-shrink direction checks.
+
+        Raw parse_components inventories store the 4) row value (Rs for
+        expdisk/edgedisk) with re_effective absent — convert, so a Re-units
+        tune value is never compared against Rs (a 1.68x-over-lenient
+        growth test would misclassify true shrinks as growth)."""
+        if label not in self.g.nodes:
+            return None
+        disk = next((c for c in self.state(label).get("inventory", [])
+                     if c.get("name") in {"disk", "edgedisk"}), None)
+        if disk is None:
+            return None
+        re = disk.get("re_effective")
+        if re is None:
+            re = disk.get("re")
+            if (disk.get("type") or "").lower() in ("expdisk", "edgedisk") \
+                    and re is not None:
+                re = float(re) * 1.68
+        try:
+            return float(re)
+        except (TypeError, ValueError):
+            return None
 
     def termination_check(self) -> dict:
         """Step-2 termination + never-executed precheck (hard gate).

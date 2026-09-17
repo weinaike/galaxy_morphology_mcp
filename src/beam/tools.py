@@ -212,6 +212,12 @@ def apply_candidate(
     (write time) and reused by beam_record_fit. On success, call
     ``run_galfit(config_file=<feedme>)`` and register the result with
     ``beam_record_fit(action_id=<action_id>)``.
+
+    Status values: ``success`` (feedme written, run the fit), ``failure``
+    (fatal; nothing was consumed), ``discarded`` (normal non-fatal outcome —
+    the candidate died at a dequeue-time legality gate, e.g. the apply-time
+    combo-cap re-check; treat it as "continue with the next queue entry",
+    NOT as an error).
     """
     try:
         from beam.transcribe import transcribe
@@ -235,6 +241,35 @@ def apply_candidate(
                     "error": f"parent state {rec['parent']} lacks artefacts {missing}"}
 
         meta = graph.g.graph.get("meta", {})
+
+        # R0 re-check at dequeue time (Plate0295 incident 2026-09-17): the
+        # candidate was validated at enqueue, but attempts may have executed
+        # since; a pending record enqueued when its combo was fresh must not
+        # run after the combo hit the per-combination cap. Floor flags do
+        # NOT exempt it — floor discharge is hypothesis-based
+        # (graph._discharge_satisfied_floors), not cap-exempt.
+        from beam.signature import apply_primitives_to_inventory, combo_identity
+
+        cap = int(meta.get("per_combo_cap", 4))
+        hypo_inv, _err = apply_primitives_to_inventory(
+            parent.get("inventory", []), rec.get("primitives", []))
+        if hypo_inv is not None:
+            hypo_combo = combo_identity(hypo_inv)
+            if graph.combo_counts().get(hypo_combo, 0) >= cap:
+                graph.mark_discarded(
+                    action_id,
+                    f"COMBO_EXHAUSTED: {hypo_combo} reached {cap} attempts "
+                    f"(apply-time R0 re-check)")
+                graph.log_decision({"kind": "combo-exhausted-discard",
+                                    "action_id": action_id, "combo": hypo_combo,
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "combo": hypo_combo,
+                        "message": "combo hit the per-combination attempt cap "
+                                   "after enqueue — candidate discarded; "
+                                   "continue with the next queue entry"}
+
         region = meta.get("fit_region")
         # Class-B mag prior for adds without a declared magnitude:
         # ~1.5 mag fainter than the parent's brightest component.

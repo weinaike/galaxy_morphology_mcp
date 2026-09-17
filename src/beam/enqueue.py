@@ -74,8 +74,8 @@ def _primitive_kinds(primitives: list[dict]) -> str:
     return "+".join(sorted(kinds))
 
 
-def _is_n_release(cand: Candidate) -> bool:
-    for p in cand.to_plain_primitives():
+def prims_are_n_release(primitives: list[dict], parent_re: float | None = None) -> bool:
+    for p in primitives:
         if p.get("op") == "tune":
             t = p
             if (t.get("structure_name") or "").lower() == "bulge" and t.get("param") == "n" \
@@ -84,8 +84,8 @@ def _is_n_release(cand: Candidate) -> bool:
     return False
 
 
-def _is_bar_direction(cand: Candidate) -> bool:
-    for p in cand.to_plain_primitives():
+def prims_are_bar_direction(primitives: list[dict], parent_re: float | None = None) -> bool:
+    for p in primitives:
         if p.get("op") == "add" and (p.get("structure_name") or "").lower() == "bar":
             return True
         if p.get("op") == "convert":
@@ -95,8 +95,9 @@ def _is_bar_direction(cand: Candidate) -> bool:
     return False
 
 
-def _is_disk_re_growth(cand: Candidate, parent_re: float | None) -> bool:
-    for p in cand.to_plain_primitives():
+def prims_are_disk_re_growth(primitives: list[dict],
+                             parent_re: float | None = None) -> bool:
+    for p in primitives:
         if p.get("op") != "tune":
             continue
         if (p.get("structure_name") or "").lower() in {"disk", "edgedisk"} \
@@ -106,8 +107,8 @@ def _is_disk_re_growth(cand: Candidate, parent_re: float | None) -> bool:
     return False
 
 
-def _is_lens_relax(cand: Candidate) -> bool:
-    for p in cand.to_plain_primitives():
+def prims_are_lens_relax(primitives: list[dict], parent_re: float | None = None) -> bool:
+    for p in primitives:
         if p.get("op") != "tune":
             continue
         if (p.get("structure_name") or "").lower() == "lens" and p.get("cons_bounds"):
@@ -115,6 +116,35 @@ def _is_lens_relax(cand: Candidate) -> bool:
             if cb.get("re") and cb["re"][1] and cb["re"][1] > (cb["re"][0] or 0):
                 return True
     return False
+
+
+# floor flag -> primitive-level predicate, uniform (primitives, parent_re)
+# signature (only disk-Re growth consumes parent_re). parent_re is the Re of
+# the disk slot in the round's OWN parent inventory — required so a
+# disk-Re SHRINK executed round never discharges a floor_disk_re blocker
+# (graph._discharge_satisfied_floors passes it per executed record).
+FLOOR_PREDICATES = {
+    "floor_n_release": prims_are_n_release,
+    "floor_bar_direction": prims_are_bar_direction,
+    "floor_disk_re": prims_are_disk_re_growth,
+    "floor_lens_relax_d": prims_are_lens_relax,
+}
+
+
+def _is_n_release(cand: Candidate) -> bool:
+    return prims_are_n_release(cand.to_plain_primitives())
+
+
+def _is_bar_direction(cand: Candidate) -> bool:
+    return prims_are_bar_direction(cand.to_plain_primitives())
+
+
+def _is_disk_re_growth(cand: Candidate, parent_re: float | None) -> bool:
+    return prims_are_disk_re_growth(cand.to_plain_primitives(), parent_re)
+
+
+def _is_lens_relax(cand: Candidate) -> bool:
+    return prims_are_lens_relax(cand.to_plain_primitives())
 
 
 def _score_candidate(cand: Candidate, hypo_combo: str, combo_counts: dict[str, int],
@@ -197,7 +227,18 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
     for cand in candidates:
         prims = cand.to_plain_primitives()
         disk = next((c for c in parent_inventory if c.get("name") in {"disk", "edgedisk"}), None)
-        parent_re = (disk.get("re_effective") or disk.get("re")) if disk else None
+        # effective Re (px): raw inventories store Rs for expdisk/edgedisk —
+        # convert, else the floor_disk_re growth test compares a Re-units
+        # tune value against Rs (1.68x over-lenient; true shrinks pass)
+        if disk is None:
+            parent_re = None
+        else:
+            parent_re = disk.get("re_effective")
+            if parent_re is None:
+                parent_re = disk.get("re")
+                if (disk.get("type") or "").lower() in ("expdisk", "edgedisk") \
+                        and parent_re is not None:
+                    parent_re = float(parent_re) * 1.68
 
         hypo, err = apply_primitives_to_inventory(parent_inventory, prims)
         if hypo is None:

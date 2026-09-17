@@ -144,3 +144,55 @@ def test_registration_includes_apply():
         finally:
             if "src" in sys.path:
                 sys.path.remove("src")
+
+
+def test_apply_candidate_rechecks_combo_cap(galaxy):
+    """Regression (Plate0295 A.12): a pending candidate enqueued while its
+    combo was fresh must be discarded at apply time once the combo has
+    reached the per-combination attempt cap (valid rounds only)."""
+    g = BeamGraph.load(str(galaxy))
+    combo = g.state("A.1")["combo_key"]
+    # exhaust the combo: per_combo_cap additional valid executions
+    cap = int(g.g.graph["meta"]["per_combo_cap"])
+    for i in range(cap):
+        g.add_pending({"sigma": 0.4,
+                       "primitives": [{"op": "tune", "structure_name": "bulge",
+                                       "param": "q", "value": 0.7, "toggle": 1}],
+                       "expected_behavior_tag": f"filler{i}"},
+                      source_session=f"s{i}", parent_label="A.1")
+        aid = g.pending_queue()[-1]
+        g.record_fit({
+            "input_param_file": str(galaxy / "_iter1.feedme"),
+            "output_param_file": str(galaxy / "galfit.01"),
+            "image_file": str(galaxy / "cmp.png"),
+            "summary_file": str(galaxy / "summary.md"),
+            "fit_statistics": {"bic_eff": 1010.0 + i, "chisq1d_nu": 0.9,
+                               "convergence": {"flag": "ok"}},
+        }, action_id=aid)
+    g.commit()
+    g2 = BeamGraph.load(str(galaxy))
+    # A.1 (the fixture's first fit) + cap filler rounds all share the combo
+    assert g2.combo_counts().get(combo) == cap + 1
+
+    # a pending candidate landing on the exhausted combo (enqueued late,
+    # bypassing survey validation, e.g. a stale floor-flagged entry)
+    g2.add_pending({"action_id": "stale-floor", "sigma": 0.3,
+                    "code_flags": {"floor_n_release": True},
+                    "primitives": [{"op": "tune", "structure_name": "bulge",
+                                    "param": "n", "value": 4.0, "toggle": 1}],
+                    "expected_behavior_tag": "bulge_n_free"},
+                   source_session="late", parent_label="A.1")
+    g2.commit()
+    stag0 = BeamGraph.load(str(galaxy)).counters()["stagnation"]
+
+    r = apply_candidate(str(galaxy), "stale-floor")
+    assert r["status"] == "discarded", r
+    assert r["combo"] == combo
+    g3 = BeamGraph.load(str(galaxy))
+    rec = g3.pending_record("stale-floor")
+    assert rec["status"] == "discarded"
+    assert "COMBO_EXHAUSTED" in rec["discard_reason"]
+    kinds = [e["kind"] for e in g3.g.graph["decision_log"]]
+    assert "combo-exhausted-discard" in kinds
+    # R0 discard stagnates the search per the workflow
+    assert g3.counters()["stagnation"] == stag0 + 1

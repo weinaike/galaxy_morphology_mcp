@@ -209,20 +209,24 @@ def _region_side(fit_region) -> float | None:
 
 
 def build_cons(blocks: list[Block], numbers: dict[str, int], *,
-               psf_fwhm_px: float | None, fit_region,
-               candidate_bounds: dict[str, dict] | None = None) -> tuple[str, list[str]]:
-    """Compose the .cons text: concentric chain + default bound set +
-    candidate tightenings (intersection only)."""
+               psf_fwhm_px: float | None, fit_region) -> tuple[str, list[str]]:
+    """Compose the .cons text: concentric chain + default bound set only.
+
+    Candidates declare INITIAL VALUES, never bands (KILOGAS_120 defect
+    follow-up: self-imposed caps vetoed the best round — lens pinned at its
+    candidate-declared [10,20]/[0.55,0.95] with BIC_eff 38900 — and forced
+    relaxation candidates that crowded the queue). Any ``cons_bounds`` a
+    candidate still carries is silently ignored: guiding happens through
+    warm-start initial values, misbehaviour through the post-hoc mech checks.
+    """
     notes: list[str] = []
     lines: list[str] = [
         "# Constraint file for the mechanised beam search (generated)",
         "# Absolute re/n/q bands use the 'to' keyword form (this GALFIT build",
         "# decodes bare two-number rows as INPUT-RELATIVE offsets).",
     ]
-    candidate_bounds = candidate_bounds or {}
     luminous = [b for b in blocks if not b.is_sky]
     centrals = [b for b in luminous if b.name in CHAIN_STRUCTURES]
-    companions = [b for b in luminous if _COMPANION_RE.match(b.name or "")]
 
     # ---- concentric chain (K >= 2 main-galaxy members, mandatory)
     if len(centrals) >= 2:
@@ -236,7 +240,7 @@ def build_cons(blocks: list[Block], numbers: dict[str, int], *,
         lines.append(f" {chain}   x   offset")
         lines.append(f" {chain}   y   offset")
 
-    # ---- default bound set (every non-sky component) + tightenings
+    # ---- default bound set (every non-sky component; no candidate tightenings)
     re_floor = re_floor_px(psf_fwhm_px)  # max(0.1, 0.1 × PSF FWHM) — see cons_decode
     side = _region_side(fit_region)
     re_cap = 0.5 * side if side else 500.0
@@ -245,42 +249,26 @@ def build_cons(blocks: list[Block], numbers: dict[str, int], *,
         num = numbers.get(b.name)
         if num is None:
             continue
-        cb = candidate_bounds.get(b.name) or {}
         is_exp = b.ctype == "expdisk"
         # re band (written in Rs for expdisk — the row bounds Rs)
-        re_lo, re_hi = re_floor, re_cap
-        if cb.get("re"):
-            re_lo = max(re_lo, min(cb["re"][0], cb["re"][1]))
-            re_hi = min(re_hi, max(cb["re"][0], cb["re"][1]))
-            if cb["re"][1] > re_cap + 1e-9:
-                notes.append(f"{b.name}: candidate re_max widened past the default cap; "
-                             f"clamped to {re_cap:.1f}")
         if b.row("4"):
-            lo, hi = (re_lo / EXPDISK_FACTOR, re_hi / EXPDISK_FACTOR) if is_exp else (re_lo, re_hi)
+            lo, hi = (re_floor / EXPDISK_FACTOR, re_cap / EXPDISK_FACTOR) if is_exp \
+                else (re_floor, re_cap)
             lines.append(f" {num}   re   {lo:.4f} to {hi:.4f}"
                          + ("   # expdisk: band in Rs" if is_exp else ""))
         # n band (sersic-type components with an n row only)
         if b.row("5") and b.ctype in {"sersic", "ferrer", "devauc", "king", "nuker",
                                       "gaussian", "moffat"}:
-            n_lo, n_hi = 0.1, 8.0
-            if cb.get("n"):
-                n_lo = max(n_lo, min(cb["n"][0], cb["n"][1]))
-                n_hi = min(n_hi, max(cb["n"][0], cb["n"][1]))
-            lines.append(f" {num}   n    {n_lo:.4f} to {n_hi:.4f}")
+            lines.append(f" {num}   n    0.1000 to 8.0000")
         # q band (shaped components with a 9) row)
         if b.row("9") and b.ctype in SHAPED_TYPES:
-            q_lo, q_hi = 0.05, 1.0
-            if cb.get("q"):
-                q_lo = max(q_lo, min(cb["q"][0], cb["q"][1]))
-                q_hi = min(q_hi, max(cb["q"][0], cb["q"][1]))
-            lines.append(f" {num}   q    {q_lo:.4f} to {q_hi:.4f}")
+            lines.append(f" {num}   q    0.0500 to 1.0000")
         # centres: chain members are bound by the offset; others get windows
         in_chain = len(centrals) >= 2 and b in centrals
         if not in_chain and b.row("1"):
             if _COMPANION_RE.match(b.name or ""):
-                w = cb.get("center_window") or 5.0
-                lines.append(f" {num}   x    -{w:g}  {w:g}   # companion window (input-relative)")
-                lines.append(f" {num}   y    -{w:g}  {w:g}")
+                lines.append(f" {num}   x    -5  5   # companion window (input-relative)")
+                lines.append(f" {num}   y    -5  5")
             elif len(centrals) < 2:
                 lines.append(f" {num}   x    -2  2")
                 lines.append(f" {num}   y    -2  2")
@@ -404,8 +392,6 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
     for b in luminous_blocks:
         backfill_block(b, converged_by_name.get(b.name))
 
-    candidate_bounds: dict[str, dict] = {}
-
     # ---- apply primitives in order (Class-A verbatim; inapplicable -> abort)
     for p in primitives:
         op = p.get("op")
@@ -440,9 +426,7 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
             block = make_block(name, (entry.get("component_type") or "sersic").lower(),
                                params, toggles)
             blocks = _insert_before_sky(blocks, block)
-            cb = entry.get("cons_bounds")
-            if cb:
-                candidate_bounds[name] = _clean_bounds(cb)
+            # candidate cons_bounds are deliberately ignored (initial values only)
 
         elif op == "tune":
             t = p.get("tune") if isinstance(p.get("tune"), dict) else p
@@ -489,11 +473,7 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
                     found = block.row(key)
                     if found:
                         block.lines[found[0]] = set_toggle(found[1], int(t["toggle"]))
-            cb = t.get("cons_bounds")
-            if cb:
-                merged = candidate_bounds.get(target) or {}
-                merged.update(_clean_bounds(cb))
-                candidate_bounds[target] = merged
+            # candidate cons_bounds are deliberately ignored (initial values only)
 
         elif op == "convert":
             cv = p.get("convert") or {}
@@ -532,8 +512,7 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
         "\n\n".join(b.strip("\n") for b in out_blocks) + "\n"
 
     cons_text, cons_notes = build_cons(
-        blocks, numbers, psf_fwhm_px=psf_fwhm_px, fit_region=fit_region,
-        candidate_bounds=candidate_bounds)
+        blocks, numbers, psf_fwhm_px=psf_fwhm_px, fit_region=fit_region)
     notes.extend(cons_notes)
 
     os.makedirs(os.path.dirname(os.path.abspath(out_feedme)), exist_ok=True)
@@ -543,17 +522,6 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
         f.write(cons_text)
     return TranscribeResult(True, feedme=out_feedme, cons=out_cons,
                             notes=notes, numbers=numbers)
-
-
-def _clean_bounds(cb: dict) -> dict:
-    out = {}
-    for key in ("re", "n", "q"):
-        v = cb.get(key)
-        if v and len(v) == 2:
-            out[key] = (float(min(v)), float(max(v)))
-    if cb.get("center_window"):
-        out["center_window"] = float(cb["center_window"])
-    return out
 
 
 def _normalize_chain_centres(blocks: list[Block]) -> None:

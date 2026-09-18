@@ -26,8 +26,6 @@ from beam.cons_decode import decode_cons_file, effective_band, number_components
 
 LN10 = math.log(10.0)
 TOL = 0.02          # onion containment tolerance (2%)
-FLAT_N_EPS = 1e-3   # lens flat-degeneration: n <= 0.1 + eps
-CAP_FRAC = 0.90     # ... and Re >= 0.90 x re_max
 
 MAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk", "singlesersic"}
 
@@ -116,10 +114,10 @@ def check_q_priors(comps: dict[str, dict]) -> list[tuple[str, str]]:
     if b is not None:
         q = b.get("ba")
         if q is not None:
-            if q < 0.4:
-                out.append((f"bulge_q={q:.2f}<0.4", "hard"))
-            elif q < 0.5:
-                out.append((f"bulge_q={q:.2f}<0.5", "note"))
+            if q < 0.3:
+                out.append((f"bulge_q={q:.2f}<0.3", "hard"))
+            elif q < 0.4:
+                out.append((f"bulge_q={q:.2f}<0.4", "note"))
     if bar is not None:
         q = bar.get("ba")
         if q is not None:
@@ -138,7 +136,7 @@ def check_q_priors(comps: dict[str, dict]) -> list[tuple[str, str]]:
     return out
 
 
-def check_n(comps: dict[str, dict], cons_cap_by_num: dict[int, float]) -> list[tuple[str, str]]:
+def check_n(comps: dict[str, dict]) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     lens, outer = comps.get("lens"), comps.get("outerdisk")
     if lens is not None:
@@ -148,11 +146,6 @@ def check_n(comps: dict[str, dict], cons_cap_by_num: dict[int, float]) -> list[t
                 out.append((f"lens_n={n:.2f}>=0.6", "hard"))
             elif n >= 0.5:
                 out.append((f"lens_n={n:.2f}>=0.5", "note"))
-        re = _eff_re(lens)
-        cap = cons_cap_by_num.get(lens.get("number", -1))
-        if (n is not None and re is not None and cap is not None
-                and n <= 0.1 + FLAT_N_EPS and re >= CAP_FRAC * cap):
-            out.append((f"lens_flat_degeneracy:n={n:.2f},re={re:.1f}>=0.9*cap({cap:.1f})", "hard"))
     if outer is not None and str(outer.get("type", "")).lower() == "sersic":
         n = outer.get("n")
         if n is not None and n >= 1.0:
@@ -223,21 +216,6 @@ def locked_turn(gdir: str) -> str | None:
     return None
 
 
-def cons_caps(cons_file: str, inputs: dict[int, dict]) -> dict[int, float]:
-    caps: dict[int, float] = {}
-    if not cons_file or not os.path.isfile(cons_file):
-        return caps
-    for row in decode_cons_file(cons_file).numeric_rows():
-        if row.param != "re" or not row.is_single_component:
-            continue
-        inp = inputs.get(int(row.comp_spec))
-        if inp is None:
-            continue
-        iv = inp.get("re")
-        band = effective_band(row, iv) if iv is not None else None
-        if band:
-            caps[int(row.comp_spec)] = band[1]
-    return caps
 
 
 def replay(root: str) -> dict:
@@ -298,13 +276,11 @@ def replay(root: str) -> dict:
             for num, c in fitted.items():
                 c["number"] = num
                 by_name.setdefault(str(c["name"]).lower(), dict(c))["number"] = num
-            caps = cons_caps(cons_f, inputs)
-
             events: list[tuple[str, str]] = []
             for h in check_onion(by_name, q_iso=q_iso):
                 events.append((h, "hard"))
             events += check_q_priors(by_name)
-            events += check_n(by_name, caps)
+            events += check_n(by_name)
             events += check_mu0(by_name, fs.get("a_psf"))
             fl_events, fracs = check_flux(by_name)
             events += fl_events

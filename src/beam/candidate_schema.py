@@ -250,12 +250,12 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
             if ctype == "expdisk" and entry.get("n") is not None:
                 issues.append(Issue("E_PARAM_TYPE",
                                     "expdisk has no n parameter (n≡1 by type)", action_id=aid))
-            # Re triplet requirement (AGN exempt)
+            # Re initial-value requirement (AGN exempt)
             if ctype != "psf" and entry.get("re_px") is None:
                 issues.append(Issue("E_RE_CHAIN",
                                     f"add({name}) without re_px — an add() on a component "
                                     "with a physical Re MUST carry the effective radius "
-                                    "(px) plus, preferably, cons_bounds.re = [min, max]",
+                                    "initial value (px)",
                                     action_id=aid))
             if entry.get("f1") and _slot(name) not in _F1_TARGETS:
                 issues.append(Issue("E_F1_TARGET",

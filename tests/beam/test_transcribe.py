@@ -131,6 +131,7 @@ def test_add_bar_with_triplet_and_chain(parent, tmp_path):
         "structure_name": "bar", "component_type": "sersic",
         "mag": 17.6, "re_px": 5.5, "n": 0.5, "q": 0.35, "pa_deg": 45.0,
         "toggles": {"n": 0},
+        # cons_bounds are IGNORED (initial values only — no candidate-declared bands)
         "cons_bounds": {"re": [4.5, 10.0], "n": None, "q": None, "center_window": None}}}]
     r = transcribe(parent[0], parent[1], prims, out_f, out_c,
                    psf_fwhm_px=4.0, fit_region=(1, 297, 1, 297),
@@ -146,8 +147,9 @@ def test_add_bar_with_triplet_and_chain(parent, tmp_path):
     # chain now includes the bar (number 3), anchor disk first
     cons = _read(out_c)
     assert "1_2_3   x   offset" in cons and "1_2_3   y   offset" in cons
-    # tightened re band for the bar (intersection with defaults)
-    assert "3   re   4.5000 to 10.0000" in cons
+    # candidate-declared bands are ignored: the bar gets the DEFAULT re band
+    assert "3   re   4.5000 to 10.0000" not in cons
+    assert "3   re   0.4000 to 148.5000" in cons
 
 
 def test_tune_re_convert_and_remove(parent, tmp_path):
@@ -167,7 +169,9 @@ def test_tune_re_convert_and_remove(parent, tmp_path):
     assert "4) 14.881" in text            # 25/1.68 written into the Rs row
     assert " 5) 2  1" in text             # bulge n tuned and freed (toggle 1)
     cons = _read(out_c)
-    assert "2   n    0.5000 to 8.0000" in cons
+    # candidate-declared n band ignored: default band only
+    assert "2   n    0.5000 to 8.0000" not in cons
+    assert "2   n    0.1000 to 8.0000" in cons
 
     # remove path: drop the bulge -> single central, no chain, +/-2 windows
     r2 = transcribe(parent[0], parent[1], [{"op": "remove", "remove": "bulge"}],

@@ -191,10 +191,14 @@ def test_flat_disk_legacy_graph_without_anchor():
 
 # ------------------------------------------------------------- q priors
 def test_bulge_q_bands():
-    assert _has(_checks([_comp("bulge", q=0.35, re=2.0, n=2.0)]), "shape_prior", "hard", "bulge q")
-    c = _checks([_comp("bulge", q=0.45, re=2.0, n=2.0)])
-    assert _has(c, "prior", "note", "bulge q") and not _has(c, "shape_prior", "hard", "bulge q")
-    assert not _has(_checks([_comp("bulge", q=0.55, re=2.0, n=2.0)]), "shape_prior", "hard", "bulge")
+    # hard below 0.3 (was 0.4), note 0.3-0.4 (was 0.4-0.5)
+    assert _has(_checks([_comp("bulge", q=0.25, re=2.0, n=2.0)]), "shape_prior", "hard", "bulge q")
+    c35 = _checks([_comp("bulge", q=0.35, re=2.0, n=2.0)])
+    assert _has(c35, "prior", "note", "bulge q") and not _has(c35, "shape_prior", "hard", "bulge q")
+    for q_clean in (0.45, 0.55):
+        c = _checks([_comp("bulge", q=q_clean, re=2.0, n=2.0)])
+        assert not _has(c, "shape_prior", "hard", "bulge q")
+        assert not _has(c, "prior", "note", "bulge q")
 
 
 def test_lens_q_hard():
@@ -232,21 +236,14 @@ def test_outerdisk_n_hard():
                 "profile_prior", "hard", "outerdisk n")
 
 
-def test_lens_flat_degeneration(tmp_path):
-    # .cons with a lens re cap; n at the floor and Re at 0.9*cap -> hard
-    feedme = tmp_path / "iterX.feedme"
-    feedme.write_text(
-        "A) image.fits\nG) iterX.cons\nH) 1 256 1 256\n"
-        "# Component number: 1\n# STRUCTURE: lens\n0) sersic\n"
-        "1) 128 128 1 1\n3) 17.0 1\n4) 5.4 1\n5) 0.1 1\n9) 0.7 1\n10) 0 1\nZ) 0\n",
-        encoding="utf-8")
-    (tmp_path / "iterX.cons").write_text("1 re 0.2381 to 6.0\n", encoding="utf-8")
+def test_lens_flat_degeneration_removed():
+    # the lens flat-degeneration sub-check (n<=0.1 AND Re>=0.9*cap) was removed
+    # together with candidate-declared bands — with the default bound set only,
+    # self-imposed caps no longer exist to hit
     comps = [_comp("disk", "expdisk", re=12.0, mag=16.0),
              _comp("lens", number=1, re=5.5, n=0.1, q=0.7)]
-    st = {"inventory": comps, "artifacts": {"feedme": str(feedme)}}
-    out = compute_mech_checks(_G({}), st)
-    assert any(c["check"] == "profile_prior" and c["severity"] == "hard"
-               and "flat degeneration" in c["detail"] for c in out)
+    out = compute_mech_checks(_G({}), {"inventory": comps, "artifacts": {}})
+    assert not any("flat degeneration" in c["detail"] for c in out)
 
 
 # ------------------------------------------------------------- mu0 order

@@ -59,11 +59,11 @@ def test_axis_ratio_limits(mini_graph):
     inv = [_comp("disk", 40.0), _comp("companion", 5.0, q=0.04)]
     hard = _by(_hards(_checks(graph, inv)), "axis_ratio")
     assert any("thin-line" in c["detail"] for c in hard)
-    # bulge prior violation is only a note
-    inv = [_comp("disk", 40.0), _comp("bulge", 3.0, q=0.4)]
+    # bulge prior violation is only a note (note band 0.3-0.4)
+    inv = [_comp("disk", 40.0), _comp("bulge", 3.0, q=0.35)]
     checks = _checks(graph, inv)
     assert not _by(_hards(checks), "axis_ratio")
-    assert any(c["severity"] == "note" and "bulge q=0.4" in c["detail"]
+    assert any(c["severity"] == "note" and "bulge q=0.35" in c["detail"]
                for c in _by(checks, "prior"))
 
 

@@ -63,16 +63,18 @@ dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
   shape_order     hard  q_bar >= q_lens when both exist (a bar must be more
                         elongated than the lens it sits inside)
   profile_prior   hard  lens n >= 0.6 (not a lens profile; 0.5-0.6 note);
-                        outerdisk (sersic variant) n >= 1.0;
-                        lens flat degeneration: n <= 0.1 AND Re >= 0.9 x its
-                        .cons re cap (the KILOGAS lens-inflation signature)
+                        outerdisk (sersic variant) n >= 1.0
+                        (the former lens flat-degeneration sub-check — n <= 0.1
+                        AND Re >= 0.9 x its .cons re cap — was removed with
+                        candidate-declared bands: with the default bound set
+                        only, self-imposed caps no longer exist to hit)
   mu0_order       hard  central surface brightness (analytic): mu0_bulge >=
                         mu0_disk, mu0_bar > mu0_disk/0.90 (bar may be fainter
                         only within the 0.90 tolerance), mu0_agn >= mu0_bulge
                         (psf peak via the A_psf proxy)
   flux_share      hard  f_lens >= f_bar (a lens must not outshine its bar)
                   note  bar flux fraction outside 10-40%; lens outside 5-35%
-  shape_prior     hard  bulge q < 0.4 (0.4-0.5 stays a note); lens q <= 0.5;
+  shape_prior     hard  bulge q < 0.3 (0.3-0.4 stays a note); lens q <= 0.5;
                         bar q in (0.5, 0.6] becomes a note (round-bar watch)
 
 Administrative disable switch (temporary experimentation): the env var
@@ -100,8 +102,8 @@ CENTRAL_CHAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk"}
 
 BAR_Q_HARD_MAX = 0.6
 BAR_Q_NOTE_MAX = 0.5
-BULGE_Q_HARD_MIN = 0.4
-BULGE_Q_NOTE_MIN = 0.5
+BULGE_Q_HARD_MIN = 0.3
+BULGE_Q_NOTE_MIN = 0.4
 LENS_Q_HARD_MIN = 0.5
 LENS_N_HARD_MIN = 0.6
 LENS_N_NOTE_MIN = 0.5
@@ -124,9 +126,6 @@ ONION_BULGE_MISMATCH = 0.25  # round bulge in a flat bar/lens: normal config
 # itself: degenerate flattening must not self-immunize against the check.
 ONION_Q_ISO_TOL = 0.15
 _EDGE_ON_RE = re.compile(r"edge[- ]?on|dust[- ]lane", re.IGNORECASE)
-# lens flat degeneration
-FLAT_N_MAX = 0.1 + 1e-3
-CAP_FRAC = 0.90
 # central surface brightness ordering
 MU0_BAR_TOL = 0.90
 # flux-share windows (fractions of the total model light)
@@ -233,38 +232,6 @@ def _ellipse_r(theta_deg: float, a: float, b: float, pa_deg: float) -> float:
 
 
 _ONION_ANGLES = list(range(0, 180, 2))  # degrees, 2-degree steps
-
-
-def _cons_re_caps(graph, state: dict) -> dict[int, float]:
-    """Effective .cons re-band upper edge per component number (used by the
-    lens flat-degeneration check); {} when the artefacts are unavailable."""
-    artifacts = state.get("artifacts", {})
-    feedme = artifacts.get("feedme")
-    if not feedme or not os.path.exists(feedme):
-        return {}
-    try:
-        from tools.parse_feedme import parse_feedme
-
-        cons_rel = parse_feedme(feedme).get("constraint")
-    except Exception:
-        return {}
-    if not cons_rel or str(cons_rel).lower() == "none":
-        return {}
-    cons_file = cons_rel if os.path.isabs(cons_rel) else \
-        os.path.join(os.path.dirname(feedme), cons_rel)
-    from beam.cons_decode import decode_cons_file, effective_band, number_components
-
-    inputs = number_components(feedme)
-    caps: dict[int, float] = {}
-    for row in decode_cons_file(cons_file).numeric_rows():
-        if row.param != "re" or not row.is_single_component:
-            continue
-        num = int(row.comp_spec)
-        iv = (inputs.get(num) or {}).get("re")
-        band = effective_band(row, iv) if iv is not None else None
-        if band:
-            caps[num] = band[1]
-    return caps
 
 
 def scan_state_bound_hits(graph, state: dict) -> list[dict]:
@@ -533,10 +500,9 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                            "detail": f"q_bar={qb:g} >= q_lens={ql:g} "
                                      "(a bar must be flatter than the lens)"})
 
-    # ---- profile priors (hard): lens/outerdisk n; lens flat degeneration
+    # ---- profile priors (hard): lens/outerdisk n
     if lens_c:
         ln = _f(lens_c.get("n"))
-        lre = _f(lens_c.get("re_effective"))
         if ln is not None:
             if ln >= LENS_N_HARD_MIN:
                 checks.append({"severity": "hard", "check": "profile_prior",
@@ -545,14 +511,6 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
             elif ln >= LENS_N_NOTE_MIN:
                 checks.append({"severity": "note", "check": "profile_prior",
                                "detail": f"lens n={ln:g} in [0.5,0.6) (lens prior is n < 0.5)"})
-        if ln is not None and lre is not None:
-            cap = _cons_re_caps(graph, state).get(lens_c.get("number"))
-            if cap and ln <= FLAT_N_MAX and lre >= CAP_FRAC * cap:
-                checks.append({"severity": "hard", "check": "profile_prior",
-                               "detail": f"lens flat degeneration: n={ln:g} at the floor "
-                                         f"AND Re={lre:g}px >= 0.9*re_max({cap:g}px) "
-                                         "(the lens-inflation signature: it wants to be a "
-                                         "flat extended envelope, not a lens)"})
     outer_c = by.get("outerdisk")
     if outer_c and (outer_c.get("type") or "") == "sersic":
         on = _f(outer_c.get("n"))

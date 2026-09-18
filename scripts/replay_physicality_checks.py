@@ -67,28 +67,45 @@ def _ellipse_r(theta_deg: float, a: float, b: float, pa_deg: float) -> float:
     return a * b / den if den > 0 else math.inf
 
 
-def check_onion(comps: dict[str, dict]) -> list[str]:
-    """2Re ellipse nesting outerdisk > disk > lens > bar > bulge; skip if disk q<0.4."""
+def check_onion(comps: dict[str, dict], q_iso: float | None = None) -> list[str]:
+    """2Re ellipse nesting outerdisk > disk > lens > bar > bulge — mirrors
+    beam.physicality: (a) always-on AREA ordering (Re^2*q) for any disk q;
+    (b) directional containment, skipped in the flat-disk regime (disk q<0.3,
+    edgedisk slot) unless the fitted q contradicts the outer-isophote anchor
+    q_iso (|q_disk - q_iso| > 0.15 -> disk_shape flag + directional re-arms).
+    """
     hits: list[str] = []
     names = set(comps)
     if "edgedisk" in names:
         return []                                    # edge-on slot: nesting undefined
     disk = comps.get("disk")
-    if disk is not None and (disk.get("ba") or 1.0) < 0.4:
-        return []                                    # oblique disk: skip family
+    dq = (disk or {}).get("ba")
+    run_directional = dq is None or dq >= 0.3
+    if not run_directional and q_iso is not None:
+        if abs(dq - q_iso) > 0.15:
+            hits.append(f"disk_shape:q={dq:.2f}_vs_q_iso={q_iso:.2f}")
+            run_directional = True
+        # else: flat disk corroborated by the anchor — directional skip stands
     chain = [n for n in ("outerdisk", "disk", "lens", "bar", "bulge") if n in names]
     for outer, inner in zip(chain, chain[1:]):
         co, ci = comps[outer], comps[inner]
-        ao, bo = _eff_re(co) or 0.0, (co.get("ba") or 1.0) * (_eff_re(co) or 0.0)
-        ai, bi = _eff_re(ci) or 0.0, (ci.get("ba") or 1.0) * (_eff_re(ci) or 0.0)
+        qo, qi = (co.get("ba") or 1.0), (ci.get("ba") or 1.0)
+        if inner == "bulge" and qi - qo > 0.25:
+            continue            # round bulge in a flat outer: normal config
+        ao, bo = _eff_re(co) or 0.0, qo * (_eff_re(co) or 0.0)
+        ai, bi = _eff_re(ci) or 0.0, qi * (_eff_re(ci) or 0.0)
         if min(ao, ai) <= 0:
             continue
-        po, pi = co.get("pa") or 0.0, ci.get("pa") or 0.0
-        worst = max(
-            _ellipse_r(t, ai, bi, pi) / _ellipse_r(t, ao, bo, po)
-            for t in range(0, 180, 2)])
-        if worst > 1.0 + TOL:
-            hits.append(f"onion:{inner}_in_{outer}:ratio={worst:.2f}")
+        area_ratio = (ai * bi) / (ao * bo)
+        if area_ratio > 1.0 + TOL:
+            hits.append(f"onion_area:{inner}_in_{outer}:ratio={area_ratio:.2f}")
+        if run_directional:
+            po, pi = co.get("pa") or 0.0, ci.get("pa") or 0.0
+            worst = max(
+                _ellipse_r(t, ai, bi, pi) / _ellipse_r(t, ao, bo, po)
+                for t in range(0, 180, 2))
+            if worst > 1.0 + TOL:
+                hits.append(f"onion:{inner}_in_{outer}:ratio={worst:.2f}")
     return hits
 
 
@@ -235,6 +252,18 @@ def replay(root: str) -> dict:
             continue
         stats["galaxies"] += 1
         lock = locked_turn(gdir)
+        # --qiso: outer-isophote anchor per galaxy (anchored flat-disk skip);
+        # measured once from the root feedme's image
+        q_iso = None
+        if "--qiso" in sys.argv:
+            try:
+                from beam.tools import measure_outer_iso_q
+
+                root_feedme = os.path.join(gdir, "galfit.feedme")
+                if os.path.isfile(root_feedme):
+                    q_iso = measure_outer_iso_q(root_feedme).get("q_iso")
+            except Exception:
+                q_iso = None
         for arch in sorted(glob.glob(os.path.join(gdir, "archives", "*"))):
             rs_f = os.path.join(arch, "round_status.json")
             if not os.path.isfile(rs_f):
@@ -272,7 +301,7 @@ def replay(root: str) -> dict:
             caps = cons_caps(cons_f, inputs)
 
             events: list[tuple[str, str]] = []
-            for h in check_onion(by_name):
+            for h in check_onion(by_name, q_iso=q_iso):
                 events.append((h, "hard"))
             events += check_q_priors(by_name)
             events += check_n(by_name, caps)

@@ -71,6 +71,7 @@ class BeamGraph:
     @classmethod
     def init(cls, galaxy_dir: str, root_feedme: str, stage1: dict,
              psf_fwhm_px: float | None = None, a_psf_px2: float | None = None,
+             q_iso_outer: float | None = None,
              temporary_constraints: list[dict] | None = None,
              beam_width: int | None = None, n_max: int | None = None,
              stagnation_max: int | None = None,
@@ -82,6 +83,7 @@ class BeamGraph:
             "created_at": _now(),
             "psf_fwhm_px": psf_fwhm_px,
             "a_psf_px2": a_psf_px2,
+            "q_iso_outer": q_iso_outer,
             "W": int(beam_width) if beam_width else BEAM_WIDTH,
             "N_max": int(n_max) if n_max else N_MAX,
             "stagnation_max": int(stagnation_max) if stagnation_max else STAGNATION_MAX,

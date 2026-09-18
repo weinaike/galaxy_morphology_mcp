@@ -33,6 +33,67 @@ def _load_graph(galaxy_dir: str):
     return BeamGraph.load(galaxy_dir)
 
 
+def measure_outer_iso_q(feedme: str) -> dict:
+    """Measure the outer-isophote axis ratio (q_iso) of the ORIGINAL image.
+
+    Anchors physicality's onion flat-disk skip (beam.physicality): a fitted
+    disk q < 0.3 is only a legitimate edge-on regime when the image itself is
+    that flat — the fitter's own q must never corroborate itself. Reuses the
+    photutils isophote machinery of the 1D SB profile (fixed-centre, fixed-PA
+    Step-2 fit); q_iso = median(1 - eps) over the outer 40% of the valid
+    isophotes' semi-major range. Best-effort: failures return {"q_iso": None,
+    "error": ...} and the caller falls back to the legacy skip behaviour.
+    """
+    out: dict = {"q_iso": None, "sma_outer": None, "n_isophotes": 0, "error": None}
+    try:
+        import numpy as np
+        from astropy.io import fits
+
+        from tools.parse_feedme import parse_feedme
+        from tools.sb_profile import fit_data_isophotes
+
+        header = parse_feedme(feedme)
+        img_path = header.get("input")
+        if not img_path or not os.path.exists(img_path):
+            out["error"] = f"image not found: {img_path}"
+            return out
+        data = np.asarray(fits.getdata(img_path), dtype=float)
+        if data.ndim != 2:
+            out["error"] = "image is not 2D"
+            return out
+        mask = None
+        mask_path = header.get("mask")
+        if mask_path and os.path.exists(mask_path):
+            m = fits.getdata(mask_path)
+            if m is not None and np.asarray(m).shape == data.shape:
+                mask = np.asarray(m) > 0
+        region = header.get("fit_region")
+        if region and len(region) == 4:
+            xmin, xmax, ymin, ymax = (int(v) for v in region)
+            if 0 < xmin < xmax <= data.shape[1] and 0 < ymin < ymax <= data.shape[0]:
+                data = data[ymin - 1:ymax, xmin - 1:xmax]
+                if mask is not None:
+                    mask = mask[ymin - 1:ymax, xmin - 1:xmax]
+        isos = fit_data_isophotes(data, mask=mask, auto_sky=False)
+        if isos is None:
+            out["error"] = "isophote fit failed"
+            return out
+        valid = [iso for iso in isos if iso.valid and iso.sma and iso.sma > 0]
+        if not valid:
+            out["error"] = "no valid isophotes"
+            return out
+        sma_max = max(float(iso.sma) for iso in valid)
+        band = [iso for iso in valid if iso.sma >= 0.6 * sma_max]
+        use = band if len(band) >= 3 else valid[-1:]
+        qs = [min(max(1.0 - float(iso.eps), 0.05), 1.0) for iso in use]
+        out["q_iso"] = float(np.median(qs))
+        out["sma_outer"] = sma_max
+        out["n_isophotes"] = len(valid)
+    except Exception as e:  # best-effort anchor; never fail beam_init on it
+        out["error"] = str(e)
+    return out
+
+
 def beam_init(
     galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory "
                                "(the beam graph is created at <galaxy_dir>/beam_state/graph.json)"],
@@ -68,11 +129,13 @@ def beam_init(
 
     Parses the root feedme into the root state A.0, validates it via
     check_feedme_file (whose warnings are returned, not fatal), measures the
-    PSF once (FWHM / A_psf feed the default Re floor and the digest [Meta]),
-    and persists the graph atomically. Stage-1 conclusions are stored for the
-    per-round digest generation. Beam parameters (W / N_max / stagnation_max)
-    and the ablation arm are written to graph meta — the single source of
-    truth every later call reads, so an arm cannot drift mid-run.
+    PSF once (FWHM / A_psf feed the default Re floor and the digest [Meta])
+    and the outer-isophote axis ratio q_iso once (anchors the physicality
+    onion flat-disk skip — see measure_outer_iso_q), and persists the graph
+    atomically. Stage-1 conclusions are stored for the per-round digest
+    generation. Beam parameters (W / N_max / stagnation_max) and the ablation
+    arm are written to graph meta — the single source of truth every later
+    call reads, so an arm cannot drift mid-run.
     """
     try:
         from beam.graph import BeamGraph
@@ -98,6 +161,14 @@ def beam_init(
         except Exception as e:  # PSF measurement is best-effort
             warnings.append(f"check_feedme_file/PSF measurement failed: {e}")
 
+        # Outer-isophote anchor q_iso (onion flat-disk skip corroboration);
+        # best-effort — a failed measurement leaves the legacy skip behaviour
+        q_iso_res = measure_outer_iso_q(root_feedme)
+        q_iso_outer = q_iso_res.get("q_iso")
+        if q_iso_outer is None and q_iso_res.get("error"):
+            warnings.append(f"outer-isophote anchor measurement failed: "
+                            f"{q_iso_res['error']}")
+
         stage1 = {
             "morphology": stage1_morphology,
             "detect_bar_lopsidedness": _parse_json(stage1_bar_lop_json, {}),
@@ -111,6 +182,7 @@ def beam_init(
         graph = BeamGraph.init(
             galaxy_dir, root_feedme, stage1=stage1,
             psf_fwhm_px=psf_fwhm_px, a_psf_px2=a_psf_px2,
+            q_iso_outer=q_iso_outer,
             temporary_constraints=_parse_json(temporary_constraints_json, []),
             beam_width=beam_width or None,
             n_max=n_max or None,
@@ -124,6 +196,8 @@ def beam_init(
             "root_state": "A.0",
             "psf_fwhm_px": psf_fwhm_px,
             "a_psf_px2": a_psf_px2,
+            "q_iso_outer": q_iso_outer,
+            "q_iso_sma_outer": q_iso_res.get("sma_outer"),
             "config": {k: meta.get(k) for k in
                        ("W", "N_max", "stagnation_max", "per_combo_cap", "g_min")},
             "ablations": meta.get("ablations", {}),

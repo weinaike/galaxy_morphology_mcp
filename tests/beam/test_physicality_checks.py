@@ -99,6 +99,96 @@ def test_onion_bar_in_lens_identity_inversion_kept():
     assert _has(checks, "shape_order", "hard", "q_bar")
 
 
+# ------------------------------------------- area ordering (rule B, always on)
+def test_onion_area_inversion_flat_disk():
+    # KILOGAS_120 A.8 geometry: flat residual disk (7.7% flux) vs the round
+    # lens carrying the main body — the area layer fires even though the
+    # directional layer is skipped in the flat-disk regime
+    comps = [
+        _comp("disk", "expdisk", re=15.62, q=0.2575, pa=-49.7, mag=18.49),
+        _comp("lens", q=0.846, pa=-35.6, re=23.84, n=0.36, mag=15.91),
+    ]
+    checks = _checks(comps)
+    assert _has(checks, "onion", "hard", "area")
+    assert not _has(checks, "onion", "hard", "pokes")  # directional still skipped
+
+
+def test_onion_area_ok_nested():
+    comps = [
+        _comp("disk", "expdisk", re=12.0, q=0.8, pa=10.0, mag=16.0),
+        _comp("lens", q=0.8, pa=10.0, re=8.0, n=0.3, mag=17.0),
+    ]
+    checks = _checks(comps)
+    assert not _has(checks, "onion", "hard", "area")
+
+
+def test_onion_area_bulge_exempt():
+    # thick bulge covering more projected area than a thin disk: the normal
+    # edge-on configuration — the rounder-bulge exemption covers BOTH layers
+    comps = [
+        _comp("disk", "expdisk", re=10.0, q=0.25, pa=0.0, mag=16.0),
+        _comp("bulge", q=0.9, pa=0.0, re=8.0, n=2.0, mag=17.0),
+    ]
+    checks = _checks(comps)
+    assert not any(ck == "onion" for ck, _ in checks)
+
+
+# --------------------------------------- anchored flat-disk skip (rule A)
+def test_flat_disk_contradicted_by_q_iso_anchor():
+    # fitted q=0.26 vs image anchor q_iso=0.79: the skip is lifted, the
+    # degeneration is flagged and the directional layer re-arms
+    comps = [
+        _comp("disk", "expdisk", re=15.62, q=0.2575, pa=-49.7, mag=18.49),
+        _comp("lens", q=0.846, pa=-35.6, re=23.84, n=0.36, mag=15.91),
+    ]
+    checks = _checks(comps, meta={"q_iso_outer": 0.79})
+    assert _has(checks, "disk_shape_inconsistency", "hard")
+    assert _has(checks, "onion", "hard", "pokes")
+
+
+def test_flat_disk_corroborated_by_q_iso_anchor():
+    # genuinely flat galaxy (anchor q_iso=0.28): skip stands, no flag; the
+    # area layer stays armed but the small lens does not fire it
+    comps = [
+        _comp("disk", "expdisk", re=15.62, q=0.2575, pa=-49.7, mag=16.0),
+        _comp("lens", q=0.6, pa=-35.6, re=5.0, n=0.3, mag=18.5),
+    ]
+    checks = _checks(comps, meta={"q_iso_outer": 0.28})
+    assert not _has(checks, "disk_shape_inconsistency")
+    assert not _has(checks, "onion", "hard", "pokes")
+    assert not _has(checks, "onion", "hard", "area")
+
+
+def test_flat_disk_corroborated_by_stage1_edge_on_text():
+    # explicit Stage-1 edge-on classification corroborates even when the
+    # anchor disagrees
+    g = _G({"q_iso_outer": 0.79})
+    g.g.graph["stage1"] = {"morphology": "edge-on disk with a dust lane"}
+    st = {"inventory": [
+        _comp("disk", "expdisk", re=15.62, q=0.2575, pa=-49.7, mag=16.0),
+        _comp("lens", q=0.6, pa=0.0, re=5.0, n=0.3, mag=18.5),
+    ], "artifacts": {}}
+    checks = {(c["check"], c["severity"]) for c in compute_mech_checks(g, st)}
+    assert ("disk_shape_inconsistency", "hard") not in checks
+
+
+def test_flat_disk_legacy_graph_without_anchor():
+    # graphs initialised before q_iso existed: no anchor -> legacy skip
+    comps = [
+        _comp("disk", "expdisk", re=15.62, q=0.2575, pa=-49.7, mag=18.49),
+        _comp("lens", q=0.846, pa=-35.6, re=23.84, n=0.36, mag=15.91),
+    ]
+    g = _G({})
+    g.g.graph["stage1"] = {"morphology": "disk galaxy, face-on, spiral arms"}
+    st = {"inventory": comps, "artifacts": {}}
+    raw = compute_mech_checks(g, st)
+    # no anchor: no inconsistency flag, directional stays skipped — but the
+    # always-on area layer still catches the inversion (rule B backstop)
+    assert not any(c["check"] == "disk_shape_inconsistency" for c in raw)
+    assert not any("pokes out" in c["detail"] for c in raw if c["check"] == "onion")
+    assert any("area exceeds" in c["detail"] for c in raw if c["check"] == "onion")
+
+
 # ------------------------------------------------------------- q priors
 def test_bulge_q_bands():
     assert _has(_checks([_comp("bulge", q=0.35, re=2.0, n=2.0)]), "shape_prior", "hard", "bulge q")

@@ -41,12 +41,25 @@ Check set (each grounded in a KILOGAS_319 round where the VLM applied it):
 Expert-round-2 additions (thresholds validated by the offline replay over
 dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
   onion           hard  2Re ellipse nesting outerdisk > disk > lens > bar >
-                        bulge (non-crossing, sampled over position angles);
-                        skipped when disk q < 0.3 or the disk slot is edgedisk
-                        (edge-on: nesting undefined), and per-pair when the
-                        inner is a bulge rounder than the outer by > 0.25
+                        bulge, in two layers: (a) AREA ordering (Re^2*q of
+                        adjacent chain pairs) — always on for any disk q;
+                        (b) directional non-crossing (sampled over position
+                        angles) — skipped in the flat-disk regime (disk q <
+                        0.3 or the edgedisk slot) only when the flat disk is
+                        corroborated by image-level evidence (Stage-1
+                        edge-on/dust-lane text or consistency with the
+                        outer-isophote anchor q_iso; KILOGAS_120 defect: a
+                        degenerate fit flattened the disk below the old
+                        unconditional skip and self-immunized against the
+                        nesting check); per-pair exempt (both layers) when
+                        the inner is a bulge rounder than the outer by > 0.25
                         (a round bulge sits laterally wider than a flat bar —
                         the normal configuration, not a violation)
+  disk_shape_inconsistency hard  fitted disk q far flatter than the image's
+                        outer-isophote anchor q_iso (|q_disk - q_iso| >
+                        ONION_Q_ISO_TOL) with no Stage-1 edge-on corroboration
+                        — suspected disk-role collapse (flux usurpation), not
+                        a real edge-on geometry
   shape_order     hard  q_bar >= q_lens when both exist (a bar must be more
                         elongated than the lens it sits inside)
   profile_prior   hard  lens n >= 0.6 (not a lens profile; 0.5-0.6 note);
@@ -101,8 +114,16 @@ RE_CHAIN_EPS_PX = 0.01
 CONTAIN_TOL_PX = 2.0
 # onion nesting (expert round 2, replay-validated rule B)
 ONION_TOL = 0.02
-ONION_SKIP_Q = 0.3          # edge-on regime: nesting undefined
+ONION_SKIP_Q = 0.3          # edge-on regime: directional nesting undefined
 ONION_BULGE_MISMATCH = 0.25  # round bulge in a flat bar/lens: normal config
+# anchored flat-disk skip (KILOGAS_120 defect): a fitted disk q below
+# ONION_SKIP_Q only earns the directional-skip when the IMAGE is that flat —
+# |q_disk - q_iso| <= tolerance against the outer-isophote anchor measured
+# once at beam_init (graph meta q_iso_outer), or an explicit Stage-1
+# edge-on/dust-lane classification. The fitter's own q never corroborates
+# itself: degenerate flattening must not self-immunize against the check.
+ONION_Q_ISO_TOL = 0.15
+_EDGE_ON_RE = re.compile(r"edge[- ]?on|dust[- ]lane", re.IGNORECASE)
 # lens flat degeneration
 FLAT_N_MAX = 0.1 + 1e-3
 CAP_FRAC = 0.90
@@ -118,6 +139,7 @@ _MECH_CHECK_NAMES = frozenset({
     "re_chain", "axis_ratio", "containment", "concentric", "degeneracy",
     "bound_pin", "onion", "shape_order", "profile_prior", "mu0_order",
     "flux_share", "shape_prior", "prior", "zombie", "internal",
+    "disk_shape_inconsistency",
 })
 _warned_unknown: set[str] = set()
 _disable_announced = False
@@ -274,6 +296,33 @@ def scan_state_bound_hits(graph, state: dict) -> list[dict]:
     return hits
 
 
+def _flat_disk_corroborated(graph, dq: float | None) -> bool | None:
+    """Image-level corroboration for a flat fitted disk (q < ONION_SKIP_Q).
+
+    Returns True (flat disk corroborated — the directional nesting skip
+    stands), False (flat q contradicts the image — degeneration suspected,
+    re-arm the directional check and flag disk_shape_inconsistency) or None
+    (no anchor information — legacy behaviour: the skip stands, so graphs
+    initialised before q_iso existed replay unchanged).
+
+    Anchors, in order: an explicit Stage-1 edge-on/dust-lane classification;
+    then consistency with the outer-isophote axis ratio q_iso measured once
+    at beam_init (graph meta ``q_iso_outer``). The fitter's own q never
+    counts — the optimiser controls it (KILOGAS_120: disk q collapsed
+    0.79 -> 0.26 in exactly the round the lens usurped 86.5% of the flux).
+    """
+    try:
+        stage1 = str((graph.g.graph.get("stage1") or {}).get("morphology") or "")
+    except Exception:
+        stage1 = ""
+    if stage1 and _EDGE_ON_RE.search(stage1):
+        return True
+    q_iso = _f((graph.g.graph.get("meta") or {}).get("q_iso_outer"))
+    if q_iso is not None and dq is not None:
+        return abs(dq - q_iso) <= ONION_Q_ISO_TOL
+    return None
+
+
 def compute_mech_checks(graph, state: dict) -> list[dict]:
     """Deterministic numeric check table for one fitted state."""
     checks: list[dict] = []
@@ -414,26 +463,57 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                      f"({h.get('provenance')} band)"})
 
     # ---- onion nesting (hard; expert round 2, replay-validated rule B):
-    # 2Re ellipses of the central chain must not cross. Skipped for edge-on
-    # disks (q < 0.3 or the edgedisk slot); per-pair exempted when the inner
-    # is a rounder bulge inside a flat bar/lens (the normal configuration).
+    # 2Re ellipses of the central chain must nest, in two layers:
+    #   (a) AREA ordering — always on, any disk q: the inner 2*Re ellipse
+    #       AREA (Re^2*q, semi-axes Re and q*Re) must stay below the outer's.
+    #       Well defined even for flat disks, where directional containment is
+    #       geometrically degenerate along the minor axis.
+    #   (b) DIRECTIONAL containment (sampled over position angles) — skipped
+    #       in the flat-disk regime (disk q < 0.3 or the edgedisk slot) ONLY
+    #       when the flat disk is corroborated by image-level evidence
+    #       (_flat_disk_corroborated); a fitted q below the threshold without
+    #       corroboration is itself flagged (disk_shape_inconsistency) and the
+    #       directional layer re-arms.
+    # Both layers per-pair exempt when the inner is a bulge rounder than the
+    # outer by > 0.25 (a round bulge sits laterally wider than a flat bar /
+    # covers more projected area than a thin disk — the normal configuration;
+    # this also protects genuine edge-on decompositions' thick bulges).
     by = {c["name"]: c for c in main_shaped if c.get("name") in CENTRAL_CHAIN}
-    if "edgedisk" not in by:
+    onion_chain = [n for n in ("outerdisk", "disk", "lens", "bar", "bulge")
+                   if n in by]
+    if "edgedisk" not in by and onion_chain:
         dq = _f(by["disk"].get("q")) if "disk" in by else None
-        if dq is None or dq >= ONION_SKIP_Q:
-            onion_chain = [n for n in ("outerdisk", "disk", "lens", "bar", "bulge")
-                           if n in by]
-            for outer, inner in zip(onion_chain, onion_chain[1:]):
-                co, ci = by[outer], by[inner]
-                qo, qi = _f(co.get("q")), _f(ci.get("q"))
-                if inner == "bulge" and qo is not None and qi is not None \
-                        and qi - qo > ONION_BULGE_MISMATCH:
-                    continue
-                ao = _f(co.get("re_effective"))
-                ai = _f(ci.get("re_effective"))
-                if not ao or not ai:
-                    continue
-                bo, bi = (qo or 1.0) * ao, (qi or 1.0) * ai
+        run_directional = dq is None or dq >= ONION_SKIP_Q
+        if not run_directional and _flat_disk_corroborated(graph, dq) is False:
+            q_iso = _f((graph.g.graph.get("meta") or {}).get("q_iso_outer"))
+            anchor_txt = f"q_iso={q_iso:.2f}" if q_iso is not None else "q_iso unavailable"
+            checks.append({
+                "severity": "hard", "check": "disk_shape_inconsistency",
+                "detail": f"fitted disk q={dq:g} is far flatter than the image-level "
+                          f"outer-isophote anchor ({anchor_txt}, |delta| > "
+                          f"{ONION_Q_ISO_TOL:g}) and Stage-1 does not classify the "
+                          "galaxy edge-on — suspected degenerate flattening (disk-role "
+                          "collapse / flux usurpation), not a real edge-on geometry"})
+            run_directional = True
+        for outer, inner in zip(onion_chain, onion_chain[1:]):
+            co, ci = by[outer], by[inner]
+            qo, qi = _f(co.get("q")), _f(ci.get("q"))
+            if inner == "bulge" and qo is not None and qi is not None \
+                    and qi - qo > ONION_BULGE_MISMATCH:
+                continue
+            ao = _f(co.get("re_effective"))
+            ai = _f(ci.get("re_effective"))
+            if not ao or not ai:
+                continue
+            bo, bi = (qo or 1.0) * ao, (qi or 1.0) * ai
+            area_ratio = (ai * bi) / (ao * bo)
+            if area_ratio > 1.0 + ONION_TOL:
+                checks.append({"severity": "hard", "check": "onion",
+                               "detail": f"{inner} 2*Re ellipse area exceeds "
+                                         f"{outer} (Re^2*q ratio {area_ratio:.2f}; "
+                                         f"q_{inner}={qi or 1:g}, "
+                                         f"q_{outer}={qo or 1:g})"})
+            if run_directional:
                 po = _f(co.get("pa")) or 0.0
                 pi = _f(ci.get("pa")) or 0.0
                 worst = max(_ellipse_r(t, ai, bi, pi) / _ellipse_r(t, ao, bo, po)

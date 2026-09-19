@@ -57,11 +57,75 @@ def _is_lens_relax_candidate(cand, cap: float | None) -> bool:
     return False
 
 
+def _spike_present_in_analysis(raw: str) -> bool:
+    """Classify the surveyor's Phase-1 `central_spike` assessment lines
+    (KILOGAS_231 / Plate0284 retrospective: the spike was recorded nearly
+    every round yet never converted into an AGN candidate). Absence markers
+    win over presence markers ('no unresolved positive core spike' must
+    classify absent despite the word 'positive')."""
+    import re as _re
+    if not raw:
+        return False
+    absent_re = _re.compile(r"\b(false|no|none|absent|not assessed|weak)\b", _re.I)
+    present_re = _re.compile(r"\b(true|yes|present|mild|minor|positive|excess)\b", _re.I)
+    for line in raw.splitlines():
+        low = line.lower()
+        if "central_spike" not in low or len(line) > 400:
+            continue
+        if absent_re.search(line):
+            continue
+        if present_re.search(line):
+            return True
+    return False
+
+
+def _bulge_n_at_cap(state: dict) -> bool:
+    """A free bulge n pinned at its n upper bound (default 8): the Sérsic
+    wants a cuspier-than-n=8 core — numeric point-source evidence of the
+    same family as the central spike (Plate0284 A.5 retrospective: bulge
+    n=8.0 pinned, band [0.1,8.0], no AGN candidate ever proposed). A fixed
+    n cannot 'hit' the cap and never fires."""
+    cons = state.get("cons_effective") or {}
+    for c in state.get("inventory", []):
+        if (c.get("name") or "").lower() != "bulge" or c.get("n") is None:
+            continue
+        toggles = c.get("toggles") or {}
+        try:
+            t_n = toggles.get("n", 1)
+            t_n = 1 if t_n is None else t_n
+            if int(t_n) != 1:
+                continue
+        except (TypeError, ValueError):
+            continue
+        band = cons.get(f"{c.get('number')}.n")
+        cap = band[1] if band else 8.0
+        try:
+            if float(c["n"]) >= 0.98 * float(cap):
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _central_spike_agn_trigger(state: dict, raw: str) -> bool:
+    """Fire when the model has no AGN yet AND either (a) this round's own
+    Phase-1 assessment reports a central <5px spike (a healthy bulge does
+    not close the door — residual_analysis: 'an obvious positive-residual
+    leftover within 0-5 px of the 1D profile that the Bulge cannot absorb'
+    is AGN evidence; 'the Bulge cannot be retained -> an AGN must be tried
+    to compensate'), or (b) a free bulge n is pinned at the n cap — the
+    n -> cusp mimicry branch of the same point-source hypothesis."""
+    names = {(c.get("name") or "").lower() for c in state.get("inventory", [])}
+    if "agn" in names:
+        return False
+    return _spike_present_in_analysis(raw) or _bulge_n_at_cap(state)
+
+
 def _candidate_absence_watchdog(graph, resp, triggers: dict, label: str,
                                 session_id: str) -> list[str]:
     """Log + queue for self-correction every fired trigger whose required
     candidate family is absent without an explicit waiver."""
-    from beam.enqueue import _is_bar_direction
+    from beam.enqueue import _is_agn_add, _is_bar_direction
 
     watch = {
         "lens_relax_d": {
@@ -73,6 +137,12 @@ def _candidate_absence_watchdog(graph, resp, triggers: dict, label: str,
             "classify": _is_bar_direction,
             "describe": "a Bar-direction candidate (tune(Bulge->Bar) / add(Bar))",
             "waiver_kw": ("bar",),
+        },
+        "central_spike_agn": {
+            "classify": _is_agn_add,
+            "describe": "an AGN point-core candidate (add(agn, psf) / "
+                        "remove(bulge)+add(agn) collapsed-bulge replacement)",
+            "waiver_kw": ("agn", "point", "spike"),
         },
     }
     notes: list[str] = []
@@ -288,6 +358,13 @@ def survey_round(
                     + f"\n## Raw VLM output\n\n{raw_analysis}\n")
     except OSError:
         md_path = ""
+
+    # ---- central-spike AGN trigger (KILOGAS_231 / Plate0284 retrospective:
+    # the <5px central spike was recorded round after round but never became
+    # an AGN candidate). Parsed from THIS round's Phase-1 assessment; arms
+    # the floor_agn_spike flag for any add(agn) candidate in this same
+    # response and the candidate-absence watchdog when the VLM stays silent.
+    triggers["central_spike_agn"] = _central_spike_agn_trigger(state, raw_analysis)
 
     # ---- enqueue legal candidates (floors/diversity/aging overlay)
     result_ingest = ingest(graph, resp.candidates, session_id=session_id,

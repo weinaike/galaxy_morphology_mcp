@@ -519,6 +519,35 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                            "detail": f"outerdisk n={on:g} >= 1.0 (outer envelope "
                                      "must be n < 1)"})
 
+    # ---- bulge n at the cap (note; Plate0284 retrospective): a free bulge n
+    # pinned at the default upper bound wants a cuspier-than-n=8 core —
+    # usually an unfitted central point source (compact bulge) or envelope
+    # flux-grabbing (large-Re bulge). The pin is a diagnostic fact, never a
+    # veto (original default band); the prompt repair menu maps the competing
+    # candidates (add(agn)+n re-warm / disk role reapportionment / giant-
+    # elliptical waiver). Raising the cap or freezing n=8 is NOT a repair.
+    bulge_c = by.get("bulge")
+    if bulge_c:
+        bn = _f(bulge_c.get("n"))
+        t_n = (bulge_c.get("toggles") or {}).get("n", 1)
+        t_n = 1 if t_n is None else t_n
+        try:
+            n_free = int(t_n) == 1
+        except (TypeError, ValueError):
+            n_free = True
+        if bn is not None and n_free:
+            num = str(bulge_c.get("number") or "")
+            band = (state.get("cons_effective") or {}).get(f"{num}.n")
+            cap = _f(band[1]) if band else None
+            if (cap is not None and bn >= 0.98 * cap) or (cap is None and bn >= 7.84):
+                checks.append({"severity": "note", "check": "profile_prior",
+                               "detail": f"bulge n={bn:g} at the n upper bound "
+                                         f"{cap if cap is not None else 8.0:g} "
+                                         "(point-source/envelope identity question: a "
+                                         "cuspier core usually compensates an unfitted "
+                                         "central point source; a large-Re high-n wing "
+                                         "grabs envelope flux)"})
+
     # ---- mu0 ordering (hard; analytic central surface brightness)
     a_psf = _f(meta.get("a_psf_px2"))
     m_disk = _comp_mu0(by["disk"], a_psf) if "disk" in by else None

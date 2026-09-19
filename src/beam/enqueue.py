@@ -118,6 +118,15 @@ def prims_are_lens_relax(primitives: list[dict], parent_re: float | None = None)
     return False
 
 
+def prims_are_agn_add(primitives: list[dict], parent_re: float | None = None) -> bool:
+    """An AGN point-core candidate: any add(agn, psf) — including the
+    collapsed-bulge replacement composite remove(bulge)+add(agn)."""
+    for p in primitives:
+        if p.get("op") == "add" and (p.get("structure_name") or "").lower() == "agn":
+            return True
+    return False
+
+
 # floor flag -> primitive-level predicate, uniform (primitives, parent_re)
 # signature (only disk-Re growth consumes parent_re). parent_re is the Re of
 # the disk slot in the round's OWN parent inventory — required so a
@@ -128,6 +137,7 @@ FLOOR_PREDICATES = {
     "floor_bar_direction": prims_are_bar_direction,
     "floor_disk_re": prims_are_disk_re_growth,
     "floor_lens_relax_d": prims_are_lens_relax,
+    "floor_agn_spike": prims_are_agn_add,
 }
 
 
@@ -145,6 +155,10 @@ def _is_disk_re_growth(cand: Candidate, parent_re: float | None) -> bool:
 
 def _is_lens_relax(cand: Candidate) -> bool:
     return prims_are_lens_relax(cand.to_plain_primitives())
+
+
+def _is_agn_add(cand: Candidate) -> bool:
+    return prims_are_agn_add(cand.to_plain_primitives())
 
 
 def _score_candidate(cand: Candidate, hypo_combo: str, combo_counts: dict[str, int],
@@ -313,6 +327,8 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
             flags["floor_disk_re"] = True
         if _is_lens_relax(cand) and triggers.get("lens_relax_d"):
             flags["floor_lens_relax_d"] = True
+        if _is_agn_add(cand) and triggers.get("central_spike_agn"):
+            flags["floor_agn_spike"] = True
 
         direction_key = f"{hypo_combo}|{_primitive_kinds(prims)}"
         prior = [h for h in direction_history

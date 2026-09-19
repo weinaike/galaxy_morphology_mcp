@@ -231,6 +231,16 @@ def build_local_state_description(g, state_label: str,
                        ("orchestrator_note", "orchestrator note")):
         lines.append(f"  - {label}: {injected.get(key, 'not assessed')}")
 
+    # ---- central-spike AGN trigger (pre-call half; survey.py parses the
+    # VLM's own Phase-1 assessment post-call). An orchestrator-injected
+    # affirmative central_spike with no AGN in the inventory arms the same
+    # floor_agn_spike flag (KILOGAS_231 / Plate0284 retrospective).
+    _inj = str(injected.get("central_spike", "")).lower()
+    _names = {(c.get("name") or "").lower() for c in inv}
+    if "agn" not in _names and _inj and not any(
+            m in _inj for m in ("false", "no", "none", "absent", "not assessed", "weak")):
+        triggers["central_spike_agn"] = True
+
     # ---- consume-once absence notices queued by the previous round's
     # candidate-absence watchdog (survey.py): facts for self-correction,
     # never direction mandates beyond the trigger rules already in the prompt

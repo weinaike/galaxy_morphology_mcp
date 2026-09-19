@@ -535,7 +535,9 @@ def check_feedme_file(
 
     # Disk-type enforcement (solution space): in a multi-component model the
     # disk slot must be `expdisk` named `disk` (n==1 by type); the `singlesersic`
-    # identity (sersic with free n) is legal ONLY as the sole luminous component.
+    # identity (sersic with free n) is legal ONLY as the sole luminous component
+    # or paired with a single AGN (psf) point core — {singlesersic, agn} is the
+    # elliptical+point-core terminal state (KILOGAS_221 retrospective).
     # This is where a missed SingleSersic->Disk conversion is caught BEFORE the
     # fit wastes budget (the verifier's 5a only audits at lock time).
     names = {c["name"] for c in components}
@@ -549,14 +551,18 @@ def check_feedme_file(
                     "conversion was missed: convert to expdisk named `disk` "
                     "(Rs = fitted Re / 1.68) and refit."
                 )
+        illegal_co_tenants = sorted(n for n in names
+                                    if n != "singlesersic" and n != "agn")
         for c in inventory:
-            if "singlesersic" in c["name"]:
+            if "singlesersic" in c["name"] and illegal_co_tenants:
                 errors.append(
                     f"Component '{c['name']}' (number {c['number']}) carries the "
-                    "single-Sersic identity (sersic with free n) alongside other "
-                    "components — the singlesersic slot is legal ONLY as the sole "
-                    "luminous component. Convert it to `expdisk` named `disk` "
-                    "(Rs = fitted Re / 1.68) when the decomposition begins."
+                    "single-Sersic identity (sersic with free n) alongside "
+                    f"{illegal_co_tenants} — the singlesersic slot is legal ONLY as "
+                    "the sole luminous component or paired with a single AGN (psf) "
+                    "point core. With any other component, convert it to `expdisk` "
+                    "named `disk` (Rs = fitted Re / 1.68) when the decomposition "
+                    "begins."
                 )
     elif len(components) == 1 and "disk" in names and components[0]["type"] == "sersic":
         warnings.append(

@@ -331,9 +331,17 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
                                 "bundle convert(singlesersic->disk: expdisk, Rs=Re/1.68) "
                                 "as the second primitive", action_id=aid))
     if "singlesersic" in slots and len(names) > 1:
-        issues.append(Issue("E_MULTIPLICITY",
-                            "singlesersic may exist only as the sole luminous component",
-                            action_id=aid))
+        co_tenants = sorted(s for s in slots if s != "singlesersic")
+        if co_tenants != ["agn"]:
+            # {singlesersic, agn} is the legal elliptical+point-core terminal
+            # state (KILOGAS_221 retrospective: the expert's singlesersic+AGN
+            # answer was unreachable because the exclusivity barred the slot).
+            issues.append(Issue("E_MULTIPLICITY",
+                                "singlesersic may coexist only with an AGN (psf) point "
+                                f"core — found alongside {co_tenants}; any "
+                                "disk/bulge/bar/lens/outerdisk add must bundle "
+                                "convert(singlesersic->disk: expdisk, Rs=Re/1.68)",
+                                action_id=aid))
     if len(names) > 1 and "disk" in slots:
         disk_type = next((c.get("type") for c in hypo if c.get("name") == "disk"), "")
         if disk_type != "expdisk":

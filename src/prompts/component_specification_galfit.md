@@ -76,10 +76,10 @@ Key parameter: R_s (disk scale length)
 
 Note (this workflow): the template's `9) b/a` and `10) PA` toggles shown as `0` above are **not** used here — in this workflow the Disk's q and PA are **free** (`1`); oblique disk configurations are legal search directions (see the solution-space definition in CLAUDE.md).
 
-Note (SingleSersic start): the single-component start is named `singlesersic` (sersic, free n). The moment a second central component is added, the start must be converted to `expdisk` and renamed `disk` (`4)` row = Rs = fitted Re / 1.68; the n row is dropped) — bundled with the first add as its second primitive; a multi-component model with a sersic `disk` is invalid.
+Note (SingleSersic start): the single-component start is named `singlesersic` (sersic, free n). The moment a second **central** component is added, the start must be converted to `expdisk` and renamed `disk` (`4)` row = Rs = fitted Re / 1.68; the n row is dropped) — bundled with the first add as its second primitive; a multi-component model with a sersic `disk` is invalid. **Exception**: `add(agn)` (psf point core) needs NO conversion — `{singlesersic, agn}` is the legal elliptical+point-core terminal state (the AGN is not a central component for the conversion rule).
 
 ---
-1. psf — (commonly used for an AGN / a foreground star / an unresolved companion; the central point-source role of the main galaxy belongs **exclusively** to the AGN, admitted only under the Bulge-Re-collapse rule)
+1. psf — (commonly used for an AGN / a foreground star / an unresolved companion; the central point-source role of the main galaxy belongs **exclusively** to the AGN, admitted under the Bulge-Re-collapse rule or, on a SingleSersic-only model, the central-spike branch)
 
 ```
 0) psf                    #  Component type

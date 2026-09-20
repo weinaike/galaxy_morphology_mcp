@@ -204,7 +204,8 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
                        combo_counts: dict[str, int], per_combo_cap: int,
                        depth: int, refuted: list[dict],
                        temp_constraints: list[dict],
-                       ledger_signatures: list[dict]) -> list[Issue]:
+                       ledger_signatures: list[dict],
+                       stage1_bar_pa: float | None = None) -> list[Issue]:
     """Validate one candidate against the solution space + graph state."""
     from beam.signature import (
         apply_primitives_to_inventory,
@@ -357,6 +358,10 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
 
     # ---- embedded-companion timing (parent must have bulge or bar)
     issues.extend(_check_companion_timing(cand, prims, parent_inventory, hypo, aid))
+
+    # ---- weak-PA anchor (new/re-tuned PA copying a near-round parent's PA)
+    issues.extend(_check_pa_anchor(cand, prims, parent_inventory, aid,
+                                   stage1_bar_pa=stage1_bar_pa))
 
     # ---- combo cap
     combo = combo_identity(hypo)
@@ -565,6 +570,91 @@ def _check_companion_timing(cand: Candidate, prims: list[dict], parent_inventory
     return issues
 
 
+def _check_pa_anchor(cand: Candidate, prims: list[dict], parent_inventory: list[dict],
+                     aid: str, stage1_bar_pa: float | None = None) -> list[Issue]:
+    """A new/re-tuned elongated component's PA may not anchor on a near-round
+    (q>0.9) parent component's fitted PA.
+
+    Plate0436 retrospective: the parent disk (q=0.955) carried a meaningless
+    converged PA=-38.5deg; the surveyor copied it as the added lens's PA, and
+    the orthogonal-to-bar seeding drove the fit into a degenerate basin that
+    mech-vetoed the whole lens direction — re-anchored on the measured bar
+    direction (56deg) the SAME inventory improved BIC_eff by 58. A near-round
+    component's PA is unidentifiable optimiser noise; anchors must be measured
+    feature directions (bar axis / Stage-1 detected PA / isophote twist).
+    PA has 180deg symmetry -> compare mod 180 within +-10deg.
+
+    Trusted-direction exemption (limits false positives): a PA that ALSO sits
+    within +-10deg of a well-determined direction — any non-round (q<=0.9)
+    parent's PA, or the Stage-1 detected bar PA — passes: a legitimately
+    measured direction that coincides with a trusted anchor is evidence of a
+    real feature, not a copy of optimiser noise."""
+    issues: list[Issue] = []
+    round_parents = []
+    trusted: list[float] = []
+    for c in parent_inventory:
+        # raw graph inventories key the axis ratio 'ba'; normalized ones 'q'
+        q = c.get("q")
+        if q is None:
+            q = c.get("ba")
+        try:
+            if c.get("pa") is None or q is None:
+                continue
+            if float(q) > 0.9:
+                round_parents.append(dict(c, q=q))
+            else:
+                trusted.append(float(c["pa"]))   # identifiable parent PA
+        except (TypeError, ValueError):
+            continue
+    if not round_parents:
+        return issues
+    if stage1_bar_pa is not None:
+        try:
+            trusted.append(float(stage1_bar_pa))
+        except (TypeError, ValueError):
+            pass
+
+    def _near_any(pa: float, anchors: list[float]) -> bool:
+        for a in anchors:
+            d = abs(pa - a) % 180.0
+            if min(d, 180.0 - d) <= 10.0:
+                return True
+        return False
+
+    for p in prims:
+        target = pa_new = None
+        if p["op"] == "add":
+            target = (p.get("structure_name") or "").lower()
+            pa_new = p.get("pa_deg")
+        elif p["op"] == "tune" and p.get("param") == "pa_deg":
+            target = (p.get("structure_name") or "").lower()
+            pa_new = p.get("value")
+        if pa_new is None:
+            continue
+        try:
+            pa_val = float(pa_new)
+        except (TypeError, ValueError):
+            continue
+        if _near_any(pa_val, trusted):
+            continue  # anchored on a well-determined direction — legitimate
+        for par in round_parents:
+            if (par.get("name") or "").lower() == target:
+                continue  # tuning the round component's own PA is not an anchor
+            d = abs(pa_val - float(par["pa"])) % 180.0
+            if min(d, 180.0 - d) <= 10.0:
+                issues.append(Issue(
+                    "E_WEAK_PA_ANCHOR",
+                    f"{p['op']}({target}) pa_deg={pa_val:g} is within 10deg of "
+                    f"parent {par['name']}'s PA={float(par['pa']):g} whose "
+                    f"q={float(par['q']):g} > 0.9 — a near-round component's PA is "
+                    "ill-determined optimiser noise, not a feature direction; anchor "
+                    "the PA on a MEASURED feature direction instead (bar axis / "
+                    "Stage-1 detected bar PA / isophote twist read from the panels)",
+                    action_id=aid))
+                break
+    return issues
+
+
 def _refute_matches(tag: str, name: str, param: str | None) -> bool:
     """Loose matcher between a refuted entry's tag and a tune direction."""
     t = tag.lower()
@@ -617,10 +707,17 @@ def validate_survey(resp: SurveyResponse, graph, state_label: str) -> Validation
     refuted = graph.g.graph.get("refuted_hypotheses", [])
     temp = graph.g.graph.get("temporary_constraints", [])
     ledger = graph.input_ledger_signatures()
+    try:
+        stage1_bar_pa = ((graph.g.graph.get("stage1", {})
+                          .get("detect_bar_lopsidedness") or {})
+                         .get("bar") or {}).get("pa_deg")
+    except AttributeError:
+        stage1_bar_pa = None
 
     for cand in resp.candidates:
         issues.extend(validate_candidate(
-            cand, parent_inventory, combo_counts, cap, depth, refuted, temp, ledger))
+            cand, parent_inventory, combo_counts, cap, depth, refuted, temp, ledger,
+            stage1_bar_pa=stage1_bar_pa))
 
     # survey-level: candidate counts per depth, tag uniqueness, queue_reorder sanity
     lo, hi = DEPTH_COUNTS.get(depth, (2, 4))

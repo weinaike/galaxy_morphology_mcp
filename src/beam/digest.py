@@ -44,7 +44,18 @@ def _comp_line(c: dict) -> str:
     if c.get("q") is not None:
         parts.append(f"q={_fmt(c.get('q'), 3)}")
     if c.get("pa") is not None:
-        parts.append(f"PA={_fmt(c.get('pa'), 4)}")
+        try:
+            _round = c.get("q") is not None and float(c["q"]) > 0.9
+        except (TypeError, ValueError):
+            _round = False
+        if _round:
+            # Plate0436 retrospective: a near-round component's PA is
+            # ill-determined optimiser noise — tagging it stops the VLM from
+            # copying it as the PA anchor of a new elongated component.
+            parts.append(f"PA={_fmt(c.get('pa'), 4)} [weak: q>0.9 -> PA "
+                         "ill-determined; NEVER anchor a new component's PA on it]")
+        else:
+            parts.append(f"PA={_fmt(c.get('pa'), 4)}")
     return f"{name}({','.join(parts)})" if parts else name
 
 

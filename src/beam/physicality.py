@@ -357,7 +357,12 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                            "detail": f"lens q={q:g} <= {LENS_Q_HARD_MIN:g} "
                                      "(lens requires q > 0.5)"})
 
-    # ---- containment (hard): 2*Re leaves the fit region from the centre
+    # ---- containment (hard): the 2*Re ellipse leaves the fit region.
+    # The reach toward each edge is the ellipse support radius along the
+    # cardinal directions (N=+Y contract: 0 deg = +y, 90 deg = +x), i.e. PA
+    # and q both matter — a flat (q<<1) component whose major axis runs
+    # diagonally reaches the edges far less than 2*Re. Isotropic fallback
+    # (2*Re circle) only when q/pa are unavailable.
     if region:
         xmin, xmax, ymin, ymax = (float(v) for v in region)
         for c in shaped:
@@ -366,11 +371,21 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
             if re2 is None or x is None or y is None:
                 continue
             re2 *= 2.0
-            if (x + re2 > xmax + CONTAIN_TOL_PX or x - re2 < xmin - CONTAIN_TOL_PX
-                    or y + re2 > ymax + CONTAIN_TOL_PX or y - re2 < ymin - CONTAIN_TOL_PX):
+            q = _f(c.get("q"))
+            pa = _f(c.get("pa"))
+            if q is not None and pa is not None and 0.0 < q <= 1.0 + 1e-6:
+                rx = _ellipse_r(90.0, re2, re2 * q, pa)  # reach toward ±x edges
+                ry = _ellipse_r(0.0, re2, re2 * q, pa)   # reach toward ±y edges
+                geom = f"2*Re ({re2:g}px, q={q:g}, PA={pa:g}deg) reach " \
+                       f"x±{rx:g}px / y±{ry:g}px"
+            else:
+                rx = ry = re2
+                geom = f"2*Re ({re2:g}px, isotropic) reach x±{rx:g}px / y±{ry:g}px"
+            if (x + rx > xmax + CONTAIN_TOL_PX or x - rx < xmin - CONTAIN_TOL_PX
+                    or y + ry > ymax + CONTAIN_TOL_PX or y - ry < ymin - CONTAIN_TOL_PX):
                 checks.append({"severity": "hard", "check": "containment",
-                               "detail": f"outermost containment: {c.get('name')} 2*Re "
-                                         f"({re2:g}px) leaves the fit region "
+                               "detail": f"outermost containment: {c.get('name')} {geom} "
+                                         f"leaves the fit region "
                                          f"[{xmin:g},{xmax:g}]x[{ymin:g},{ymax:g}]"})
 
     # ---- concentric (hard): chained central components vs the anchor centre

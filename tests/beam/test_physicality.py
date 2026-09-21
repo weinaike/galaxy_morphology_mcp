@@ -12,9 +12,10 @@ from beam.physicality import compute_mech_checks, merge_verdict
 from tests.beam.test_vlm_enqueue import cand  # Candidate factory
 
 
-def _comp(name, re, q=0.8, x=100.0, y=100.0, ctype="sersic", mag=18.0, n=1.0):
+def _comp(name, re, q=0.8, x=100.0, y=100.0, ctype="sersic", mag=18.0, n=1.0,
+          pa=0.0):
     return {"name": name, "type": ctype, "x": x, "y": y, "mag": mag,
-            "re": re, "re_effective": re, "n": n, "q": q, "pa": 0.0,
+            "re": re, "re_effective": re, "n": n, "q": q, "pa": pa,
             "toggles": {}}
 
 
@@ -75,6 +76,21 @@ def test_containment_hard(mini_graph):
     assert hard and "2*Re" in hard[0]["detail"]
     inv = [_comp("disk", 60.0, x=149.0, y=149.0)]   # 298 -> 269 fits... 149+120=269
     assert not _by(_hards(_checks(graph, inv)), "containment")
+
+
+def test_containment_pa_q_aware(mini_graph):
+    """KILOGAS_319 regression: a flat outerdisk with its major axis on the
+    diagonal does NOT leave the region even though 2*Re exceeds the half-side
+    (A.10: Re=87.2, q=0.274, PA=-41.3 -> old isotropic check false-FIREd)."""
+    graph, _ = mini_graph
+    graph.g.graph["meta"]["fit_region"] = [1.0, 297.0, 1.0, 297.0]
+    inv = [_comp("outerdisk", 87.2, q=0.274, pa=-41.3, x=148.9, y=148.9)]
+    assert not _by(_hards(_checks(graph, inv)), "containment")
+    # same size but round (q=1) or axis-aligned (PA=0) still fails
+    assert _by(_hards(_checks(graph, [_comp("outerdisk", 87.2, q=1.0, pa=-41.3,
+                                            x=148.9, y=148.9)])), "containment")
+    assert _by(_hards(_checks(graph, [_comp("outerdisk", 87.2, q=0.274, pa=0.0,
+                                            x=148.9, y=148.9)])), "containment")
 
 
 def test_concentric_deviance_hard(mini_graph):

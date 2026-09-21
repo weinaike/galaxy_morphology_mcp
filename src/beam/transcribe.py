@@ -319,8 +319,10 @@ def make_block(name: str, ctype: str, params: dict, toggles: dict[str, int],
     lines.append("Z) 0")
     f1 = params.get("f1")
     if f1:
-        amp = f1.get("amplitude", 0.05)
-        phase = f1.get("phase_deg", 0.0)
+        # accept both key spellings: the schema documents amplitude/phase_deg,
+        # the surveyor VLM emits am/theta_m (fourier_mode_analysis wording)
+        amp = f1.get("amplitude", f1.get("am", 0.05))
+        phase = f1.get("phase_deg", f1.get("theta_m", 0.0))
         lines.insert(-1, f"F1) {_fmt_num(amp)}  {_fmt_num(phase)}  1  1   #  Az. Fourier mode 1")
     return Block(lines=lines, name=name, ctype=ctype, is_sky=False)
 

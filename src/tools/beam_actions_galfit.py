@@ -34,6 +34,11 @@ dotenv.load_dotenv()
 # and VLM readings are written verbatim). Patch the PA clause at load time —
 # the shared file itself stays untouched for GalfitS.
 _PA_CLAUSE_RE = re.compile(r"(?m)^3\. \*\*PA convention\*\*:.*$")
+# Companion-ish STRUCTURE names (same pattern family as beam.candidate_schema's
+# _COMPANION_RE): field contaminants, exempt from the singlesersic co-tenant
+# rule and from the concentric offset chain.
+_COMPANION_NAME_RE = re.compile(r"^(companion|comp|secondary|satellite)",
+                                re.IGNORECASE)
 _NPY_PA_CLAUSE = (
     "3. **PA convention (N=+Y contract)**: whenever a position angle (PA) is involved — "
     "including a component's PA, a Fourier mode's phase angle, or a suggested correction "
@@ -552,18 +557,32 @@ def check_feedme_file(
                     "(Rs = fitted Re / 1.68) and refit."
                 )
         illegal_co_tenants = sorted(n for n in names
-                                    if n != "singlesersic" and n != "agn")
+                                    if n != "singlesersic" and n != "agn"
+                                    and not _COMPANION_NAME_RE.match(n))
         for c in inventory:
             if "singlesersic" in c["name"] and illegal_co_tenants:
                 errors.append(
                     f"Component '{c['name']}' (number {c['number']}) carries the "
                     "single-Sersic identity (sersic with free n) alongside "
                     f"{illegal_co_tenants} — the singlesersic slot is legal ONLY as "
-                    "the sole luminous component or paired with a single AGN (psf) "
-                    "point core. With any other component, convert it to `expdisk` "
+                    "the sole luminous component, alongside an AGN (psf) point core "
+                    "and/or companions (field contaminants). With any other "
+                    "component, convert it to `expdisk` "
                     "named `disk` (Rs = fitted Re / 1.68) when the decomposition "
                     "begins."
                 )
+        # Disk-required rule (multi-component regime): without a singlesersic,
+        # a multi-component model must carry a disk/edgedisk slot — a diskless
+        # inventory (e.g. {bulge, companion}, {bar, agn}) belongs to the
+        # singlesersic regime, not the decomposition regime.
+        if "singlesersic" not in names and not ({"disk", "edgedisk"} & names):
+            errors.append(
+                "The multi-component model carries no disk/edgedisk slot — a "
+                "multi-component inventory must contain a disk or edgedisk "
+                "(the decomposition regime is disk-bearing by definition); a "
+                "diskless model belongs to the singlesersic regime "
+                "({singlesersic} / {singlesersic, agn} / + companions)."
+            )
     elif len(components) == 1 and "disk" in names and components[0]["type"] == "sersic":
         warnings.append(
             "The sole component is a sersic named 'disk' with free n — in the "

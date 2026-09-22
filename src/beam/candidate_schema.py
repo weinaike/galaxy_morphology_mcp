@@ -333,13 +333,16 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
                                 "as the second primitive", action_id=aid))
     if "singlesersic" in slots and len(names) > 1:
         co_tenants = sorted(s for s in slots if s != "singlesersic")
-        if co_tenants != ["agn"]:
+        illegal = [s for s in co_tenants if s not in ("agn", "companion")]
+        if illegal:
             # {singlesersic, agn} is the legal elliptical+point-core terminal
             # state (KILOGAS_221 retrospective: the expert's singlesersic+AGN
-            # answer was unreachable because the exclusivity barred the slot).
+            # answer was unreachable because the exclusivity barred the slot);
+            # companions ride alongside too — they are field contaminants, not
+            # main-galaxy structure, so add(companion) triggers no conversion.
             issues.append(Issue("E_MULTIPLICITY",
                                 "singlesersic may coexist only with an AGN (psf) point "
-                                f"core — found alongside {co_tenants}; any "
+                                f"core and companions — found alongside {illegal}; any "
                                 "disk/bulge/bar/lens/outerdisk add must bundle "
                                 "convert(singlesersic->disk: expdisk, Rs=Re/1.68)",
                                 action_id=aid))
@@ -348,6 +351,18 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
         if disk_type != "expdisk":
             issues.append(Issue("E_ALPHABET",
                                 "a multi-component model's disk slot must be expdisk",
+                                action_id=aid))
+
+    # ---- disk-required rule (multi-component regime): any multi-component
+    # inventory without a singlesersic must carry a disk/edgedisk slot — a
+    # diskless multi-component state (e.g. {bulge, companion}, {bar, agn})
+    # belongs to the singlesersic regime, not the decomposition regime.
+    if "singlesersic" not in slots and len(names) > 1:
+        if not ("disk" in slots or "edgedisk" in slots):
+            issues.append(Issue("E_MULTIPLICITY",
+                                "a multi-component model must carry a disk or edgedisk — "
+                                "a diskless inventory belongs to the singlesersic regime "
+                                "({singlesersic} / {singlesersic, agn} / + companions)",
                                 action_id=aid))
 
     # ---- Re chain adjacency (central components only; decrease outward

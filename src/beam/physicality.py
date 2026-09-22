@@ -22,7 +22,9 @@ Check set (each grounded in a KILOGAS_319 round where the VLM applied it):
                         re_bulge (outerdisk above re_disk); survivors only;
                         3% relative tolerance (an inner Re may exceed the
                         adjacent outer Re by at most RE_CHAIN_TOL)
-  axis_ratio      hard  bar q > 0.7; any shaped component q < 0.05
+  axis_ratio      hard  bar q > 0.7; bar q < 0.15 (needle degeneration) or
+                        bar minor-axis unresolved (2*Re*q < PSF FWHM);
+                        any shaped component q < 0.05
                         (thin-line degeneracy) or q > 1.0
   containment     hard  2*Re of a shaped component leaving the fit region
                         from its centre (A.5/A.7/A.11/A.13 disk 2*Re)
@@ -109,6 +111,14 @@ CENTRAL_CHAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk",
 
 BAR_Q_HARD_MAX = 0.7
 BAR_Q_NOTE_MAX = 0.5
+# Bar needle floor (jwst/1071 retrospective: bulge-family slivers collapsed to
+# q~0.05 across four rounds; a physical bar's projected b/a tail bottoms out
+# ~0.1-0.15, and below that the minor axis is unresolved). The .cons default
+# q band keeps its 0.05 lower bound — the floor is enforced here, post-hoc, on
+# the fitted values (the fitter stays free to touch the bound; the mech table
+# then routes the identity question).
+BAR_Q_HARD_MIN = 0.15
+BAR_Q_NOTE_MIN = 0.2
 BULGE_Q_HARD_MIN = 0.3
 BULGE_Q_NOTE_MIN = 0.4
 LENS_Q_HARD_MIN = 0.5
@@ -358,6 +368,34 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                            "detail": f"bar q={q:g} in (0.5,{BAR_Q_HARD_MAX:g}] "
                                      "(round-bar watch: "
                                      "bar/lens identity confusion risk)"})
+        if name == "bar":
+            # needle floor (hard): below this no physical bar survives
+            # projection — a ridge artefact chasing a nuclear spike / noise
+            if q < BAR_Q_HARD_MIN:
+                checks.append({"severity": "hard", "check": "shape_prior",
+                               "detail": f"bar q={q:g} < {BAR_Q_HARD_MIN:g} "
+                                         "(needle degeneration: not a bar — re-round "
+                                         "q_init≈0.3 as a warm start; with a central "
+                                         "<5 px spike present this is the point-source "
+                                         "identity question (AGN branch), not a bar)"})
+            elif q < BAR_Q_NOTE_MIN:
+                checks.append({"severity": "note", "check": "shape_prior",
+                               "detail": f"bar q={q:g} in "
+                                         f"[{BAR_Q_HARD_MIN:g},{BAR_Q_NOTE_MIN:g}) "
+                                         "(needle watch: minor-axis resolution risk)"})
+            # PSF-coupled resolution floor (hard): the bar must be resolved in
+            # its minor direction — minor half-light extent 2*Re*q >= FWHM_PSF
+            re_bar = _f(c.get("re_effective")) or _f(c.get("re"))
+            if re_bar is not None and 2.0 * re_bar * q < psf:
+                checks.append({"severity": "hard", "check": "shape_prior",
+                               "detail": f"bar minor-axis unresolved: 2*Re*q="
+                                         f"{2.0 * re_bar * q:.2f}px < PSF FWHM "
+                                         f"{psf:g}px (Re={re_bar:g}px, q={q:g}) — "
+                                         "the bar is unresolved in its minor direction "
+                                         "(needle/ridge artefact: re-round q_init≈0.3, or "
+                                         "re-identify — central spike → AGN branch; disk "
+                                         "simultaneously flat vs the q_iso anchor → the "
+                                         "edgedisk-slot question)"})
         if name == "bulge":
             if q < BULGE_Q_HARD_MIN:
                 checks.append({"severity": "hard", "check": "shape_prior",

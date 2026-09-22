@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset decision candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sample_id",
+    "dataset_id",
+    "object_id",
+    "mode",
+    "state_round_id",
+    "post_action_round_id",
+    "source_components",
+    "expert_final_components",
+    "current_fit_health",
+    "historical_action_raw",
+    "canonical_action",
+    "evidence_refs",
+    "terminal_consistency",
+    "review_status",
+    "evaluation_pool"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "evaluation-decision-candidate@v1"
+    },
+    "sample_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "object_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "enum": [
+        "single_band",
+        "multi_band"
+      ]
+    },
+    "state_round_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "post_action_round_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_components": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expert_final_components": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "current_fit_health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fit_converged",
+        "bic",
+        "reduced_chisq",
+        "residual_flags",
+        "parameter_flags",
+        "constraint_flags",
+        "data_quality_flags"
+      ],
+      "properties": {
+        "fit_converged": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "bic": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reduced_chisq": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "residual_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameter_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "constraint_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "data_quality_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "historical_action_raw": {
+      "type": "string"
+    },
+    "canonical_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_type"
+      ],
+      "properties": {
+        "action_type": {
+          "enum": [
+            "PROPOSE_ADD",
+            "PROPOSE_REMOVE",
+            "PROPOSE_REPLACE",
+            "PROMOTE_SINGLE_SERSIC_TO_DISK",
+            "REFIT_PARAMETERS",
+            "CONVERGED",
+            "COMPOUND"
+          ]
+        },
+        "component": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replace_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replace_to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parameter_changes": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "atomic_actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action_type"
+            ],
+            "properties": {
+              "action_type": {
+                "enum": [
+                  "PROPOSE_ADD",
+                  "PROPOSE_REMOVE",
+                  "PROPOSE_REPLACE",
+                  "PROMOTE_SINGLE_SERSIC_TO_DISK"
+                ]
+              },
+              "component": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "replace_from": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "replace_to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "compound_reason": {
+          "enum": [
+            "NO_INTERMEDIATE_ROUND",
+            "UNMAPPABLE_ATOMIC_CHANGE"
+          ]
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "terminal_consistency": {
+      "enum": [
+        "match",
+        "mismatch",
+        "unresolved"
+      ]
+    },
+    "review_status": {
+      "enum": [
+        "pending",
+        "adjudicated",
+        "excluded"
+      ]
+    },
+    "evaluation_pool": {
+      "enum": [
+        "benchmark",
+        "audit",
+        "excluded"
+      ]
+    },
+    "historical_best_round_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

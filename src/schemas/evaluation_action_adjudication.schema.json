@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset action adjudication",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sample_id",
+    "canonical_action",
+    "action_verdict",
+    "confidence",
+    "verdict_reason_codes",
+    "evidence_refs",
+    "review_status",
+    "evaluation_pool"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "evaluation-action-adjudication@v1"
+    },
+    "sample_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonical_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_type"
+      ],
+      "properties": {
+        "action_type": {
+          "enum": [
+            "PROPOSE_ADD",
+            "PROPOSE_REMOVE",
+            "PROPOSE_REPLACE",
+            "PROMOTE_SINGLE_SERSIC_TO_DISK",
+            "REFIT_PARAMETERS",
+            "CONVERGED",
+            "COMPOUND"
+          ]
+        },
+        "component": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replace_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replace_to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "atomic_actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action_type"
+            ],
+            "properties": {
+              "action_type": {
+                "enum": [
+                  "PROPOSE_ADD",
+                  "PROPOSE_REMOVE",
+                  "PROPOSE_REPLACE",
+                  "PROMOTE_SINGLE_SERSIC_TO_DISK"
+                ]
+              },
+              "component": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "replace_from": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "replace_to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "compound_reason": {
+          "enum": [
+            "NO_INTERMEDIATE_ROUND",
+            "UNMAPPABLE_ATOMIC_CHANGE"
+          ]
+        }
+      }
+    },
+    "action_verdict": {
+      "enum": [
+        "CORRECT",
+        "EXPLORATORY",
+        "HARMFUL",
+        "INCONCLUSIVE"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "verdict_reason_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "review_status": {
+      "enum": [
+        "pending",
+        "adjudicated",
+        "excluded"
+      ]
+    },
+    "evaluation_pool": {
+      "enum": [
+        "benchmark",
+        "audit",
+        "excluded"
+      ]
+    },
+    "adjudicator_note": {
+      "type": "string"
+    }
+  }
+}

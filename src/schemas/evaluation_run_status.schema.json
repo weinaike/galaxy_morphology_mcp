@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset run status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "status"],
+  "properties": {
+    "schema_version": {"const": "evaluation-run-status@v1"},
+    "run_id": {"type": "string"},
+    "status": {"enum": ["INITIALIZED", "INVENTORY_RUNNING", "INVENTORY_READY", "PILOT_SELECTION_REVIEW_REQUIRED", "PILOT_RUNNING", "PILOT_REVIEW_REQUIRED", "PILOT_APPROVED", "FULL_PREPARING", "FULL_REVIEW_REQUIRED", "FREEZING", "FROZEN", "FAILED"]},
+    "object_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "exclusion_count": {"type": "integer", "minimum": 0}
+  }
+}

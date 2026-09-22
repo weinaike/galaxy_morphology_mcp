@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset state manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "sample_id", "mode", "object_id", "state_round_id", "input_cutoff", "source_refs", "history_context"],
+  "properties": {
+    "schema_version": {"const": "evaluation-state-manifest@v1"},
+    "sample_id": {"type": "string", "minLength": 1},
+    "mode": {"enum": ["single_band", "multi_band"]},
+    "object_id": {"type": "string", "minLength": 1},
+    "state_round_id": {"type": "string", "minLength": 1},
+    "input_cutoff": {"type": "string", "minLength": 1},
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "role", "size_bytes", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "role": {"type": "string", "minLength": 1},
+          "size_bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "history_context": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["round_id", "action"], "properties": {"round_id": {"type": "string"}, "action": {"type": "string"}}}}
+  }
+}

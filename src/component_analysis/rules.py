@@ -91,13 +91,36 @@ def _trace(
     inputs: Iterable[str] = (),
     unmet: Iterable[str] = (),
     detail: str | None = None,
+    blocking: bool | None = None,
+    collector_id: str | None = None,
+    evidence_targets: Iterable[str] = (),
+    expected_new_fingerprint: str | None = None,
 ) -> dict[str, Any]:
+    is_blocking = outcome == "INCONCLUSIVE" if blocking is None else blocking
+    targets = list(evidence_targets)
+    if outcome == "INCONCLUSIVE" and not targets:
+        targets = list(inputs) or ["fit_convergence_summary", "residual_profile"]
+    has_declared_vlm_gap = (
+        "VLM" in (detail or "").upper()
+        or any("VLM" in value.upper() for value in unmet)
+        or rule_id == "VLM_UNAVAILABLE_V1"
+    )
     return {
         "rule_id": rule_id,
         "outcome": outcome,
         "inputs": list(inputs),
         "unmet_conditions": list(unmet),
         "detail": detail,
+        "blocking": is_blocking,
+        "collector_id": (
+            collector_id
+            if collector_id is not None
+            else "refresh_numeric_and_vlm_evidence"
+            if outcome == "INCONCLUSIVE" and has_declared_vlm_gap
+            else None
+        ),
+        "evidence_targets": targets,
+        "expected_new_fingerprint": expected_new_fingerprint,
     }
 
 
@@ -112,18 +135,22 @@ def _complete_action(
     completed = dict(action)
     action_type = completed.get("action_type")
     last_rule = traces[-1].get("rule_id", "decision") if traces else "decision"
-    if action_type == "KEEP_AND_CONTINUE":
+    if action_type == "COLLECT_EVIDENCE":
         completed.setdefault(
             "continuation_reason",
             f"Rule evaluation {last_rule} requires another evidence-changing round.",
         )
         completed.setdefault("next_step", "Collect the missing fit or residual evidence and re-analyze.")
         completed.setdefault("next_transition", "COLLECT_EVIDENCE")
-        completed.setdefault("collector_id", "refresh_numeric_and_vlm_evidence")
+        completed.setdefault(
+            "collector_id", "refresh_numeric_and_vlm_evidence"
+        )
         completed.setdefault(
             "evidence_targets",
             ["fit_convergence_summary", "residual_profile", "parameter_health"],
         )
+        completed.setdefault("expected_input_change", "new evidence artifact")
+        completed.setdefault("expected_new_fingerprint", "unavailable")
     if action_type == "PROPOSE_REPLACE":
         completed.setdefault("target_model_label", completed.get("replace_from"))
     if action_type == "CONVERGED":
@@ -266,7 +293,7 @@ def _disk_rule(
         ),
     )
     if n1 and not n2 and not n3 and n_unbound and n_value >= thresholds.spheroid_n_min:
-        return {"action_type": "KEEP_AND_CONTINUE"}, _trace(
+        return None, _trace(
             "SPHEROID_SINGLE_SERSIC_V1",
             "SATISFIED",
             inputs=("source_extent_psf_ratio", "single_sersic_n"),
@@ -858,7 +885,11 @@ def _termination_checks(
             }
         )
 
-    inconclusive = any(item.get("outcome") == "INCONCLUSIVE" for item in traces)
+    inconclusive = any(
+        item.get("outcome") == "INCONCLUSIVE"
+        and item.get("blocking", True)
+        for item in traces
+    )
     checks.append(
         {
             "check_id": "RULES_COMPLETE",
@@ -883,7 +914,11 @@ def _select_candidates(
         return None, []
     ordered = sorted(
         enumerate(candidates),
-        key=lambda item: (item[1]["priority"], item[0]),
+        key=lambda item: (
+            item[1]["priority"],
+            1 if item[1]["action"].get("action_type") == "INCONCLUSIVE" else 0,
+            item[0],
+        ),
     )
     selected_index = ordered[0][0]
     result = []
@@ -992,7 +1027,9 @@ def decide_proposal(
         }
     ]
     inconclusive = any(
-        item.get("outcome") == "INCONCLUSIVE" for item in traces
+        item.get("outcome") == "INCONCLUSIVE"
+        and item.get("blocking", True)
+        for item in traces
     )
     selected, candidate_artifact = _select_candidates(candidates)
     if selected is None:
@@ -1012,17 +1049,7 @@ def decide_proposal(
             selected = {"action_type": "INCONCLUSIVE"}
             candidate_artifact = []
         else:
-            selected = {
-                "action_type": "KEEP_AND_CONTINUE",
-                "continuation_reason": "No structural candidate is actionable, but termination gates are not complete.",
-                "next_step": "Collect the missing fit, constraint or residual evidence and re-analyze.",
-                "next_transition": "COLLECT_EVIDENCE",
-                "evidence_targets": [
-                    "fit_convergence_summary",
-                    "residual_profile",
-                    "parameter_health",
-                ],
-            }
+            selected = None
             candidate_artifact = []
     else:
         checks = _termination_checks(
@@ -1042,7 +1069,9 @@ def decide_proposal(
         thresholds=thresholds,
         workflow_status=(
             "CONVERGED"
-            if selected.get("action_type") == "CONVERGED"
+            if selected and selected.get("action_type") == "CONVERGED"
+            else "STOPPED_NEEDS_REVIEW"
+            if selected is None
             else "STOPPED_NEEDS_REVIEW"
             if selected.get("action_type") == "INCONCLUSIVE"
             else "CONTINUE"

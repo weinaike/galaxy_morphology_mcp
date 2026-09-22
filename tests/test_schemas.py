@@ -230,6 +230,19 @@ def test_all_schemas_load_and_are_valid_draft202012():
         "workflow_fit_artifact": "workflow-fit-artifact@v1",
         "verifier_assessment": "verifier-assessment@v1",
         "workflow_verifier": "workflow-verifier@v1",
+        "evaluation_run_config": "evaluation-run-config@v1",
+        "evaluation_source_inventory": "evaluation-source-inventory@v1",
+        "evaluation_pilot_selection": "evaluation-pilot-selection@v1",
+        "evaluation_pilot_selection_proposal": "evaluation-pilot-selection-proposal@v1",
+        "evaluation_run_status": "evaluation-run-status@v1",
+        "evaluation_decision_candidate": "evaluation-decision-candidate@v1",
+        "evaluation_state_manifest": "evaluation-state-manifest@v1",
+        "evaluation_action_prelabel": "evaluation-action-prelabel@v1",
+        "evaluation_action_adjudication": "evaluation-action-adjudication@v1",
+        "evaluation_set_manifest": "evaluation-set-manifest@v1",
+        "evaluation_pilot_approval": "evaluation-pilot-approval@v1",
+        "evaluation_coverage_matrix": "evaluation-coverage-matrix@v1",
+        "evaluation_source_exclusion": "evaluation-source-exclusion@v1",
     }
     for name in SCHEMA_NAMES:
         schema = load_schema(name)
@@ -533,9 +546,13 @@ def _v11_decision(action, *, workflow_status="CONTINUE", state="PROPOSE", raw_ac
 
 def test_v11_action_specific_contracts_pass():
     validate(_v11_decision({
-        "action_type": "KEEP_AND_CONTINUE",
+        "action_type": "COLLECT_EVIDENCE",
         "continuation_reason": "missing evidence",
-        "next_step": "collect another fit",
+        "next_step": "collect another evidence view",
+        "next_transition": "COLLECT_EVIDENCE",
+        "collector_id": "refresh_numeric_and_vlm_evidence",
+        "evidence_targets": ["residual_profile"],
+        "expected_new_fingerprint": "new:fingerprint",
     }), "decision_artifact")
     validate(_v11_decision(None, workflow_status="STOPPED_NEEDS_REVIEW"), "decision_artifact")
     validate(_v11_decision({
@@ -561,7 +578,7 @@ def test_v11_action_specific_requirements_are_enforced():
     bad = _v11_decision({"action_type": "REFIT_PARAMETERS", "parameter_changes": []})
     with pytest.raises(jsonschema.ValidationError):
         validate(bad, "decision_artifact")
-    bad = _v11_decision({"action_type": "KEEP_AND_CONTINUE"})
+    bad = _v11_decision({"action_type": "COLLECT_EVIDENCE"})
     with pytest.raises(jsonschema.ValidationError):
         validate(bad, "decision_artifact")
 

@@ -243,10 +243,10 @@ def test_shadow_runner_preserves_raw_controlled_vlm_response(tmp_path):
         vlm_callback=callback,
         current_components={"disk"},
     )
-    assert result["vlm_error"] is None
+    assert result["vlm_error"]
     assert result["vlm_evidence"]["model_id"] == "test-vlm"
     assert (output_dir / "vlm_response.raw.json").read_text() == raw
-    assert result["vlm_evidence"]["parse_status"] == "OK"
+    assert result["vlm_evidence"]["parse_status"] == "PARTIAL"
 
 
 def test_shadow_runner_retries_malformed_json_once_and_preserves_attempts(tmp_path):
@@ -263,7 +263,7 @@ def test_shadow_runner_retries_malformed_json_once_and_preserves_attempts(tmp_pa
         "parse_status": "OK",
         "observations": [],
     })
-    responses = iter(["{ malformed", valid])
+    responses = iter(["{ malformed", valid, valid])
     calls = []
 
     def callback(image_path, prompt):
@@ -277,13 +277,12 @@ def test_shadow_runner_retries_malformed_json_once_and_preserves_attempts(tmp_pa
         vlm_callback=callback,
         current_components={"disk"},
     )
-
-    assert len(calls) == 2
-    assert result["vlm_evidence"]["parse_status"] == "OK"
+    assert len(calls) == 3
+    assert result["vlm_evidence"]["parse_status"] == "PARSE_FAILED"
     attempts = json.loads(
         (output_dir / "vlm_response.attempts.json").read_text(encoding="utf-8")
     )["attempts"]
-    assert [item["parse_status"] for item in attempts] == ["PARSE_FAILED", "OK"]
+    assert [item["parse_status"] for item in attempts] == ["PARSE_FAILED", "OK", "OK"]
     assert attempts[0]["raw_response"] == "{ malformed"
     assert (output_dir / "policy_state.json").is_file()
 
@@ -310,14 +309,14 @@ def test_shadow_runner_uses_numeric_fallback_after_two_parse_failures(tmp_path):
         current_components={"disk"},
     )
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert result["vlm_evidence"]["parse_status"] == "PARSE_FAILED"
     assert result["decision_artifact"]["automation"]["resolution"] == "numeric_only_retry"
     assert result["decision_artifact"]["raw_decision"]["action"]["action_type"] == "REFIT_PARAMETERS"
     attempts = json.loads(
         (output_dir / "vlm_response.attempts.json").read_text(encoding="utf-8")
     )["attempts"]
-    assert [item["attempt"] for item in attempts] == [1, 2]
+    assert [item["attempt"] for item in attempts] == [1, 2, 3]
     assert all(item["raw_response"] == "{ malformed" for item in attempts)
 
 

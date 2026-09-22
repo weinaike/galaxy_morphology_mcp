@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset pilot approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "approval_id", "pilot_run_id", "status", "approved_by", "approved_at", "design_sha256", "source_inventory_sha256", "adjudication_rule_version"],
+  "properties": {
+    "schema_version": {"const": "evaluation-pilot-approval@v1"},
+    "approval_id": {"type": "string", "minLength": 1},
+    "pilot_run_id": {"type": "string", "minLength": 1},
+    "status": {"const": "PILOT_APPROVED"},
+    "approved_by": {"type": "string", "minLength": 1},
+    "approved_at": {"type": "string", "minLength": 1},
+    "design_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_inventory_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "adjudication_rule_version": {"const": "component-evalset-v2"}
+  }
+}

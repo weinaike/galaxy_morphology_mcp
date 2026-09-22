@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset pilot selection proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "target_object_count", "selection_policy", "required_review", "objects"],
+  "properties": {
+    "schema_version": {"const": "evaluation-pilot-selection-proposal@v1"},
+    "status": {"const": "PROPOSAL_REQUIRES_USER_CONFIRMATION"},
+    "target_object_count": {"type": "integer", "minimum": 0},
+    "selection_policy": {"type": "string"},
+    "required_review": {"type": "array", "items": {"type": "string"}},
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode", "object_id", "batches", "selection_reason", "coverage_tags", "expected_validation_boundary", "confirmation_status"],
+        "properties": {
+          "mode": {"enum": ["single_band", "multi_band"]},
+          "object_id": {"type": "string"},
+          "batches": {"type": "array", "items": {"type": "string"}},
+          "selection_reason": {"type": "string"},
+          "coverage_tags": {"type": "array", "items": {"type": "string"}},
+          "expected_validation_boundary": {"type": "array", "items": {"type": "string"}},
+          "confirmation_status": {"const": "PENDING_USER_CONFIRMATION"}
+        }
+      }
+    }
+  }
+}

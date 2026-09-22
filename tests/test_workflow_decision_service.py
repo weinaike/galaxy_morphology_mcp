@@ -160,12 +160,12 @@ def test_formal_service_retries_vlm_once_and_preserves_raw_response(tmp_path):
         vlm_callback=callback,
     )
 
-    assert proposal["provider"]["status"] == "USED"
+    assert proposal["provider"]["status"] == "PARSE_FAILED"
     assert len(proposal["provider"]["attempts"]) == 2
     assert prompts[0] != prompts[1]
     assert proposal["provider"]["attempts"][0]["finish_reason"] == "unavailable"
-    assert proposal["provider"]["prompt_version"] == "component-analysis-vlm@v1.3"
-    assert proposal["provider"]["attempts"][0]["prompt_version"] == "component-analysis-vlm@v1.3"
+    assert proposal["provider"]["prompt_version"] == "component-analysis-vlm@v2.0"
+    assert proposal["provider"]["attempts"][0]["prompt_version"] == "component-analysis-vlm@v2.0"
     attempts = json.loads(
         (tmp_path / "vlm" / "vlm_response.attempts.json").read_text()
     )["attempts"]

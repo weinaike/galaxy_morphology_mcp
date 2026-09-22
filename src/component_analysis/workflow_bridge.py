@@ -38,6 +38,7 @@ _ACTION_TYPES = {
     "PROPOSE_REMOVE",
     "PROMOTE_SINGLE_SERSIC_TO_DISK",
     "REFIT_PARAMETERS",
+    "COLLECT_EVIDENCE",
     "KEEP_AND_CONTINUE",
     "CONVERGED",
 }
@@ -451,10 +452,12 @@ def preflight_action(
             "should_fit": False,
             "action_summary": summary,
         }
-    if action_type in {"INCONCLUSIVE", "KEEP_AND_CONTINUE", "CONVERGED"}:
+    if action_type in {"INCONCLUSIVE", "COLLECT_EVIDENCE", "KEEP_AND_CONTINUE", "CONVERGED"}:
         next_transition = (
             "VERIFY_BEST_ROUND"
             if action_type == "CONVERGED"
+            else "COLLECT_EVIDENCE"
+            if action_type == "COLLECT_EVIDENCE"
             else "REVIEW"
         )
         return {
@@ -1668,7 +1671,7 @@ def apply_action_to_config(
     action = preflight["action"]
     source_config = str(workflow_manifest["config_file"])
     config_path = str(Path(target_config).expanduser().resolve())
-    if action["action_type"] in {"KEEP_AND_CONTINUE", "CONVERGED"}:
+    if action["action_type"] in {"COLLECT_EVIDENCE", "KEEP_AND_CONTINUE", "CONVERGED"}:
         config_path = source_config
         constraint_files: list[str] = []
     else:
@@ -1730,7 +1733,7 @@ def apply_action_to_config(
     preflight["config_file"] = config_path
     preflight["constraint_files"] = constraint_files
     preflight["mcp_call"] = call
-    preflight["action_summary"]["config_written"] = action["action_type"] not in {"KEEP_AND_CONTINUE", "CONVERGED"}
+    preflight["action_summary"]["config_written"] = action["action_type"] not in {"COLLECT_EVIDENCE", "KEEP_AND_CONTINUE", "CONVERGED"}
     return preflight
 
 
@@ -1831,7 +1834,19 @@ def _action_summary(
         ),
     }
     if existing:
-        summary.update(dict(existing))
+        for key in (
+            "raw_action_type",
+            "resolved_action_type",
+            "candidate_action_types",
+            "executed_action_type",
+            "refit_verdict",
+            "fallback",
+            "needs_review",
+            "config_written",
+            "action_validated",
+        ):
+            if key in existing:
+                summary[key] = copy.deepcopy(existing[key])
     action_type = (
         resolved_action.get("action_type")
         if isinstance(resolved_action, Mapping)
@@ -2023,6 +2038,8 @@ def evaluate_workflow_refit(
     state_file: str | Path | None = None,
     decision_ref: str | None = None,
     config_ref: str | None = None,
+    evidence_fingerprint: str = "",
+    baseline_config_checksum: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one completed candidate and persist its object-level state."""
     decision = evaluate_refit_with_policy(
@@ -2033,6 +2050,8 @@ def evaluate_workflow_refit(
         candidate_action_type=candidate_action_type,
         candidate_reason_code=candidate_reason_code,
         evidence_refs=dict(evidence_refs or {}),
+        evidence_fingerprint=evidence_fingerprint,
+        baseline_config_checksum=baseline_config_checksum,
     )
     validate(decision, "decision_artifact")
     raw_decision = _raw_decision_only(decision)
@@ -2099,6 +2118,8 @@ def complete_workflow_candidate(
         candidate_action_type=candidate_action_type,
         candidate_reason_code=candidate_reason_code,
         evidence_refs=refs,
+        evidence_fingerprint=str(refs.get("evidence_fingerprint", "")),
+        baseline_config_checksum=refs.get("baseline_config_checksum"),
     )
     validate(decision, "decision_artifact")
     raw_decision = _raw_decision_only(decision)

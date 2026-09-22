@@ -277,7 +277,7 @@ class _FakeMCPClient:
                 "manifest_ref": manifest["config_file"],
                 "numeric_evidence": {},
                 "vlm_evidence": {},
-                "evidence_fingerprint": "fixture",
+                "evidence_fingerprint": f"fixture-{manifest['round_id']}",
                 "rule_decision": {},
                 "raw_decision": {},
                 "candidate_actions": [],
@@ -401,9 +401,13 @@ def _fake_decision(object_id, action_type, **action_fields):
         action["parameter_changes"] = [{"target_model_label": "obj0", "parameter": "n", "operation": "FIX_VALUE", "value": 1.0}]
     if action_type == "PROPOSE_REMOVE":
         action.setdefault("target_model_label", "obj0")
-    if action_type == "KEEP_AND_CONTINUE":
+    if action_type == "COLLECT_EVIDENCE":
         action.setdefault("continuation_reason", "collect more evidence")
-        action.setdefault("next_step", "analyze next image round")
+        action.setdefault("next_step", "analyze changed evidence")
+        action.setdefault("next_transition", "COLLECT_EVIDENCE")
+        action.setdefault("collector_id", "refresh_numeric_and_vlm_evidence")
+        action.setdefault("evidence_targets", ["residual_profile"])
+        action.setdefault("expected_new_fingerprint", "new:fingerprint")
     if action_type == "CONVERGED":
         action["termination_checks"] = [{"check_id": "check", "status": "PASS"}] * 7
 
@@ -468,7 +472,7 @@ def test_coordinator_consumes_resolved_action_and_runs_handoff(tmp_path):
     assert all(item["baseline"]["config_file"] for item in index["rounds"])
 
 
-def test_keep_and_continue_advances_to_next_image_round(tmp_path):
+def test_collect_evidence_advances_to_next_image_round(tmp_path):
     from tools.workflow_batch_runner import WorkflowBatchCoordinator
 
     root = tmp_path / "batch"
@@ -478,7 +482,7 @@ def test_keep_and_continue_advances_to_next_image_round(tmp_path):
     write_batch_manifest(manifest)
     fake = _FakeMCPClient(
         [
-            _fake_decision("obj1", "KEEP_AND_CONTINUE"),
+            _fake_decision("obj1", "COLLECT_EVIDENCE"),
             _fake_decision("obj1", "CONVERGED"),
         ]
     )

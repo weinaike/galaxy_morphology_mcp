@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset source exclusion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "object_id", "batch", "path", "reason_code"],
+  "properties": {
+    "schema_version": {"const": "evaluation-source-exclusion@v1"},
+    "mode": {"enum": ["single_band", "multi_band"]},
+    "object_id": {"type": "string"},
+    "batch": {"type": "string"},
+    "path": {"type": "string"},
+    "reason_code": {"enum": ["NO_CONFIRMED_EXPERT_LABEL", "NO_IMAGE_ROUND_CONFIGURATION"]}
+  }
+}

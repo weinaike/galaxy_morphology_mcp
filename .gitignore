@@ -105,6 +105,8 @@ docs/patent/
 .claude/worktrees/
 .superpowers/
 
+artifacts/component-analysis-evalset/
+
 gadotti_data/
 logs/
 output/

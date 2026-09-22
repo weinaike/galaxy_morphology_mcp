@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset source inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "design_sha256", "adjudication_rule_version", "hash_policy", "datasets"],
+  "properties": {
+    "schema_version": {"const": "evaluation-source-inventory@v1"},
+    "run_id": {"type": "string"},
+    "design_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "adjudication_rule_version": {"const": "component-evalset-v2"},
+    "hash_policy": {"type": "object", "additionalProperties": false, "required": ["max_bytes", "oversized_files"], "properties": {"max_bytes": {"type": "integer", "minimum": 1}, "oversized_files": {"type": "string"}}},
+    "datasets": {
+      "type": "array", "minItems": 2,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["mode", "root", "label_source", "label_count", "batch_count", "object_instance_count", "eligible_object_instance_count", "excluded_object_instance_count", "image_round_count", "role_counts", "scope_counts", "objects"],
+        "properties": {
+          "mode": {"enum": ["single_band", "multi_band"]},
+          "root": {"type": "string", "minLength": 1},
+          "label_source": {"type": "string", "minLength": 1},
+          "label_count": {"type": "integer", "minimum": 0},
+          "batch_count": {"type": "integer", "minimum": 0},
+          "object_instance_count": {"type": "integer", "minimum": 0},
+          "eligible_object_instance_count": {"type": "integer", "minimum": 0},
+          "excluded_object_instance_count": {"type": "integer", "minimum": 0},
+          "image_round_count": {"type": "integer", "minimum": 0},
+          "role_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+          "scope_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+          "objects": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["object_id", "original_object_name", "batch", "path", "eligible", "label", "file_count", "role_counts", "image_round_count", "files"],
+              "properties": {
+                "object_id": {"type": "string"},
+                "original_object_name": {"type": "string"},
+                "batch": {"type": "string"},
+                "path": {"type": "string"},
+                "eligible": {"type": "boolean"},
+                "label": {"type": ["object", "null"], "additionalProperties": true},
+                "file_count": {"type": "integer", "minimum": 0},
+                "role_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+                "image_round_count": {"type": "integer", "minimum": 0},
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["path", "role", "scope", "size_bytes", "mtime_ns", "sha256", "hash_status"],
+                    "properties": {
+                      "path": {"type": "string"},
+                      "role": {"type": "string"},
+                      "scope": {"enum": ["image", "sed"]},
+                      "size_bytes": {"type": ["integer", "null"], "minimum": 0},
+                      "mtime_ns": {"type": ["integer", "null"], "minimum": 0},
+                      "sha256": {"type": ["string", "null"]},
+                      "hash_status": {"enum": ["hashed", "skipped_size_limit", "unreadable"]}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

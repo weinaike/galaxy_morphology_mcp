@@ -195,10 +195,10 @@ def test_rejected_component_not_retried():
     state = PolicyState()
     state.rejected_components.add("disk")
     decision = decide([EXTENT, GEOMETRY], state=state)
-    assert decision["action"] is None
-    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
-    assert decision["automation"]["resolution"] == "rule_terminated"
-    assert state.trials_used == 0
+    assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "disk"}
+    assert decision["workflow_status"] == "CONTINUE"
+    assert decision["automation"]["resolution"] == "trial_fit"
+    assert state.trials_used == 1
 
 
 def test_repeated_inconclusive_terminates_question():

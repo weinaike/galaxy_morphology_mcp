@@ -50,14 +50,22 @@ def test_openai_compatible_callback_sends_inline_image_and_json_mode(tmp_path):
     )
 
     assert callback(str(image), "return JSON") == '{"parse_status":"OK"}'
-    assert callback.last_response_metadata == {
+    assert {
+        key: callback.last_response_metadata[key]
+        for key in ("response_bytes", "finish_reason", "token_usage")
+    } == {
         "response_bytes": len('{"parse_status":"OK"}'.encode("utf-8")),
         "finish_reason": "stop",
         "token_usage": {"prompt_tokens": 4, "completion_tokens": 3},
     }
+    assert callback.last_response_metadata["model_id"] == "gemini-test"
+    assert callback.last_response_metadata["prompt_version"] == "component-analysis-vlm@v2.0"
+    assert callback.last_response_metadata["started_at"]
+    assert callback.last_response_metadata["ended_at"]
     request = client.chat.completions.kwargs
     assert request["model"] == "gemini-test"
     assert request["temperature"] == 0
+    assert request["max_tokens"] >= 4096
     assert request["response_format"] == {"type": "json_object"}
     content = request["messages"][0]["content"]
     assert content[0] == {"type": "text", "text": "return JSON"}

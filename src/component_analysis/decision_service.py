@@ -76,12 +76,12 @@ def _run_vlm(
     callback: VLMCallback | None,
     timing_ref_path: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str | None]:
-    """Collect bounded VLM evidence without repeating an identical request.
+    """Collect sparse VLM evidence with explicit target coverage accounting.
 
-    Numeric candidate regions are sent in small batches. A failed batch is
-    retried with a smaller target set and a different prompt variant. Any
-    malformed batch makes the aggregate evidence PARSE_FAILED; observations
-    from that batch are never partially consumed by Rules.
+    A successful JSON response is not sufficient for a batch to be complete:
+    every requested target must either produce an observation or be retried
+    individually with a changed prompt variant. The aggregate is OK only when
+    all targets are covered; otherwise it is PARTIAL or fail-closed.
     """
     all_targets = allowed_target_ids(numeric)
     batches = [
@@ -115,6 +115,12 @@ def _run_vlm(
             "attempts": attempts,
             "raw_response": raw_response,
             "error": error,
+            "coverage": {
+                "requested": list(all_targets),
+                "covered": [],
+                "missing": list(all_targets),
+                "complete": False,
+            },
         }, prompt
 
     if callback is None:
@@ -129,16 +135,17 @@ def _run_vlm(
         return vlm, provider, prompt
 
     merged_observations: list[dict[str, Any]] = []
-    aggregate_status = "OK"
+    covered_targets: set[str] = set()
+    failed_targets: set[str] = set()
+    last_status = "PARSE_FAILED"
     last_prompt = ""
     for batch_index, batch in enumerate(batches):
-        batch_ok = False
-        for retry in (0, 1):
-            requested = tuple(batch) if retry == 0 else (tuple(batch[:1]) or ("central",))
+        requested = tuple(batch)
+        for retry, retry_targets in enumerate((requested,)):
             prompt = build_vlm_prompt(
                 round_id=round_id,
                 numeric_evidence=numeric,
-                target_ids=requested,
+                target_ids=retry_targets,
                 retry_variant=retry,
             )
             last_prompt = prompt
@@ -156,12 +163,14 @@ def _run_vlm(
                     round_id=round_id,
                     numeric_evidence=numeric,
                     model_id=model_id,
-                    allowed_targets=set(requested),
+                    allowed_targets=set(retry_targets),
                 )
                 parse_status = vlm["parse_status"]
-                if parse_status == "OK":
+                if parse_status in {"OK", "PARTIAL"}:
                     merged_observations.extend(vlm["observations"])
-                    batch_ok = True
+                    covered_targets.update(
+                        observation["target_id"] for observation in vlm["observations"]
+                    )
             except TimeoutError:
                 parse_status = "TIMEOUT"
                 error = "VLM callback timed out"
@@ -189,10 +198,10 @@ def _run_vlm(
             ended = datetime.now(timezone.utc)
             attempt_record = {
                 "attempt": attempt_number,
-                "model_id": model_id,
-                "prompt_version": PROMPT_VERSION,
+                "model_id": metadata.get("model_id", model_id),
+                "prompt_version": metadata.get("prompt_version", PROMPT_VERSION),
                 "batch": batch_index,
-                "target_ids": list(requested),
+                "target_ids": list(retry_targets),
                 "retry_variant": retry,
                 "parse_status": parse_status,
                 "error": error,
@@ -200,9 +209,11 @@ def _run_vlm(
                 "response_bytes": metadata.get("response_bytes", "unavailable"),
                 "finish_reason": metadata.get("finish_reason", "unavailable"),
                 "token_usage": metadata.get("token_usage", "unavailable"),
-                "started_at": attempt_started.isoformat(),
-                "ended_at": ended.isoformat(),
-                "duration_s": round(time.perf_counter() - attempt_clock, 6),
+                "started_at": metadata.get("started_at", attempt_started.isoformat()),
+                "ended_at": metadata.get("ended_at", ended.isoformat()),
+                "duration_s": metadata.get(
+                    "duration_s", round(time.perf_counter() - attempt_clock, 6)
+                ),
             }
             attempts.append(attempt_record)
             timing_attempts.append({
@@ -213,31 +224,122 @@ def _run_vlm(
                     "token_usage", "started_at", "ended_at", "duration_s",
                 )
             })
-            if batch_ok:
-                break
-            errors.append(error or f"batch {batch_index} parse failed")
-        if not batch_ok:
-            aggregate_status = "TIMEOUT" if attempts[-1]["parse_status"] == "TIMEOUT" else "PARSE_FAILED"
-            break
+            last_status = parse_status
+            if error:
+                errors.append(error)
 
-    if aggregate_status == "OK":
-        unique: dict[tuple[str, str], dict[str, Any]] = {}
-        for observation in merged_observations:
-            unique[(observation["target_id"], observation["label"])] = observation
-        vlm = {
-            "schema_version": "1.0",
-            "round_id": round_id,
-            "prompt_version": PROMPT_VERSION,
-            "model_id": model_id,
-            "parse_status": "OK",
-            "observations": list(unique.values()),
-        }
-        status = "USED"
+        missing = [target for target in requested if target not in covered_targets]
+        for retry_index, target in enumerate(missing, start=1):
+            retry_variant = batch_index + retry_index
+            retry_targets = (target,)
+            prompt = build_vlm_prompt(
+                round_id=round_id,
+                numeric_evidence=numeric,
+                target_ids=retry_targets,
+                retry_variant=retry_variant,
+            )
+            last_prompt = prompt
+            attempt_number = len(attempts) + 1
+            attempt_started = datetime.now(timezone.utc)
+            attempt_clock = time.perf_counter()
+            metadata: dict[str, Any] = {}
+            parse_status = "PARSE_FAILED"
+            error = None
+            response_for_attempt: str | None = None
+            try:
+                response_for_attempt = callback(image, prompt)
+                raw_response = response_for_attempt
+                metadata = dict(getattr(callback, "last_response_metadata", {}) or {})
+                vlm, error = parse_vlm_response(
+                    response_for_attempt,
+                    round_id=round_id,
+                    numeric_evidence=numeric,
+                    model_id=model_id,
+                    allowed_targets={target},
+                )
+                parse_status = vlm["parse_status"]
+                if parse_status in {"OK", "PARTIAL"}:
+                    merged_observations.extend(vlm["observations"])
+                    covered_targets.update(
+                        observation["target_id"] for observation in vlm["observations"]
+                    )
+            except TimeoutError:
+                parse_status = "TIMEOUT"
+                error = "VLM callback timed out"
+            except PermissionError:
+                parse_status = "REFUSED"
+                error = "VLM callback was refused"
+            except ValueError as exc:
+                parse_status = "PARSE_FAILED"
+                error = f"VLM callback returned invalid content: {exc}"
+            except Exception as exc:
+                parse_status = "REFUSED"
+                error = f"VLM provider error: {type(exc).__name__}: {exc}"
+            ended = datetime.now(timezone.utc)
+            retry_record = {
+                "attempt": attempt_number,
+                "model_id": metadata.get("model_id", model_id),
+                "prompt_version": metadata.get("prompt_version", PROMPT_VERSION),
+                "batch": batch_index,
+                "target_ids": [target],
+                "retry_variant": retry_variant,
+                "parse_status": parse_status,
+                "error": error,
+                "raw_response": response_for_attempt,
+                "response_bytes": metadata.get("response_bytes", "unavailable"),
+                "finish_reason": metadata.get("finish_reason", "unavailable"),
+                "token_usage": metadata.get("token_usage", "unavailable"),
+                "started_at": metadata.get("started_at", attempt_started.isoformat()),
+                "ended_at": metadata.get("ended_at", ended.isoformat()),
+                "duration_s": metadata.get(
+                    "duration_s", round(time.perf_counter() - attempt_clock, 6)
+                ),
+            }
+            attempts.append(retry_record)
+            timing_attempts.append(
+                {
+                    key: retry_record[key]
+                    for key in (
+                        "attempt", "model_id", "prompt_version", "batch",
+                        "target_ids", "retry_variant", "parse_status",
+                        "response_bytes", "finish_reason", "token_usage",
+                        "started_at", "ended_at", "duration_s",
+                    )
+                }
+            )
+            last_status = parse_status
+            if error:
+                errors.append(error)
+        failed_targets.update(
+            target for target in requested if target not in covered_targets
+        )
+
+    unique: dict[tuple[str, str], dict[str, Any]] = {}
+    for observation in merged_observations:
+        unique[(observation["target_id"], observation["label"])] = observation
+    if not failed_targets and covered_targets >= set(all_targets):
+        aggregate_status = "OK"
+        status = "OK"
+    elif unique:
+        aggregate_status = "PARTIAL"
+        status = "PARTIAL"
     else:
-        vlm = make_unavailable_vlm_evidence(
-            round_id=round_id, status=aggregate_status, model_id=model_id
+        aggregate_status = (
+            last_status
+            if last_status in {"TIMEOUT", "REFUSED", "PARSE_FAILED"}
+            else "PARSE_FAILED"
         )
         status = aggregate_status
+    vlm = {
+        "schema_version": "1.0",
+        "round_id": round_id,
+        "prompt_version": PROMPT_VERSION,
+        "model_id": model_id,
+        "parse_status": aggregate_status,
+        "observations": list(unique.values()),
+    }
+    covered = sorted(covered_targets)
+    missing = sorted(set(all_targets) - covered_targets)
     timing = {
         "schema_version": "workflow-vlm-timing@v1",
         "round_id": round_id,
@@ -264,6 +366,12 @@ def _run_vlm(
             "response_bytes": attempts[-1].get("response_bytes", "unavailable") if attempts else "unavailable",
             "finish_reason": attempts[-1].get("finish_reason", "unavailable") if attempts else "unavailable",
             "token_usage": attempts[-1].get("token_usage", "unavailable") if attempts else "unavailable",
+            "coverage": {
+                "requested": list(all_targets),
+                "covered": covered,
+                "missing": missing,
+                "complete": not missing,
+            },
         },
         last_prompt or build_vlm_prompt(
             round_id=round_id,
@@ -459,8 +567,10 @@ def _next_transition(decision: Mapping[str, Any], *, fit_available: bool) -> str
         return "VERIFY_BEST_ROUND"
     if status == "STOPPED_NEEDS_REVIEW":
         return "REPORT_AND_HANDOFF" if fit_available else "FAILED_NEEDS_REVIEW"
-    if action_type == "KEEP_AND_CONTINUE":
+    if action_type == "COLLECT_EVIDENCE":
         return "COLLECT_EVIDENCE"
+    if action_type == "KEEP_AND_CONTINUE":
+        return "REPORT_AND_HANDOFF"
     return "REVIEW"
 
 

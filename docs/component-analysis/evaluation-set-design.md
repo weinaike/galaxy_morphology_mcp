@@ -1,7 +1,8 @@
 # 成分分析评测集设计（v1）
 
-> 更新日期：2026-09-09。
-> 状态：数据源完成首轮只读盘点，评测集尚未抽取。
+> 更新日期：2026-09-14。
+> 状态：数据源完成首轮只读盘点；micro-pilot 已抽取并人工审阅，正式评测集尚未抽取。
+> `adjudication_rule_version`：`component-evalset-v2`（2026-09-14 升版：冻结 `PROMOTE`／`REPLACE` 分界、多波段未分类单 Sersic 记名 `unclassified_sersic`、复合转换按参数块血缘指派原子动作；2026-09-15 增补：`edge_on_disk` 终态对象与无中间状态复合动作均不进核心集、归 audit 池；单波段 `single_sersic -> disk(expdisk)` 原位转换为 `PROMOTE`；Gadotti 标签读法按 `MType` 规则执行；2026-09-16 增补：单波段 sersic 拟合 `n≈0.5`（固定或自由）识别为 `bar`，其余多成分 sersic 记 `bulge`；`PROMOTE` 的动作类型判定不依赖专家标签——elliptical 对象的 `single_sersic→expdisk` 同样记 `PROMOTE_SINGLE_SERSIC_TO_DISK`，其正确与否由动作裁决判定；复合动作中 `PROMOTE+ADD(一个成分)` 与 `REPLACE(single_sersic→某成分)+ADD(一个成分)` 两类两原子模式可进入核心集；2026-09-18 增补（小鱼儿 S8 QC 裁定）：①单波段成分语义标签来源扩展——`0) model # ... (Label)` 行内括号标签与 `# Object number: N -- Label` 段头、`# STRUCTURE` 注释同等优先；②单波段无标签多成分 Sersic，`n≈1.0`（容差 0.01）且 `vary=0` 记 `disk`（Sersic-disk），其余非 `n≈0.5` 记 `bulge`；③多波段 N 块（AGN）记 `agn`，非宿主 G 块属下的 P 块记 `companion`；④多波段泛化标签（`objN`）按「当轮决策文件 `objN→语义` 映射＋实例内 P 字母语义锚点＋`n≈0.5`／`n≈1.0` 固定启发式」恢复语义，无法恢复的块记状态标记 `unidentified_sersic`，涉及该标记结构变化的转换标 `INCONCLUSIVE` 归排除集；⑤多波段决策文件（`all_bands_comparison_component_analysis_*.md`）与单波段决策文件同为动作意图证据源，适用于动作核验与裁决；⑥CONVERGED 裁决不以 1D/2D 残差视觉核验为判据，终止证据＝历史最佳轮指定＋专家成分一致＋拟合健康（视觉核验升级通道保留，需要时可再加）；2026-09-20 增补（小鱼儿 label-rule-samples 审阅裁定）：⑦多波段 lyric 块前注释（如 `# Sersic function — Bulge (obj0)`、`# Component A: Bulge (Sersic, n free)`、`# Profile C - Nucleus (obj2)`）是泛化标签块的第一语义来源，优先于决策文件锚点／实例字母锚点／n 启发式；注释明写 AGN 才记 `agn`，注释 Nucleus/致密核的 P 块 Sersic 一律记 `bulge`（P 块 Sersic 拟合的核不是 AGN）；⑧轮次输入完整性门：多波段轮目录须含至少一个拟合产物（result FITS 或 gssummary）且 lyric 引用的全部科学图像存在；单波段配置 `A)` 行引用的输入图像须存在——不满足的轮次视为不可用拟合轮，不参与任何转换对与 CONVERGED 候选（reason code `NO_FIT_PRODUCT`／`SCIENCE_INPUT_MISSING`／`INPUT_IMAGE_MISSING`）；2026-09-20 第二批裁定：⑨benchmark 语义去重——同一 `(mode, object_id, source_components, canonical_action)` 决策点在冻结集内只保留证据最完整的一条（CONVERGED 以 `(mode, object_id, best-round components, CONVERGED)` 为键，同时覆盖镜像批次副本），其余记 `SEMANTIC_DUPLICATE` 归 audit——跨批次对同一星系的重复历史演示（拟合数值略异、内容指纹不合并）不得重复计入核心集；⑩非泛化、非语义标签的 sersic 块废除 bulge 残留回退，改记 `unidentified_sersic`（同泛化不可恢复处理）；2026-09-21 增补（小鱼儿方案 A 裁定）：⑪单波段无标签 Sersic 的 disk 判定增加尺寸判据——同轮存在 ≥2 个无标签 Sersic 时，其中距星系成分质心 ≤10 px 且 Re 最大者若 n≈1.0（±0.01，不论固定或自由）记 `disk`（其余块按 n 判：0.5→bar、其余→bulge，非最大块的固定 n=1.0 不再记 disk）；仅一个无标签块时维持「固定 n≈1.0→disk」；远心块不参与盘判定。背景量化：有标签块中固定 n≈1.0 的 bulge(294)/disk(84)、自由 n≈1.0 的 bulge(155)/disk(156)，n 值本身不能区分，须以尺寸＋位置辅助；此前为 `component-evalset-v1`）。
 
 ---
 
@@ -56,6 +57,7 @@ v1 范围限定为 Image 拟合阶段的单步决策评测，包含实际转换�
 - README 统计自动拟合约有 10 个批次、约 322 个对象目录。
 - 当前标签中的硬成分包括 `disk`、`bulge`、`bar`、`nucleus`、`fourier` 和 `elliptical`；5 个 `companion?` 是不确定标签，不作为 v1 硬标签。
 - 单波段 JWST F277W 中，`elliptical` 共 4 个：`obj1845`、`obj216`、`obj2185`、`obj2758`。它表示椭圆星系，canonical component 固定记为 `single_sersic`，对应使用 Sersic 模型的单成分拟合；它不能与使用 `expdisk` 模型的 `disk` 合并。`nucleus -> agn`、`fourier -> fourier_m1` 按当前项目语义规范化。
+- Gadotti 专家标签读法（2026-09-15 裁定）：`gadotti-json*/` 的 `<sample>_Gadotti_params.json` 中，`MType` 为 `elliptical` 且 `mag_bulge` 有数值 → 标签为 `single_sersic`（`mag_bulge` 描述单成分而非分解中的 bulge）；`MType` 非 `elliptical` → 依有数值的 `mag_xxx` 字段确定成分（`mag_disk`→`disk`、`mag_bulge`→`bulge`、`mag_bar`→`bar`，mag=0 表示缺失）。
 
 #### 单波段证据限制
 
@@ -161,7 +163,15 @@ v1 的单步决策样本预测目标与当前结构化 workflow action contract 
 
 `ACCEPT_REFIT` 和 `REJECT_REFIT` 属于候选拟合完成后的 refit comparator 输出，不与 proposal 阶段的主评测混为一个任务。以后可以单独建立 refit 仲裁子评测集。
 
-评测 canonical component 名称使用：`disk`、`single_sersic`、`bulge`、`edge_on_disk`、`bar`、`agn`、`fourier_m1`、`companion`、`compact_central_source_candidate` 和 `lens`。其中 `single_sersic` 仅用于单波段椭圆星系的 Sersic 单成分语义；`PROMOTE_SINGLE_SERSIC_TO_DISK` 只适用于未分类 single Sersic 向 `disk` 的原位确认，不能用于把 `elliptical` 标签改写成 `disk`。某数据源没有对应专家语义时，不得自行猜测映射。
+评测 canonical component 名称使用：`disk`、`single_sersic`、`bulge`、`edge_on_disk`、`bar`、`agn`、`fourier_m1`、`companion`、`compact_central_source_candidate`、`lens`，以及仅作状态标记的 `unclassified_sersic` 与 `unidentified_sersic`（2026-09-18 增补：多波段泛化标签经锚点与启发式仍无法恢复语义的块）。其中 `single_sersic` 仅用于单波段椭圆星系的 Sersic 单成分语义；多波段首轮未标注的单 Sersic 一律记为 `unclassified_sersic`，不得记为 `single_sersic`。`PROMOTE_SINGLE_SERSIC_TO_DISK` 只适用于未分类 single Sersic（`unclassified_sersic`）向 `disk` 的原位确认，不能用于把 `elliptical` 标签改写成 `disk`。某数据源没有对应专家语义时，不得自行猜测映射。
+
+`PROMOTE` 与 `PROPOSE_REPLACE` 的分界（`component-evalset-v2` 起冻结）：
+
+- `PROMOTE_SINGLE_SERSIC_TO_DISK` 仅适用于**未分类** single Sersic 向 `disk` 的原位确认；确认 Disk 后固定 `n=1` 是该动作的规范组成部分，不另计为独立的参数动作。
+- `PROPOSE_REPLACE(from, to)` 适用于**已有语义分类**的成分更换语义或 profile，`from` 与 `to` 必须一对一：既包括 profile 类型替换（如 `sersic -> ferrer`、`sersic -> edgeondisk`），也包括同 profile 下的语义改标（如单波段 `single_sersic -> bulge`：Sersic 模型不变，语义标签改变并伴随 `n` 固定）。
+- 未分类成分（`unclassified_sersic`）没有「被裁定的物理语义」，因此不存在语义错误，不得作为 `PROPOSE_REPLACE` 的 `from`；它只能被 `PROMOTE` 确认为 `disk`。未分类成分在血缘上变为非 `disk` 成分（如直接成为 `bulge`）的原子变化无法映射为现有动作，所在转换保留复合候选并标记 `INCONCLUSIVE`。
+- 单波段扩展（2026-09-15 裁定，2026-09-16 修订）：单波长轮次中未分解单 Sersic 向 `disk` 的原位转换（Sersic→expdisk，参数块血缘上原成分成为盘）一律计为 `PROMOTE_SINGLE_SERSIC_TO_DISK`——单波段确认 Disk 后即使用 expdisk 模型，模型切换是确认动作的组成部分。**动作类型判定不依赖专家标签**：elliptical 对象（专家终态 `single_sersic`）上的同类转换同样记 `PROMOTE`，其方向是否与专家语义冲突由动作裁决（verdict）表达，不改变动作类型。
+- 单波段成分细分（2026-09-16 裁定）：GALFIT 单波段输出中 bar 与 bulge 同为 Sersic profile，以拟合 Sérsic 指数区分——`n≈0.5`（固定或自由，容差 0.01）记 `bar`，其余多成分 Sersic 记 `bulge`；单一无标注 Sersic 仍记 `single_sersic`。
 
 ---
 
@@ -277,7 +287,7 @@ delta_d = d_i - d_j
 | `PROPOSE_REPLACE` | 被替换成分语义错误，目标成分属于专家终态；替换后结构距离下降且拟合健康 |
 | `PROMOTE_SINGLE_SERSIC_TO_DISK` | 当前确为未分类 single Sersic；专家终态包含 Disk；原位提升后没有生成第二个 Disk，拟合有效且参数物理合理 |
 | `REFIT_PARAMETERS` | 当前存在明确的参数／约束问题；动作直接针对该问题；下一轮相应问题消失或减轻，且没有引入更严重问题 |
-| `CONVERGED` | 当前轮等于历史报告选定的 `historical_best_round_id`，且 `C_i == G`、拟合有效、无明确参数病态、1D／2D 残差无显著系统结构；否则不能标为正确的 `CONVERGED` |
+| `CONVERGED` | 当前轮等于历史报告选定的 `historical_best_round_id`，且 `C_i == G`、拟合有效、无明确参数病态（2026-09-18 小鱼儿裁定：1D/2D 残差视觉核验不作为裁决判据，终止证据＝最佳轮指定＋专家成分一致＋拟合健康；视觉核验升级通道保留）；否则不能标为正确的 `CONVERGED` |
 
 对于当前项目仍处于 review-only 的真实删除动作，只有具备实际前后轮 A/B 结果时才可进入核心评测集；仅有自然语言“建议删除”不足以形成金标准。
 
@@ -402,7 +412,7 @@ v1 核心评测集只纳入 `CORRECT + high`。`medium` 和 `low` 保留供后�
 
 ### 9.1 数据分层
 
-1. **核心评测集**：历史决策中 `action_verdict=CORRECT` 且 `confidence=high`，具有唯一 canonical action 或已验证的 `accepted_action_set`；`CONVERGED` 还必须有专家终态一致和完整终止证据。
+1. **核心评测集**：历史决策中 `action_verdict=CORRECT` 且 `confidence=high`，具有唯一 canonical action 或已验证的 `accepted_action_set`；`CONVERGED` 还必须有专家终态一致和完整终止证据。专家终态为 `edge_on_disk` 的对象（2026-09-15 裁定）不进入核心评测集，其转换样本归入 audit 池。复合动作默认归 audit 池，但两类模式（2026-09-16 小鱼儿裁定）视为合理单轮组合、可进入核心集：`PROMOTE_SINGLE_SERSIC_TO_DISK + PROPOSE_ADD(一个成分)` 与 `PROPOSE_REPLACE(single_sersic -> 某成分) + PROPOSE_ADD(一个成分)`——修改一个成分的参数并同轮新增一个成分是合理的历史操作形态；其余复合（多于两个原子、含 REMOVE、或 REPLACE 的 from 不是 single_sersic）仍归 audit。
 2. **非核心审计池**：`EXPLORATORY`、`HARMFUL` 以及未达到核心门槛但仍有完整产物的记录。它只用于错误类型、安全性和历史轨迹覆盖分析，不参与主指标，也不用于训练或调参。
 3. **待补证／排除集**：`INCONCLUSIVE`、证据不完整、复合动作无法拆分或语义映射未裁定；这些记录不作为被测模块的输入／输出样本。
 
@@ -454,7 +464,7 @@ v1 核心评测集只纳入 `CORRECT + high`。`medium` 和 `low` 保留供后�
 
 1. 对普通转换依据明确时间、轮次配置引用和报告记录建立 `parent_round_id -> post_action_round_id`；对 `CONVERGED` 记录历史报告选定的 `historical_best_round_id`。
 2. 解析前后配置，恢复成分、参数和约束差异。
-3. 对包含多个动作的转换检查下一轮及后续轮次：有中间配置／拟合结果时拆分为单动作候选；只有文字顺序、没有中间状态时保留复合候选并排除核心集。
+3. 对包含多个动作的转换检查下一轮及后续轮次：有中间配置／拟合结果时拆分为单动作候选；只有文字顺序、没有中间状态时保留复合候选并排除核心集。复合转换的原子动作按参数块血缘（成分块位置与初值连续性）指派：原成分原位变为 `disk` 且前一轮为 `unclassified_sersic` 记 `PROMOTE_SINGLE_SERSIC_TO_DISK`；原已分类成分语义改标（如 `single_sersic -> bulge`）记 `PROPOSE_REPLACE`；新增成分块记 `PROPOSE_ADD`。原未分类成分变为非 `disk` 成分、或血缘无法唯一追踪的原子变化标记 `INCONCLUSIVE`，该转换保留为复合候选。
 4. 生成 `sample_fingerprint`，至少覆盖 observation mode、规范化对象、当前轮配置、当前结果、动作后配置（如有）和动作差异。
 5. 跨同日期目录、镜像目录和 `_2` 变体去重；保留证据更完整的 canonical source，其他路径作为 aliases。
 6. 无法唯一确定父子轮次或动作的记录标记 `INCONCLUSIVE`。

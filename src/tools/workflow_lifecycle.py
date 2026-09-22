@@ -360,6 +360,8 @@ def workflow_evaluate_refit(
     decision_ref: str | None = None,
     object_id: str | None = None,
     config_ref: str | None = None,
+    evidence_fingerprint: str = "",
+    baseline_config_checksum: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate a completed refit and persist the updated object state."""
     state = load_policy_state(state_file, object_id=object_id)
@@ -374,6 +376,8 @@ def workflow_evaluate_refit(
         state_file=state_file,
         decision_ref=decision_ref,
         config_ref=config_ref,
+        evidence_fingerprint=evidence_fingerprint,
+        baseline_config_checksum=baseline_config_checksum,
     )
 
 

@@ -151,6 +151,27 @@
               "null"
             ],
             "maxLength": 1000
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "collector_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence_targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected_new_fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }
@@ -169,7 +190,7 @@
             "PROPOSE_REMOVE",
             "PROMOTE_SINGLE_SERSIC_TO_DISK",
             "REFIT_PARAMETERS",
-            "KEEP_AND_CONTINUE",
+            "COLLECT_EVIDENCE",
             "CONVERGED",
             "INCONCLUSIVE",
             "ACCEPT_REFIT",
@@ -267,6 +288,25 @@
             "string",
             "null"
           ]
+        },
+        "expected_input_change": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_new_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_attempts": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
         }
       },
       "allOf": [
@@ -359,14 +399,18 @@
           "if": {
             "properties": {
               "action_type": {
-                "const": "KEEP_AND_CONTINUE"
+                "const": "COLLECT_EVIDENCE"
               }
             }
           },
           "then": {
             "required": [
               "continuation_reason",
-              "next_step"
+              "next_step",
+              "next_transition",
+              "collector_id",
+              "evidence_targets",
+              "expected_new_fingerprint"
             ]
           }
         },
@@ -555,6 +599,18 @@
             "string",
             "null"
           ]
+        },
+        "evidence_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseline_config_checksum": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -581,6 +637,8 @@
             "conservative_keep",
             "reject_fallback",
             "numeric_only_retry",
+            "collect_evidence",
+            "candidate_queue",
             "rule_terminated"
           ]
         },

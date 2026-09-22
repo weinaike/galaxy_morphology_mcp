@@ -171,6 +171,8 @@
       "properties": {
         "status": {
           "enum": [
+            "OK",
+            "PARTIAL",
             "USED",
             "REFUSED",
             "TIMEOUT",
@@ -224,6 +226,18 @@
           ]
         },
         "token_usage": {}
+        ,
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requested", "covered", "missing", "complete"],
+          "properties": {
+            "requested": {"type": "array", "items": {"type": "string"}},
+            "covered": {"type": "array", "items": {"type": "string"}},
+            "missing": {"type": "array", "items": {"type": "string"}},
+            "complete": {"type": "boolean"}
+          }
+        }
       }
     }
   }

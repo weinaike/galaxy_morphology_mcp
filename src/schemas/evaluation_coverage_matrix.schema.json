@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset coverage matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "eligible_object_instances_by_component", "notes"],
+  "properties": {
+    "schema_version": {"const": "evaluation-coverage-matrix@v1"},
+    "eligible_object_instances_by_component": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "notes": {"type": "array", "items": {"type": "string"}}
+  }
+}

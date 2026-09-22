@@ -12,7 +12,7 @@
     "model_id": {"type": ["string", "null"], "description": "VLM model identifier and version"},
     "prompt_version": {"type": ["string", "null"]},
     "parse_status": {
-      "enum": ["OK", "PARSE_FAILED", "TIMEOUT", "REFUSED"],
+      "enum": ["OK", "PARTIAL", "PARSE_FAILED", "TIMEOUT", "REFUSED"],
       "description": "Anything other than OK must be treated as INCONCLUSIVE by layer 3; observations must then be empty"
     },
     "observations": {
@@ -59,6 +59,6 @@
       }
     }
   },
-  "if": {"properties": {"parse_status": {"const": "OK"}}},
+  "if": {"properties": {"parse_status": {"enum": ["OK", "PARTIAL"]}}},
   "else": {"properties": {"observations": {"maxItems": 0}}}
 }

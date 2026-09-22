@@ -344,7 +344,8 @@ def test_legacy_spheroid_label_does_not_create_vlm_disk_conflict():
 def test_spheroid_kept_as_single_sersic():
     sersic = feat("n", "single_sersic_n", {"n": 4.0, "at_boundary": False})
     decision = decide([EXTENT, sersic])
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
     assert any(item["rule_id"] == "SPHEROID_SINGLE_SERSIC_V1" for item in decision["rule_trace"])
 
 # ---------------------------------------------------------------------------
@@ -401,7 +402,8 @@ def test_bar_band_failing_quality_gate_cannot_trigger():
         components={"disk"},
         band_quality=[{"band": "f200w", "passed": False}],
     )
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 def test_bar_unknown_psf_veto_cannot_trigger_strong_evidence():
@@ -411,7 +413,8 @@ def test_bar_unknown_psf_veto_cannot_trigger_strong_evidence():
         {**STRONG_BAR["value"], "psf_veto": None},
     )
     decision = decide([unknown_psf], [], components={"disk"})
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 def test_bar_weak_candidate_needs_numeric_and_vlm():
@@ -422,7 +425,8 @@ def test_bar_weak_candidate_needs_numeric_and_vlm():
     decision = decide(weak, [obs("bar_like")], components={"disk"})
     assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "bar"}
     decision = decide(weak, [], components={"disk"})
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +551,8 @@ def test_companion_without_original_match_not_proposed():
         [obs("independent_source", target_id="candidate_1")],
         components={"disk"},
     )
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 # ---------------------------------------------------------------------------
@@ -579,13 +584,15 @@ def test_lens_companion_conflict_inconclusive():
 
 def test_lens_not_proposed_without_bar():
     decision = decide([BAR_ANOMALY, EXTENDED_RESIDUAL], [], components={"disk"})
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 def test_lens_normal_bar_parameters_not_triggered():
     normal = feat("barpar", "bar_fit_parameters", {"re_bar_over_re_disk": 0.5, "q_bar": 0.3})
     decision = decide([normal, EXTENDED_RESIDUAL], [], components={"disk", "bar"})
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 # ---------------------------------------------------------------------------
@@ -623,7 +630,8 @@ def test_all_components_present_keeps_and_continues():
     decision = decide(
         [], [], components={"disk", "bulge", "bar", "fourier_m1", "companion"}
     )
-    assert decision["action"]["action_type"] == "KEEP_AND_CONTINUE"
+    assert decision["action"] is None
+    assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 # ---------------------------------------------------------------------------

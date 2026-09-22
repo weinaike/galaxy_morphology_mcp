@@ -166,3 +166,15 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 正式锁定最优轮次之前，必须调用共享逻辑工具 `workflow_verify_best_round`。它读取 workflow manifest、lifecycle、拟合产物和 component analysis 证据，生成 `workflow-verifier@v1` artifact；客户端只能提交 schema 约束的 `verifier_assessment`，不能直接提交 `PASS`。
 - verifier artifact 的 `verdict=PASS` 且 `lockable=true` 后，才能调用 `workflow_lock_best_round`，并且只能传入 verifier artifact 文件引用。
 - `FAIL` 或 `INCONCLUSIVE` 都禁止落锁；`STOPPED_NEEDS_REVIEW` 永远保持 `UNLOCKED`。Claude Code 的 `.claude/agents/best-round-verifier.md` 只是该共享 verifier 的调用包装层，不保留第二套判定逻辑。
+
+---
+
+## 成分分析评测集抽取（component-analysis-evalset）
+
+评测集抽取与单波段拟合指导相互独立，同时读取单／多波段两个历史数据根目录（`/media/data/galfit_run_history`、`/media/data/galfits_run_history`）。本节同样适用于 `CLAUDE.md` 入口的多波段会话。
+
+- 科学权威：`docs/component-analysis/evaluation-set-design.md`；实施权威：`docs/component-analysis/evaluation-set-skill-execution-plan.md`。
+- Skill 权威内容位于 `.agents/skills/component-analysis-evalset/`；Claude Code 薄入口位于 `.claude/skills/component-analysis-evalset/`，只引用同一份内容。
+- 唯一 CLI 入口：`/home/www/ENTER/envs/galfit/bin/python -m src.tools.component_evalset <mode>`，不得用临时脚本重写抽取逻辑。
+- 数据根目录严格只读；不执行 GALFIT／GalfitS，不修改专家标签，不删除历史文件。
+- `pilot` 完成后固定停在 `PILOT_REVIEW_REQUIRED` 等待小鱼儿确认；`full` 需要显式 schema-valid approval artifact，不得从自然语言确认推断已批准。

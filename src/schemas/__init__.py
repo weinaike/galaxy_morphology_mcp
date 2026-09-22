@@ -35,6 +35,20 @@ SCHEMA_NAMES = (
     "workflow_fit_artifact",
     "verifier_assessment",
     "workflow_verifier",
+    "evaluation_run_config",
+    "evaluation_source_inventory",
+    "evaluation_pilot_selection_proposal",
+    "evaluation_pilot_selection",
+    "evaluation_run_status",
+    "evaluation_decision_candidate",
+    "evaluation_state_manifest",
+    "evaluation_action_prelabel",
+    "evaluation_action_adjudication",
+    "evaluation_set_manifest",
+    "evaluation_set_sample",
+    "evaluation_pilot_approval",
+    "evaluation_coverage_matrix",
+    "evaluation_source_exclusion",
 )
 
 _cache: dict[str, dict] = {}
@@ -52,6 +66,20 @@ _SCHEMA_VERSIONS = {
     "workflow_fit_artifact": ("workflow-fit-artifact@v1",),
     "verifier_assessment": ("verifier-assessment@v1",),
     "workflow_verifier": ("workflow-verifier@v1",),
+    "evaluation_run_config": ("evaluation-run-config@v1",),
+    "evaluation_source_inventory": ("evaluation-source-inventory@v1",),
+    "evaluation_pilot_selection_proposal": ("evaluation-pilot-selection-proposal@v1",),
+    "evaluation_pilot_selection": ("evaluation-pilot-selection@v1",),
+    "evaluation_run_status": ("evaluation-run-status@v1",),
+    "evaluation_decision_candidate": ("evaluation-decision-candidate@v1",),
+    "evaluation_state_manifest": ("evaluation-state-manifest@v1",),
+    "evaluation_action_prelabel": ("evaluation-action-prelabel@v1",),
+    "evaluation_action_adjudication": ("evaluation-action-adjudication@v1",),
+    "evaluation_set_manifest": ("evaluation-set-manifest@v1",),
+    "evaluation_set_sample": ("evaluation-set-sample@v1",),
+    "evaluation_pilot_approval": ("evaluation-pilot-approval@v1",),
+    "evaluation_coverage_matrix": ("evaluation-coverage-matrix@v1",),
+    "evaluation_source_exclusion": ("evaluation-source-exclusion@v1",),
 }
 
 

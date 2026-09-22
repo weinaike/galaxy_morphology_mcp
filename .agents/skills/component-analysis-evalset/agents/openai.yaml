@@ -1,0 +1,4 @@
+interface:
+  display_name: "Component Analysis Evalset"
+  short_description: "Build and validate the galaxy component-analysis benchmark"
+  default_prompt: "Use $component-analysis-evalset to build a read-only pilot evaluation set from the approved historical archives."

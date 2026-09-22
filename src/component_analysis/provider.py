@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import mimetypes
 import os
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -53,6 +55,8 @@ class OpenAICompatibleVLM:
         if mime_type not in {"image/png", "image/jpeg", "image/webp"}:
             raise ValueError(f"unsupported comparison image type: {image_path.suffix}")
         encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        started_at = datetime.now(timezone.utc)
+        started_clock = time.perf_counter()
         try:
             response = self.client.chat.completions.create(
                 model=self.model_id,
@@ -71,10 +75,21 @@ class OpenAICompatibleVLM:
                     }
                 ],
                 temperature=0,
-                max_tokens=2048,
+                max_tokens=4096,
                 response_format={"type": "json_object"},
             )
         except Exception as exc:
+            self.last_response_metadata = {
+                "model_id": self.model_id,
+                "prompt_version": "component-analysis-vlm@v2.0",
+                "attempt": "unavailable",
+                "response_bytes": "unavailable",
+                "finish_reason": "unavailable",
+                "token_usage": "unavailable",
+                "started_at": started_at.isoformat(),
+                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "duration_s": round(time.perf_counter() - started_clock, 6),
+            }
             # Keep provider-specific SDK errors out of the shadow runner API.
             error_name = type(exc).__name__
             if error_name in {"APITimeoutError", "Timeout"}:
@@ -92,9 +107,15 @@ class OpenAICompatibleVLM:
             raise ValueError("VLM provider returned no message content") from exc
         if not isinstance(content, str) or not content.strip():
             self.last_response_metadata = {
+                "model_id": self.model_id,
+                "prompt_version": "component-analysis-vlm@v2.0",
+                "attempt": "unavailable",
                 "response_bytes": 0,
                 "finish_reason": "unavailable",
                 "token_usage": "unavailable",
+                "started_at": started_at.isoformat(),
+                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "duration_s": round(time.perf_counter() - started_clock, 6),
             }
             raise ValueError("VLM provider returned an empty message")
         usage = getattr(response, "usage", None)
@@ -110,8 +131,14 @@ class OpenAICompatibleVLM:
                 usage_value = str(usage)
         choice = response.choices[0]
         self.last_response_metadata = {
+            "model_id": self.model_id,
+            "prompt_version": "component-analysis-vlm@v2.0",
+            "attempt": "unavailable",
             "response_bytes": len(content.encode("utf-8")),
             "finish_reason": getattr(choice, "finish_reason", "unavailable"),
             "token_usage": usage_value,
+            "started_at": started_at.isoformat(),
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "duration_s": round(time.perf_counter() - started_clock, 6),
         }
         return content

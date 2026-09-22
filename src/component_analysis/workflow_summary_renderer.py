@@ -11,7 +11,7 @@ from jsonschema import ValidationError
 from schemas import validate
 
 
-RENDERER_VERSION = "workflow-summary-renderer@v1"
+RENDERER_VERSION = "workflow-summary-renderer@v2"
 
 
 def _read_validated(path: Path, schema: str) -> tuple[dict[str, Any] | None, str]:
@@ -28,11 +28,113 @@ def _read_validated(path: Path, schema: str) -> tuple[dict[str, Any] | None, str
     return value, "available"
 
 
+def _profile_lines(value: Any) -> list[str]:
+    """Render component semantics without serializing profile JSON."""
+    if not isinstance(value, list) or not value:
+        return ["- 当前 profile：unavailable"]
+    if all(isinstance(item, str) for item in value):
+        return [f"- 当前 profile：{json.dumps(value, ensure_ascii=False)}"]
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            lines.append(f"- {_value(item)}")
+            continue
+        label = item.get("semantic_label") or item.get("model_label") or item.get("component_id")
+        lines.append(
+            f"- {_value(label)}：model={_value(item.get('model_type'))}；"
+            f"classification={_value(item.get('classification'))}"
+        )
+    return lines or ["- 当前 profile：unavailable"]
+
+
+def _detection_lines(value: Mapping[str, Any] | None) -> list[str]:
+    if not isinstance(value, Mapping):
+        return ["- detect_bar_lopsidedness：unavailable"]
+    results = value.get("results")
+    if not isinstance(results, list):
+        return [f"- detect_bar_lopsidedness：status={_value(value.get('status'))}"]
+    lines = [f"- detect_bar_lopsidedness：status={_value(value.get('status'), fallback='success')}"]
+    for item in results:
+        if not isinstance(item, Mapping):
+            continue
+        band = _value(item.get("band"))
+        bar = item.get("bar") if isinstance(item.get("bar"), Mapping) else {}
+        lop = item.get("lopsidedness") if isinstance(item.get("lopsidedness"), Mapping) else {}
+        lines.append(
+            f"  - {band}：bar={_value(bar.get('detected'))}；"
+            f"lopsidedness={_value(lop.get('detected'))}"
+        )
+    return lines
+
+
+def _policy_state_lines(value: Any) -> list[str]:
+    if not isinstance(value, Mapping):
+        return ["- PolicyState：unavailable"]
+    rejected = value.get("rejected_candidate_keys")
+    collectors = value.get("evidence_collector_keys")
+    return [
+        f"- trial budget：{_value(value.get('trials_used'), fallback='未采集')}/"
+        f"{_value(value.get('trial_budget'), fallback='未采集')}",
+        f"- rejected candidate keys：{len(rejected) if isinstance(rejected, list) else '未采集'}",
+        f"- evidence collectors used：{len(collectors) if isinstance(collectors, list) else '未采集'}",
+        f"- last evidence fingerprint：{_value(value.get('last_evidence_fingerprint'), fallback='未采集')}",
+    ]
+
+
+def _timing_lines(timing: Any) -> list[str]:
+    if not isinstance(timing, Mapping):
+        return ["- timing：未采集"]
+    attempts = timing.get("attempts")
+    attempt_count = len(attempts) if isinstance(attempts, list) else "未采集"
+    return [
+        f"- timing：started={_value(timing.get('started_at'), fallback='未采集')}；"
+        f"ended={_value(timing.get('ended_at'), fallback='未采集')}；"
+        f"duration_s={_value(timing.get('duration_s'), fallback='未采集')}；"
+        f"attempts={attempt_count}",
+        f"- timing log：{_value(timing.get('timing_log_ref'), fallback='未采集')}",
+    ]
+
+
+def _error_summary(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return "unavailable"
+    parts = [part.strip() for part in value.split(";") if part.strip()]
+    if not parts:
+        return "unavailable"
+    counts: dict[str, int] = {}
+    for part in parts:
+        counts[part] = counts.get(part, 0) + 1
+    return "；".join(
+        f"{message}（{count}次）" if count > 1 else message
+        for message, count in sorted(counts.items())
+    )
+
+
+def _coverage_lines(provider: Mapping[str, Any]) -> list[str]:
+    coverage = provider.get("coverage")
+    if not isinstance(coverage, Mapping):
+        return ["- target coverage：unavailable"]
+    requested = coverage.get("requested") if isinstance(coverage.get("requested"), list) else []
+    covered = coverage.get("covered") if isinstance(coverage.get("covered"), list) else []
+    missing = coverage.get("missing") if isinstance(coverage.get("missing"), list) else []
+    return [
+        f"- target coverage：{len(covered)}/{len(requested)}；complete={_value(coverage.get('complete'))}",
+        f"- covered targets：{_value(covered, fallback='未采集')}",
+        f"- missing targets：{_value(missing, fallback='无')}",
+    ]
+
+
 def _value(value: Any, *, fallback: str = "unavailable") -> str:
     if value is None or value == "":
         return fallback
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if isinstance(value, dict):
+        parts = [
+            f"{key}={_value(item, fallback='未采集')}"
+            for key, item in value.items()
+        ]
+        return "；".join(parts) or fallback
+    if isinstance(value, list):
+        return "、".join(_value(item, fallback="未采集") for item in value) or fallback
     return str(value)
 
 
@@ -56,7 +158,18 @@ def _action_lines(decision: Mapping[str, Any] | None) -> list[str]:
             lines.append(f"- {key}：{_value(action.get(key))}")
     changes = action.get("parameter_changes")
     if isinstance(changes, list):
-        lines.append(f"- parameter_changes：{_value(changes)}")
+        lines.append("- parameter_changes：")
+        for change in changes:
+            if isinstance(change, Mapping):
+                lines.append(
+                    "  - "
+                    + "；".join(
+                        f"{key}={_value(value, fallback='未采集')}"
+                        for key, value in change.items()
+                    )
+                )
+            else:
+                lines.append(f"  - {_value(change)}")
     return lines
 
 
@@ -89,16 +202,24 @@ def _evidence_lines(
         features = evidence.get("features")
         if not isinstance(features, list):
             return ["- unavailable"]
-        return _bullet_lines([
-            f"{_value(item.get('name'))}：{_value(item.get('value'))}（{_value(item.get('status'))}）"
-            for item in features[:12]
-            if isinstance(item, Mapping)
-        ])
+        rows = []
+        for item in features:
+            if not isinstance(item, Mapping):
+                continue
+            scope = item.get("band") or item.get("target_id") or item.get("region")
+            scope_text = f"[{_value(scope)}]" if scope is not None else ""
+            rows.append(
+                f"{scope_text}{_value(item.get('name'))}：{_value(item.get('value'))}"
+                f"（{_value(item.get('status'))}）"
+            )
+        return _bullet_lines(rows[:24])
     observations = evidence.get("observations")
     if not isinstance(observations, list):
         return ["- unavailable"]
     return _bullet_lines([
-        f"{_value(item.get('target_id'))}：{_value(item.get('label'))}，confidence={_value(item.get('confidence'))}"
+        f"target={_value(item.get('target_id'))}：{_value(item.get('label'))}，confidence={_value(item.get('confidence'))}；"
+        f"证据定位={_value(item.get('evidence_regions'), fallback='未采集')}；"
+        f"备注={_value(item.get('notes'), fallback='未采集')}"
         for item in observations[:12]
         if isinstance(item, Mapping)
     ])
@@ -120,12 +241,13 @@ def _provider_lines(proposal: Mapping[str, Any] | None) -> list[str]:
         f"- provider status：{_value(provider.get('status'))}",
         f"- model：{_value(provider.get('model_id'), fallback='unavailable')}",
         f"- prompt_version：{_value(provider.get('prompt_version'), fallback='unavailable')}",
-        f"- attempts：{_value(attempt_statuses, fallback='未采集')}",
+        f"- attempts：{len(attempt_statuses)}；状态={_value(sorted(set(attempt_statuses)), fallback='未采集')}",
+        *_coverage_lines(provider),
         f"- response_bytes：{_value(provider.get('response_bytes'), fallback='unavailable')}",
         f"- finish_reason：{_value(provider.get('finish_reason'), fallback='unavailable')}",
         f"- token_usage：{_value(provider.get('token_usage'), fallback='unavailable')}",
-        f"- timing：{_value(timing_text, fallback='未采集')}",
-        f"- error：{_value(provider.get('error'), fallback='unavailable')}",
+        *_timing_lines(timing_text),
+        f"- error：{_error_summary(provider.get('error'))}",
     ]
 
 
@@ -192,11 +314,39 @@ def _evidence_view_lines(
         "action": decision.get("action", "unavailable"),
         "automation": decision.get("automation", "unavailable"),
     }
-    return [
-        f"- raw VLM decision view：{_value(_compact_evidence_view(views.get('vlm')), fallback='未采集')}",
-        f"- numeric-only decision view：{_value(_compact_evidence_view(views.get('numeric_only')), fallback='未采集')}",
-        f"- resolved decision view：{_value(resolved)}",
-    ]
+    lines: list[str] = []
+    for label, view in (
+        ("raw VLM", views.get("vlm")),
+        ("numeric-only", views.get("numeric_only")),
+    ):
+        compact = _compact_evidence_view(view)
+        if not compact:
+            lines.append(f"- {label} decision view：未采集")
+            continue
+        lines.extend(
+            [
+                f"- {label} parse_status：{_value(compact.get('parse_status'))}",
+                f"- {label} observations：{_value(compact.get('observations'), fallback='未采集')}",
+                f"- {label} candidate actions：{_value(compact.get('candidate_action_types'), fallback='未采集')}",
+            ]
+        )
+        traces = compact.get("rule_trace") or []
+        lines.append(f"- {label} rule conclusions：")
+        if traces:
+            lines.extend(
+                f"  - {item.get('rule_id')}：{item.get('outcome')}；未满足={_value(item.get('unmet_conditions'), fallback='无')}"
+                for item in traces
+            )
+        else:
+            lines.append("  - 未采集")
+    lines.extend(
+        [
+            f"- resolved workflow_status：{_value(resolved.get('workflow_status'))}",
+            f"- resolved action：{_value((resolved.get('action') or {}).get('action_type') if isinstance(resolved.get('action'), Mapping) else None)}",
+            f"- automation reason：{_value((resolved.get('automation') or {}).get('reason') if isinstance(resolved.get('automation'), Mapping) else None)}",
+        ]
+    )
+    return lines
 
 
 def _band_paths(
@@ -220,6 +370,29 @@ def _band_paths(
             )
         )
     return rows or [f"- {label}unavailable" if label else "- unavailable"]
+
+
+def _rule_lines(decision: Mapping[str, Any] | None) -> list[str]:
+    if not isinstance(decision, Mapping):
+        return ["- 未采集"]
+    traces = decision.get("rule_trace")
+    if not isinstance(traces, list) or not traces:
+        traces = (decision.get("raw_decision") or {}).get("rule_trace", [])
+    if not isinstance(traces, list) or not traces:
+        return ["- 未采集"]
+    lines: list[str] = []
+    for trace in traces:
+        if not isinstance(trace, Mapping):
+            continue
+        status = _value(trace.get("outcome"), fallback="未采集")
+        blocking = "blocking" if trace.get("blocking") is True else "non-blocking"
+        unmet = _value(trace.get("unmet_conditions"), fallback="无")
+        detail = _value(trace.get("detail"), fallback="未采集")
+        lines.append(
+            f"- {trace.get('rule_id', 'unavailable')}：{status}（{blocking}）；"
+            f"未满足={unmet}；说明={detail}"
+        )
+    return lines or ["- 未采集"]
 
 
 def _baseline_fit_lines(proposal: Mapping[str, Any] | None) -> list[str]:
@@ -250,7 +423,9 @@ def _round_conclusion(round_dir: Path) -> str:
     manifest, _ = _read_validated(round_dir / "workflow_manifest.json", "workflow_round_manifest")
     proposal, _ = _read_validated(round_dir / "proposal" / "workflow_proposal.json", "workflow_proposal")
     lifecycle, _ = _read_validated(round_dir / "lifecycle.json", "workflow_lifecycle")
+    terminal, _ = _read_validated(round_dir / "terminal_lifecycle.json", "workflow_lifecycle")
     candidate, _ = _read_validated(round_dir / "candidate_lifecycle.json", "workflow_lifecycle")
+    lifecycle = terminal or lifecycle
     if not manifest and not proposal and not lifecycle:
         return f"- `{round_dir.name}`：结构化 artifact unavailable"
     decision = lifecycle.get("resolved_decision") if lifecycle else None
@@ -259,11 +434,41 @@ def _round_conclusion(round_dir: Path) -> str:
     summary = (candidate or lifecycle or {}).get("action_summary", {})
     verdict = summary.get("refit_verdict") if isinstance(summary, Mapping) else None
     next_step = (lifecycle or {}).get("next_step")
-    return (
-        f"- `{(manifest or {}).get('round_id', round_dir.name)}`："
-        f"action={_value(action_type, fallback='unavailable')}；"
-        f"refit={_value(verdict, fallback='未采集')}；"
-        f"next={_value(next_step, fallback='unavailable')}"
+    workflow_status = (
+        decision.get("workflow_status")
+        if isinstance(decision, Mapping)
+        else "unavailable"
+    )
+    terminal_review = workflow_status == "STOPPED_NEEDS_REVIEW"
+    if terminal_review:
+        verdict = None
+    provider = proposal.get("provider") if isinstance(proposal, Mapping) else {}
+    provider_status = provider.get("status") if isinstance(provider, Mapping) else "unavailable"
+    rule_items = (
+        [
+            f"{item.get('rule_id')}={item.get('outcome')}"
+            for item in (decision or {}).get("rule_trace", [])
+            if isinstance(item, Mapping)
+        ]
+        if isinstance(decision, Mapping)
+        else []
+    )
+    executed = summary.get("executed_action_type") if isinstance(summary, Mapping) else None
+    if executed is None and isinstance(summary, Mapping):
+        executed = summary.get("executed")
+    action_text = "未执行模型动作" if terminal_review else (
+        executed or (action_type if action_type not in {"REJECT_REFIT", "ACCEPT_REFIT"} else "未执行模型动作")
+    )
+    return "\n".join(
+        [
+            f"- {(manifest or {}).get('round_id', round_dir.name)}："
+            f"workflow_status={_value(workflow_status)}；"
+            f"VLM={_value(provider_status)}；"
+            f"动作={_value(action_text)}；"
+            f"refit={_value(verdict, fallback='未采集')}；"
+            f"下一步={_value(next_step, fallback='unavailable')}",
+            f"  - 规则结论：{_value(rule_items, fallback='未采集')}",
+        ]
     )
 
 
@@ -300,6 +505,12 @@ def render_image_round(
     manifest, manifest_status = _read_validated(round_path / "workflow_manifest.json", "workflow_round_manifest")
     proposal, proposal_status = _read_validated(round_path / "proposal" / "workflow_proposal.json", "workflow_proposal")
     lifecycle, lifecycle_status = _read_validated(round_path / "lifecycle.json", "workflow_lifecycle")
+    terminal_lifecycle, terminal_status = _read_validated(
+        round_path / "terminal_lifecycle.json", "workflow_lifecycle"
+    )
+    if terminal_lifecycle is not None:
+        lifecycle = terminal_lifecycle
+        lifecycle_status = terminal_status
     candidate_lifecycle, candidate_lifecycle_status = _read_validated(
         round_path / "candidate_lifecycle.json", "workflow_lifecycle"
     )
@@ -321,6 +532,17 @@ def render_image_round(
         profile_value = (proposal or {}).get("current_components")
     confirmed_value = (proposal or {}).get("confirmed_components")
     detection = detect_result or (proposal or {}).get("round0_detection")
+    profile_lines = _profile_lines(profile_value)
+    candidate_exists = candidate_manifest is not None
+    executed_action = action_summary.get("executed_action_type") if isinstance(action_summary, Mapping) else None
+    if executed_action is None and isinstance(action_summary, Mapping):
+        executed_action = action_summary.get("executed")
+    if not candidate_exists:
+        fitting_conclusion = "- 本轮没有生成 candidate lyric，未执行新的 Image fitting。"
+    elif executed_action:
+        fitting_conclusion = f"- 本轮执行模型动作：{_value(executed_action)}。"
+    else:
+        fitting_conclusion = "- candidate 产物已记录；执行动作状态：未采集。"
     content = [
         f"# Image Round {round_id} Component Analysis",
         "",
@@ -334,12 +556,12 @@ def render_image_round(
         f"- historical_pre_fix：{_value((state or {}).get('historical_pre_fix'), fallback='unavailable')}",
         "",
         "## Round 0：原图成分预测",
-        f"- detect_bar_lopsidedness：{_value(detection, fallback='unavailable')}",
+        *_detection_lines(detection),
         f"- detected_features：{_value(_detected_features(detection), fallback='unavailable')}",
         f"- 高概率存在成分：{_value((proposal or {}).get('predicted_components'), fallback='unavailable')}",
         "",
         "## 当前模型与已确认成分",
-        f"- 当前 profile：{_value(profile_value, fallback='unavailable')}",
+        *profile_lines,
         f"- 已确认成分：{_value(confirmed_value, fallback='unavailable')}",
         "",
         "## Numeric Evidence",
@@ -354,6 +576,9 @@ def render_image_round(
             decision if isinstance(decision, Mapping) else None,
             proposal if isinstance(proposal, Mapping) else None,
         ),
+        "",
+        "## Rules 逐条结论",
+        *_rule_lines(decision if isinstance(decision, Mapping) else None),
         "",
         "## 动作决策",
         "### Raw Action",
@@ -377,6 +602,7 @@ def render_image_round(
         f"- artifact index：{_value((state or {}).get('artifact_index_file'), fallback='未采集')}",
         "",
         "## 拟合评价",
+        fitting_conclusion,
         "### baseline",
         *_baseline_fit_lines(proposal),
         "### candidate",
@@ -384,7 +610,7 @@ def render_image_round(
         f"- refit verdict：{_value((action_summary or {}).get('refit_verdict'), fallback='未采集')}",
         "",
         "## 状态与下一步",
-        f"- PolicyState：{_value((lifecycle or {}).get('policy_state'), fallback='unavailable')}",
+        *_policy_state_lines((lifecycle or {}).get("policy_state")),
         f"- needs_review：{_value((lifecycle or {}).get('needs_review'), fallback='unavailable')}",
         f"- next_transition：{_value((decision or {}).get('action', {}).get('next_transition') if isinstance(decision, Mapping) else None, fallback=_value((lifecycle or {}).get('next_step'), fallback='unavailable'))}",
         f"- verifier：{_value((verifier or {}).get('verdict'), fallback='未采集')}",
@@ -440,6 +666,11 @@ def render_final_report(
         f"- best round status：{_value(state.get('best_round_status'), fallback='UNLOCKED')}",
         f"- needs_review：{_value(state.get('needs_review'))}",
         f"- Image 停止原因：{_value(state.get('termination_reason'), fallback='unavailable')}",
+        "",
+        "## 工程闭环判定",
+        f"- Image 迭代执行链：{_value(state.get('image_iteration_status'), fallback=_value(state.get('status'), fallback='未采集'))}",
+        f"- 安全停止门：{_value(state.get('safe_stop_status'), fallback='未采集')}",
+        f"- 完整 workflow 闭环：{_value(state.get('full_workflow_closure'), fallback='NOT_PASSED')}",
         "",
         "## 逐轮总结",
         "- 见 `working_note.md` 与各 `round_*_component_analysis.md`。",

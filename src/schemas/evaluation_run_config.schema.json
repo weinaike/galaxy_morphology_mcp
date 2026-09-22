@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component evalset run configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "mode", "design_document", "design_sha256", "adjudication_rule_version", "single_band_root", "multi_band_root", "output_root"],
+  "properties": {
+    "schema_version": {"const": "evaluation-run-config@v1"},
+    "run_id": {"type": "string", "pattern": "^evalset-[0-9TZ]+$"},
+    "mode": {"enum": ["inventory", "pilot", "validate-pilot", "full"]},
+    "design_document": {"type": "string", "minLength": 1},
+    "design_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "adjudication_rule_version": {"const": "component-evalset-v2"},
+    "single_band_root": {"type": "string", "minLength": 1},
+    "multi_band_root": {"type": "string", "minLength": 1},
+    "output_root": {"type": "string", "minLength": 1},
+    "selection_manifest": {"type": ["string", "null"]},
+    "approval_artifact": {"type": ["string", "null"]}
+  }
+}

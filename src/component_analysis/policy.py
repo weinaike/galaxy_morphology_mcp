@@ -52,7 +52,9 @@ class PolicyState:
     trial_budget: int = DEFAULT_TRIAL_BUDGET
     trials_used: int = 0
     rejected_components: set[str] = field(default_factory=set)
+    rejected_candidate_keys: set[str] = field(default_factory=set)
     inconclusive_seen: dict[str, str] = field(default_factory=dict)
+    evidence_collector_keys: set[str] = field(default_factory=set)
     terminated_rules: set[str] = field(default_factory=set)
     object_id: str | None = None
     last_round_id: str | None = None
@@ -81,7 +83,9 @@ class PolicyState:
             "trial_budget": self.trial_budget,
             "trials_used": self.trials_used,
             "rejected_components": sorted(self.rejected_components),
+            "rejected_candidate_keys": sorted(self.rejected_candidate_keys),
             "inconclusive_seen": dict(sorted(self.inconclusive_seen.items())),
+            "evidence_collector_keys": sorted(self.evidence_collector_keys),
             "terminated_rules": sorted(self.terminated_rules),
             "last_round_id": self.last_round_id,
             "last_decision_ref": self.last_decision_ref,
@@ -110,7 +114,9 @@ class PolicyState:
             trial_budget=int(data.get("trial_budget", DEFAULT_TRIAL_BUDGET)),
             trials_used=int(data.get("trials_used", 0)),
             rejected_components=set(data.get("rejected_components", [])),
+            rejected_candidate_keys=set(data.get("rejected_candidate_keys", [])),
             inconclusive_seen=dict(data.get("inconclusive_seen", {})),
+            evidence_collector_keys=set(data.get("evidence_collector_keys", [])),
             terminated_rules=set(data.get("terminated_rules", [])),
             object_id=data.get("object_id"),
             last_round_id=data.get("last_round_id"),
@@ -276,14 +282,91 @@ def _conservative(decision: dict[str, Any], rule_id: str, reason: str) -> dict[s
     )
 
 
+def _candidate_key(
+    action: Mapping[str, Any],
+    *,
+    evidence_fingerprint: str,
+    baseline_config_checksum: str | None = None,
+) -> str:
+    payload = {
+        "action_type": action.get("action_type"),
+        "component": action.get("component"),
+        "target_model_label": action.get("target_model_label"),
+        "replace_from": action.get("replace_from"),
+        "replace_to": action.get("replace_to"),
+        "parameter_changes": action.get("parameter_changes", []),
+        "baseline_config_checksum": baseline_config_checksum,
+        "evidence_fingerprint": evidence_fingerprint,
+    }
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _collect_evidence_action(
+    decision: dict[str, Any],
+    *,
+    trace: Mapping[str, Any],
+    evidence_fingerprint: str,
+    state: PolicyState,
+) -> dict[str, Any]:
+    rule_id = str(trace.get("rule_id") or "unknown_rule")
+    collector_id = trace.get("collector_id")
+    targets = list(trace.get("evidence_targets") or [])
+    if not collector_id or not targets:
+        return _conservative(
+            decision,
+            rule_id,
+            "No schema-declared evidence collector or target was available.",
+        )
+    key = f"{collector_id}|{rule_id}|{evidence_fingerprint}|{','.join(targets)}"
+    if key in state.evidence_collector_keys:
+        return _conservative(
+            decision,
+            rule_id,
+            "The same evidence collector input and fingerprint were already used.",
+        )
+    state.evidence_collector_keys.add(key)
+    expected = trace.get("expected_new_fingerprint")
+    if not expected or expected == evidence_fingerprint:
+        expected = f"new:{rule_id}:{evidence_fingerprint[:16]}"
+    action = {
+        "action_type": "COLLECT_EVIDENCE",
+        "continuation_reason": (
+            f"Rule {rule_id} is inconclusive; collect a new evidence view before "
+            "considering model actions."
+        ),
+        "next_step": "Run the declared collector and re-evaluate the changed evidence.",
+        "next_transition": "COLLECT_EVIDENCE",
+        "collector_id": collector_id,
+        "evidence_targets": targets,
+        "expected_input_change": "collector input or evidence view must change",
+        "expected_new_fingerprint": expected,
+        "max_attempts": 1,
+    }
+    return _with_automation(
+        decision,
+        action=action,
+        resolution="collect_evidence",
+        original_action_type="INCONCLUSIVE",
+        resolved_rule_id=rule_id,
+        reason="Evidence collection is explicit and does not execute a model fit.",
+        workflow_status="CONTINUE",
+    )
+
+
 def apply_policy(
     decision: dict[str, Any],
     state: PolicyState,
     *,
     evidence_fingerprint: str = "",
     component: str | None = None,
+    baseline_config_checksum: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve an INCONCLUSIVE without hiding the rule-layer decision."""
+    """Resolve rule output through a deterministic candidate queue.
+
+    COLLECT_EVIDENCE is the only non-fit continuation. Structural candidates
+    remain executable actions; they are never globally blocked just because a
+    component name was rejected in a different baseline/evidence context.
+    """
 
     action = decision.get("action")
     action_type = action.get("action_type") if isinstance(action, dict) else None
@@ -293,6 +376,13 @@ def apply_policy(
             target = component or action.get("component")
             if target:
                 state.rejected_components.add(target)
+                state.rejected_candidate_keys.add(
+                    _candidate_key(
+                        action,
+                        evidence_fingerprint=evidence_fingerprint,
+                        baseline_config_checksum=baseline_config_checksum,
+                    )
+                )
             return decision
         if action_type != "INCONCLUSIVE":
             return decision
@@ -317,6 +407,35 @@ def apply_policy(
     if action_type != "INCONCLUSIVE":
         return decision
 
+    candidate_actions = decision.get("candidate_actions", [])
+    executable = [
+        item for item in candidate_actions
+        if isinstance(item.get("action"), dict)
+        and item["action"].get("action_type") not in {"INCONCLUSIVE", "COLLECT_EVIDENCE"}
+    ]
+    executable.sort(key=lambda item: (int(item.get("priority", 999)), str(item.get("rule_id", ""))))
+    for candidate in executable:
+        candidate_action = candidate["action"]
+        key = _candidate_key(
+            candidate_action,
+            evidence_fingerprint=evidence_fingerprint,
+            baseline_config_checksum=baseline_config_checksum,
+        )
+        if key in state.rejected_candidate_keys:
+            continue
+        resolved = _with_automation(
+            decision,
+            action=candidate_action,
+            resolution="candidate_queue",
+            original_action_type=action_type or "INCONCLUSIVE",
+            resolved_rule_id=candidate.get("rule_id"),
+            reason="Selected the next safe candidate from the deterministic candidate queue.",
+            workflow_status="CONTINUE",
+        )
+        for item in resolved.get("candidate_actions", []):
+            item["status"] = "SELECTED" if item.get("rule_id") == candidate.get("rule_id") else item.get("status", "DEFERRED")
+        return resolved
+
     inconclusive_trace = next(
         (
             item
@@ -340,18 +459,33 @@ def apply_policy(
         )
     state.inconclusive_seen[rule_id] = evidence_fingerprint
 
+    trace_collector = inconclusive_trace.get("collector_id")
+    trace_targets = inconclusive_trace.get("evidence_targets") or []
     template = _TRIAL_FIT_ACTIONS.get(rule_id)
+    if trace_collector and trace_targets and template is None:
+        return _collect_evidence_action(
+            decision,
+            trace=inconclusive_trace,
+            evidence_fingerprint=evidence_fingerprint,
+            state=state,
+        )
+
     if template is not None:
         proposed = template.get("component") or template.get("replace_to")
         if state.trials_used >= state.trial_budget:
             return _conservative(
                 decision, rule_id, f"Trial budget exhausted ({state.trial_budget} trial fits)."
             )
-        if proposed in state.rejected_components:
+        candidate_key = _candidate_key(
+            template,
+            evidence_fingerprint=evidence_fingerprint,
+            baseline_config_checksum=baseline_config_checksum,
+        )
+        if candidate_key in state.rejected_candidate_keys:
             return _conservative(
                 decision,
                 rule_id,
-                f"Candidate '{proposed}' was already rejected by EVALUATE_REFIT; not re-proposed.",
+                f"Candidate '{proposed}' was already rejected for this evidence context; not re-proposed.",
             )
         action = dict(template)
         if rule_id == "COMPANION_NUMERIC_VLM_V1":
@@ -479,6 +613,8 @@ def evaluate_refit_with_policy(
     candidate_reason_code: str | None = None,
     evidence_refs: dict[str, Any] | None = None,
     thresholds: RuleThresholds | None = None,
+    evidence_fingerprint: str = "",
+    baseline_config_checksum: str | None = None,
 ) -> dict[str, Any]:
     """evaluate_refit plus automation policy: INCONCLUSIVE falls back to reject."""
 
@@ -491,4 +627,10 @@ def evaluate_refit_with_policy(
         evidence_refs=evidence_refs,
         thresholds=thresholds,
     )
-    return apply_policy(decision, state, component=component)
+    return apply_policy(
+        decision,
+        state,
+        component=component,
+        evidence_fingerprint=evidence_fingerprint,
+        baseline_config_checksum=baseline_config_checksum,
+    )

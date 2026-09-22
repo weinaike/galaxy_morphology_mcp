@@ -14,7 +14,7 @@ import jsonschema
 
 from schemas import load_schema, validate
 
-PROMPT_VERSION = "component-analysis-vlm@v1.3"
+PROMPT_VERSION = "component-analysis-vlm@v2.0"
 MAX_OBSERVATIONS_PER_REQUEST = 4
 MAX_NOTES_LENGTH = 240
 
@@ -96,26 +96,17 @@ def build_vlm_prompt(
         "schema_version": "1.0",
         "round_id": round_id,
         "parse_status": "OK",
-        "observations": [
-            {
-                "target_id": "central",
-                "label": "uncertain",
-                "confidence": 0.0,
-                "evidence_regions": ["nircam_f200w:residual:central_r5px"],
-                "quality_flags": [],
-                "notes": None,
-            }
-        ],
+        "observations": [],
     }
     return "\n".join(
         (
             "你负责数值层 candidate overlay 的受控形态标注，不负责成分增删决策。",
             f"prompt_version: {PROMPT_VERSION}",
             f"round_id: {round_id}",
-            "只能描述本次请求给出的 target_id；没有可靠视觉证据时可以省略："
+            "只能描述本次请求给出的 target_id；没有可靠视觉证据时可以省略，不要补猜："
             + json.dumps(requested_targets, ensure_ascii=False),
-            f"本次最多输出 {MAX_OBSERVATIONS_PER_REQUEST} 条 observation；不要为未列出的 target 输出内容。",
-            f"retry_variant: {retry_variant}; 如果证据不足，输出 observations=[]。",
+            f"本次最多输出 {len(requested_targets)} 条 observation；不要为未列出的 target 输出内容。",
+            f"retry_variant: {retry_variant}; 这是稀疏证据请求，只输出有视觉把握的 target，证据不足时输出 observations=[]。",
             "label 只能取以下新方案枚举值（历史兼容标签不在此列表）："
             + json.dumps(CONTROLLED_LABELS, ensure_ascii=False),
             "quality_flags 只能取以下枚举值："

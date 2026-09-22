@@ -666,26 +666,13 @@ def _terminal_review_decision(
 
 
 def _terminal_action_summary(state: dict[str, Any]) -> dict[str, Any]:
-    summary = state.get("action_summary") or {}
-    candidates = summary.get("candidate")
-    if not isinstance(candidates, list):
-        candidates = []
+    """Describe the terminal review transition, not the previous fit action."""
     return {
-        "raw_action_type": summary.get("raw")
-        if isinstance(summary.get("raw"), str)
-        else None,
-        "resolved_action_type": summary.get("resolved")
-        if isinstance(summary.get("resolved"), str)
-        else None,
-        "candidate_action_types": [
-            value for value in candidates if isinstance(value, str)
-        ],
-        "executed_action_type": summary.get("executed")
-        if isinstance(summary.get("executed"), str)
-        else None,
-        "refit_verdict": summary.get("refit")
-        if isinstance(summary.get("refit"), str)
-        else None,
+        "raw_action_type": None,
+        "resolved_action_type": None,
+        "candidate_action_types": [],
+        "executed_action_type": None,
+        "refit_verdict": None,
         "fallback": "rule_terminated",
         "needs_review": True,
     }
@@ -1027,6 +1014,13 @@ class WorkflowBatchCoordinator:
                     resolution = _read_json(resolution_path)
                 except (OSError, ValueError, BatchManifestError):
                     resolution = None
+            terminal_lifecycle = None
+            terminal_path = round_dir / "terminal_lifecycle.json"
+            if terminal_path.is_file():
+                try:
+                    terminal_lifecycle = _read_json(terminal_path)
+                except (OSError, ValueError, BatchManifestError):
+                    terminal_lifecycle = None
             refit = None
             refit_path = round_dir / "refit_decision.json"
             if refit_path.is_file():
@@ -1038,8 +1032,16 @@ class WorkflowBatchCoordinator:
             records[round_id] = {
                 "round_id": round_id,
                 "round_dir": str(round_dir.resolve()),
-                "action": ((resolution or {}).get("decision") or {}).get("action"),
-                "refit_verdict": ((refit or {}).get("action_summary") or {}).get("refit_verdict"),
+                "action": (
+                    (terminal_lifecycle or {}).get("resolved_decision", {}).get("action")
+                    if terminal_lifecycle
+                    else ((resolution or {}).get("decision") or {}).get("action")
+                ),
+                "refit_verdict": (
+                    ((terminal_lifecycle or {}).get("action_summary") or {}).get("refit_verdict")
+                    if terminal_lifecycle
+                    else ((refit or {}).get("action_summary") or {}).get("refit_verdict")
+                ),
                 "baseline": {
                     "config_file": workflow_manifest.get("config_file"),
                     "result_files": workflow_manifest.get("result_files", []),
@@ -1111,6 +1113,27 @@ class WorkflowBatchCoordinator:
         return round_summary
 
     def _render_final_report(self, object_id: str, state: dict[str, Any]) -> Path:
+        downstream = state.get("downstream") if isinstance(state.get("downstream"), dict) else {}
+        state["image_iteration_status"] = (
+            "PASSED"
+            if state.get("status") in {"COMPLETED", "COMPLETED_WITH_REVIEW"}
+            and bool(state.get("round_summary_files"))
+            else "NOT_PASSED"
+        )
+        state["safe_stop_status"] = (
+            "PASSED"
+            if downstream.get("sed") == "NOT_RUN"
+            and downstream.get("image_sed") == "NOT_RUN"
+            and state.get("best_round_status") != "LOCKED"
+            else "NOT_APPLICABLE"
+        )
+        state["full_workflow_closure"] = (
+            "PASSED"
+            if state.get("status") == "COMPLETED"
+            and state.get("best_round_status") == "LOCKED"
+            and all(downstream.get(stage) == "COMPLETED" for stage in ("image", "sed", "image_sed"))
+            else "NOT_PASSED"
+        )
         target = render_final_report(
             object_id=object_id,
             summary_dir=self._summary_dir(object_id),
@@ -1961,15 +1984,20 @@ class WorkflowBatchCoordinator:
                     state_file=state_file,
                 )
 
-            preflight = await self.client.call_tool(
-                "workflow_action_preflight",
-                {
-                    "decision_artifact": decision,
-                    "workflow_manifest": workflow_manifest,
-                    "allow_remove": self.allow_remove,
-                    "remove_pilot_passed": self.remove_pilot_passed,
-                },
-            )
+            preflight = {"ok": True, "skipped": True, "reason_code": "non-fit action"}
+            if action_type in {
+                "PROPOSE_ADD", "PROPOSE_REPLACE", "PROPOSE_REMOVE",
+                "REFIT_PARAMETERS", "PROMOTE_SINGLE_SERSIC_TO_DISK",
+            }:
+                preflight = await self.client.call_tool(
+                    "workflow_action_preflight",
+                    {
+                        "decision_artifact": decision,
+                        "workflow_manifest": workflow_manifest,
+                        "allow_remove": self.allow_remove,
+                        "remove_pilot_passed": self.remove_pilot_passed,
+                    },
+                )
             _write_json(round_dir / "action_preflight.json", preflight)
             if action_type in {
                 "PROPOSE_ADD", "PROPOSE_REPLACE", "PROPOSE_REMOVE",
@@ -2095,7 +2123,11 @@ class WorkflowBatchCoordinator:
                         "state_file": str(state_file),
                         "candidate_action_type": action_type,
                         "candidate_reason_code": action.get("reason_code"),
-                        "evidence_refs": {"manifest": str(round_dir / "refit_evidence.json")},
+                        "evidence_refs": {
+                            "manifest": str(round_dir / "refit_evidence.json"),
+                            "evidence_fingerprint": proposal.get("evidence_fingerprint", ""),
+                            "baseline_config_checksum": action_baseline_fingerprint,
+                        },
                         "decision_ref": resolution.get("decision_ref"),
                         "object_id": object_id,
                         "config_ref": str(candidate_config),
@@ -2136,7 +2168,7 @@ class WorkflowBatchCoordinator:
                 self._save_runner_state(object_id, state)
                 continue
 
-            if action_type == "KEEP_AND_CONTINUE":
+            if action_type == "COLLECT_EVIDENCE":
                 has_collector = (
                     action.get("next_transition") == "COLLECT_EVIDENCE"
                     and bool(action.get("evidence_targets"))
@@ -2153,7 +2185,7 @@ class WorkflowBatchCoordinator:
                         state=state,
                         config_file=current_config,
                         fit_result=current_fit,
-                        reason="KEEP_AND_CONTINUE has no explicit evidence collector",
+                        reason="COLLECT_EVIDENCE has no explicit evidence collector",
                         workflow_manifest=workflow_manifest,
                         resolution=resolution,
                         round_dir=round_dir,
@@ -2201,6 +2233,19 @@ class WorkflowBatchCoordinator:
                 state["round_index"] = round_index + 1
                 self._save_runner_state(object_id, state)
                 continue
+
+            if action_type == "KEEP_AND_CONTINUE":
+                return await self._finish_with_review(
+                    object_id=object_id,
+                    state=state,
+                    config_file=current_config,
+                    fit_result=current_fit,
+                    reason="legacy KEEP_AND_CONTINUE is not executable in the new workflow",
+                    workflow_manifest=workflow_manifest,
+                    resolution=resolution,
+                    round_dir=round_dir,
+                    state_file=state_file,
+                )
 
             state["pending_action"] = None
             if action_type == "CONVERGED" or decision.get("workflow_status") == "CONVERGED":

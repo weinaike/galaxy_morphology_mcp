@@ -98,7 +98,10 @@ _COMPANION_RE = re.compile(r"^(companion|comp|secondary|satellite)", re.IGNORECA
 
 # Re-chain rank (mirrors candidate_schema._check_re_chain; higher = outer)
 RE_RANK = {"bulge": 0, "bar": 1, "lens": 2, "disk": 3, "edgedisk": 3, "outerdisk": 4}
-CENTRAL_CHAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk"}
+# ("singlesersic"/"agn" join only the concentric check; re_chain uses
+#  RE_RANK and the onion tuple lists the five shaped slots — unaffected)
+CENTRAL_CHAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk",
+                 "agn", "singlesersic"}
 
 BAR_Q_HARD_MAX = 0.6
 BAR_Q_NOTE_MAX = 0.5
@@ -389,7 +392,10 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                          f"[{xmin:g},{xmax:g}]x[{ymin:g},{ymax:g}]"})
 
     # ---- concentric (hard): chained central components vs the anchor centre
-    chained = [c for c in shaped if c.get("name") in CENTRAL_CHAIN
+    # (drawn from inv, not shaped: the psf-typed member — the agn point core —
+    #  is a chain member too and must sit on the anchor centre; companions
+    #  are excluded by name via CENTRAL_CHAIN membership)
+    chained = [c for c in inv if c.get("name") in CENTRAL_CHAIN
                and _f(c.get("x")) is not None and _f(c.get("y")) is not None]
     anchor = next((c for c in chained if c.get("name") in {"disk", "edgedisk"}), None)
     if anchor is None and chained:

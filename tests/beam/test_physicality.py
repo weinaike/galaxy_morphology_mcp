@@ -100,6 +100,20 @@ def test_concentric_deviance_hard(mini_graph):
     assert hard and "bar" in hard[0]["detail"]
 
 
+def test_concentric_agn_psf_checked_companion_ignored(mini_graph):
+    """jwst/104 retrospective: the AGN psf point core is a chain member and its
+    fitted centre is checked against the anchor; a psf COMPANION at an offset
+    position is not a chain member and is never flagged."""
+    graph, _ = mini_graph
+    inv = [_comp("disk", 40.0, x=100.0, y=100.0),
+           _comp("agn", 0.0, x=100.5, y=100.2, ctype="psf", mag=25.0),
+           _comp("companion", 0.0, x=140.0, y=90.0, ctype="psf", mag=24.0)]
+    assert not _by(_hards(_checks(graph, inv)), "concentric")
+    inv[1] = _comp("agn", 0.0, x=103.5, y=100.0, ctype="psf", mag=25.0)
+    hard = _by(_hards(_checks(graph, inv)), "concentric")
+    assert hard and "agn" in hard[0]["detail"]
+
+
 def test_degeneracy_hard(mini_graph):
     graph, _ = mini_graph
     inv = [_comp("disk", 110.0), _comp("outerdisk", 115.0)]

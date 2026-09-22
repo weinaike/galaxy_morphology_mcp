@@ -152,6 +152,106 @@ def test_add_bar_with_triplet_and_chain(parent, tmp_path):
     assert "3   re   0.4000 to 148.5000" in cons
 
 
+def test_agn_joins_chain_psf_companion_excluded(tmp_path):
+    """jwst/104 retrospective: the AGN psf point core is a main-galaxy central
+    member and MUST join the concentric offset chain ({disk, agn} previously
+    ran with two ±2px windows and drifted 1.2px apart); a psf COMPANION never
+    joins the chain — its centre stays free with a ±5px window."""
+    feedme = """A) image.fits
+B) galfit_out.fits
+G) none
+H) 1 117 1 125
+
+# Component number: 1
+# STRUCTURE: disk
+ 0) expdisk
+ 1) 59.7  63.2  1 1
+ 3) 23.8      1
+ 4) 4.0      1
+ 9) 0.63      1
+10) 26.6      1
+ Z) 0
+
+# Component number: 2
+# STRUCTURE: agn
+ 0) psf
+ 1) 60.7  63.7  1 1
+ 3) 27.2      1
+ Z) 0
+
+# Component number: 3
+# STRUCTURE: companion
+ 0) psf
+ 1) 80.0  40.0  1 1
+ 3) 26.0      1
+ Z) 0
+"""
+    f = tmp_path / "_iter1.feedme"
+    f.write_text(feedme, encoding="utf-8")
+    nn = tmp_path / "galfit.01"
+    nn.write_text(feedme, encoding="utf-8")  # warm start = same values
+    out_f, out_c = str(tmp_path / "_iter2.feedme"), str(tmp_path / "iter2.cons")
+    r = transcribe(str(f), str(nn), [], out_f, out_c,
+                   psf_fwhm_px=3.0, fit_region=(1, 117, 1, 125))
+    assert r.ok, r.notes
+    cons = _read(out_c)
+    # agn chained to the disk anchor (paired x/y offset lines, agn = number 2)
+    assert "1_2   x   offset" in cons and "1_2   y   offset" in cons
+    # companion (3) NOT in the chain; keeps its free ±5px window
+    assert "1_2_3" not in cons
+    assert "3   x    -5  5" in cons and "3   y    -5  5" in cons
+    # chained members get no separate centre windows
+    import re as _re
+    assert not _re.search(r"^\s*[12]\s+[xy]\s+-\d", cons, _re.M)
+    # the agn INPUT centre was normalized to the disk anchor centre (the
+    # offset chain locks input-relative positions) ...
+    text = _read(out_f)
+    assert "60.7" not in text            # old agn x gone
+    # ... while the companion centre is untouched
+    assert " 1) 80" in text and " 40 " in text
+
+
+def test_singlesersic_agn_terminal_state_chained(tmp_path):
+    """{singlesersic, agn} (the elliptical+point-core terminal state) is also
+    a 2-member main-galaxy model: the AGN joins the chain anchored on the
+    (brighter) singlesersic."""
+    feedme = """A) image.fits
+B) galfit_out.fits
+G) none
+H) 1 117 1 125
+
+# Component number: 1
+# STRUCTURE: singlesersic
+ 0) sersic
+ 1) 60.0  63.0  1 1
+ 3) 21.0      1
+ 4) 8.0      1
+ 5) 2.0      1
+ 9) 0.8      1
+10) 10.0      1
+ Z) 0
+
+# Component number: 2
+# STRUCTURE: agn
+ 0) psf
+ 1) 61.5  64.0  1 1
+ 3) 26.0      1
+ Z) 0
+"""
+    f = tmp_path / "_iter1.feedme"
+    f.write_text(feedme, encoding="utf-8")
+    nn = tmp_path / "galfit.01"
+    nn.write_text(feedme, encoding="utf-8")
+    out_f, out_c = str(tmp_path / "_iter2.feedme"), str(tmp_path / "iter2.cons")
+    r = transcribe(str(f), str(nn), [], out_f, out_c,
+                   psf_fwhm_px=3.0, fit_region=(1, 117, 1, 125))
+    assert r.ok, r.notes
+    cons = _read(out_c)
+    assert "1_2   x   offset" in cons and "1_2   y   offset" in cons
+    text = _read(out_f)
+    assert "61.5" not in text           # agn centre normalized onto the anchor
+
+
 def test_tune_re_convert_and_remove(parent, tmp_path):
     out_f, out_c = str(tmp_path / "_iter4.feedme"), str(tmp_path / "iter4.cons")
     prims = [

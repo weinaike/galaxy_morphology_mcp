@@ -31,12 +31,20 @@ STRUCTURE_COMMENT_RE = re.compile(r"^#\s*STRUCTURE:\s*(\S+)", re.IGNORECASE)
 COMPONENT_NO_RE = re.compile(
     r"^#\s*(?:Component|Object)(?:\s+number)?\s*:?\s*(\d+)", re.IGNORECASE)
 CENTRAL_STRUCTURES = {"disk", "edgedisk", "bulge", "bar", "lens"}
-# Chain membership: the four central types PLUS the outer envelope — the
-# offset chain locks INPUT relative positions, so every main-galaxy member
-# must be written concentric or the chain faithfully preserves scatter
-# (OuterDisk is main-galaxy structure: an off-centre envelope at (143,140)
-# vs galaxy centre (149,149) was observed in the KILOGAS_319 shakedown).
-CHAIN_STRUCTURES = CENTRAL_STRUCTURES | {"outerdisk"}
+# Chain membership: the four central types PLUS the outer envelope, the AGN
+# point core and the singlesersic body — the offset chain locks INPUT
+# relative positions, so every main-galaxy member must be written concentric
+# or the chain faithfully preserves scatter (OuterDisk is main-galaxy
+# structure: an off-centre envelope at (143,140) vs galaxy centre (149,149)
+# was observed in the KILOGAS_319 shakedown). The AGN (psf) is the
+# main-galaxy central point source: it joins the chain whenever another
+# main-galaxy member exists — the point core sits at the galaxy centre
+# (jwst/104 retrospective: {agn, disk} ran with two ±2px windows instead of
+# a chain and the fitted centres drifted 1.2px apart). singlesersic joins
+# for the {singlesersic, agn} elliptical+point-core terminal state.
+# Companions (companion/comp/secondary/satellite — psf OR sersic) NEVER
+# join: their centres stay free with a ±5px input-relative window.
+CHAIN_STRUCTURES = CENTRAL_STRUCTURES | {"outerdisk", "agn", "singlesersic"}
 _COMPANION_RE = re.compile(r"^(companion|comp|secondary|satellite)", re.IGNORECASE)
 SHAPED_TYPES = {"sersic", "expdisk", "edgedisk", "ferrer", "gaussian", "moffat",
                 "devauc", "king", "nuker"}

@@ -121,8 +121,8 @@ def check_q_priors(comps: dict[str, dict]) -> list[tuple[str, str]]:
     if bar is not None:
         q = bar.get("ba")
         if q is not None:
-            if q > 0.6:
-                out.append((f"bar_q={q:.2f}>0.6", "hard"))
+            if q > 0.7:
+                out.append((f"bar_q={q:.2f}>0.7", "hard"))
             elif q > 0.5:
                 out.append((f"bar_q={q:.2f}>0.5", "note"))
     if lens is not None:

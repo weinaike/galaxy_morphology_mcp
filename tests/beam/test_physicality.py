@@ -50,12 +50,25 @@ def test_re_chain_clean_passes(mini_graph):
     assert not _by(_checks(graph, inv), "re_chain")
 
 
+def test_re_chain_3pct_tolerance(mini_graph):
+    """Relaxed re_chain: an inner Re may exceed the adjacent outer Re by at
+    most 3% (RE_CHAIN_TOL) without firing; beyond 3% still fires hard."""
+    graph, _ = mini_graph
+    # bulge 4.1 vs disk 4.0 = +2.5% -> within tolerance
+    inv = [_comp("disk", 4.0), _comp("bulge", 4.1)]
+    assert not _by(_hards(_checks(graph, inv)), "re_chain")
+    # bulge 4.2 vs disk 4.0 = +5.0% -> fires
+    inv = [_comp("disk", 4.0), _comp("bulge", 4.2)]
+    hard = _by(_hards(_checks(graph, inv)), "re_chain")
+    assert hard and "3% tolerance" in hard[0]["detail"]
+
+
 def test_axis_ratio_limits(mini_graph):
     graph, _ = mini_graph
     # bar above the hard limit
-    inv = [_comp("disk", 40.0), _comp("bar", 8.0, q=0.7)]
+    inv = [_comp("disk", 40.0), _comp("bar", 8.0, q=0.75)]
     hard = _by(_hards(_checks(graph, inv)), "axis_ratio")
-    assert any("bar q=0.7" in c["detail"] for c in hard)
+    assert any("bar q=0.75" in c["detail"] for c in hard)
     # thin-line degeneracy at the q floor
     inv = [_comp("disk", 40.0), _comp("companion", 5.0, q=0.04)]
     hard = _by(_hards(_checks(graph, inv)), "axis_ratio")

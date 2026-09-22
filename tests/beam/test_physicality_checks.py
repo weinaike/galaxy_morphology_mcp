@@ -136,13 +136,14 @@ def test_onion_area_bulge_exempt():
 # --------------------------------------- anchored flat-disk skip (rule A)
 def test_flat_disk_contradicted_by_q_iso_anchor():
     # fitted q=0.26 vs image anchor q_iso=0.79: the skip is lifted, the
-    # degeneration is flagged and the directional layer re-arms
+    # inconsistency is flagged (note-level since jwst/1071 — q_iso is a
+    # coarse anchor, no PASS veto) and the directional layer re-arms
     comps = [
         _comp("disk", "expdisk", re=15.62, q=0.2575, pa=-49.7, mag=18.49),
         _comp("lens", q=0.846, pa=-35.6, re=23.84, n=0.36, mag=15.91),
     ]
     checks = _checks(comps, meta={"q_iso_outer": 0.79})
-    assert _has(checks, "disk_shape_inconsistency", "hard")
+    assert _has(checks, "disk_shape_inconsistency", "note")
     assert _has(checks, "onion", "hard", "pokes")
 
 
@@ -169,7 +170,7 @@ def test_flat_disk_corroborated_by_stage1_edge_on_text():
         _comp("lens", q=0.6, pa=0.0, re=5.0, n=0.3, mag=18.5),
     ], "artifacts": {}}
     checks = {(c["check"], c["severity"]) for c in compute_mech_checks(g, st)}
-    assert ("disk_shape_inconsistency", "hard") not in checks
+    assert all(c["check"] != "disk_shape_inconsistency" for c in compute_mech_checks(g, st))
 
 
 def test_flat_disk_legacy_graph_without_anchor():
@@ -210,12 +211,15 @@ def test_lens_q_hard():
 def test_bar_q_note_band():
     c = _checks([_comp("bar", q=0.55, re=4.0, n=0.5)])
     assert _has(c, "shape_prior", "note", "round-bar") and not _has(c, "axis_ratio", "hard")
-    assert _has(_checks([_comp("bar", q=0.65, re=4.0, n=0.5)]), "axis_ratio", "hard")
+    # 0.5 < q <= 0.7 is the round-bar watch band (hard limit relaxed 0.6 -> 0.7)
+    c65 = _checks([_comp("bar", q=0.65, re=4.0, n=0.5)])
+    assert _has(c65, "shape_prior", "note", "round-bar") and not _has(c65, "axis_ratio", "hard")
+    assert _has(_checks([_comp("bar", q=0.75, re=4.0, n=0.5)]), "axis_ratio", "hard")
 
 
 def test_q_bar_vs_q_lens():
     comps = [_comp("lens", q=0.7, re=6.0, n=0.3), _comp("bar", q=0.75, re=4.0, n=0.5)]
-    # bar q=0.75 > 0.6 also hard axis_ratio; shape_order must fire independently
+    # bar q=0.75 > 0.7 also hard axis_ratio; shape_order must fire independently
     assert _has(_checks(comps), "shape_order", "hard", "q_bar")
     assert not _has(_checks([_comp("lens", q=0.7, re=6.0, n=0.3),
                              _comp("bar", q=0.4, re=4.0, n=0.5)]), "shape_order", "hard")

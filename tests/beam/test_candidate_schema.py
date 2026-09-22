@@ -178,6 +178,32 @@ def test_re_chain_init_only():
     assert any(i.code == "E_RE_CHAIN" and "outer" in i.message for i in issues)
 
 
+def test_re_chain_3pct_tolerance():
+    """Relaxed total order: an inner Re may exceed the adjacent outer Re by at
+    most 3% without firing E_RE_CHAIN; beyond 3% still fires. Applies to both
+    the hypo-pair check (tune) and the add-time initial-value adjacency.
+    (comp(disk, expdisk, re=8.0) -> Re_effective = 13.44 px.)"""
+    parent = [comp("disk", "expdisk", re=8.0), comp("bulge", re=3.5)]
+    # hypo pair: bulge 13.7 vs disk 13.44 = +1.9% -> within tolerance
+    within = make_cand([{"op": "tune", "tune": {"structure_name": "bulge",
+                                                "param": "re_px", "value": 13.7}}])
+    assert "E_RE_CHAIN" not in codes(_validate(within, parent=parent))
+    # bulge 14.2 vs disk 13.44 = +5.7% -> beyond tolerance
+    beyond = make_cand([{"op": "tune", "tune": {"structure_name": "bulge",
+                                                "param": "re_px", "value": 14.2}}])
+    assert "E_RE_CHAIN" in codes(_validate(beyond, parent=parent))
+    # add-time adjacency: lens re_init 13.7 vs disk 13.44 = +1.9% -> passes
+    add_within = make_cand([{"op": "add", "add": {"structure_name": "lens",
+                                                  "component_type": "sersic",
+                                                  "re_px": 13.7}}])
+    assert "E_RE_CHAIN" not in codes(_validate(add_within, parent=parent))
+    # lens re_init 15.0 vs disk 13.44 = +11.6% -> fires
+    add_beyond = make_cand([{"op": "add", "add": {"structure_name": "lens",
+                                                  "component_type": "sersic",
+                                                  "re_px": 15.0}}])
+    assert "E_RE_CHAIN" in codes(_validate(add_beyond, parent=parent))
+
+
 # ----------------------------------------------------------------- combo cap
 def test_combo_exhausted():
     counts = {"bar+bulge+disk": 4}

@@ -19,8 +19,10 @@ Contract:
 
 Check set (each grounded in a KILOGAS_319 round where the VLM applied it):
   re_chain        hard  central Re total order re_disk > re_lens > re_bar >
-                        re_bulge (outerdisk above re_disk); survivors only
-  axis_ratio      hard  bar q > 0.6; any shaped component q < 0.05
+                        re_bulge (outerdisk above re_disk); survivors only;
+                        3% relative tolerance (an inner Re may exceed the
+                        adjacent outer Re by at most RE_CHAIN_TOL)
+  axis_ratio      hard  bar q > 0.7; any shaped component q < 0.05
                         (thin-line degeneracy) or q > 1.0
   containment     hard  2*Re of a shaped component leaving the fit region
                         from its centre (A.5/A.7/A.11/A.13 disk 2*Re)
@@ -55,11 +57,13 @@ dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
                         the inner is a bulge rounder than the outer by > 0.25
                         (a round bulge sits laterally wider than a flat bar —
                         the normal configuration, not a violation)
-  disk_shape_inconsistency hard  fitted disk q far flatter than the image's
+  disk_shape_inconsistency note fitted disk q far flatter than the image's
                         outer-isophote anchor q_iso (|q_disk - q_iso| >
                         ONION_Q_ISO_TOL) with no Stage-1 edge-on corroboration
-                        — suspected disk-role collapse (flux usurpation), not
-                        a real edge-on geometry
+                        — possible disk-role collapse (flux usurpation);
+                        advisory only (q_iso itself is a coarse anchor —
+                        jwst/1071: downgraded hard -> note, no PASS veto);
+                        still re-arms the directional onion layer
   shape_order     hard  q_bar >= q_lens when both exist (a bar must be more
                         elongated than the lens it sits inside)
   profile_prior   hard  lens n >= 0.6 (not a lens profile; 0.5-0.6 note);
@@ -75,7 +79,7 @@ dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
   flux_share      hard  f_lens >= f_bar (a lens must not outshine its bar)
                   note  bar flux fraction outside 10-40%; lens outside 5-35%
   shape_prior     hard  bulge q < 0.3 (0.3-0.4 stays a note); lens q <= 0.5;
-                        bar q in (0.5, 0.6] becomes a note (round-bar watch)
+                        bar q in (0.5, 0.7] becomes a note (round-bar watch)
 
 Administrative disable switch (temporary experimentation): the env var
 ``GALMCP_DISABLE_MECH_CHECKS`` holds a comma-separated list of check families
@@ -103,7 +107,7 @@ RE_RANK = {"bulge": 0, "bar": 1, "lens": 2, "disk": 3, "edgedisk": 3, "outerdisk
 CENTRAL_CHAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk",
                  "agn", "singlesersic"}
 
-BAR_Q_HARD_MAX = 0.6
+BAR_Q_HARD_MAX = 0.7
 BAR_Q_NOTE_MAX = 0.5
 BULGE_Q_HARD_MIN = 0.3
 BULGE_Q_NOTE_MIN = 0.4
@@ -115,6 +119,10 @@ THIN_LINE_Q = 0.05
 CONCENTRIC_TOL_PX = 2.0
 DEGENERACY_RATIO = 0.95
 RE_CHAIN_EPS_PX = 0.01
+# re_chain relative tolerance (mirrors candidate_schema._check_re_chain):
+# the inner Re may exceed the adjacent outer Re by at most 3% without firing
+# (warm-start jitter / fit noise on near-equal adjacent components)
+RE_CHAIN_TOL = 0.03
 # containment tolerance: ignore sub-pixel overshoot at the panel edge
 CONTAIN_TOL_PX = 2.0
 # onion nesting (expert round 2, replay-validated rule B)
@@ -307,18 +315,21 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
     shaped = [c for c in inv if (c.get("type") or "") != "psf"]  # companions included
     main_shaped = [c for c in main if (c.get("type") or "") != "psf"]
 
-    # ---- re_chain (hard): strict decrease with rank among existing central comps
+    # ---- re_chain (hard): decrease with rank among existing central comps,
+    # within the 3% relative tolerance (the inner Re may exceed the adjacent
+    # outer Re by at most RE_CHAIN_TOL)
     chain = [c for c in shaped if c.get("name") in RE_RANK and _f(c.get("re_effective"))]
     chain.sort(key=lambda c: RE_RANK[c["name"]])
     for a, b in zip(chain, chain[1:]):
         ra, rb = _f(a.get("re_effective")), _f(b.get("re_effective"))
-        # strict decrease outward required: inner Re must stay below outer Re
-        if ra >= rb - RE_CHAIN_EPS_PX:
+        # decrease outward required, 3% slack: inner Re <= 1.03 * outer Re
+        if ra > rb * (1.0 + RE_CHAIN_TOL) + RE_CHAIN_EPS_PX:
             checks.append({
                 "severity": "hard", "check": "re_chain",
-                "detail": f"re inversion: re_{a['name']}({ra:g}px) >= "
-                          f"re_{b['name']}({rb:g}px) (required strict decrease "
-                          f"bulge < bar < lens < disk < outerdisk)",
+                "detail": f"re inversion: re_{a['name']}({ra:g}px) exceeds "
+                          f"re_{b['name']}({rb:g}px) by more than "
+                          f"{RE_CHAIN_TOL:.0%} (required decrease outward "
+                          f"bulge < bar < lens < disk < outerdisk, 3% tolerance)",
             })
 
     # ---- axis_ratio (hard; all shaped components incl. companions) + priors (note)
@@ -344,7 +355,8 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                            "detail": f"bar q={q:g} > {BAR_Q_HARD_MAX:g} (axis-ratio hard limit)"})
         elif name == "bar" and q > BAR_Q_NOTE_MAX:
             checks.append({"severity": "note", "check": "shape_prior",
-                           "detail": f"bar q={q:g} in (0.5,0.6] (round-bar watch: "
+                           "detail": f"bar q={q:g} in (0.5,{BAR_Q_HARD_MAX:g}] "
+                                     "(round-bar watch: "
                                      "bar/lens identity confusion risk)"})
         if name == "bulge":
             if q < BULGE_Q_HARD_MIN:
@@ -476,12 +488,14 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
             q_iso = _f((graph.g.graph.get("meta") or {}).get("q_iso_outer"))
             anchor_txt = f"q_iso={q_iso:.2f}" if q_iso is not None else "q_iso unavailable"
             checks.append({
-                "severity": "hard", "check": "disk_shape_inconsistency",
+                "severity": "note", "check": "disk_shape_inconsistency",
                 "detail": f"fitted disk q={dq:g} is far flatter than the image-level "
                           f"outer-isophote anchor ({anchor_txt}, |delta| > "
                           f"{ONION_Q_ISO_TOL:g}) and Stage-1 does not classify the "
-                          "galaxy edge-on — suspected degenerate flattening (disk-role "
-                          "collapse / flux usurpation), not a real edge-on geometry"})
+                          "galaxy edge-on — possible degenerate flattening (disk-role "
+                          "collapse / flux usurpation); advisory only: q_iso is a "
+                          "coarse single-m outer-isophote measurement (jwst/1071: "
+                          "note-level, does not veto PASS)"})
             run_directional = True
         for outer, inner in zip(onion_chain, onion_chain[1:]):
             co, ci = by[outer], by[inner]

@@ -350,7 +350,8 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
                                 "a multi-component model's disk slot must be expdisk",
                                 action_id=aid))
 
-    # ---- Re chain adjacency (central components only, strict decrease)
+    # ---- Re chain adjacency (central components only; decrease outward
+    # with a 3% relative tolerance)
     issues.extend(_check_re_chain(cand, prims, hypo, aid))
 
     # ---- AGN admission (bulge-Re-collapse rule)
@@ -446,6 +447,9 @@ def _check_re_chain(cand: Candidate, prims: list[dict], hypo: list[dict],
     issues: list[Issue] = []
     rank = {"bulge": 0, "bar": 1, "lens": 2, "disk": 3, "edgedisk": 3, "outerdisk": 4}
     chain_set = CENTRAL_STRUCTURES | {"outerdisk"}  # OuterDisk sits above re_disk
+    # relative tolerance (mirrors physicality.RE_CHAIN_TOL): the inner Re may
+    # exceed the adjacent outer Re by at most 3% without firing
+    re_tol = 0.03
     centrals = {c.get("name"): c for c in hypo if c.get("name") in chain_set}
 
     touched: set[str] = set()
@@ -468,11 +472,12 @@ def _check_re_chain(cand: Candidate, prims: list[dict], hypo: list[dict],
     vals.sort(key=lambda t: t[0])
     for (_r1, n1, v1), (_r2, n2, v2) in zip(vals, vals[1:]):
         if n1 in touched or n2 in touched:
-            if v1 >= v2:
+            if v1 > v2 * (1.0 + re_tol):
                 issues.append(Issue("E_RE_CHAIN",
-                                    f"Re total-order violation: re_{n1}={v1:g}px must be "
-                                    f"strictly smaller than re_{n2}={v2:g}px "
-                                    "(disk > lens > bar > bulge)", action_id=aid))
+                                    f"Re total-order violation: re_{n1}={v1:g}px exceeds "
+                                    f"re_{n2}={v2:g}px by more than {re_tol:.0%} "
+                                    "(disk > lens > bar > bulge, 3% tolerance)",
+                                    action_id=aid))
 
     # declared triplet adjacency for added components
     for p in prims:
@@ -505,14 +510,18 @@ def _check_re_chain(cand: Candidate, prims: list[dict], hypo: list[dict],
                                     f"outer Re={r_out:g}px (total-order adjacency)",
                                     action_id=aid))
         else:
-            if r_in is not None and re_eff <= r_in:
+            # same 3% tolerance: the adjacent inner Re may exceed re_init by
+            # at most re_tol; re_init may exceed the adjacent outer Re by at
+            # most re_tol
+            if r_in is not None and r_in > re_eff * (1.0 + re_tol):
                 issues.append(Issue("E_RE_CHAIN",
                                     f"{name} re_init={re_eff:g}px must exceed the adjacent "
-                                    f"inner Re={r_in:g}px", action_id=aid))
-            if r_out is not None and re_eff >= r_out:
+                                    f"inner Re={r_in:g}px (within {re_tol:.0%})", action_id=aid))
+            if r_out is not None and re_eff > r_out * (1.0 + re_tol):
                 issues.append(Issue("E_RE_CHAIN",
                                     f"{name} re_init={re_eff:g}px must stay below the "
-                                    f"adjacent outer Re={r_out:g}px", action_id=aid))
+                                    f"adjacent outer Re={r_out:g}px (within {re_tol:.0%})",
+                                    action_id=aid))
     return issues
 
 

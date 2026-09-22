@@ -131,9 +131,12 @@ Rules:
    issues>")` (bounded, cumulative cap 4) and run repair rounds with directives until
    the audit reaches PASS; only PASS (WARN allowed) may lock. Crashed repair fits do
    NOT count toward stagnation — keep repairing while repair budget remains.
-5. Science-goal calibration: if the best model has no F1 and the science goal cares
-   about lopsidedness, `fourier_mode_analysis` on the best round's comparison image;
-   adopt only per its recommendation, then one beam round with `directives="+F1"`.
+5. Science-goal calibration (empirical F1 arbitration): if the best model has no F1,
+   the science goal cares about lopsidedness, and budget remains, call
+   `fourier_mode_analysis` on the best round's comparison image (initial-value
+   advisor: it returns am/theta_m + confidence only, no yes/no verdict) and ALWAYS
+   run one beam round with `directives="+F1"`; the fit numbers arbitrate retention
+   (amplitude > 0.02 and no fit degradation).
 6. Report: write `analysis_report_<galaxy>.md` in the galaxy directory with the five
    normative section headers (Generation time / Preprocessing information / Iteration
    log [from working_note's branch structure] / Best-result locking analysis and result /

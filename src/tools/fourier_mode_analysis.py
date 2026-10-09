@@ -77,10 +77,11 @@ def fourier_mode_analysis(
     - It can only be applied to the Disk component
     - This tool returns PARAMETER ESTIMATES ONLY — no adoption verdict
       (recommend yes/no does not exist). Per the empirical F1 arbitration
-      rule (workflow_galfit.md Stage 3), the caller always runs the +F1
-      competing round and the fitted numbers arbitrate retention
-      (amplitude > 0.02 and no fit degradation); this tool merely supplies
-      the starting point.
+      rule (workflow_galfit.md Stage 3, the "7+1" reserved slot), the caller
+      always spends the ONE reserved F1 fit on the current best state
+      (beam_enqueue_f1 -> apply -> run -> record) and the BIC comparison
+      against the pre-F1 best arbitrates retention; this tool merely
+      supplies the starting point.
 
     Args:
         image_file (str): Path to the combined image file from the best round,

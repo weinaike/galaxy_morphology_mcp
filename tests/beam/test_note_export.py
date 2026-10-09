@@ -49,8 +49,9 @@ def test_working_note_template_sections(seeded_graph, tmp_path):
         assert section in text, f"missing {section}"
     # queue table lists the enqueued candidate with its floor flag
     assert "n_free" in text and "floor_n_release" in text
-    # stage-1 zero-evidence wording
-    assert "zero evidence, non-determinative" in text
+    # stage-1: detection retired (2026-10-09); the header states the retirement
+    # (legacy graphs with a detect block would render the zero-evidence wording)
+    assert "detection retired" in text
     # verdict recorded verbatim with the note
     assert "PASS" in text and "[note] x" in text
 

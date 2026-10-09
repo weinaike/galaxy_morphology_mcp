@@ -36,17 +36,25 @@ def build_working_note(g, galaxy_dir: str) -> str:
     lines.append(f"- PSF: FWHM = {_fmt(meta.get('psf_fwhm_px'))} px, "
                  f"A_psf = {_fmt(meta.get('a_psf_px2'))} px² (measured once by beam_init)")
     lines.append(f"- Stage-1 conclusions: {(stage1.get('morphology') or '(none recorded)').strip()}")
-    d = stage1.get("detect_bar_lopsidedness") or {}
-    bar, lop = d.get("bar") or {}, d.get("lopsidedness") or {}
-    if bar.get("detected"):
-        lines.append(f"  - bar detected: PA={_fmt(bar.get('pa_deg'))}°, b/a={_fmt(bar.get('b_over_a'))} "
-                     "(N=+Y; initial guess only — the fit is the arbiter)")
-    else:
-        lines.append("  - bar not detected (zero evidence, non-determinative)")
-    if lop.get("detected"):
-        lines.append(f"  - lopsidedness detected: phase={_fmt(lop.get('phase_deg'))}°")
-    else:
-        lines.append("  - lopsidedness not detected (zero evidence, non-determinative)")
+    d = stage1.get("detect_bar_lopsidedness")
+    if isinstance(d, dict) and d:  # legacy graphs (detection retired 2026-10-09)
+        bar, lop = d.get("bar") or {}, d.get("lopsidedness") or {}
+        if bar.get("detected"):
+            lines.append(f"  - bar detected: PA={_fmt(bar.get('pa_deg'))}°, b/a={_fmt(bar.get('b_over_a'))} "
+                         "(N=+Y; initial guess only — the fit is the arbiter)")
+        if lop.get("detected"):
+            lines.append(f"  - lopsidedness detected: phase={_fmt(lop.get('phase_deg'))}°")
+    openings = stage1.get("opening_candidates") or {}
+    ocands = openings.get("candidates") if isinstance(openings, dict) else None
+    if isinstance(ocands, list) and ocands:
+        lines.append("  - opening skeleton proposal (rank order; #1 = the root feedme):")
+        for i, c in enumerate(ocands[:4]):
+            if isinstance(c, dict):
+                lines.append(f"    {i + 1}. {'+'.join(c.get('inventory', []) or ['?'])} "
+                             f"(σ={_fmt(c.get('sigma'))}) — {str(c.get('rationale', ''))[:100]}")
+    lines.append("  - standalone bar/lopsidedness detection retired (2026-10-09): "
+                 "component existence is settled by residual-driven trial and error "
+                 "in the fit")
     for tc in g.g.graph.get("temporary_constraints", []):
         if tc.get("active", True):
             lines.append(f"- Temporary constraint ACTIVE {tc.get('issued', '?')}: "

@@ -245,10 +245,11 @@ def test_batch_top_pick_survives_truncation(mini_graph):
                                     "re_px": 60.0}}], sigma=0.4, tag="fresh_pick"),
     ], session_id="s1", parent_label=label)
     q = graph.pending_queue()
-    assert len(q) == 5
+    assert len(q) == 4  # W default 4 (austerity profile 2026-10-09)
     assert res.enqueued[0]["action_id"] in q          # pinned: survived
-    # the lowest-score protected entry was evicted instead
+    # the lowest-score protected entries were evicted instead
     assert graph.g.graph["pending"]["f4"]["status"] == "discarded"
+    assert graph.g.graph["pending"]["f3"]["status"] == "discarded"
 
 
 def test_queue_reorder_pin_applied_and_persists(mini_graph):

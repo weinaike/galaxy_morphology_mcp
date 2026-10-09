@@ -151,17 +151,36 @@ def build_global_state_description(g) -> str:
 
 
 def _stage1_line(stage1: dict) -> str:
+    """Stage-1 conclusions line for the global digest.
+
+    Since 2026-10-09 the standalone bar/lopsidedness detection is RETIRED
+    from the flow (its accuracy no longer justified the call): Stage 1 is the
+    VLM morphology judgement + the ranked opening skeleton proposal; bar/F1
+    existence is settled by residual-driven trial and error in the fit. A
+    graph that still carries a legacy detect block (runs initialised before
+    the retirement) renders it verbatim.
+    """
     morph = (stage1.get("morphology") or "").strip() or "(no morphology summary recorded)"
-    d = stage1.get("detect_bar_lopsidedness") or {}
-    bar = d.get("bar") or {}
-    lop = d.get("lopsidedness") or {}
-    bar_txt = (f"bar detected: PA={_fmt(bar.get('pa_deg'))}deg b/a={_fmt(bar.get('b_over_a'))}"
-               if bar.get("detected") else
-               "bar not detected (zero evidence, non-determinative)")
-    lop_txt = (f"lopsidedness detected: phase={_fmt(lop.get('phase_deg'))}deg"
-               if lop.get("detected") else
-               "lopsidedness not detected (zero evidence, non-determinative)")
-    return f"{morph}; {bar_txt}; {lop_txt}."
+    parts = [morph]
+    d = stage1.get("detect_bar_lopsidedness")
+    if isinstance(d, dict) and d:
+        bar = d.get("bar") or {}
+        lop = d.get("lopsidedness") or {}
+        if bar.get("detected"):
+            parts.append(f"bar detected: PA={_fmt(bar.get('pa_deg'))}deg "
+                         f"b/a={_fmt(bar.get('b_over_a'))}")
+        if lop.get("detected"):
+            parts.append(f"lopsidedness detected: phase={_fmt(lop.get('phase_deg'))}deg")
+    openings = stage1.get("opening_candidates") or {}
+    cands = openings.get("candidates") if isinstance(openings, dict) else None
+    if isinstance(cands, list) and cands:
+        ranked = ["#1 " + "+".join(c.get("inventory", []) or ["?"])
+                  for c in cands[:3] if isinstance(c, dict)]
+        if ranked:
+            parts.append("opening skeletons: " + " | ".join(ranked))
+    parts.append("bar/F1 existence is settled by residual-driven trial and error "
+                 "(standalone detection retired)")
+    return "; ".join(p for p in parts if p) + "."
 
 
 # ---------------------------------------------------------------------- local

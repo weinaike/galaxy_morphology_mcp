@@ -34,11 +34,16 @@ SCHEMA_VERSION = 1
 GRAPH_SUBDIR = "beam_state"
 GRAPH_FILE = "graph.json"
 
-# Hard constants of the workflow (not adjusted per galaxy)
-BEAM_WIDTH = 5
-N_MAX = 15
-STAGNATION_MAX = 5
-PER_COMBO_CAP = 4
+# Hard constants of the workflow (not adjusted per galaxy).
+# 2026-10-09 austerity profile (KILOGAS_73 retrospective): N_max 15 -> 7
+# (+1 reserved F1 arbitration fit on the best state, counted outside n via
+# the f1_reserved flag), stagnation 5 -> 2 (early stop dominates at low
+# budget), per-combo cap 4 -> 2 (the 3rd/4th attempt on one inventory never
+# repaid its fit), W 5 -> 4 (queue slots are scarce at n=7).
+BEAM_WIDTH = 4
+N_MAX = 7
+STAGNATION_MAX = 2
+PER_COMBO_CAP = 2
 G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)
@@ -300,6 +305,136 @@ class BeamGraph:
         inv, _err = apply_primitives_to_inventory(parent.get("inventory", []), primitives)
         return inv if inv is not None else parent.get("inventory", [])
 
+    # ------------------------------------------------- reserved F1 arbitration
+    def add_f1_reserved(self, amplitude: float, phase_deg: float,
+                        action_id: str = "f1-arbitration") -> tuple[str | None, str]:
+        """Create the Stage-3 reserved F1 arbitration candidate on the BEST
+        state (the "7+1" slot). No VLM call: the primitive pair is built from
+        the best state's fitted disk (remove+add rebuild with the F1 row —
+        the shape the surveyor used and the transcription layer already
+        accepts), warm-started by fourier_mode_analysis's am/theta_m.
+
+        Guards: runs at most once per run (meta["f1"]); the best state must
+        exist and carry no F1 yet. The record is exempt from the apply-time
+        combo-cap re-check (tools.apply_candidate) and is counted outside
+        N_max (record_fit's f1_reserved branch).
+
+        Returns (action_id, "") on success or (None, reason) on refusal.
+        """
+        if (self.g.graph.get("meta", {}).get("f1") or {}).get("used"):
+            return None, "the reserved F1 arbitration slot was already consumed"
+        best = self.g.graph.get("best_state")
+        if not best or best not in self.g.nodes:
+            return None, "no best_state yet — the F1 arbitration needs a fitted best"
+        best_state = self.state(best)
+        feedme = (best_state.get("artifacts") or {}).get("feedme") or ""
+        if feedme and os.path.exists(feedme):
+            with open(feedme, encoding="utf-8") as f:
+                if any(line.strip().upper().startswith("F1)") for line in f):
+                    return None, f"state {best} already carries an F1 row"
+        target = next((c for c in best_state.get("inventory", [])
+                       if (c.get("name") or "").lower() in {"disk", "edgedisk"}), None) \
+            or next((c for c in best_state.get("inventory", [])
+                     if (c.get("name") or "").lower() == "singlesersic"), None)
+        if target is None:
+            return None, f"state {best} has no disk/edgedisk/singlesersic to carry F1"
+        name = (target.get("name") or "disk").lower()
+        ctype = (target.get("type") or "expdisk").lower()
+        re_eff = target.get("re_effective", target.get("re"))
+        add_params: dict = {
+            "structure_name": name, "component_type": ctype,
+            "x_px": target.get("x"), "y_px": target.get("y"),
+            "mag": target.get("mag"), "re_px": re_eff,
+            "q": target.get("q", target.get("ba")), "pa_deg": target.get("pa",
+                                                                         target.get("pa_deg", 0.0)),
+            "f1": {"amplitude": float(amplitude), "phase_deg": float(phase_deg)},
+        }
+        if ctype == "sersic" and target.get("n") is not None:
+            add_params["n"] = target.get("n")
+        add_params = {k: v for k, v in add_params.items() if v is not None}
+        primitives = [{"op": "remove", "target": name},
+                      {"op": "add", **add_params}]
+        aid = self.add_pending({
+            "action_id": action_id, "sigma": 0.5,
+            "expected_behavior_tag": "f1_arbitration",
+            "expected_C_prime": f"{best}+F1", "novelty_claim":
+                "Stage-3 reserved F1 arbitration on the current best state",
+            "primitives": primitives,
+            "code_flags": {"f1_reserved": True}, "score": 0.95,
+        }, source_session="f1-arbitration", parent_label=best)
+        self.g.graph["pending"][aid]["surveyor_rank_pin"] = 1
+        self.log_decision({"kind": "f1-reserved-enqueue", "action_id": aid,
+                           "parent": best, "amplitude": float(amplitude),
+                           "phase_deg": float(phase_deg)})
+        self.commit()
+        return aid, ""
+
+    # ------------------------------------------------- opening alternates
+    def enqueue_opening_alternates(self, first_state: str) -> list[dict]:
+        """Enqueue the non-top opening skeletons (stage1.opening_candidates)
+        as pending candidates parented on the FIRST FITTED state.
+
+        The opening response ranks skeleton proposals; rank 1 was written by
+        the orchestrator as the root feedme and fitted as ``first_state``;
+        every further entry must carry ``primitives`` RELATIVE to the rank-1
+        skeleton (usually a single remove) — validated by re-applying them to
+        the first state's inventory and comparing against the declared
+        ``inventory`` name set. Alternates that fail validation are logged
+        and skipped, never fatal.
+        """
+        stage1 = self.g.graph.get("stage1", {})
+        openings = stage1.get("opening_candidates") or {}
+        if self.g.graph["meta"].get("opening_alternates_enqueued"):
+            return []
+        result: list[dict] = []
+        base = self.state(first_state).get("inventory", [])
+        base_names = {(c.get("name") or "").lower() for c in base}
+        cands = openings.get("candidates")
+        if not isinstance(cands, list):
+            cands = []
+        for i, cand in list(enumerate(cands))[1:]:
+            prims = cand.get("primitives") or []
+            declared = {(n or "").lower() for n in (cand.get("inventory") or [])}
+            if not prims or not declared:
+                self.log_decision({"kind": "opening-alternate-skip", "rank": i,
+                                   "reason": "missing primitives/inventory"})
+                continue
+            from beam.signature import apply_primitives_to_inventory
+
+            hypo, err = apply_primitives_to_inventory(base, prims)
+            if hypo is None:
+                self.log_decision({"kind": "opening-alternate-skip", "rank": i,
+                                   "reason": f"E_APPLY: {err}"})
+                continue
+            hypo_names = {(c.get("name") or "").lower() for c in hypo}
+            if hypo_names != declared:
+                self.log_decision({"kind": "opening-alternate-skip", "rank": i,
+                                   "reason": f"declared {sorted(declared)} != projected "
+                                             f"{sorted(hypo_names)}"})
+                continue
+            if hypo_names == base_names:
+                continue
+            aid = self.add_pending({
+                "action_id": cand.get("action_id") or f"open-alt-{i}",
+                "sigma": float(cand.get("sigma", 0.4) or 0.4),
+                "expected_behavior_tag": cand.get("rationale",
+                                                  f"opening alternate #{i}")[:80],
+                "expected_C_prime": "+".join(sorted(hypo_names)),
+                "novelty_claim": "opening skeleton alternate "
+                                 "(untried, proposed at Stage 1)",
+                "primitives": prims,
+                "code_flags": {"opening_alternate": True},
+                "score": float(cand.get("sigma", 0.4) or 0.4),
+            }, source_session="opening", parent_label=first_state)
+            result.append({"action_id": aid, "rank": i,
+                           "inventory": sorted(hypo_names)})
+        self.g.graph["meta"]["opening_alternates_enqueued"] = True
+        if result:
+            self.log_decision({"kind": "opening-alternates-enqueued",
+                               "parent": first_state, "alternates": result})
+        self.commit()
+        return result
+
     # ---------------------------------------------------------- record fit
     def record_fit(self, run_result: dict, action_id: str = "",
                    verdict: dict | None = None,
@@ -309,9 +444,23 @@ class BeamGraph:
         ``run_result`` is the run_galfit success dict (input_param_file,
         output_param_file, image_file, summary_file, round_status_file,
         fit_statistics). ``action_id`` empty = the deterministic first fit.
+
+        A pending record carrying ``code_flags.f1_reserved`` (the Stage-3
+        F1 arbitration round on the best state) is counted in the separate
+        ``n_f1_reserved`` counter, NOT in ``n_executed`` — the reserved fit
+        rides on top of N_max ("7+1"), and it runs exactly once (the guard
+        lives in beam_enqueue_f1 / meta["f1"]).
         """
         c = self.counters()
-        c["n_executed"] = int(c.get("n_executed", 0)) + 1
+        if action_id:
+            rec0 = self.g.graph["pending"].get(action_id) or {}
+            f1_reserved = bool((rec0.get("code_flags") or {}).get("f1_reserved"))
+        else:
+            f1_reserved = False
+        if f1_reserved:
+            c["n_f1_reserved"] = int(c.get("n_f1_reserved", 0)) + 1
+        else:
+            c["n_executed"] = int(c.get("n_executed", 0)) + 1
 
         if action_id:
             rec = self.g.graph["pending"].get(action_id)
@@ -401,6 +550,13 @@ class BeamGraph:
             rec["status"] = "executed"
             rec["target_state"] = label
             self._drop_from_queue(action_id)
+
+        if f1_reserved:
+            # mark the reserved F1 slot consumed — beam_enqueue_f1 refuses a
+            # second arbitration round regardless of the outcome (the BIC
+            # comparison against the pre-F1 best settles retention)
+            self.g.graph["meta"]["f1"] = {"used": True, "state": label,
+                                          "parent": parent_label, "at": _now()}
 
         if verdict is not None:
             self.apply_verdict(label, verdict, parent_label=parent_label)

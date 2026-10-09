@@ -102,20 +102,31 @@ def beam_init(
                                 "verbatim sky block); fitted as the first state"],
     stage1_morphology: Annotated[str, "Stage-1 VLM morphology judgement (free text; "
                                      "recorded verbatim in the graph header for digest)"] = "",
-    stage1_bar_lop_json: Annotated[str, "JSON string of the detect_bar_lopsidedness "
-                                       "result, e.g. {\"bar\": {\"detected\": false}, "
-                                       "\"lopsidedness\": {\"detected\": true, "
-                                       "\"phase_deg\": 30}}"] = "",
+    stage1_bar_lop_json: Annotated[str, "DEPRECATED 2026-10-09 (detection retired from the "
+                                       "flow; kept for backward compatibility — stored "
+                                       "verbatim, never re-read)"] = "",
+    opening_candidates_json: Annotated[str, "Optional JSON of the Stage-1 opening proposal: "
+                                            "{\"candidates\": [{\"inventory\": [\"disk\","
+                                            "\"bulge\",\"bar\"], \"sigma\": 0.5, "
+                                            "\"rationale\": \"...\"}, {\"inventory\": "
+                                            "[\"disk\",\"bulge\"], \"sigma\": 0.4, "
+                                            "\"rationale\": \"...\", \"primitives\": "
+                                            "[{\"op\": \"remove\", \"target\": \"bar\"}]}]}. "
+                                            "Rank 1 = the root feedme you already wrote; "
+                                            "every further entry needs primitives RELATIVE "
+                                            "to it (usually a single remove) and is "
+                                            "auto-enqueued after the first fit"] = "",
     temporary_constraints_json: Annotated[str, "Optional JSON list of session-scoped user "
                                               "directives, e.g. [{\"issued\": \"2026-09-04\", "
                                               "\"text\": \"companion exclusion\", "
                                               "\"forbid_structures\": [\"companion\"], "
                                               "\"active\": true}]"] = "",
-    beam_width: Annotated[int, "Beam width W (queue truncation size); 0 = default 5. "
+    beam_width: Annotated[int, "Beam width W (queue truncation size); 0 = default 4. "
                                "Paper sensitivity study: W=1 is the greedy best-first "
                                "baseline"] = 0,
-    n_max: Annotated[int, "Fit budget N_max; 0 = default 15"] = 0,
-    stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 5"] = 0,
+    n_max: Annotated[int, "Fit budget N_max; 0 = default 7 (+1 reserved F1 arbitration "
+                          "fit on the best state, counted outside N_max)"] = 0,
+    stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 2"] = 0,
     ablations_json: Annotated[str, "Optional JSON object selecting the ablation arm for "
                                    "this run, persisted in graph meta and enforced by "
                                    "code in every later call: {\"no_global_state\": true} "
@@ -173,6 +184,17 @@ def beam_init(
             "morphology": stage1_morphology,
             "detect_bar_lopsidedness": _parse_json(stage1_bar_lop_json, {}),
         }
+        openings = _parse_json(opening_candidates_json, None)
+        if opening_candidates_json and openings is None:
+            return {"status": "failure",
+                    "error": "opening_candidates_json is not valid JSON"}
+        if openings is not None:
+            if not isinstance(openings, dict) or not isinstance(
+                    openings.get("candidates"), list):
+                return {"status": "failure",
+                        "error": "opening_candidates_json must be "
+                                 "{\"candidates\": [...]}"}
+            stage1["opening_candidates"] = openings
         ablations = _parse_json(ablations_json, None)
         if ablations_json and ablations is None:
             return {"status": "failure", "error": "ablations_json is not valid JSON"}
@@ -239,6 +261,12 @@ def beam_record_fit(
         graph = _load_graph(galaxy_dir)
         label = graph.record_fit(run_result, action_id=action_id, verdict=verdict)
         state = graph.state(label)
+        # Opening skeletons (Stage-1 proposal): the non-top entries ride the
+        # queue as A.1-parented alternates once the FIRST fit exists (A.0 has
+        # no galfit.NN to warm-start from, so the alternates parent the fit).
+        opening_alternates = []
+        if not action_id and int(graph.counters().get("n_executed", 0)) == 1:
+            opening_alternates = graph.enqueue_opening_alternates(label)
         return {
             "status": "success",
             "new_state": label,
@@ -248,6 +276,8 @@ def beam_record_fit(
             "is_best": state.get("is_best"),
             "best_state": graph.g.graph.get("best_state"),
             "counters": graph.counters(),
+            "f1": graph.g.graph.get("meta", {}).get("f1"),
+            "opening_alternates": opening_alternates,
             "termination": graph.termination_check(),
         }
     except Exception as e:
@@ -268,6 +298,48 @@ def beam_mark_failure(
         graph.commit()
         return {"status": "success", "action_id": action_id,
                 "counters": graph.counters(), "termination": graph.termination_check()}
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_enqueue_f1(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    amplitude: Annotated[float, "m=1 amplitude warm start (fourier_mode_analysis's "
+                                "am; a low-confidence 0.02 is a valid start — the "
+                                "amp/phase are free parameters the fit re-optimises)"],
+    phase_deg: Annotated[float, "m=1 phase warm start in degrees (fourier_mode_analysis's "
+                                "theta_m; N=+Y convention, written verbatim into the "
+                                "F1) row)"],
+) -> dict[str, Any]:
+    """Stage-3 reserved F1 arbitration (the "+1" of the "7+1" budget).
+
+    Creates the F1 candidate on the CURRENT BEST state — no VLM call, the
+    primitive pair (disk remove+add rebuild carrying the F1 row) is built from
+    the best state's fitted disk. Runs at most ONCE per run (also refused when
+    the best state already carries an F1 row): execute it, compare the fitted
+    BIC against the pre-F1 best, keep the F1-bearing round only when the BIC
+    improves; a sub-converged F1 round is NOT re-run. The fit is counted in
+    ``n_f1_reserved`` (outside N_max) and is exempt from the combo-cap gates.
+
+    Typical sequence: fourier_mode_analysis on the best round's comparison
+    image (initial-value advisor) -> beam_enqueue_f1(am, theta_m) ->
+    apply_candidate -> run_galfit -> beam_record_fit -> BIC comparison.
+    """
+    try:
+        graph = _load_graph(galaxy_dir)
+        aid, err = graph.add_f1_reserved(float(amplitude), float(phase_deg))
+        if aid is None:
+            return {"status": "failure", "error": err}
+        return {
+            "status": "success",
+            "action_id": aid,
+            "parent": graph.g.graph.get("best_state"),
+            "queue_head": graph.next_action(),
+            "message": "next: apply_candidate(action_id=...) -> run_galfit -> "
+                       "beam_record_fit; the fit is counted outside N_max "
+                       "(n_f1_reserved) and settles retention by the BIC "
+                       "comparison against the pre-F1 best",
+        }
     except Exception as e:
         return {"status": "failure", "error": str(e)}
 
@@ -321,13 +393,18 @@ def apply_candidate(
         # since; a pending record enqueued when its combo was fresh must not
         # run after the combo hit the per-combination cap. Floor flags do
         # NOT exempt it — floor discharge is hypothesis-based
-        # (graph._discharge_satisfied_floors), not cap-exempt.
+        # (graph._discharge_satisfied_floors), not cap-exempt. Sole
+        # exception: the reserved F1 arbitration round (f1_reserved) — it
+        # targets the best state by construction and must run even when that
+        # inventory already exhausted its attempts (the F1 slot rides on top
+        # of N_max precisely to be spent once, regardless of combo state).
+        f1_reserved = bool((rec.get("code_flags") or {}).get("f1_reserved"))
         from beam.signature import apply_primitives_to_inventory, combo_identity
 
         cap = int(meta.get("per_combo_cap", 4))
         hypo_inv, _err = apply_primitives_to_inventory(
             parent.get("inventory", []), rec.get("primitives", []))
-        if hypo_inv is not None:
+        if hypo_inv is not None and not f1_reserved:
             hypo_combo = combo_identity(hypo_inv)
             if graph.combo_counts().get(hypo_combo, 0) >= cap:
                 graph.mark_discarded(

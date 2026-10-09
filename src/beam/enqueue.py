@@ -3,11 +3,15 @@ code-side overlay on surveyor scores (floors, diversity, starvation aging,
 persistent-candidate protection) + queue truncation.
 
 Design contract ("surveyor orders, code decides legality"):
-* the surveyor's local_benefit_sigma drives the residual-potential dimension;
+* the surveyor's local_benefit_sigma is a POSTERIOR probability — p(this
+  candidate's direction becomes the final best fit | everything seen so far),
+  redefined 2026-10-09 (the old "expected chi^2 fraction" semantics decayed
+  monotonically with round number and systematically under-scored cheap
+  high-information experiments): it starts ~0.5 for genuinely new directions
+  and must NOT decay merely because the round index grows;
 * mandatory-retention floors, path diversity (weight x2), aging and the
-  persistent-candidate protection are computed here — they are structural
-  counterweights to the documented VLM sigma bias against cheap parameter
-  experiments (n-release sigma 0.1-0.4 vs failed lens adds 0.5-0.8);
+  persistent-candidate protection are computed here — structural
+  counterweights to any residual VLM miscalibration;
 * floor-flagged candidates are exempt from g_min discards and from queue
   truncation.
 """
@@ -29,6 +33,11 @@ from beam.signature import (
 G_MIN = 0.3
 FLOOR_G = 0.5
 PERSISTENT_G = 0.6
+# persistent-protection trigger under the POSTERIOR sigma semantics: a fresh
+# direction starts at ~0.5, so the old >=0.5 trigger would arm protection on
+# the first mention of anything; require a genuinely above-prior posterior
+# (>=0.6, matching the PERSISTENT_G lift) in >=2 calls instead
+PERSISTENT_SIGMA = 0.6
 AGING_BONUS = 0.02
 AGING_CAP = 0.10
 # surveyor rank-1 pin: matches the maximum floor(0.05)+aging(0.10) bonus, so
@@ -334,11 +343,12 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
         prior = [h for h in direction_history
                  if h.get("direction") == direction_key]
         # the current call counts as one of the >=2 proposals
-        sessions = {h.get("session") for h in prior if h.get("sigma", 0) >= 0.5}
+        sessions = {h.get("session") for h in prior
+                    if h.get("sigma", 0) >= PERSISTENT_SIGMA}
         sessions.add(session_id)
         never_executed = not any(h.get("executed") for h in prior)
         persistent = len(sessions) >= 2 and never_executed \
-            and cand.local_benefit_sigma >= 0.5
+            and cand.local_benefit_sigma >= PERSISTENT_SIGMA
         if persistent:
             flags["persistent_protection"] = True
             result.protected.append(direction_key)

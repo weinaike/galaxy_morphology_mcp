@@ -36,6 +36,7 @@ from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1, 
 from beam.tools import (
     apply_candidate,
     beam_export_note,
+    beam_enqueue_f1,
     beam_grant_repair_budget,
     beam_init,
     beam_mark_failure,
@@ -73,6 +74,7 @@ def _register_tools_and_prompts():
         app.add_tool(beam_init)
         app.add_tool(beam_record_fit)
         app.add_tool(beam_mark_failure)
+        app.add_tool(beam_enqueue_f1)
         app.add_tool(beam_status)
         app.add_tool(survey_round)
         app.add_tool(beam_enqueue_candidates)

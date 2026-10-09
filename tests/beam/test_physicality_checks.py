@@ -217,6 +217,22 @@ def test_bar_q_note_band():
     assert _has(_checks([_comp("bar", q=0.75, re=4.0, n=0.5)]), "axis_ratio", "hard")
 
 
+def test_bar_q_needle_floor_fixed_no_psf_coupling():
+    # fixed astronomer-mandated floor at 0.15: q < 0.15 hard, 0.15-0.2 note —
+    # and NO PSF-coupled minor-axis check (2*Re*q >= FWHM_PSF was removed
+    # 2026-10-09: for small-Re bars its implied q floor rose far above 0.15
+    # and over-rejected legitimate bars)
+    assert _has(_checks([_comp("bar", q=0.10, re=4.0, n=0.5)]),
+                "shape_prior", "hard", "needle")
+    assert _has(_checks([_comp("bar", q=0.18, re=4.0, n=0.5)]),
+                "shape_prior", "note", "needle")
+    # small-Re bar with q >= 0.15 but 2*Re*q < PSF FWHM: no hard entry
+    c = _checks([_comp("bar", q=0.2, re=1.0, n=0.5)],
+                meta={"psf_fwhm_px": 3.0})  # 2*Re*q = 0.4 < 3.0
+    assert not any("unresolved" in d for d in c.values())
+    assert not any(sev == "hard" and ck == "shape_prior" for ck, sev in c)
+
+
 def test_q_bar_vs_q_lens():
     comps = [_comp("lens", q=0.7, re=6.0, n=0.3), _comp("bar", q=0.75, re=4.0, n=0.5)]
     # bar q=0.75 > 0.7 also hard axis_ratio; shape_order must fire independently

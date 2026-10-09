@@ -231,8 +231,18 @@ def survey_round(
     local_injections: dict | None = None,
     directives: str = "",
     max_retries: int = 2,
+    opening_image: str = "",
 ) -> dict[str, Any]:
-    """Run one surveyor round on the (latest or given) fitted state."""
+    """Run one surveyor round on the (latest or given) fitted state.
+
+    Round-0 OPENING mode (2026-10-09): when the target state is the unfitted
+    root A.0 (global_iter_id == 0), the surveyor is sent the RENDERED ORIGINAL
+    image (``opening_image``) instead of a comparison panel and asked for the
+    ranked opening skeleton candidates (single ``skeleton`` primitives seeded
+    from the input feedme's reference parameters). No verdict is settled (no
+    fit exists yet); the candidates are enqueued parented A.0 and the loop
+    begins by applying the top-ranked one.
+    """
     try:
         from beam.graph import BeamGraph
 
@@ -251,22 +261,63 @@ def survey_round(
         return {"status": "failure", "error": f"state '{label}' not found in the graph"}
     state = graph.state(label)
 
+    is_opening = int(state.get("global_iter_id", 0)) == 0
     artifacts = state.get("artifacts", {})
     feedme = artifacts.get("feedme")
-    fitted = artifacts.get("galfit_nn")
-    comparison = artifacts.get("comparison_png")
-    missing = [k for k, v in (("feedme", feedme), ("galfit_nn", fitted),
-                              ("comparison_png", comparison)) if not v or not os.path.exists(v)]
-    if missing:
-        return {"status": "failure",
-                "error": f"state {label} is missing artefacts: {missing}; "
-                         "re-run run_galfit and beam_record_fit first"}
+    if is_opening:
+        # round-0: no galfit.NN / comparison exist; the rendered original is
+        # the survey image and the root feedme is the header/sky/reference
+        # source
+        comparison = opening_image
+        missing = [k for k, v in (("feedme", feedme), ("opening_image", comparison))
+                   if not v or not os.path.exists(v)]
+        if missing:
+            return {"status": "failure",
+                    "error": f"opening round is missing inputs: {missing}; "
+                             "run render_original and pass opening_image"}
+    else:
+        fitted = artifacts.get("galfit_nn")
+        comparison = artifacts.get("comparison_png")
+        missing = [k for k, v in (("feedme", feedme), ("galfit_nn", fitted),
+                                  ("comparison_png", comparison)) if not v or not os.path.exists(v)]
+        if missing:
+            return {"status": "failure",
+                    "error": f"state {label} is missing artefacts: {missing}; "
+                             "re-run run_galfit and beam_record_fit first"}
 
     # ---- digests from the graph
     global_desc = global_desc_for(graph)
-    local_desc, triggers = build_local_state_description(graph, label,
-                                                         local_injections or {})
     queue_digest = build_queue_digest(graph)
+    if is_opening:
+        triggers = {}
+        ref_lines = ""
+        try:
+            from tools.beam_actions_galfit import check_feedme_file as _cff
+
+            refs = _cff(feedme).get("components", [])
+            ref_lines = "; ".join(
+                f"{c.get('name')} ({c.get('type')}): Re_eff="
+                f"{(c.get('params') or {}).get('re_effective_px')}px, mag="
+                f"{(c.get('params') or {}).get('mag')}, q={(c.get('params') or {}).get('q')}, "
+                f"PA={(c.get('params') or {}).get('pa_deg')}deg, centre=("
+                f"{(c.get('params') or {}).get('x_px')},"
+                f"{(c.get('params') or {}).get('y_px')})px" for c in refs) or "(unparsed)"
+        except Exception as e:  # reference formatting is best-effort
+            ref_lines = f"(input feedme reference parse failed: {e})"
+        local_desc = (
+            "Round-0 OPENING survey: NO fit exists yet — the image is the RENDERED "
+            "ORIGINAL (asinh stretch + isophote contours), NOT a comparison panel; "
+            "there are no model/residual/1D panels and no fitted parameters. "
+            f"Input-feedme reference parameters (seeding references, NOT a model to "
+            f"copy verbatim): {ref_lines}. Task: judge the morphology and return 1-3 "
+            "RANKED opening skeleton candidates, each a single skeleton primitive "
+            "(components from {disk(expdisk), bulge(sersic), bar(sersic, n=0.5 FIXED)} "
+            "— or singlesersic alone for an elliptical opening; bar PA from the visual "
+            "feature direction, N=+Y). Seed every mag/re/q/PA from the references and "
+            "your image reading; the top-ranked candidate becomes the first fit.")
+    else:
+        local_desc, triggers = build_local_state_description(graph, label,
+                                                             local_injections or {})
 
     # ---- prompt assembly (system message mirrors the legacy generator)
     try:
@@ -277,8 +328,12 @@ def survey_round(
         component_spec = prompt_singleton.get_component_specification_galfit()
         if component_spec:
             system_message = system_message + "\n\n" + component_spec
-        summary_content = _build_summary_content_galfit(
-            feedme, fitted, artifacts.get("summary") or "")
+        if is_opening:
+            summary_content = ("(round-0 opening: no fitted parameters — seed from the "
+                               "input-feedme references in the local supplement)")
+        else:
+            summary_content = _build_summary_content_galfit(
+                feedme, artifacts.get("galfit_nn"), artifacts.get("summary") or "")
         turn1 = prompt_singleton.get_survey_visual_extraction(
             global_state_description=global_desc)
         turn2 = prompt_singleton.get_survey_candidate_generation(
@@ -289,8 +344,29 @@ def survey_round(
             parent_label=state.get("parent") or label,
             depth=int(state.get("depth", 1)),
             queue_digest=queue_digest,
-            directives=directives or "(none)",
+            directives=directives or ("(round-0 opening — skeleton primitives only; "
+                                      "return physicality_verdict PASS as a "
+                                      "placeholder)" if is_opening else "(none)"),
         )
+        if is_opening:
+            turn2 = (
+                "## OPENING ROUND (round-0; the parent is the unfitted root A.0)\n"
+                "Return 1-3 RANKED opening skeleton candidates. Each candidate uses "
+                "EXACTLY ONE primitive: {\"op\": \"skeleton\", \"skeleton\": "
+                "{\"components\": [<AddParams-shaped declarations for the WHOLE "
+                "luminous model>]}}. The alphabet: singlesersic ALONE (elliptical "
+                "opening) XOR any subset of {disk (expdisk), bulge (sersic), bar "
+                "(sersic with n=0.5 and toggles.n=0)} — lens/outerdisk/edgedisk/AGN/"
+                "companion/F1 are OUTSIDE the opening alphabet (they enter later "
+                "through residual-driven candidates). Seed parameters from the "
+                "input-feedme references (mag split ~3:7 bulge:disk for two "
+                "components, bar between; disk Re from the reference Re, bulge Re "
+                "1/5-1/3 of it, bar Re between the two; disk q/PA/centre from the "
+                "references; bar PA from the visual feature direction, N=+Y). Rank "
+                "by your posterior sigma (fresh skeleton ~0.5; converging visual "
+                "evidence up to ~0.7; never above 0.9). Return "
+                "physicality_verdict PASS (placeholder — nothing is fitted yet).\n\n"
+                + turn2)
     except Exception as e:
         return {"status": "failure", "error": f"prompt assembly failed: {e}"}
 
@@ -337,14 +413,21 @@ def survey_round(
 
     # ---- settle the verdict on the state (mechanical checks merged in code)
     vlm_verdict = resp.physicality_verdict.model_dump()
-    graph.apply_verdict(label, vlm_verdict)
-    state = graph.state(label)
-    verdict = state.get("verdict") or vlm_verdict  # merged verdict (may mech-veto)
+    if is_opening:
+        # round-0: nothing is fitted — the verdict is a placeholder and is NOT
+        # settled onto the unfitted root A.0 (the physicality gate engages from
+        # the first fitted state on, via its own survey_round)
+        verdict = vlm_verdict
+    else:
+        graph.apply_verdict(label, vlm_verdict)
+        state = graph.state(label)
+        verdict = state.get("verdict") or vlm_verdict  # merged verdict (may mech-veto)
 
     # ---- archive the raw exchange for audit
     out_base = os.path.splitext(os.path.basename(comparison))[0]
     md_path = os.path.join(os.path.dirname(os.path.abspath(comparison)),
-                           f"{out_base}_survey_{label}_{session_id or uuid.uuid4().hex[:8]}.md")
+                           f"{out_base}_{'opening_' if is_opening else 'survey_'}"
+                           f"{label}_{session_id or uuid.uuid4().hex[:8]}.md")
     try:
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(f"# survey_round {label} (session {session_id})\n\n"
@@ -364,17 +447,19 @@ def survey_round(
     # an AGN candidate). Parsed from THIS round's Phase-1 assessment; arms
     # the floor_agn_spike flag for any add(agn) candidate in this same
     # response and the candidate-absence watchdog when the VLM stays silent.
-    triggers["central_spike_agn"] = _central_spike_agn_trigger(state, raw_analysis)
+    if not is_opening:
+        triggers["central_spike_agn"] = _central_spike_agn_trigger(state, raw_analysis)
 
     # ---- enqueue legal candidates (floors/diversity/aging overlay)
     result_ingest = ingest(graph, resp.candidates, session_id=session_id,
                            parent_label=label,
-                           verdict_fail=(verdict.get("verdict") == "FAIL"),
+                           verdict_fail=(verdict.get("verdict") == "FAIL" and not is_opening),
                            numeric_triggers=triggers)
-    absence_notes = _candidate_absence_watchdog(graph, resp, triggers, label,
-                                                session_id)
+    absence_notes = [] if is_opening else _candidate_absence_watchdog(
+        graph, resp, triggers, label, session_id)
     graph.age_pending()  # pending entries age while a round passes
-    graph.log_decision({"kind": "survey-round", "state": label, "session": session_id,
+    graph.log_decision({"kind": "opening-round" if is_opening else "survey-round",
+                        "state": label, "session": session_id,
                         "enqueued": [e["action_id"] for e in result_ingest.enqueued],
                         "discarded": result_ingest.discarded})
     graph.commit()

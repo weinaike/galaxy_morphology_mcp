@@ -80,6 +80,10 @@ def _primitive_kinds(primitives: list[dict]) -> str:
                          f"{(p.get('param') or 'bound')}")
         elif op == "convert":
             kinds.append("convert")
+        elif op == "skeleton":
+            comps = (p.get("skeleton") or {}).get("components") or p.get("components") or []
+            kinds.append("skeleton:" + "+".join(
+                sorted((c.get("structure_name") or "?").lower() for c in comps)))
     return "+".join(sorted(kinds))
 
 

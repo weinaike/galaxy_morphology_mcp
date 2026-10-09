@@ -435,6 +435,35 @@ def apply_primitives_to_inventory(parent_inventory: list[dict],
                 if comp.get("re_effective") is not None:
                     comp["re"] = comp["re_effective"] / 1.68
                 comp.pop("n", None)
+        elif op == "skeleton":
+            # round-0 opening: the declared components REPLACE the parent's
+            # whole luminous inventory (the sky is not part of inventories)
+            comps = (p.get("skeleton") or {}).get("components") or p.get("components") or []
+            if not comps:
+                return None, "skeleton without components"
+            new_inv = []
+            for entry in comps:
+                name = (entry.get("structure_name") or "").lower()
+                if not name:
+                    return None, "skeleton component without structure_name"
+                ctype = (entry.get("component_type") or "").lower()
+                re_eff = entry.get("re_px")  # effective radius (unit contract)
+                new_inv.append({
+                    "number": None,
+                    "name": name,
+                    "type": ctype,
+                    "x": entry.get("x_px"),
+                    "y": entry.get("y_px"),
+                    "mag": entry.get("mag"),
+                    "re": (re_eff / 1.68 if ctype == "expdisk" and re_eff is not None
+                           else re_eff),
+                    "re_effective": re_eff,
+                    "n": entry.get("n"),
+                    "q": entry.get("q"),
+                    "pa": entry.get("pa_deg"),
+                    "toggles": dict(entry.get("toggles") or {}),
+                })
+            inv = new_inv
         else:
             return None, f"unknown op: {op}"
     return inv, ""

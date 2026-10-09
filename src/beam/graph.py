@@ -370,6 +370,47 @@ class BeamGraph:
         return aid, ""
 
     # ------------------------------------------------- opening alternates
+    def opening_skeletons(self) -> list[dict]:
+        """The round-0 opening skeleton candidates (VLM-authored), in queue
+        order: pending records whose primitives carry a ``skeleton`` op
+        (parented the unfitted root A.0). Returns
+        [{action_id, inventory, sigma, rationale, status}]."""
+        out: list[dict] = []
+        for aid in self.pending_queue():
+            rec = self.g.graph.get("pending", {}).get(aid)
+            if not rec:
+                continue
+            skel = next((p for p in rec.get("primitives", [])
+                         if p.get("op") == "skeleton"), None)
+            if skel is None:
+                continue
+            comps = (skel.get("skeleton") or {}).get("components") \
+                or skel.get("components") or []
+            out.append({
+                "action_id": aid,
+                "inventory": sorted((c.get("structure_name") or "?").lower()
+                                    for c in comps),
+                "sigma": rec.get("sigma"),
+                "rationale": rec.get("expected_behavior_tag", ""),
+                "status": rec.get("status"),
+            })
+        # include executed/discarded ones too (audit trail), appended
+        for aid, rec in self.g.graph.get("pending", {}).items():
+            if any(p.get("op") == "skeleton" for p in rec.get("primitives", [])) \
+                    and all(o.get("action_id") != aid for o in out):
+                comps = next(((p.get("skeleton") or {}).get("components")
+                              or p.get("components") or [])
+                             for p in rec.get("primitives", []) if p.get("op") == "skeleton")
+                out.append({
+                    "action_id": aid,
+                    "inventory": sorted((c.get("structure_name") or "?").lower()
+                                        for c in comps),
+                    "sigma": rec.get("sigma"),
+                    "rationale": rec.get("expected_behavior_tag", ""),
+                    "status": rec.get("status"),
+                })
+        return out
+
     def enqueue_opening_alternates(self, first_state: str) -> list[dict]:
         """Enqueue the non-top opening skeletons (stage1.opening_candidates)
         as pending candidates parented on the FIRST FITTED state.

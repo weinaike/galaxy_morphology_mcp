@@ -81,7 +81,11 @@ def build_global_state_description(g) -> str:
 
     stage1 = g.g.graph.get("stage1", {})
     lines.append("")
-    lines.append("[Stage-1 conclusions] " + _stage1_line(stage1))
+    try:
+        skeletons = g.opening_skeletons()
+    except Exception:
+        skeletons = []
+    lines.append("[Stage-1 conclusions] " + _stage1_line(stage1, skeletons))
 
     lines.append("")
     lines.append("[State ledger (px)] one line per fitted state — compare your expected_C' "
@@ -150,12 +154,12 @@ def build_global_state_description(g) -> str:
     return "\n".join(lines)
 
 
-def _stage1_line(stage1: dict) -> str:
+def _stage1_line(stage1: dict, graph_skeletons: list | None = None) -> str:
     """Stage-1 conclusions line for the global digest.
 
     Since 2026-10-09 the standalone bar/lopsidedness detection is RETIRED
     from the flow (its accuracy no longer justified the call): Stage 1 is the
-    VLM morphology judgement + the ranked opening skeleton proposal; bar/F1
+    round-0 opening survey (VLM morphology + ranked skeleton candidates); bar/F1
     existence is settled by residual-driven trial and error in the fit. A
     graph that still carries a legacy detect block (runs initialised before
     the retirement) renders it verbatim.
@@ -173,6 +177,9 @@ def _stage1_line(stage1: dict) -> str:
             parts.append(f"lopsidedness detected: phase={_fmt(lop.get('phase_deg'))}deg")
     openings = stage1.get("opening_candidates") or {}
     cands = openings.get("candidates") if isinstance(openings, dict) else None
+    if not (isinstance(cands, list) and cands):
+        # new flow: the skeletons are VLM survey candidates in the graph
+        cands = graph_skeletons or []
     if isinstance(cands, list) and cands:
         ranked = ["#1 " + "+".join(c.get("inventory", []) or ["?"])
                   for c in cands[:3] if isinstance(c, dict)]

@@ -380,7 +380,12 @@ def apply_candidate(
         artifacts = parent.get("artifacts", {})
         p_feedme = artifacts.get("feedme")
         p_nn = artifacts.get("galfit_nn")
-        missing = [k for k, v in (("feedme", p_feedme), ("galfit_nn", p_nn))
+        # round-0 opening skeletons are applied on the unfitted root A.0 —
+        # there is no galfit.NN to warm-start from (the skeleton declares
+        # every initial value); only the parent feedme is required
+        is_skeleton = any(p.get("op") == "skeleton" for p in rec.get("primitives", []))
+        missing = [k for k, v in (("feedme", p_feedme),
+                                  ("galfit_nn", p_nn if not is_skeleton else p_feedme))
                    if not v or not os.path.exists(v)]
         if missing:
             return {"status": "failure",
@@ -619,6 +624,14 @@ def survey_round(
                                "carried verbatim into the prompt (repair restarts, "
                                "Occam validation, ...)"] = "",
     max_retries: Annotated[int, "Bounded validation-retry budget (default 2)"] = 2,
+    opening_image: Annotated[str, "Round-0 OPENING survey only (state_label='A.0'): "
+                                  "absolute path of the rendered original PNG "
+                                  "(render_original's output). The surveyor reads "
+                                  "the ORIGINAL image (no model/residual panels) "
+                                  "and returns 1-3 ranked opening skeleton "
+                                  "candidates (skeleton primitives, alphabet "
+                                  "singlesersic XOR {disk,bulge,bar}) seeded from "
+                                  "the input-feedme reference parameters"] = "",
 ) -> dict[str, Any]:
     """Run ONE surveyor round on a fitted state (single-function VLM trigger).
 
@@ -627,6 +640,11 @@ def survey_round(
     structured error feedback and bounded retries -> verdict settled on the
     state -> legal candidates enqueued (floors/diversity/aging overlay) ->
     returns the queue snapshot and the next candidate to execute.
+
+    Round-0 opening mode: state_label='A.0' + opening_image=<rendered
+    original> -> the VLM authors the opening skeleton candidates (no verdict
+    is settled; the top-ranked skeleton becomes the first fit via
+    apply_candidate).
     """
     try:
         from beam.survey import survey_round as _survey_round
@@ -637,6 +655,7 @@ def survey_round(
             local_injections=_parse_json(local_injections_json, {}),
             directives=directives,
             max_retries=max_retries,
+            opening_image=opening_image,
         )
     except Exception as e:
         return {"status": "failure", "error": str(e)}

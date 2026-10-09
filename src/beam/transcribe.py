@@ -405,7 +405,40 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
     # ---- apply primitives in order (Class-A verbatim; inapplicable -> abort)
     for p in primitives:
         op = p.get("op")
-        if op == "remove":
+        if op == "skeleton":
+            # round-0 opening: the declared skeleton REPLACES the parent's
+            # whole luminous model (header + sky block carried verbatim from
+            # the root feedme; no warm-start backfill — the skeleton carries
+            # its own seeded initial values)
+            comps = (p.get("skeleton") or {}).get("components") or p.get("components") or []
+            if not comps:
+                return TranscribeResult(False, notes=["skeleton without components"])
+            centre = _main_centre(blocks)
+            sky_blocks = [b for b in blocks if b.is_sky]
+            new_blocks: list[Block] = []
+            for entry in comps:
+                name = (entry.get("structure_name") or "").lower()
+                if not name or any(b.name == name for b in new_blocks):
+                    return TranscribeResult(
+                        False, notes=[f"bad skeleton component '{name}' "
+                                      "(missing/duplicate)"])
+                params = {k: v for k, v in entry.items()
+                          if k in ("mag", "re_px", "n", "q", "pa_deg", "x_px", "y_px", "f1")}
+                toggles = {k.lower(): int(v) for k, v in (entry.get("toggles") or {}).items()}
+                if params.get("x_px") is None or params.get("y_px") is None:
+                    params.setdefault("x_px", centre[0])
+                    params.setdefault("y_px", centre[1])
+                    notes.append(f"{name}: centre defaulted to the root centre")
+                if params.get("mag") is None and default_mag_hint is not None:
+                    params["mag"] = default_mag_hint
+                    notes.append(f"{name}: mag defaulted to {default_mag_hint:.2f} (spec prior)")
+                block = make_block(name, (entry.get("component_type") or "sersic").lower(),
+                                   params, toggles)
+                new_blocks.append(block)
+            blocks = new_blocks + sky_blocks
+            notes.append(f"opening skeleton built: "
+                         f"{'+'.join(b.name or '?' for b in new_blocks)}")
+        elif op == "remove":
             rm = p.get("remove")
             target = (rm if isinstance(rm, str) else None) or \
                 (p.get("target") or p.get("structure_name") or "")

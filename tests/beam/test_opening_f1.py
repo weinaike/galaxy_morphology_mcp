@@ -100,3 +100,114 @@ def test_opening_alternates_enqueued_after_first_fit(tmp_path, test_data_dir):
     assert "opening-alternate-skip" in kinds
     # idempotent: a second call enqueues nothing
     assert graph.enqueue_opening_alternates(label) == []
+
+
+# ---------------------------------------------- VLM-authored opening round
+def _skel(components, tag, sigma):
+    return {
+        "primitives": [{"op": "skeleton", "skeleton": {"components": components}}],
+        "physical_motivation": "opening morphology judgement",
+        "expected_C_prime": "{" + ",".join(sorted(c["structure_name"]
+                                                  for c in components)) + "}",
+        "novelty_claim": "untried opening skeleton",
+        "expected_behavior_tag": tag,
+        "local_benefit_sigma": sigma,
+    }
+
+
+_D3 = [
+    {"structure_name": "disk", "component_type": "expdisk", "mag": 15.2,
+     "re_px": 55.0, "q": 0.4, "pa_deg": 66.0},
+    {"structure_name": "bulge", "component_type": "sersic", "mag": 16.6,
+     "re_px": 3.0, "n": 1.0, "q": 0.6, "pa_deg": 66.0},
+    {"structure_name": "bar", "component_type": "sersic", "mag": 15.9,
+     "re_px": 11.0, "n": 0.5, "q": 0.45, "pa_deg": 82.0,
+     "toggles": {"n": 0}},
+]
+_D2 = [c for c in _D3 if c["structure_name"] in ("disk", "bulge")]
+
+OPENING_MD = """```json
+{"physicality_verdict": {"verdict": "PASS", "failed_checks": [], "swap_hint": "none"},
+ "candidates": [
+  """ + json.dumps(_skel(_D3, "skel_barred", 0.65)) + """,
+  """ + json.dumps(_skel(_D2, "skel_bd", 0.5)) + """
+ ]}
+```"""
+
+
+def test_opening_round_vlm_authored_end_to_end(tmp_path, test_data_dir, monkeypatch):
+    """Flow: beam_init (root verbatim) -> survey_round(A.0, opening_image)
+    -> skeleton candidates enqueued -> apply top on A.0 (no galfit.NN)
+    -> _iter1.feedme + concentric cons -> beam_record_fit -> A.1."""
+    import shutil
+
+    from beam.survey import survey_round
+    from beam.tools import apply_candidate, beam_init, beam_record_fit
+
+    gdir = tmp_path / "OPEN2"
+    gdir.mkdir()
+    shutil.copy(test_data_dir / "NGC1097.feedme", gdir / "root.feedme")
+    (gdir / "orig.png").write_bytes(b"\x89PNG\r\n\x1a\n stub")
+
+    r = beam_init(str(gdir), str(gdir / "root.feedme"))
+    assert r["status"] == "success", r.get("error")
+
+    def fake_dispatch(system_prompt, turns, image_path):
+        return OPENING_MD, "sess-open", None
+
+    monkeypatch.setattr("beam.survey._dispatch", fake_dispatch)
+    rr = survey_round(str(gdir), state_label="A.0",
+                      opening_image=str(gdir / "orig.png"))
+    assert rr["status"] == "success", rr.get("error")
+    assert len(rr["enqueued"]) == 2, rr.get("discarded")
+    # no verdict settled on the unfitted root
+    from beam.graph import BeamGraph
+
+    g = BeamGraph.load(str(gdir))
+    assert (g.state("A.0").get("verdict") or {}).get("verdict") is None
+    # both skeletons are parented A.0 and the 3-component one leads (sigma)
+    q = rr["queue"]
+    assert all(e["parent"] == "A.0" for e in q)
+    assert rr["next_candidate"] == q[0]["action_id"]
+    skel = g.opening_skeletons()
+    assert skel and skel[0]["inventory"] == ["bar", "bulge", "disk"]
+
+    # apply the top skeleton on A.0 — no parent galfit.NN exists
+    ap = apply_candidate(str(gdir), rr["next_candidate"])
+    assert ap["status"] == "success", ap.get("error")
+    assert ap["iter_id"] == 1
+    text = open(ap["feedme"], encoding="utf-8").read()
+    assert "# STRUCTURE: disk" in text and "# STRUCTURE: bulge" in text \
+        and "# STRUCTURE: bar" in text
+    # the fixture root carries NO sky block — the skeleton path preserves
+    # the root verbatim (header survives; nothing invented)
+    assert "A) NGC1097.phot.1_nonan.fits" in text
+    cons = open(ap["cons"], encoding="utf-8").read()
+    assert "x   offset" in cons and "y   offset" in cons  # concentric chain
+
+    # record the first fit -> A.1, combo bar+bulge+disk
+    rec = beam_record_fit(str(gdir), json.dumps({
+        "input_param_file": ap["feedme"], "output_param_file": "",
+        "image_file": "", "summary_file": "", "round_status_file": "",
+        "fit_statistics": {"bic_eff": 13844.0, "chisq1d_nu": 86.0,
+                           "convergence": {"flag": "ok"}},
+    }), action_id=rr["next_candidate"])
+    assert rec["status"] == "success", rec.get("error")
+    assert rec["new_state"] == "A.1"
+    assert rec["combo_key"] == "bar+bulge+disk"
+    # the alternate skeleton remains queued as an untried direction
+    assert rec["termination"]["stop"] is False
+    assert g.next_action() is not None
+
+
+def test_opening_skeleton_rejected_off_root(mini_graph, monkeypatch):
+    """skeleton primitives are legal ONLY on the unfitted root A.0."""
+    from beam.candidate_schema import parse_survey_response, validate_survey
+
+    graph, label = mini_graph  # label A.1 is fitted
+    payload = json.loads(OPENING_MD.replace("```json", "").replace("```", ""))
+    resp, err = parse_survey_response(payload)
+    assert resp is not None, err
+    report = validate_survey(resp, graph, label)
+    assert not report.ok
+    assert any(i.code == "E_OPENING" for i in report.errors)

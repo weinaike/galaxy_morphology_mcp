@@ -46,8 +46,15 @@ def build_working_note(g, galaxy_dir: str) -> str:
             lines.append(f"  - lopsidedness detected: phase={_fmt(lop.get('phase_deg'))}°")
     openings = stage1.get("opening_candidates") or {}
     ocands = openings.get("candidates") if isinstance(openings, dict) else None
+    if not (isinstance(ocands, list) and ocands):
+        # new flow: the opening skeletons are VLM survey candidates in the
+        # graph (skeleton primitives parented A.0)
+        ocands = [{"inventory": o.get("inventory", []),
+                   "sigma": o.get("sigma"),
+                   "rationale": f"{o.get('rationale', '')} [{o.get('status', '')}]"}
+                  for o in g.opening_skeletons()]
     if isinstance(ocands, list) and ocands:
-        lines.append("  - opening skeleton proposal (rank order; #1 = the root feedme):")
+        lines.append("  - opening skeleton proposal (rank order; #1 = the first fit):")
         for i, c in enumerate(ocands[:4]):
             if isinstance(c, dict):
                 lines.append(f"    {i + 1}. {'+'.join(c.get('inventory', []) or ['?'])} "

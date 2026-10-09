@@ -277,6 +277,19 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
             if ctype == "expdisk" and entry.get("n") is not None:
                 issues.append(Issue("E_PARAM_TYPE",
                                     "expdisk has no n parameter (n≡1 by type)", action_id=aid))
+            # Bulge n free-from-creation (2026-10-09 austerity revision):
+            # the fixed-then-release scaffold wasted budget rounds; the
+            # concentration prior rides the INITIAL value (4 or 1), never a
+            # fixed toggle
+            if name == "bulge":
+                tog = entry.get("toggles") or {}
+                if int(tog.get("n", 1)) == 0:
+                    issues.append(Issue("E_BULGE_N_FREE",
+                                        "add(bulge) with n FIXED is rejected — the "
+                                        "bulge n is free from creation (initial 4 "
+                                        "or 1, or a sensible value in 0.5-8; the "
+                                        "fixed-then-release scaffold wasted budget "
+                                        "rounds under N_max=7)", action_id=aid))
             # Re initial-value requirement (AGN exempt)
             if ctype != "psf" and entry.get("re_px") is None:
                 issues.append(Issue("E_RE_CHAIN",
@@ -311,6 +324,15 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
                 issues.append(Issue("E_PARAM_TYPE",
                                     "the Disk is expdisk: it has no n to release "
                                     "(n≡1 by component type)", action_id=aid))
+            _tg = t.get("toggle")
+            _tg = 1 if _tg is None else int(_tg)
+            if param == "n" and name == "bulge" and _tg == 0:
+                issues.append(Issue("E_BULGE_N_FREE",
+                                    "tune(bulge, n→FIXED) is rejected — the bulge "
+                                    "n is free from creation and stays free (a "
+                                    "free n converging back to ≈4 IS the "
+                                    "classical-bulge support; re-fixing buys "
+                                    "nothing and spends a slot)", action_id=aid))
             if t.get("value") is None and t.get("toggle") is None and not t.get("cons_bounds"):
                 issues.append(Issue("E_SCHEMA",
                                     "tune carries neither value, toggle nor cons_bounds",
@@ -367,6 +389,13 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
                         issues.append(Issue("E_OPENING",
                                             "the opening bar must carry n=0.5 FIXED "
                                             "(toggles.n=0)", action_id=aid))
+                if name == "bulge":
+                    toggles = entry.get("toggles") or {}
+                    if int(toggles.get("n", 1)) == 0:
+                        issues.append(Issue("E_BULGE_N_FREE",
+                                            "opening skeleton bulge with n FIXED — "
+                                            "the bulge n is free from creation "
+                                            "(initial 4 or 1)", action_id=aid))
                 if name != "singlesersic" and entry.get("re_px") is None:
                     issues.append(Issue("E_OPENING",
                                         f"opening '{name}' without re_px — every shaped "

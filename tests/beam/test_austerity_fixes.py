@@ -317,3 +317,92 @@ def test_mark_failure_stores_archive_dir(mini_graph):
     entry = [e for e in graph.g.graph["decision_log"]
              if e.get("kind") == "fit-failure"][-1]
     assert entry.get("archive_dir") == "/tmp/archives/20261009T000000.deadbeef"
+
+
+# ------------------- bulge n free-from-creation (2026-10-09 revision)
+def test_bulge_n_fixed_rejected_everywhere(tmp_path, test_data_dir):
+    import shutil
+    from beam.candidate_schema import parse_survey_response, validate_survey
+    gdir = tmp_path / "BN"
+    gdir.mkdir()
+    feedme = gdir / "root.feedme"
+    shutil.copy(test_data_dir / "NGC1097.feedme", feedme)
+    g = BeamGraph.init(str(gdir), str(feedme), stage1={"morphology": "m"})
+    g.record_fit({"input_param_file": str(feedme), "output_param_file": "",
+                  "image_file": "", "summary_file": "",
+                  "fit_statistics": {"bic_eff": 1.0, "chisq1d_nu": 1.0,
+                                     "convergence": {"flag": "ok"}}})
+
+    def _check(candidates):
+        payload = {"physicality_verdict": {"verdict": "PASS",
+                                           "failed_checks": [],
+                                           "swap_hint": "none"},
+                   "candidates": candidates}
+        resp, err = parse_survey_response(payload)
+        assert resp is not None, err
+        return validate_survey(resp, g, "A.1")
+
+    # add(bulge) with n fixed -> rejected
+    rep = _check([{"primitives": [
+        {"op": "remove", "remove": "bulge"},
+        {"op": "add", "add": {"structure_name": "bulge",
+                              "component_type": "sersic", "mag": 16.5,
+                              "re_px": 3.0, "n": 4.0, "q": 0.7, "pa_deg": 10.0,
+                              "toggles": {"n": 0}}}],
+        "physical_motivation": "m", "expected_C_prime": "c",
+        "novelty_claim": "n", "expected_behavior_tag": "fixed_add",
+        "local_benefit_sigma": 0.6}])
+    assert any(i.code == "E_BULGE_N_FREE" for i in rep.errors)
+
+    # tune(bulge, n -> fixed) -> rejected
+    rep = _check([{"primitives": [
+        {"op": "tune", "tune": {"structure_name": "bulge", "param": "n",
+                                 "value": 4.0, "toggle": 0}}],
+        "physical_motivation": "m", "expected_C_prime": "c",
+        "novelty_claim": "n", "expected_behavior_tag": "refix",
+        "local_benefit_sigma": 0.6}])
+    assert any(i.code == "E_BULGE_N_FREE" for i in rep.errors)
+
+    # free-n add is legal
+    rep = _check([{"primitives": [
+        {"op": "remove", "remove": "bulge"},
+        {"op": "add", "add": {"structure_name": "bulge",
+                              "component_type": "sersic", "mag": 16.5,
+                              "re_px": 3.0, "n": 4.0, "q": 0.7, "pa_deg": 10.0,
+                              "toggles": {"n": 1}}}],
+        "physical_motivation": "m", "expected_C_prime": "c",
+        "novelty_claim": "n", "expected_behavior_tag": "free_add",
+        "local_benefit_sigma": 0.6}])
+    assert not any(i.code == "E_BULGE_N_FREE" for i in rep.errors)
+
+
+def test_opening_skeleton_fixed_bulge_n_rejected():
+    from beam.candidate_schema import parse_survey_response, validate_survey
+    payload = {"physicality_verdict": {"verdict": "PASS", "failed_checks": [],
+                                       "swap_hint": "none"},
+               "candidates": [{"primitives": [
+                   {"op": "skeleton", "skeleton": {"components": [
+                       {"structure_name": "disk", "component_type": "expdisk",
+                        "mag": 15.2, "re_px": 55.0, "q": 0.4, "pa_deg": 66.0},
+                       {"structure_name": "bulge", "component_type": "sersic",
+                        "mag": 16.6, "re_px": 3.0, "n": 4.0, "q": 0.6,
+                        "pa_deg": 66.0, "toggles": {"n": 0}}]}}],
+                   "physical_motivation": "m", "expected_C_prime": "c",
+                   "novelty_claim": "n", "expected_behavior_tag": "bad_skel",
+                   "local_benefit_sigma": 0.5}]}
+    resp, err = parse_survey_response(payload)
+    assert resp is not None, err
+    # validate against any graph — the skeleton check needs is_root_opening,
+    # so drive it through a fresh graph's A.0
+    import tempfile, shutil
+    from pathlib import Path
+    td = Path("tests/test_data")
+    tmp = tempfile.mkdtemp()
+    gdir = Path(tmp) / "G"
+    gdir.mkdir()
+    shutil.copy(td / "NGC1097.feedme", gdir / "root.feedme")
+    g = BeamGraph.init(str(gdir), str(gdir / "root.feedme"),
+                       stage1={"morphology": "m"})
+    rep = validate_survey(resp, g, "A.0")
+    shutil.rmtree(tmp, ignore_errors=True)
+    assert any(i.code == "E_BULGE_N_FREE" for i in rep.errors)

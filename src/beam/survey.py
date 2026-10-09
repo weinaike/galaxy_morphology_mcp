@@ -311,8 +311,8 @@ def survey_round(
             f"Input-feedme reference parameters (seeding references, NOT a model to "
             f"copy verbatim): {ref_lines}. Task: judge the morphology and return 1-3 "
             "RANKED opening skeleton candidates, each a single skeleton primitive "
-            "(components from {disk(expdisk), bulge(sersic), bar(sersic, n=0.5 FIXED)} "
-            "— or singlesersic alone for an elliptical opening; bar PA from the visual "
+            "(components from {disk(expdisk), bulge(sersic, n FREE with initial 4 or 1), "
+            "bar(sersic, n=0.5 FIXED)} — or singlesersic alone for an elliptical opening; bar PA from the visual "
             "feature direction, N=+Y). Seed every mag/re/q/PA from the references and "
             "your image reading; the top-ranked candidate becomes the first fit.")
     else:

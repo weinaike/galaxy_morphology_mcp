@@ -247,6 +247,7 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
     """
     result = IngestResult()
     triggers = numeric_triggers or {}
+    crash_kinds = graph.crash_kinds() if hasattr(graph, "crash_kinds") else {}
     parent = graph.state(parent_label)
     parent_inventory = parent.get("inventory", [])
     combo_counts = graph.combo_counts()
@@ -265,8 +266,33 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
     reorder_reqs = [(qr.action_id, qr.new_rank)
                     for cand in candidates for qr in (cand.queue_reorder or [])]
 
+    def _prim_kind(p):
+        op = p.get("op", "?")
+        inner = p.get(op) if isinstance(p.get(op), dict) else {}
+        name = (p.get("structure_name") or inner.get("structure_name")) or ""
+        if op == "add":
+            return f"add:{(name or '?').lower()}"
+        if op == "remove":
+            return f"remove:{(p.get('target') or inner.get('remove') or '?').lower()}"
+        if op == "tune":
+            return f"tune:{(name or '?').lower()}.{p.get('param') or inner.get('param') or 'bound'}"
+        return op
+
     for cand in candidates:
         prims = cand.to_plain_primitives()
+        # ---- crash-pattern suppression: a primitive kind that already crashed
+        # twice is banned for the rest of the run (KILOGAS_221 rerun: 4/7 fits
+        # lost to repeated add:bar/add:bulge singular-matrix crashes)
+        crashed_kinds = {k for k in (_prim_kind(p) for p in prims)
+                         if int((crash_kinds.get(k) or {}).get("count", 0)) >= 2}
+        if crashed_kinds:
+            result.discarded.append({"reason": "E_CRASH_PATTERN",
+                                     "kinds": sorted(crashed_kinds),
+                                     "tag": cand.expected_behavior_tag})
+            graph.log_decision({"kind": "enqueue-discard", "session": session_id,
+                                "reason": f"E_CRASH_PATTERN: {sorted(crashed_kinds)}",
+                                "tag": cand.expected_behavior_tag})
+            continue
         disk = next((c for c in parent_inventory if c.get("name") in {"disk", "edgedisk"}), None)
         # effective Re (px): raw inventories store Rs for expdisk/edgedisk —
         # convert, else the floor_disk_re growth test compares a Re-units

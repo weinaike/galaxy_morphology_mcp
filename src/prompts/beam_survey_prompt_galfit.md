@@ -123,6 +123,9 @@ Field rules:
 - On verdict=FAIL at least one candidate must repair failed_checks (swap_hint=disk_bulge_swap → include the label-swap candidate).
 - Candidate counts by depth: 1 → 1–2; 2 → 2–3; ≥3 → 2–4. No padding.
 
+### Crash ledger rule
+The current-round supplement may carry a `CRASH LEDGER (objective facts)` line: primitive kinds (`add:bar`, `tune:lens.re_px`, ...) that already crashed GALFIT (singular matrix / divergence), with counts. **A kind with >=2 crashes is BANNED — code discards its candidates (E_CRASH_PATTERN); do not propose it.** A kind with exactly 1 crash may only be re-proposed with a materially different seeding (different mag/Re/q initial values AND a physical_motivation citing NEW residual evidence for the component) — otherwise diversify elsewhere.
+
 ### Validation feedback loop
 
 Your output is parsed and validated in code. **Errors** return this block to you for correction (keep the same overall judgement, fix the flagged fields):
@@ -132,6 +135,8 @@ Your output is parsed and validated in code. **Errors** return this block to you
 - E_MULTIPLICITY — a >1 slot (disk/edgedisk/bulge/bar/lens/outerdisk/agn), disk+edgedisk, singlesersic alongside anything but AGN and companions, or a diskless multi-component inventory (no disk/edgedisk while other components exist).
 - E_SINGLE_CONVERSION — central add on a SingleSersic parent without the bundled convert.
 - E_RE_CHAIN — Re triplet/init violates total-order adjacency (message carries the numbers).
+- E_CRASH_PATTERN — the candidate's primitive kind already crashed GALFIT twice (banned for this run).
+- E_F1_MULTIPLICITY — the parent already carries an F1 row; at most one m=1 mode exists.
 - E_COMBO_EXHAUSTED / E_R1_LEDGER / E_R2_EXACT — the landed state is closed or already known (diversify).
 - E_SKY_TOUCH / E_F1_TARGET / E_PARAM_TYPE — illegal parameter/target.
 - E_AGN_ADMISSION / E_COMPANION_TIMING — admission or timing rule violation.

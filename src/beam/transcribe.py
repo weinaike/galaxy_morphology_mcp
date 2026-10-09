@@ -252,6 +252,14 @@ def build_cons(blocks: list[Block], numbers: dict[str, int], *,
     re_floor = re_floor_px(psf_fwhm_px)  # max(0.1, 0.1 × PSF FWHM) — see cons_decode
     side = _region_side(fit_region)
     re_cap = 0.5 * side if side else 500.0
+    # mag SAFETY band anchor: the brightest component's mag. The band is wide
+    # enough never to bind a healthy fit (flux reapportionment stays free) and
+    # exists only to stop the divergence that produces GALFIT singular
+    # matrices — an added central component with nothing to grab empties
+    # itself (mag -> 110+) or blows up (mag -> 1e18) and the Hessian goes
+    # singular (KILOGAS_221 austerity rerun: 4/7 fits lost to exactly this).
+    mags = [m for m in (_block_mag(b) for b in luminous) if m is not None]
+    mag_ref = min(mags) if mags else None
 
     for b in luminous:
         num = numbers.get(b.name)
@@ -264,6 +272,11 @@ def build_cons(blocks: list[Block], numbers: dict[str, int], *,
                 else (re_floor, re_cap)
             lines.append(f" {num}   re   {lo:.4f} to {hi:.4f}"
                          + ("   # expdisk: band in Rs" if is_exp else ""))
+        # mag safety band (every component with a 3) row; absolute 'to' form)
+        if b.row("3") and mag_ref is not None:
+            lines.append(f" {num}   mag  {mag_ref - 2.0:.4f} to {mag_ref + 12.0:.4f}"
+                         "   # mag safety band (anti-divergence; wide, never "
+                         "binding in a healthy fit)")
         # n band (sersic-type components with an n row only)
         if b.row("5") and b.ctype in {"sersic", "ferrer", "devauc", "king", "nuker",
                                       "gaussian", "moffat"}:

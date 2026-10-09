@@ -560,6 +560,11 @@ class BeamGraph:
         archive_dir = None
         if run_result.get("round_status_file"):
             archive_dir = os.path.dirname(os.path.abspath(run_result["round_status_file"]))
+        elif run_result.get("input_param_file"):
+            # KILOGAS_221 rerun: a run_result without round_status_file left
+            # the best state's snapshot showing "archives directory: None" —
+            # the input feedme lives in the same archive dir, use it
+            archive_dir = os.path.dirname(os.path.abspath(run_result["input_param_file"]))
 
         self.g.add_node(label, **{
             "label": label,
@@ -760,9 +765,39 @@ class BeamGraph:
         self._drop_from_queue(action_id)
         c = self.counters()
         c["n_failed"] = int(c.get("n_failed", 0)) + 1
+        # crash ledger (KILOGAS_221 austerity rerun: 4/7 fits lost to the SAME
+        # degeneration pattern — add:bar / add:bulge on a converged centre ->
+        # mag blow-up + q floor -> singular matrix — while the queue kept
+        # feeding the same kinds from three different surveys). Count per
+        # primitive kind; the digest surfaces the ledger to the surveyor and
+        # enqueue discards a kind after its 2nd crash.
+        ledger = self.g.graph.setdefault("crash_kinds", {})
+
+        def _kind(p):
+            op = p.get("op", "?")
+            inner = p.get(op) if isinstance(p.get(op), dict) else {}
+            name = (p.get("structure_name") or inner.get("structure_name")) or ""
+            if op == "add":
+                return f"add:{(name or '?').lower()}"
+            if op == "remove":
+                return f"remove:{(p.get('target') or inner.get('remove') or '?').lower()}"
+            if op == "tune":
+                param = p.get("param") or inner.get("param") or "bound"
+                return f"tune:{(name or '?').lower()}.{param}"
+            return op
+
+        for p in rec.get("primitives", []):
+            kind = _kind(p)
+            entry = ledger.setdefault(kind, {"count": 0, "last_reason": ""})
+            entry["count"] += 1
+            entry["last_reason"] = reason[:200]
         # a crashed/diverged fit is NOT evidence of a stuck search: budget
         # already bounds the failure loop, stagnation stays untouched
-        self.log_decision({"kind": "fit-failure", "action_id": action_id, "reason": reason})
+        self.log_decision({"kind": "fit-failure", "action_id": action_id,
+                           "reason": reason, "crash_kinds": dict(ledger)})
+
+    def crash_kinds(self) -> dict:
+        return self.g.graph.get("crash_kinds", {}) or {}
 
     def mark_discarded(self, action_id: str, reason: str,
                        bump_stagnation: bool = True) -> None:

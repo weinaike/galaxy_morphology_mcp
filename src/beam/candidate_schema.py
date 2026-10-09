@@ -812,6 +812,19 @@ def validate_survey(resp: SurveyResponse, graph, state_label: str) -> Validation
     # the round-0 opening survey: the parent is the unfitted root A.0 (no fit
     # has run yet) — skeleton primitives are legal here and nowhere else
     is_root_opening = int(state.get("global_iter_id", 0)) == 0
+    # F1 multiplicity: inventories do not carry F1 rows, so a parent that
+    # already holds an F1 is invisible to the slot checks — scan its feedme
+    # (KILOGAS_221 rerun: the post-F1 survey proposed another F1-carrying
+    # candidate on the F1-bearing best and it passed validation)
+    parent_has_f1 = False
+    _pfeedme = (state.get("artifacts") or {}).get("feedme") or ""
+    if _pfeedme:
+        try:
+            with open(_pfeedme, encoding="utf-8") as _f:
+                parent_has_f1 = any(_ln.strip().upper().startswith("F1)")
+                                     for _ln in _f)
+        except OSError:
+            parent_has_f1 = False
     combo_counts = graph.combo_counts()
     cap = int(graph.g.graph["meta"].get("per_combo_cap", 4))
     refuted = graph.g.graph.get("refuted_hypotheses", [])
@@ -829,6 +842,13 @@ def validate_survey(resp: SurveyResponse, graph, state_label: str) -> Validation
             cand, parent_inventory, combo_counts, cap, depth, refuted, temp, ledger,
             stage1_bar_pa=stage1_bar_pa,
             is_root_opening=is_root_opening))
+        if parent_has_f1 and any(
+                p.get("f1") for p in cand.to_plain_primitives()):
+            issues.append(Issue("E_F1_MULTIPLICITY",
+                                "the parent state already carries an F1 row — at "
+                                "most one m=1 Fourier mode exists per model; do "
+                                "not propose another F1-carrying primitive",
+                                action_id=cand.action_id))
 
     # survey-level: candidate counts per depth, tag uniqueness, queue_reorder sanity
     if is_root_opening:

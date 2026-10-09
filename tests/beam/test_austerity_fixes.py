@@ -169,3 +169,110 @@ def test_skeleton_candidates_shielded_from_truncation(mini_graph):
     assert res.enqueued, res.discarded
     rec = graph.g.graph["pending"][res.enqueued[0]["action_id"]]
     assert rec["code_flags"].get("opening_alternate") is True
+
+
+# ------------------- KILOGAS_221 rerun fixes (mag band, crash ledger, ...)
+def test_mag_safety_band_in_cons(mini_graph, tmp_path):
+    from beam.transcribe import transcribe
+    graph, label = mini_graph
+    feedme = graph.state(label)["artifacts"]["feedme"]
+    out_f = tmp_path / "m.feedme"
+    out_c = tmp_path / "m.cons"
+    r = transcribe(feedme, "", [{"op": "tune", "structure_name": "disk",
+                                 "param": "re_px", "value": 30.0}],
+                   str(out_f), str(out_c), psf_fwhm_px=4.0)
+    assert r.ok
+    cons = open(out_c).read()
+    assert "mag" in cons and "anti-divergence" in cons
+    # band anchored on the brightest component, wide (never binding healthy)
+    import re as _re
+    m = _re.search(r"(\d+)\s+mag\s+([\d.]+) to ([\d.]+)", cons)
+    assert m and abs(float(m.group(3)) - float(m.group(2)) - 14.0) < 1e-6  # -2 / +12
+
+
+def test_crash_ledger_suppression(mini_graph):
+    graph, label = mini_graph
+    for i in (1, 2):
+        aid = graph.add_pending({"action_id": f"bar{i}", "sigma": 0.6, "score": 0.6,
+                                 "expected_behavior_tag": f"bar{i}",
+                                 "primitives": [_add("bar", re=12.0, n=0.5)]},
+                                "s", label)
+        graph.mark_failed(aid, "GALFIT crash: singular matrix (bar degenerated)")
+    assert graph.crash_kinds()["add:bar"]["count"] == 2
+    res = ingest(graph, [_cand([_add("bar", re=9.0, n=0.5)], sigma=0.7, tag="bar3")],
+                 session_id="s", parent_label=label)
+    assert not res.enqueued
+    assert res.discarded and res.discarded[0]["reason"] == "E_CRASH_PATTERN"
+    # a different kind is unaffected (lens is absent from the parent)
+    res2 = ingest(graph, [_cand([_add("lens", re=6.0, n=0.3)], sigma=0.7,
+                                tag="lens_ok")],
+                  session_id="s", parent_label=label)
+    assert res2.enqueued
+
+
+def test_archive_dir_fallback(tmp_path, test_data_dir):
+    import shutil
+    gdir = tmp_path / "AF"
+    gdir.mkdir()
+    feedme = gdir / "root.feedme"
+    shutil.copy(test_data_dir / "NGC1097.feedme", feedme)
+    g = BeamGraph.init(str(gdir), str(feedme), stage1={"morphology": "m"})
+    # run_result WITHOUT round_status_file (KILOGAS_221 F1-round shape)
+    g.record_fit({"input_param_file": str(feedme), "output_param_file": "",
+                  "image_file": "", "summary_file": "",
+                  "fit_statistics": {"bic_eff": 1.0, "chisq1d_nu": 1.0,
+                                     "convergence": {"flag": "ok"}}})
+    assert g.state("A.1")["archive_dir"] == str(gdir)
+
+
+def test_double_f1_rejected(tmp_path, test_data_dir):
+    import shutil
+    from beam.candidate_schema import parse_survey_response, validate_survey
+    gdir = tmp_path / "F1X"
+    gdir.mkdir()
+    feedme = gdir / "root.feedme"
+    shutil.copy(test_data_dir / "NGC1097.feedme", feedme)
+    g = BeamGraph.init(str(gdir), str(feedme), stage1={"morphology": "m"})
+    g.record_fit({"input_param_file": str(feedme), "output_param_file": "",
+                  "image_file": "", "summary_file": "",
+                  "fit_statistics": {"bic_eff": 1.0, "chisq1d_nu": 1.0,
+                                     "convergence": {"flag": "ok"}}})
+    # parent feedme now carries an F1) row
+    text = feedme.read_text().replace(
+        "Z) 0", "F1) 0.05  100.0  1  1\nZ) 0", 1)
+    feedme.write_text(text)
+    payload = {"physicality_verdict": {"verdict": "PASS", "failed_checks": [],
+                                       "swap_hint": "none"},
+               "candidates": [{"primitives": [
+                   {"op": "remove", "remove": "disk"},
+                   {"op": "add", "add": {"structure_name": "disk",
+                                         "component_type": "expdisk",
+                                         "mag": 15.0, "re_px": 30.0, "q": 0.5,
+                                         "pa_deg": 10.0,
+                                         "f1": {"amplitude": 0.04,
+                                                "phase_deg": 90.0}}}],
+                   "physical_motivation": "m", "expected_C_prime": "c",
+                   "novelty_claim": "n", "expected_behavior_tag": "second_f1",
+                   "local_benefit_sigma": 0.5}]}
+    resp, err = parse_survey_response(payload)
+    assert resp is not None, err
+    report = validate_survey(resp, g, "A.1")
+    assert any(i.code == "E_F1_MULTIPLICITY" for i in report.errors)
+
+
+def test_flat_bulge_trigger_skips_zombie(tmp_path, test_data_dir):
+    import shutil
+    from beam.digest import build_local_state_description
+    gdir = tmp_path / "ZB"
+    gdir.mkdir()
+    feedme = gdir / "root.feedme"
+    shutil.copy(test_data_dir / "NGC1097.feedme", feedme)
+    g = BeamGraph.init(str(gdir), str(feedme), stage1={"morphology": "m"})
+    label = g.record_fit({"input_param_file": str(feedme), "output_param_file": "",
+                          "image_file": "", "summary_file": "",
+                          "fit_statistics": {"bic_eff": 1.0, "chisq1d_nu": 1.0,
+                                             "convergence": {"flag": "ok"}}})
+    # a flat zombie bulge (q=0.05, Re on the PSF floor) — trigger must stay off
+    g.g.nodes[label]["zombies"] = ["bulge"]
+    _desc, triggers = build_local_state_description(g, label, {})
+    assert triggers.get("flat_bulge_bar") is not True

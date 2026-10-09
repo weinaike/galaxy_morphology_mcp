@@ -202,6 +202,19 @@ def build_local_state_description(g, state_label: str,
 
     lines.append(f"Parent state {state_label} (depth {state.get('depth')}, "
                  f"combo {state.get('combo_key')}):")
+    # ---- crash ledger (objective facts; KILOGAS_221 rerun): the surveyor
+    # must see which add/remove/tune kinds already crashed GALFIT
+    try:
+        ck = g.crash_kinds() if hasattr(g, "crash_kinds") else {}
+    except Exception:
+        ck = {}
+    if ck:
+        entries = ", ".join(f"{kind} x{int(v.get('count', 0))}"
+                            for kind, v in sorted(ck.items()))
+        lines.append(f"  CRASH LEDGER (objective facts): {entries}. A kind with "
+                     ">=2 crashes is BANNED (code discards its candidates); do "
+                     "NOT re-propose a once-crashed kind without a materially "
+                     "different seeding grounded in NEW residual evidence.")
     lines.append("  inventory: " + ("; ".join(_comp_line(c) for c in inv) or "(empty)"))
     metrics = state.get("metrics", {})
     conv = (metrics.get("convergence") or {}).get("flag", "ok")
@@ -247,7 +260,7 @@ def build_local_state_description(g, state_label: str,
     facts.extend(_lens_inflation(g, state, inv, triggers))
     facts.extend(_disk_re_bottleneck(g, state, inv, triggers, hits))
     facts.extend(_flux_misallocation(g, state, inv))
-    facts.extend(_flat_bulge_trigger(inv, triggers))
+    facts.extend(_flat_bulge_trigger(g, state, inv, triggers))
     lines.append("")
     if facts:
         lines.append("Numeric-rule delegations (objective facts; generation decisions are "
@@ -428,10 +441,21 @@ def _flux_misallocation(g, state, inv) -> list[str]:
     return facts
 
 
-def _flat_bulge_trigger(inv, triggers) -> list[str]:
+def _flat_bulge_trigger(g, state, inv, triggers) -> list[str]:
     bulge = next((c for c in inv if c.get("name") == "bulge"), None)
     disk = next((c for c in inv if c.get("name") in {"disk", "edgedisk"}), None)
     if bulge is None or disk is None:
+        return []
+    # degenerate-bulge exclusion (KILOGAS_221 rerun: a ZOMBIE bulge at q=0.05,
+    # Re on the PSF floor fired the flat-bulge watchdog and demanded Bar
+    # candidates from a component that carries no flux) — a zombie or
+    # floor-pinned bulge is an identity question, not a flat-bulge trigger
+    zombies = set(state.get("zombies") or [])
+    re_eff = bulge.get("re_effective", bulge.get("re"))
+    psf = (g.g.graph.get("meta") or {}).get("psf_fwhm_px") or 1.0
+    floor = max(0.1, 0.1 * float(psf))
+    if "bulge" in zombies or (re_eff is not None and float(re_eff) <= floor * 1.05):
+        triggers["flat_bulge_bar"] = False
         return []
     bq = bulge.get("q")
     dq = disk.get("q")

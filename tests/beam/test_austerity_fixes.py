@@ -276,3 +276,44 @@ def test_flat_bulge_trigger_skips_zombie(tmp_path, test_data_dir):
     g.g.nodes[label]["zombies"] = ["bulge"]
     _desc, triggers = build_local_state_description(g, label, {})
     assert triggers.get("flat_bulge_bar") is not True
+
+
+# ------------------- crash forensics archiving (run_galfit failure paths)
+def test_run_galfit_crash_archives_forensics(tmp_path, test_data_dir, monkeypatch):
+    """A crashed GALFIT (nonzero return) still gets an archives/ directory
+    carrying console.log + the input feedme + round_status.json with
+    status=galfit_crashed, and the failure dict carries archive_dir."""
+    import shutil as _sh
+    import os as _os
+
+    from tools.run_galfit import run_galfit
+
+    gdir = tmp_path / "CRASH"
+    gdir.mkdir()
+    _sh.copy(test_data_dir / "NGC1097.feedme", gdir / "root.feedme")
+    # /bin/false: exits 1 with no output -> the returncode != 0 path
+    monkeypatch.setenv("GALFIT_BIN", "/bin/false")
+    import asyncio
+    r = asyncio.run(run_galfit(config_file=str(gdir / "root.feedme")))
+    assert r["status"] == "failure"
+    ar = r.get("archive_dir")
+    assert ar and _os.path.isdir(ar)
+    assert (gdir / "archives" / _os.path.basename(ar)).exists()
+    assert _os.path.exists(_os.path.join(ar, "root.feedme"))
+    rs = json.load(open(_os.path.join(ar, "round_status.json")))
+    assert rs["status"] == "galfit_crashed"
+
+
+def test_mark_failure_stores_archive_dir(mini_graph):
+    graph, label = mini_graph
+    aid = graph.add_pending({"action_id": "boom", "sigma": 0.6, "score": 0.6,
+                             "expected_behavior_tag": "boom",
+                             "primitives": [_add("bar", re=12.0, n=0.5)]},
+                            "s", label)
+    graph.mark_failed(aid, "GALFIT crash: singular matrix",
+                      archive_dir="/tmp/archives/20261009T000000.deadbeef")
+    rec = graph.g.graph["pending"][aid]
+    assert rec["archive_dir"] == "/tmp/archives/20261009T000000.deadbeef"
+    entry = [e for e in graph.g.graph["decision_log"]
+             if e.get("kind") == "fit-failure"][-1]
+    assert entry.get("archive_dir") == "/tmp/archives/20261009T000000.deadbeef"

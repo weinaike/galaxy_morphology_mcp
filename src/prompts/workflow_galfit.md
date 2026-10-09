@@ -83,7 +83,9 @@ while beam_status(galaxy_dir).termination.stop is False:
        - failure with missing parent artefacts: repair the environment, retry once
     3. run_galfit(config_file=r.feedme)
        - tool failure / no comparison image: beam_mark_failure(galaxy_dir, next,
-         reason) and continue
+         reason, archive_dir=<the failed run_galfit's archive_dir if returned>)
+         and continue — crash forensics (console.log + the exact input) are
+         auto-archived under archives/ by run_galfit itself
     4. beam_record_fit(galaxy_dir, run_galfit_result_json=<full return dict>,
        action_id=next)
     5. survey_round(galaxy_dir)  → returns verdict, enqueued/discarded candidates,

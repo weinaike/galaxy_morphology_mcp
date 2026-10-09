@@ -194,6 +194,9 @@ def build_working_note(g, galaxy_dir: str) -> str:
             lines.append(f"### {aid} (parent = {r.get('parent')}, failed)")
             lines.append(f"- Action tag: {r.get('expected_behavior_tag')}")
             lines.append(f"- Failure reason: {r.get('discard_reason')}")
+            if r.get("archive_dir"):
+                lines.append(f"- Crash forensics archive: {r['archive_dir']} "
+                             "(console.log + input feedme/.cons + round_status.json)")
     else:
         lines.append("- (none)")
 

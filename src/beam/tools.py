@@ -290,11 +290,16 @@ def beam_mark_failure(
                               "(tool error / no comparison image / no summary)"],
     reason: Annotated[str, "Short failure reason (tool error, timeout, "
                            "check_feedme_file rejection, ...)"] = "",
+    archive_dir: Annotated[str, "Optional crash-forensics archive directory "
+                                "returned by a failed run_galfit call "
+                                "(archive_dir field) — stored on the failed "
+                                "record and the decision log"] = "",
 ) -> dict[str, Any]:
     """Record a failed fit (b.5 branch): marks the edge failed, bumps counters."""
     try:
         graph = _load_graph(galaxy_dir)
-        graph.mark_failed(action_id, reason or "unspecified")
+        graph.mark_failed(action_id, reason or "unspecified",
+                          archive_dir=archive_dir or "")
         graph.commit()
         return {"status": "success", "action_id": action_id,
                 "counters": graph.counters(), "termination": graph.termination_check()}

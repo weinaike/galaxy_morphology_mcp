@@ -756,12 +756,15 @@ class BeamGraph:
                 })
 
     # ------------------------------------------------------------ failures
-    def mark_failed(self, action_id: str, reason: str) -> None:
+    def mark_failed(self, action_id: str, reason: str,
+                    archive_dir: str = "") -> None:
         rec = self.g.graph["pending"].get(action_id)
         if rec is None:
             return
         rec["status"] = "failed"
         rec["discard_reason"] = reason
+        if archive_dir:
+            rec["archive_dir"] = archive_dir  # crash forensics (run_galfit)
         self._drop_from_queue(action_id)
         c = self.counters()
         c["n_failed"] = int(c.get("n_failed", 0)) + 1
@@ -793,8 +796,11 @@ class BeamGraph:
             entry["last_reason"] = reason[:200]
         # a crashed/diverged fit is NOT evidence of a stuck search: budget
         # already bounds the failure loop, stagnation stays untouched
-        self.log_decision({"kind": "fit-failure", "action_id": action_id,
-                           "reason": reason, "crash_kinds": dict(ledger)})
+        entry = {"kind": "fit-failure", "action_id": action_id,
+                 "reason": reason, "crash_kinds": dict(ledger)}
+        if archive_dir:
+            entry["archive_dir"] = archive_dir
+        self.log_decision(entry)
 
     def crash_kinds(self) -> dict:
         return self.g.graph.get("crash_kinds", {}) or {}

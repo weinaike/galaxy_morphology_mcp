@@ -44,6 +44,9 @@ AGING_CAP = 0.10
 # the surveyor's explicit pick leads in ordering while floor entries keep
 # their eviction protection and their base-score priority
 SURVEYOR_PIN_BONUS = 0.15
+# off-best-path demotion factor (ordering + truncation): candidates parented
+# on superseded states rank at ~2/3 of their nominal score
+OFF_PATH_FACTOR = 0.65
 
 # weights: dimension 3 (path diversity) x2, cf. workflow §Deduplication & Ranking
 W = [1.0, 1.0, 2.0, 1.0, 1.0]
@@ -176,7 +179,8 @@ def _is_agn_add(cand: Candidate) -> bool:
 
 def _score_candidate(cand: Candidate, hypo_combo: str, combo_counts: dict[str, int],
                      queued_directions: set[str], direction_key: str,
-                     verdict_fail: bool) -> tuple[float, dict]:
+                     verdict_fail: bool,
+                     parent_inventory: list[dict] | None = None) -> tuple[float, dict]:
     """Deterministic six-dimension score; returns (g, flags)."""
     sigma = float(cand.local_benefit_sigma)
     prims = cand.to_plain_primitives()
@@ -191,6 +195,16 @@ def _score_candidate(cand: Candidate, hypo_combo: str, combo_counts: dict[str, i
         names = {(p.get("structure_name") or "").lower() for p in adds}
         if names <= {"bulge", "bar", "f1"} or names <= {"companion"}:
             s2 = 1.0
+            # Skeleton ladder (Disk -> Bulge -> Bar; KILOGAS_73 austerity
+            # rerun: the disk+bar jump burned fit 2 at dBIC +4578 while the
+            # disk+bulge foundation candidate idled in the queue): a BAR
+            # added while the parent carries NO bulge (and none is being
+            # added) skips a rung — demote it below the bulge-first order.
+            parent_names = {(c.get("name") or "").lower()
+                            for c in (parent_inventory or [])}
+            if "bar" in names and "bulge" not in names \
+                    and "bulge" not in parent_names:
+                s2 = 0.8
         elif "lens" in names or "outerdisk" in names:
             s2 = 0.6
         elif "agn" in names:
@@ -330,6 +344,11 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
 
         # ---- code flags (floors) + persistent-candidate protection
         flags: dict[str, bool] = {}
+        if any(p.get("op") == "skeleton" for p in prims):
+            # round-0 opening skeletons are the run's fallback foundations —
+            # never lost to queue truncation (KILOGAS_73 rerun: the disk+bulge
+            # alternate was truncated at A.2 and only survived in spirit)
+            flags["opening_alternate"] = True
         if _is_n_release(cand):
             flags["floor_n_release"] = True
         if _is_bar_direction(cand) and (triggers.get("flat_bulge_bar")
@@ -358,7 +377,8 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
             result.protected.append(direction_key)
 
         g, _ = _score_candidate(cand, hypo_combo, combo_counts, queued_directions,
-                                direction_key, verdict_fail)
+                                direction_key, verdict_fail,
+                                parent_inventory=parent_inventory)
         if flags:
             g = max(g, FLOOR_G)
         if persistent:
@@ -449,11 +469,16 @@ def _truncate_queue(graph) -> None:
     queue = [a for a in graph.g.graph.get("queue", []) if a in pending]
     if len(queue) <= W:
         return
+    on_path = graph.best_path_labels()
+
     def rank(aid):
         rec = pending[aid]
         protected = bool(rec.get("code_flags")) or bool(rec.get("surveyor_rank_pin"))
+        score = rec.get("score") or 0.0
+        if rec.get("parent") not in on_path:
+            score *= OFF_PATH_FACTOR  # evict off-path entries first
         return (0 if protected else 1,
-                -(rec.get("score") or 0.0),
+                -score,
                 -rec.get("age_counter", 0))
     ordered = sorted(queue, key=rank)
     keep, evict = ordered[:W], ordered[W:]
@@ -479,7 +504,12 @@ def _reorder_queue(graph) -> None:
     def order(aid):
         rec = pending[aid]
         eff = rec.get("score") or 0.0
-        if rec.get("parent") in on_path:
+        if rec.get("parent") not in on_path:
+            # off-best-path demotion (KILOGAS_73 rerun: add_agn_core on the
+            # superseded bar+disk state survived 3 rounds and burned fit 7 at
+            # dBIC +5715) — fresh repairs on the best branch lead
+            eff *= OFF_PATH_FACTOR
+        else:
             eff += min(AGING_BONUS * rec.get("age_counter", 0), AGING_CAP)
         if rec.get("code_flags"):
             eff += 0.05

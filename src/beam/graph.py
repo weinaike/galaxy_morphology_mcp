@@ -48,6 +48,9 @@ G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)
 REPAIR_BUDGET_CAP = 4
+# sub-converged rounds are budget-free (non-information); stop after this
+# many — the seeding/optimisation is then systematically broken
+SUB_CONVERGED_LIMIT = 3
 
 
 def _now() -> str:
@@ -491,7 +494,17 @@ class BeamGraph:
         ``n_f1_reserved`` counter, NOT in ``n_executed`` — the reserved fit
         rides on top of N_max ("7+1"), and it runs exactly once (the guard
         lives in beam_enqueue_f1 / meta["f1"]).
+
+        A [sub-converged] round is likewise counted in ``n_sub_converged``,
+        not in ``n_executed`` (KILOGAS_73 austerity rerun: fits 5-6 burned
+        2/7 of the budget on frozen-optimiser rounds that carried no
+        information — the Refutation validity rule already declares them
+        non-evidence, the combo cap already exempts them; the budget now
+        does too, bounded by the ``sub_converged_limit`` termination
+        condition so a systematically broken seeding cannot loop forever).
         """
+        fit_stats_early = dict(run_result.get("fit_statistics") or {})
+        conv_early = ((fit_stats_early.get("convergence") or {}).get("flag"))
         c = self.counters()
         if action_id:
             rec0 = self.g.graph["pending"].get(action_id) or {}
@@ -500,6 +513,8 @@ class BeamGraph:
             f1_reserved = False
         if f1_reserved:
             c["n_f1_reserved"] = int(c.get("n_f1_reserved", 0)) + 1
+        elif conv_early == "sub-converged":
+            c["n_sub_converged"] = int(c.get("n_sub_converged", 0)) + 1
         else:
             c["n_executed"] = int(c.get("n_executed", 0)) + 1
 
@@ -782,9 +797,37 @@ class BeamGraph:
         self.g.graph["queue"] = list(ordered_ids)
 
     def age_pending(self) -> None:
+        """Age every pending entry by one round, then EVICT stale off-path ones.
+
+        Stale eviction (KILOGAS_73 austerity rerun: A.1-c4 sat age=8 at the
+        queue head while add_agn_core from a superseded parent survived 3
+        rounds and burned fit 7): a pending candidate that is >3 rounds old,
+        carries NO code_flags/pin (floors, opening skeletons and the reserved
+        F1 are exempt) and whose parent lies OFF the current best path is
+        discarded — at a 7-fit budget queue slots are too scarce for zombie
+        directions. (The aging BONUS stays on-path only; off-path entries no
+        longer accumulate value with age.)
+        """
         for rec in self.g.graph.get("pending", {}).values():
             if rec.get("status") == "pending":
                 rec["age_counter"] = int(rec.get("age_counter", 0)) + 1
+        on_path = self.best_path_labels()
+        for aid in list(self.g.graph.get("queue", [])):
+            rec = self.g.graph.get("pending", {}).get(aid)
+            if not rec or rec.get("status") != "pending":
+                continue
+            if rec.get("code_flags") or rec.get("surveyor_rank_pin"):
+                continue
+            if rec.get("parent") in on_path:
+                continue
+            if int(rec.get("age_counter", 0)) > 3:
+                rec["status"] = "discarded"
+                rec["discard_reason"] = "STALE_OFFPATH"
+                self._drop_from_queue(aid)
+                self.log_decision({"kind": "stale-offpath-eviction",
+                                   "action_id": aid,
+                                   "age": rec.get("age_counter"),
+                                   "parent": rec.get("parent")})
 
     def best_path_labels(self) -> set[str]:
         """Labels on the current best branch (best state + its ancestors).
@@ -905,10 +948,15 @@ class BeamGraph:
         rounds are excluded — the Refutation validity rule declares the
         optimiser never explored, so the attempt never happened and a
         corrected re-run must remain legal (KILOGAS_432/353, Plate0295
-        A.10→A.11 chain). valid_only=False counts every fit that ran
-        (used by never_executed_precheck: a sub-converged round still
-        proves the inventory was executed).
+        A.10→A.11 chain). The reserved F1 arbitration round is ALSO excluded:
+        it is exempt from the combo gates at apply time by construction, and
+        counting it exhausted the best inventory right after the F1 retention
+        (KILOGAS_73 austerity rerun: the post-F1 survey's candidates were
+        E_COMBO_EXHAUSTED-rejected in a retry storm). valid_only=False counts
+        every fit that ran (used by never_executed_precheck: a sub-converged
+        round still proves the inventory was executed).
         """
+        pending = self.g.graph.get("pending", {})
         counts: dict[str, int] = {}
         for _label, attrs in self.g.nodes(data=True):
             if attrs.get("global_iter_id", 0) == 0:
@@ -916,6 +964,9 @@ class BeamGraph:
             if valid_only:
                 conv = ((attrs.get("metrics") or {}).get("convergence") or {}).get("flag")
                 if conv == "sub-converged":
+                    continue
+                rec = pending.get(attrs.get("action_in") or "") or {}
+                if (rec.get("code_flags") or {}).get("f1_reserved"):
                     continue
             key = attrs.get("combo_key", "?")
             counts[key] = counts.get(key, 0) + 1
@@ -1094,6 +1145,10 @@ class BeamGraph:
             conditions.append("budget_exhausted")
         if int(self.counters().get("stagnation", 0)) >= int(meta.get("stagnation_max", STAGNATION_MAX)):
             conditions.append("stagnation")
+        # sub-converged rounds are budget-free (non-information); this is the
+        # bound that keeps a systematically broken seeding from looping
+        if int(self.counters().get("n_sub_converged", 0)) >= SUB_CONVERGED_LIMIT:
+            conditions.append("sub_converged_limit")
         blockers = self.never_executed_precheck()
         floors = self.floor_blockers()
         left = self.budget_left()

@@ -362,8 +362,19 @@ def survey_round(
                 "input-feedme references (mag split ~3:7 bulge:disk for two "
                 "components, bar between; disk Re from the reference Re, bulge Re "
                 "1/5-1/3 of it, bar Re between the two; disk q/PA/centre from the "
-                "references; bar PA from the visual feature direction, N=+Y). Rank "
-                "by your posterior sigma (fresh skeleton ~0.5; converging visual "
+                "references; bar PA from the visual feature direction, N=+Y).\n"
+                "**Skeleton priority is EVIDENCE-CONDITIONAL (hard ranking rule)**: "
+                "when the image shows CLEAR component-skeleton evidence — an "
+                "elongated outer disk (q clearly < 0.5), a two-zone radial profile "
+                "(compact bright core + extended envelope), a bar-like inner "
+                "elongation — the MULTI-COMPONENT skeletons rank ABOVE singlesersic "
+                "(the decomposition hypothesis has the stronger prior; singlesersic "
+                "is then at most a low-σ alternate). When NO clear skeleton evidence "
+                "exists (smooth, featureless, round-ish isophotes, no core/envelope "
+                "contrast), singlesersic ranks FIRST (the elliptical hypothesis is "
+                "then the best prior; multi-component skeletons become the low-σ "
+                "alternates).\n"
+                "Rank by your posterior sigma (fresh skeleton ~0.5; converging visual "
                 "evidence up to ~0.7; never above 0.9). Return "
                 "physicality_verdict PASS (placeholder — nothing is fitted yet).\n\n"
                 + turn2)
@@ -447,6 +458,13 @@ def survey_round(
     # an AGN candidate). Parsed from THIS round's Phase-1 assessment; arms
     # the floor_agn_spike flag for any add(agn) candidate in this same
     # response and the candidate-absence watchdog when the VLM stays silent.
+    if is_opening:
+        # write the surveyor's morphology judgement back into the graph
+        # stage1 block so the working_note header and the digest render it
+        mot = "; ".join((c.physical_motivation or "").strip()
+                        for c in resp.candidates[:2] if c.physical_motivation)
+        graph.g.graph.setdefault("stage1", {})["morphology"] = (
+            "(round-0 opening survey) " + (mot[:400] or "(no rationale returned)"))
     if not is_opening:
         triggers["central_spike_agn"] = _central_spike_agn_trigger(state, raw_analysis)
 

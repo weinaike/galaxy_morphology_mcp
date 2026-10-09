@@ -152,9 +152,11 @@ workflow_galfit_v2 = _make_templated_prompt(
         "Single-band galaxy morphology fitting on the mechanised beam search: "
         "state graph + candidate legality + warm-start transcription live in "
         "code (beam_* tools); the orchestrator is a pure scheduler and the "
-        "surveyor VLM is triggered once per fit by survey_round. "
+        "surveyor VLM is triggered once per fit by survey_round. The former "
+        "workflow_galfit_v2.md has been merged into workflow_galfit.md "
+        "(single source of truth); this prompt renders the unified workflow. "
         "Usage: `workflow_galfit_v2 <galaxy_dir>`"
     ),
-    md_file="workflow_galfit_v2.md",
+    md_file="workflow_galfit.md",
     params={"argument": _REQUIRED},
 )

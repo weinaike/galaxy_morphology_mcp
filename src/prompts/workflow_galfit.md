@@ -39,10 +39,10 @@ Stage 1. Inspect the galaxy directory and render the original image
 - **1–3 ranked candidates** with σ per the posterior semantics (fresh skeleton ~0.5; converging visual evidence up to ~0.7; never above 0.9); the top-ranked one becomes the first fit, the alternates stay in the queue as untried directions the beam spends when the mainline disappoints (skeleton candidates carry the `opening_alternate` flag and are exempt from queue truncation and stale eviction).
 
 Stage 2. Structure search and dynamic validation (Beam Search mode)
-*Goal: search the structure space in parallel for the optimal physical component combination with a narrow beam (W=4), avoiding a greedy single path getting stuck at degenerate rounds (failed constraints, parameter collapse) in local optima. Each in-beam branch still follows the bottom-up, one-component-at-a-time incremental philosophy; beam search merely widens "the single next step" into "several parallel candidate paths".*
+*Goal: search the structure space in parallel for the optimal physical component combination with a narrow beam (W=5, one slot reserved in spirit for the hedge runner-up), avoiding a greedy single path getting stuck at degenerate rounds (failed constraints, parameter collapse) in local optima. Each in-beam branch still follows the bottom-up, one-component-at-a-time incremental philosophy; beam search merely widens "the single next step" into "several parallel candidate paths".*
 
 ### Constants (defaults; not adjusted per galaxy unless an experiment arm overrides them via beam_init)
-- Beam width W = 4 (priority-queue capacity)
+- Beam width W = 5 (queue capacity; 2026-10-10: 4 → 5 — the hedged-search runner-up skeleton/variant needs a slot that W=4 truncation kept eating; queue width itself costs no fits)
 - Global fitting budget **N_max = 7** ("7+1": seven exploration fits + exactly ONE reserved F1 arbitration fit on the best state — the reserved fit is created by `beam_enqueue_f1`, counted in `n_f1_reserved` OUTSIDE N_max, exempt from the combo-cap gates AND from combo counting, and never re-run even when sub-converged). **[sub-converged] rounds are budget-free** (counted in `n_sub_converged`, not n — a frozen-optimiser round carries no information; bounded by the `sub_converged_limit` stop at 3)
 - Early-stop threshold S_max = 2 (cap on consecutive non-improvements; at a 7-fit budget the early stop dominates — a converged beam must not burn slots)
 - **Per-combination attempt cap = 2**: any single component combination (the same physical-identity inventory C) may be fitted at most 2 times — a diversity-promoting cap that forces exploration toward untried combinations instead of re-testing saturated ones (see the formal definitions and Step 1.b.0/R0)
@@ -377,7 +377,7 @@ Each candidate returned by `generate_galfit_beam_actions` declares primitives (e
 
 ## Basic information
 - Galaxy ID / coordinates / fitting region (the feedme H) item) / band
-- Beam width W = 4; global budget N_max = 7 (+1 reserved F1 arbitration fit, counted outside N_max)
+- Beam width W = 5; global budget N_max = 7 (+1 reserved F1 arbitration fit, counted outside N_max)
 - PA convention: N=+Y (+Y up = 0° counterclockwise, same frame as the feedme 10) row); unit contract: pixels only
 - PSF: FWHM = … px, A_psf = … px² (from check_feedme_file before the first fit; feeds the default Re floor and the companion psf-vs-sersic rule)
 - Stage-1 conclusions (VLM morphology classification, bar/lop detection, PA, b/a)

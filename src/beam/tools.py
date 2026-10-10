@@ -121,9 +121,10 @@ def beam_init(
                                               "\"text\": \"companion exclusion\", "
                                               "\"forbid_structures\": [\"companion\"], "
                                               "\"active\": true}]"] = "",
-    beam_width: Annotated[int, "Beam width W (queue truncation size); 0 = default 4. "
-                               "Paper sensitivity study: W=1 is the greedy best-first "
-                               "baseline"] = 0,
+    beam_width: Annotated[int, "Beam width W (queue truncation size); 0 = default 5 "
+                               "(2026-10-10: back to 5 — the hedged-search runner-up "
+                               "needs a queue slot). Paper sensitivity study: W=1 is "
+                               "the greedy best-first baseline"] = 0,
     n_max: Annotated[int, "Fit budget N_max; 0 = default 7 (+1 reserved F1 arbitration "
                           "fit on the best state, counted outside N_max)"] = 0,
     stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 2"] = 0,

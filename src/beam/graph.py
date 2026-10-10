@@ -39,8 +39,12 @@ GRAPH_FILE = "graph.json"
 # (+1 reserved F1 arbitration fit on the best state, counted outside n via
 # the f1_reserved flag), stagnation 5 -> 2 (early stop dominates at low
 # budget), per-combo cap 4 -> 2 (the 3rd/4th attempt on one inventory never
-# repaid its fit), W 5 -> 4 (queue slots are scarce at n=7).
-BEAM_WIDTH = 4
+# repaid its fit).
+# 2026-10-10 W 4 -> 5 (KILOGAS_13/101/238/230 retrospectives): hedged search
+# needs a queue slot for the runner-up skeleton/variant — truncation at W=4
+# kept discarding the hedge entries; queue width costs nothing per se (fits
+# are bounded by N_max), so the hedge slot is cheap.
+BEAM_WIDTH = 5
 N_MAX = 7
 STAGNATION_MAX = 2
 PER_COMBO_CAP = 2

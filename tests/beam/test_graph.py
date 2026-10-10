@@ -83,7 +83,7 @@ def test_snapshot_config_defaults_without_ablations(galaxy):
     g = _init(galaxy)
     snap = g.snapshot()
     assert snap["ablations"] == {}
-    assert snap["config"]["W"] == 4 and snap["config"]["g_min"] == 0.3  # austerity profile 2026-10-09 (W 5->4)
+    assert snap["config"]["W"] == 5 and snap["config"]["g_min"] == 0.3  # 2026-10-10: W back to 5 (hedge slot)
 
 
 # -------------------------------------------------------------- record fit

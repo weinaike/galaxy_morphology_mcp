@@ -107,3 +107,11 @@ docs/superpowers/
 gadotti_data/
 logs/
 output/
+
+# local runtime artifacts (never commit)
+src/start*.sh
+src/nohup.out
+src/service/test.py
+src/tools/tmp/
+src/tools/*.bak
+mcp-local-*.json

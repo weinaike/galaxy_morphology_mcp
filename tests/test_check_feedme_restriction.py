@@ -223,3 +223,46 @@ class TestScanForbiddenCandidates:
     def test_no_candidates_section_returns_empty(self):
         md = "## Physicality Verdict\n- verdict: PASS\n- failed_checks: none\n- swap_hint: none\n"
         assert _scan_forbidden_candidates(md) == []
+
+
+# ------------------- branch generation gate (candidate_schema, post-merge)
+def test_candidate_schema_restricted_generation():
+    """add/tune/remove targeting forbidden slots are E_RESTRICTED_SPACE;
+    recognition stays free (no gate on descriptions — only on actions)."""
+    import sys
+    sys.path.insert(0, "src")
+    from beam.candidate_schema import validate_candidate, parse_survey_response
+
+    def codes(prims):
+        payload = {"physicality_verdict": {"verdict": "PASS",
+                                           "failed_checks": [],
+                                           "swap_hint": "none"},
+                   "candidates": [{"primitives": prims,
+                                   "physical_motivation": "m",
+                                   "expected_C_prime": "c",
+                                   "novelty_claim": "n",
+                                   "expected_behavior_tag": "t",
+                                   "local_benefit_sigma": 0.5}]}
+        resp, _ = parse_survey_response(payload)
+        parent = [{"name": "disk", "type": "expdisk"},
+                  {"name": "bulge", "type": "sersic"}]
+        return [i.code for i in validate_candidate(
+            resp.candidates[0], parent, {}, 2, 1, [], [], [])]
+
+    assert "E_RESTRICTED_SPACE" in codes(
+        [{"op": "add", "add": {"structure_name": "lens",
+                               "component_type": "sersic", "re_px": 8.0}}])
+    assert "E_RESTRICTED_SPACE" in codes(
+        [{"op": "add", "add": {"structure_name": "companion",
+                               "component_type": "psf"}}])
+    assert "E_RESTRICTED_SPACE" in codes(
+        [{"op": "add", "add": {"structure_name": "outerdisk",
+                               "component_type": "sersic", "re_px": 30.0}}])
+    assert "E_RESTRICTED_SPACE" in codes(
+        [{"op": "tune", "tune": {"structure_name": "lens", "param": "q",
+                                  "value": 0.7}}])
+    # legal targets unaffected (agn admission aside)
+    assert "E_RESTRICTED_SPACE" not in codes(
+        [{"op": "add", "add": {"structure_name": "bar",
+                               "component_type": "sersic", "re_px": 10.0,
+                               "n": 0.5}}])

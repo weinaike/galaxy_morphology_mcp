@@ -550,6 +550,46 @@ async def run_galfit(
     # Use config file directory as working directory so fit.log is created there
     working_dir = os.path.dirname(os.path.abspath(config_file))
 
+    def _archive_crash(stage: str, error: str, full_output_text: str = "") -> str:
+        """Crash forensics (KILOGAS_221 retrospective): a crashed/diverged
+        round gets the SAME timestamped archive treatment as a successful
+        one — console.log (the divergence evidence: mag blow-ups, q pins,
+        singular-matrix messages), the exact input feedme + .cons copies,
+        and any fit.log GALFIT managed to write — so the crash ledger's
+        claims stay machine-checkable instead of living only in the
+        orchestrator's reason string. Returns the archive dir path."""
+        try:
+            ws_dir = working_dir
+            ar_dir = os.path.join(
+                ws_dir, "archives",
+                "%s.%s" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S"),
+                           hashlib.md5(config_file.encode("utf-8")).hexdigest()[:8]))
+            os.makedirs(ar_dir, exist_ok=True)
+            if full_output_text:
+                with open(os.path.join(ar_dir, "console.log"), "w",
+                          encoding="utf-8") as f:
+                    f.write(full_output_text)
+            shutil.copy(config_file, ar_dir)
+            _cons = config_paths.get("constraint") or ""
+            if _cons and _cons.lower() != "none":
+                _cons_path = _cons if os.path.isabs(_cons) else \
+                    os.path.join(working_dir, _cons)
+                if os.path.exists(_cons_path):
+                    shutil.copy(_cons_path, ar_dir)
+            fit_log_path = os.path.join(working_dir, "fit.log")
+            if os.path.exists(fit_log_path):
+                shutil.move(fit_log_path, ar_dir)
+            with open(os.path.join(ar_dir, "round_status.json"), "w",
+                      encoding="utf-8") as f:
+                json.dump({"stage": stage, "status": "galfit_crashed",
+                           "error": error,
+                           "inputs": {"feedme": os.path.join(ar_dir,
+                                                             os.path.basename(config_file))}},
+                          f, indent=1, default=str)
+            return ar_dir
+        except Exception:
+            return ""
+
     try:
         proc = subprocess.run(
             command,
@@ -563,6 +603,8 @@ async def run_galfit(
         return {
             "status": "failure",
             "error": "GALFIT execution timed out after 5 minutes",
+            "archive_dir": _archive_crash("galfit_timeout",
+                                          "GALFIT execution timed out after 5 minutes"),
         }
     except FileNotFoundError:
         return {
@@ -578,6 +620,9 @@ async def run_galfit(
             "status": "failure",
             "error": f"GALFIT failed with return code {proc.returncode}",
             "log": full_output,
+            "archive_dir": _archive_crash("galfit_crashed",
+                                          f"GALFIT failed with return code {proc.returncode}",
+                                          full_output),
         }
 
     # Get output file path from parsed config
@@ -586,6 +631,10 @@ async def run_galfit(
         return {
             "status": "failure",
             "error": "Could not find output file path in config",
+            "log": full_output,
+            "archive_dir": _archive_crash("galfit_crashed",
+                                          "Could not find output file path in config",
+                                          full_output),
         }
 
     # Check if output file exists
@@ -594,6 +643,9 @@ async def run_galfit(
             "status": "failure",
             "error": f"GALFIT output file not created: {output_file}",
             "log": full_output,
+            "archive_dir": _archive_crash("galfit_crashed",
+                                          f"GALFIT output file not created: {output_file}",
+                                          full_output),
         }
 
     # Identify the latest galfit.[0-9]* file for parameter extraction

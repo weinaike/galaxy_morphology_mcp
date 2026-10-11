@@ -65,7 +65,7 @@
         - **正式落锁前，必须调用 subagent `best-round-verifier`** 对候选轮做独立审计，**`FAIL` 严禁落锁**，按"阻断性问题"修复后复审至 `PASS`；`PASS`（含 WARN）方可落锁。
 
 阶段三. 科学目标校准与报告撰写
-* 科学目标校准：科学目标关心偏心的影响，如果最佳结果不包含 Fourier 成分，调用 fourier_mode_analysis 对残差图进行分析判断是否需要采用 fourier mode 对偏心非对称残差拟合。如果已经包含 Fourier 成分，则跳过该步骤。
+* 科学目标校准（经验仲裁）：科学目标关心偏心的影响，如果最佳结果不包含 Fourier 成分且预算未耗尽，先调用 fourier_mode_analysis 对残差图分析（该工具只返回 m=1 初始参数 am/theta_m + 置信度，不输出 yes/no 结论），然后**无条件**以 `directives="+F1"` 重启一轮 beam 拟合，由拟合数值裁决去留。如果已经包含 Fourier 成分或预算耗尽，则跳过该步骤。
     - 只能使用 1 阶 Fourier 模式进行拟合补偿。且只能作用于 Disk 成分 或者 是单 Sersic 模型（如果没有 Disk 成分）。
     - F1 成分的 amplitude 大于 0.02，且拟合质量没有恶化 就可以保留；更新最佳轮次为带 F1 的最新轮次。否则放弃 F1 成分，保持原来的最佳轮次。
 

@@ -123,14 +123,20 @@ def test_onion_area_ok_nested():
 
 
 def test_onion_area_bulge_exempt():
-    # thick bulge covering more projected area than a thin disk: the normal
-    # edge-on configuration — the rounder-bulge exemption covers BOTH layers
+    # POLICY CHANGE 2026-10-10 (user override, KILOGAS_114 retrospective):
+    # in the flat-disk regime the rounder-bulge exemption still voids the
+    # two classic layers, but the new AREA CAPS (bulge <= 50% of the disk's
+    # 2*Re area) are NOT exempt — this former "normal edge-on" fixture (82%
+    # of the thin disk) now draws a hard cap flag. The exemption itself
+    # still holds for the classic layers (no area-exceeds/pokes-out entries).
     comps = [
         _comp("disk", "expdisk", re=10.0, q=0.25, pa=0.0, mag=16.0),
         _comp("bulge", q=0.9, pa=0.0, re=8.0, n=2.0, mag=17.0),
     ]
     checks = _checks(comps)
-    assert not any(ck == "onion" for ck, _ in checks)
+    assert _has(checks, "onion", "hard", "flat disk's area")   # the cap fires
+    assert not _has(checks, "onion", "hard", "area exceeds")   # exempt layer
+    assert not _has(checks, "onion", "hard", "pokes out")
 
 
 # --------------------------------------- anchored flat-disk skip (rule A)
@@ -378,3 +384,50 @@ def test_disable_mech_checks_env(monkeypatch):
     # unknown family names are ignored (warned once), nothing disabled
     monkeypatch.setenv("GALMCP_DISABLE_MECH_CHECKS", "bogus_family")
     assert _present(_raw(inv), "mu0_order", "hard", "mu0_bulge")
+
+
+# ------------------- flat-disk regime area caps (KILOGAS_114 A.1)
+def test_flat_disk_bulge_area_cap_kilogas114():
+    # KILOGAS_114 A.1 geometry: disk Re_eff=45.8, q=0.126 (area 264);
+    # bulge Re=34.4, q=0.406 (area 480 = 182% of the disk) — round-bulge
+    # exemption (dq=0.28>0.25) voided the area layer and the flat-disk
+    # regime skipped directional; the cap must fire (NOT exempt).
+    comps = [
+        _comp("disk", "expdisk", re=27.25, q=0.126, pa=29.3, mag=15.97),
+        _comp("bulge", q=0.406, re=34.40, n=3.76, mag=14.82),
+    ]
+    checks = _checks(comps)
+    assert _has(checks, "onion", "hard", "flat disk's area")
+    assert _has(checks, "onion", "hard", "182%")
+
+
+def test_flat_disk_caps_thresholds():
+    # bulge within the 50% cap -> no fire
+    ok = _checks([
+        _comp("disk", "expdisk", re=27.25, q=0.126, pa=29.3, mag=15.97),
+        _comp("bulge", q=0.8, re=8.0, n=2.0, mag=17.0),      # 51/264 = 19%
+    ])
+    assert not _has(ok, "onion", "hard", "flat disk's area")
+    # bar above the 70% cap -> fires (bar q round-ish keeps the area high)
+    bad = _checks([
+        _comp("disk", "expdisk", re=27.25, q=0.126, pa=29.3, mag=15.97),
+        _comp("bar", q=0.5, re=30.0, n=0.5, mag=15.5),       # 450/264 = 170%
+    ])
+    assert _has(bad, "onion", "hard", "flat disk's area")
+    # bar within cap -> silent
+    okb = _checks([
+        _comp("disk", "expdisk", re=27.25, q=0.126, pa=29.3, mag=15.97),
+        _comp("bar", q=0.4, re=12.0, n=0.5, mag=15.5),       # 58/264 = 22%
+    ])
+    assert not _has(okb, "onion", "hard", "flat disk's area")
+
+
+def test_round_disk_no_flat_caps():
+    # a round disk (q=0.6): the caps are flat-disk-regime-only; a big round
+    # bulge there is handled by the ordinary layers (exempted here by the
+    # round-bulge rule) — the cap block must stay silent
+    checks = _checks([
+        _comp("disk", "expdisk", re=27.25, q=0.6, pa=29.3, mag=15.97),
+        _comp("bulge", q=0.9, re=34.40, n=3.76, mag=14.82),  # dq=0.3>0.25
+    ])
+    assert not _has(checks, "onion", "hard", "flat disk's area")

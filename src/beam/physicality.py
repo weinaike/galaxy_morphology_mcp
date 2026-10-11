@@ -558,6 +558,51 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                              f"{outer} (max radius ratio {worst:.2f}; "
                                              f"q_{inner}={qi or 1:g}, q_{outer}={qo or 1:g})"})
 
+    # ---- flat-disk regime AREA CAPS (KILOGAS_114 A.1 retrospective): when
+    # the directional layer is skipped (fitted disk q < ONION_SKIP_Q, or the
+    # edgedisk slot which never runs it), tip-poking/crossing goes unchecked,
+    # and the round-bulge exemption (qi - qo > 0.25 voids BOTH layers) leaves
+    # a round bulge inside a FLAT disk completely unexamined — KILOGAS_114
+    # A.1: bulge 2*Re area = 182% of the flat disk (Re_eff 45.8, q 0.126 vs
+    # bulge Re 34.4, q 0.406), visibly crossing on the panel, verdict PASS
+    # with an empty mech table. In that regime the inner components must
+    # instead keep a MARGIN of the disk's 2*Re area (user-specified caps):
+    # bulge <= 50%, bar <= 70%. NOT subject to the round-bulge exemption —
+    # a round bulge laterally wider than a flat DISK is the pathology this
+    # catches, not a normal configuration.
+    FLAT_DISK_AREA_CAPS = {"bulge": 0.50, "bar": 0.70}
+    disk_c = by.get("edgedisk") or by.get("disk")
+    if disk_c is not None:
+        dq_cap = _f(disk_c.get("q"))
+        ad_cap = _f(disk_c.get("re_effective"))
+        flat_regime = (disk_c.get("name") == "edgedisk"
+                       or (dq_cap is not None and dq_cap < ONION_SKIP_Q))
+        if flat_regime and ad_cap and dq_cap:
+            a_disk = ad_cap * ad_cap * dq_cap
+            for inner_name, cap in FLAT_DISK_AREA_CAPS.items():
+                ci = by.get(inner_name)
+                if ci is None:
+                    continue
+                ai = _f(ci.get("re_effective"))
+                qi = _f(ci.get("q"))
+                if ai is None or qi is None:
+                    continue
+                frac = (ai * ai * qi) / a_disk
+                if frac > cap:
+                    checks.append({
+                        "severity": "hard", "check": "onion",
+                        "detail": f"{inner_name} 2*Re ellipse covers {frac:.0%} "
+                                  f"of the flat disk's area (cap {cap:.0%}; "
+                                  f"q_disk={dq_cap:g}, q_{inner_name}={qi:g}) — "
+                                  "directional containment is skipped in the "
+                                  "flat-disk regime and the round-bulge exemption "
+                                  "voids the bare area ordering, so the inner "
+                                  "component must keep an area MARGIN instead; a "
+                                  "bulge/bar comparable to (or larger than) the "
+                                  "flat disk in projected area is the crossing "
+                                  "pathology (KILOGAS_114 A.1: bulge at 182% of "
+                                  "the disk, unchecked)"})
+
     # ---- shape order (hard): a bar must be more elongated than its lens
     bar_c, lens_c = by.get("bar"), by.get("lens")
     if bar_c and lens_c:

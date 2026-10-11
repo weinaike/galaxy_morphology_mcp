@@ -127,7 +127,7 @@ def beam_init(
                                "the greedy best-first baseline"] = 0,
     n_max: Annotated[int, "Fit budget N_max; 0 = default 7 (+1 reserved F1 arbitration "
                           "fit on the best state, counted outside N_max)"] = 0,
-    stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 2"] = 0,
+    stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 3"] = 0,
     ablations_json: Annotated[str, "Optional JSON object selecting the ablation arm for "
                                    "this run, persisted in graph meta and enforced by "
                                    "code in every later call: {\"no_global_state\": true} "

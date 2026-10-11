@@ -46,7 +46,7 @@ GRAPH_FILE = "graph.json"
 # are bounded by N_max), so the hedge slot is cheap.
 BEAM_WIDTH = 5
 N_MAX = 7
-STAGNATION_MAX = 2
+STAGNATION_MAX = 3  # 2026-10-10: 2 -> 3 (user call: at 2 the stop fired before hedges/repairs got their turn)
 PER_COMBO_CAP = 2
 G_MIN = 0.3
 REFUTE_DBIC = 10.0

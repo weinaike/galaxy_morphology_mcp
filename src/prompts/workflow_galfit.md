@@ -44,7 +44,7 @@ Stage 2. Structure search and dynamic validation (Beam Search mode)
 ### Constants (defaults; not adjusted per galaxy unless an experiment arm overrides them via beam_init)
 - Beam width W = 5 (queue capacity; 2026-10-10: 4 → 5 — the hedged-search runner-up skeleton/variant needs a slot that W=4 truncation kept eating; queue width itself costs no fits)
 - Global fitting budget **N_max = 7** ("7+1": seven exploration fits + exactly ONE reserved F1 arbitration fit on the best state — the reserved fit is created by `beam_enqueue_f1`, counted in `n_f1_reserved` OUTSIDE N_max, exempt from the combo-cap gates AND from combo counting, and never re-run even when sub-converged). **[sub-converged] rounds are budget-free** (counted in `n_sub_converged`, not n — a frozen-optimiser round carries no information; bounded by the `sub_converged_limit` stop at 3)
-- Early-stop threshold S_max = 2 (cap on consecutive non-improvements; at a 7-fit budget the early stop dominates — a converged beam must not burn slots)
+- Early-stop threshold S_max = 3 (cap on consecutive non-improvements; 2026-10-10: 2 → 3 — at 2 the stop fired before hedge/repair candidates got their turn)
 - **Per-combination attempt cap = 2**: any single component combination (the same physical-identity inventory C) may be fitted at most 2 times — a diversity-promoting cap that forces exploration toward untried combinations instead of re-testing saturated ones (see the formal definitions and Step 1.b.0/R0)
 - W / N_max / S_max are set once at `beam_init` (`beam_width` / `n_max` / `stagnation_max`; 0 = default) for paper ablation arms and sensitivity studies — never adjusted mid-run
 
@@ -400,7 +400,7 @@ Each candidate returned by `generate_galfit_beam_actions` declares primitives (e
 
 ### Global fit counters
 - n = X / 7 (+1 F1 reserved: used/unused)
-- stagnation = Y / 2
+- stagnation = Y / 3
 - global_iter_id = Z (the next feedme suffix)
 
 ## State ledgers (graph-search visited set; append one line per successful fit; never overwrite)

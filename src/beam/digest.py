@@ -202,6 +202,25 @@ def build_local_state_description(g, state_label: str,
 
     lines.append(f"Parent state {state_label} (depth {state.get('depth')}, "
                  f"combo {state.get('combo_key')}):")
+    # ---- dBIC vs parent (objective fact; reclassify trigger input): BIC_eff
+    # DECREASED vs parent = the light model genuinely improved (most
+    # parameters got better) — a residual identity violation then points at
+    # wrong component TYPES, not wrong parameters
+    try:
+        _pl = state.get("parent")
+        _b = (state.get("metrics") or {}).get("bic_eff")
+        _pb = None
+        if _pl and _pl in g.g.nodes:
+            _pb = (g.state(_pl).get("metrics") or {}).get("bic_eff")
+        if _pl and _pl in g.g.nodes and _b is not None and _pb is not None:
+            _d = float(_b) - float(_pb)
+            lines.append(f"  dBIC_eff vs parent = {_d:+.1f} "
+                         f"({'improved (light model got better)' if _d < 0 else 'worse'})")
+        else:
+            lines.append("  dBIC_eff vs parent: n/a (no parent / first fit / "
+                         "parent unfitted)")
+    except Exception:
+        pass
     # ---- crash ledger (objective facts; KILOGAS_221 rerun): the surveyor
     # must see which add/remove/tune kinds already crashed GALFIT
     try:

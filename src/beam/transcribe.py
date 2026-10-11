@@ -187,6 +187,73 @@ def _row_values(line: str) -> list[float]:
     return out
 
 
+def _row_toggle(line: str) -> int | None:
+    """The toggle column of a 'N) value toggle' row (None when absent)."""
+    m = ROW_RE.match(line)
+    if not m:
+        return None
+    toks = m.group(3).split("#")[0].split()
+    # rows like '1) x y tx ty' carry two toggles — the LAST numeric token(s)
+    # after the value(s); for single-value rows the second token is the toggle
+    ints = [t for t in toks if t.lstrip("-").isdigit()]
+    try:
+        return int(ints[-1]) if ints else None
+    except (ValueError, IndexError):
+        return None
+
+
+def _block_params(b: Block) -> tuple[dict, dict[str, int]]:
+    """Extract a block's current (post-backfill) parameters + toggles in
+    make_block's input shape. ``re_eff`` is ALWAYS the effective radius
+    (expdisk Rs rows are converted via ×1.68)."""
+    prm: dict = {}
+    tog: dict[str, int] = {}
+    if (r := b.row("1")):
+        v = _row_values(r[1])
+        if len(v) >= 2:
+            prm["x_px"], prm["y_px"] = v[0], v[1]
+        t = _row_values(r[1])
+        tg = [x for x in t[2:4]]
+        if len(tg) >= 2:
+            tog["x"], tog["y"] = int(tg[0]), int(tg[1])
+    if (r := b.row("3")):
+        v = _row_values(r[1])
+        if v:
+            prm["mag"] = v[0]
+        tg = _row_toggle(r[1])
+        if tg is not None:
+            tog["mag"] = tg
+    if (r := b.row("4")):
+        v = _row_values(r[1])
+        if v:
+            prm["re_eff"] = v[0] * 1.68 if b.ctype == "expdisk" else v[0]
+        tg = _row_toggle(r[1])
+        if tg is not None:
+            tog["re"] = tg
+    if (r := b.row("5")):
+        v = _row_values(r[1])
+        if v:
+            prm["n"] = v[0]
+        tg = _row_toggle(r[1])
+        if tg is not None:
+            tog["n"] = tg
+    if (r := b.row("9")):
+        v = _row_values(r[1])
+        if v:
+            prm["q"] = v[0]
+        tg = _row_toggle(r[1])
+        if tg is not None:
+            tog["q"] = tg
+    if (r := b.row("10")):
+        v = _row_values(r[1])
+        if v:
+            prm["pa_deg"] = v[0]
+        tg = _row_toggle(r[1])
+        if tg is not None:
+            tog["pa"] = tg
+    return prm, tog
+
+
 # ------------------------------------------------------------------ backfill
 def backfill_block(block: Block, converged: dict | None) -> None:
     """Warm-start: rewrite initial values with the parent converged values
@@ -451,6 +518,47 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
             blocks = new_blocks + sky_blocks
             notes.append(f"opening skeleton built: "
                          f"{'+'.join(b.name or '?' for b in new_blocks)}")
+        elif op == "reclassify":
+            # identity reassignment of well-fitted components (KILOGAS_296):
+            # each mapped block KEEPS its (warm-start-backfilled) light
+            # parameters and is REBUILT under the new name/type via
+            # make_block — guaranteeing row/comment consistency; the
+            # type-mandated corrections come from the shared helpers in
+            # beam.signature (deterministic, code-side)
+            entries = (p.get("reclassify") or {}).get("map") or p.get("map") or []
+            mapping = {(e.get("from") or "").lower(): (e.get("to") or "").lower()
+                       for e in entries if e.get("from") and e.get("to")}
+            if not mapping:
+                return TranscribeResult(False, notes=["reclassify without a map"])
+            from beam.signature import (apply_reclassify_corrections,
+                                        resolve_reclassify_type)
+            rebuilt = []
+            for b in blocks:
+                if b.is_sky or (b.name or "") not in mapping:
+                    rebuilt.append(b)
+                    continue
+                to = mapping[b.name]
+                src_type = (b.ctype or "sersic").lower()
+                new_type = resolve_reclassify_type(to, src_type)
+                prm, tog = _block_params(b)
+                re_px = prm.pop("re_eff")          # always the EFFECTIVE radius
+                n, n_t, q = apply_reclassify_corrections(
+                    to, new_type, prm.get("n"), prm.get("q"))
+                if q is not None:
+                    prm["q"] = q
+                if to in ("disk", "edgedisk"):
+                    prm.pop("n", None)
+                elif n is not None:
+                    prm["n"] = n
+                if n_t is None:
+                    tog.pop("n", None)
+                else:
+                    tog["n"] = n_t
+                prm["re_px"] = re_px
+                rebuilt.append(make_block(to, new_type, prm, tog))
+            blocks = rebuilt
+            notes.append("reclassify applied: " +
+                         ", ".join(f"{k}->{v}" for k, v in mapping.items()))
         elif op == "remove":
             rm = p.get("remove")
             target = (rm if isinstance(rm, str) else None) or \

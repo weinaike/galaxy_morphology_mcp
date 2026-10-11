@@ -36,6 +36,8 @@ This section is the authoritative definition of the solution space for the singl
 - **multi-component regime**: `(outerdisk)? + (disk | edgedisk) + (lens)? + (bar)? + (bulge)? + (AGN)? + (companion)*` — the disk/edgedisk slot is **mandatory** (the decomposition regime is disk-bearing by definition), F1 ≤ 1 rides on the disk/edgedisk (or the singlesersic in the other regime), the sky is exactly 1 in both.
 A diskless multi-component inventory (e.g. `{bulge, companion}`, `{bar, agn}`) is **invalid** — it belongs to the single-Sérsic regime; both the candidate schema (`E_MULTIPLICITY`) and `check_feedme_file` reject it.
 
+**Reclassify (identity reassignment; 2026-10-10, KILOGAS_296)**: when a fit's mech failures are limited to Re-chain ORDERING, the visual onion is clean, and the round improved BIC_eff vs its parent (or has none), the VLM may propose `reclassify` — a same-slot bijection `map: [{from, to}]` over the shaped slots {disk, edgedisk, bulge, bar, lens, outerdisk} that keeps every component's fitted light parameters (Re multiset unchanged; the chain re-sorts under new names; component count unchanged) while the transcription layer applies the type mandates deterministically (bar n=0.5 fixed; ->disk expdisk Rs=Re/1.68; prior-violating q/n re-seeds). Bare label swaps remain forbidden — reclassify is the only legal identity-reassignment channel; it is a tune-equal primitive (ordinary combo counting, no exemptions).
+
 ### 2. Per-component hard parameter limits
 
 | Parameter | Rule |

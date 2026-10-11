@@ -81,6 +81,55 @@ def normalize_inventory(inventory: list[dict]) -> list[dict]:
     return [normalize_entry(e) for e in inventory]
 
 
+# ------------------------------------------------------- reclassify helpers
+def resolve_reclassify_type(to: str, src_type: str | None) -> str:
+    """Target-slot canonical type resolution. disk/edgedisk are forced to
+    their disk types (a ->disk target IS an expdisk by definition); the
+    sersic slots take sersic; outerdisk accepts expdisk OR sersic — keep the
+    source type when legal, else default to expdisk."""
+    if to == "disk":
+        return "expdisk"
+    if to == "edgedisk":
+        return "edgedisk"
+    if to == "outerdisk":
+        return src_type if src_type in ("expdisk", "sersic") else "expdisk"
+    return "sersic"
+
+
+def apply_reclassify_corrections(to: str, new_type: str,
+                                 n, q) -> tuple:
+    """Type-mandated parameter corrections for a reclassified component
+    (deterministic, code-side — the VLM never declares them). Only the new
+    type's HARD mandates and hard-limit violations are corrected; everything
+    else keeps the warm value. Returns (n, n_toggle, q) with n_toggle
+    None = drop the n toggle."""
+    if to == "bar":
+        n, n_t = 0.5, 0
+    elif to in ("disk", "edgedisk"):
+        n, n_t = None, None
+    elif to == "bulge":
+        n_t = 1                       # free from creation
+        if n is None:
+            n = 1.0
+    elif to == "lens":
+        n_t = 1
+        if n is None or n >= 0.5:     # lens profile prior n < 0.5 hard
+            n = 0.3
+    elif to == "outerdisk" and new_type == "sersic":
+        n_t = 1
+        if n is None or n >= 1.0:     # outerdisk sersic n < 1 hard
+            n = 0.5
+    else:
+        n_t = None
+    if to == "bar" and (q is None or q > 0.7):
+        q = 0.4
+    if to == "bulge" and (q is None or q < 0.3):
+        q = 0.5
+    if to == "lens" and (q is None or q <= 0.5):
+        q = 0.7
+    return n, n_t, q
+
+
 # --------------------------------------------------------------------- signature
 def component_signature(comp: dict) -> dict:
     """Canonical per-component signature (px, N=+Y)."""
@@ -464,6 +513,49 @@ def apply_primitives_to_inventory(parent_inventory: list[dict],
                     "toggles": dict(entry.get("toggles") or {}),
                 })
             inv = new_inv
+        elif op == "reclassify":
+            # identity reassignment: each mapped component KEEPS its fitted
+            # light parameters and takes a new type/name; the type-mandated
+            # corrections mirror the transcription layer (shared helpers)
+            entries = (p.get("reclassify") or {}).get("map") or p.get("map") or []
+            mapping = {}
+            seen_targets = set()
+            for e in entries:
+                frm = (e.get("from") or "").lower()
+                to = (e.get("to") or "").lower()
+                if not frm or not to:
+                    return None, "reclassify entry without from/to"
+                if to in seen_targets:
+                    return None, f"reclassify duplicate target: {to}"
+                seen_targets.add(to)
+                mapping[frm] = to
+            for c in inv:
+                src = (c.get("name") or "").lower()
+                if src not in mapping:
+                    continue
+                to = mapping[src]
+                new_type = resolve_reclassify_type(to, (c.get("type") or "").lower())
+                c["name"] = to
+                c["type"] = new_type
+                n, n_t, q = apply_reclassify_corrections(
+                    to, new_type, c.get("n"), c.get("q"))
+                re_eff = c.get("re_effective", c.get("re"))
+                if re_eff is not None:
+                    c["re_effective"] = re_eff
+                    # expdisk-family entries store Rs in "re"; sersic store Re
+                    c["re"] = (re_eff / 1.68
+                               if new_type in ("expdisk", "edgedisk") else re_eff)
+                if new_type in ("expdisk", "edgedisk"):
+                    c.pop("n", None)
+                elif n is not None:
+                    c["n"] = n
+                if q is not None:
+                    c["q"] = q
+                tg = c.setdefault("toggles", {})
+                if n_t is None:
+                    tg.pop("n", None)
+                else:
+                    tg["n"] = n_t
         else:
             return None, f"unknown op: {op}"
     return inv, ""

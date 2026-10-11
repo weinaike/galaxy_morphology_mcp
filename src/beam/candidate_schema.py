@@ -118,9 +118,33 @@ class SkeletonPrimitive(BaseModel):
         return d
 
 
+class ReclassifyParams(BaseModel):
+    """Identity reassignment of WELL-FITTED components (KILOGAS_296
+    retrospective). The map carries ``{"from": <parent name>, "to": <slot>}``
+    pairs; each component KEEPS its fitted light parameters (Re/q/PA/mag/
+    centre) and only its type/name changes — the light model stays fixed
+    while the interpretation layer is corrected. The type-mandated parameter
+    corrections (bar n=0.5 fixed; disk expdisk Rs=Re/1.68; prior-violating
+    q/n re-seeds) are applied DETERMINISTICALLY BY CODE (transcription
+    layer) — the VLM proposes ONLY the mapping, never the corrections.
+    Targets are limited to the shaped central slots; component count is
+    unchanged (add/remove are separate primitives)."""
+    map: list[dict] = Field(min_length=1, max_length=6)
+
+
+class ReclassifyPrimitive(BaseModel):
+    op: Literal["reclassify"]
+    reclassify: ReclassifyParams
+
+    def to_plain(self) -> dict:
+        d = self.reclassify.model_dump(exclude_none=True)
+        d["op"] = "reclassify"
+        return d
+
+
 Primitive = Annotated[
     Union[AddPrimitive, RemovePrimitive, TunePrimitive, ConvertPrimitive,
-          SkeletonPrimitive],
+          SkeletonPrimitive, ReclassifyPrimitive],
     Field(discriminator="op"),
 ]
 
@@ -188,6 +212,11 @@ NAME_TO_TYPES = {
 CENTRAL_STRUCTURES = {"disk", "edgedisk", "bulge", "bar", "lens"}
 SLOTS_MAX_ONE = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk", "agn",
                  "singlesersic", "f1"}
+# reclassify targets: the shaped central slots only — agn/companion are
+# point-source/contaminant semantics with different parameter signatures
+# (collapsed-core replacement has its own remove+add(agn) channel with the
+# admission rules), singlesersic cannot co-tenant (regime rule)
+RECLASSIFY_TARGETS = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk"}
 _COMPANION_RE = re.compile(r"^(companion|comp|secondary|satellite)", re.IGNORECASE)
 _F1_TARGETS = {"disk", "edgedisk", "singlesersic"}
 
@@ -410,6 +439,61 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
             if not skel_names:
                 issues.append(Issue("E_OPENING", "empty opening skeleton",
                                     action_id=aid))
+        elif p["op"] == "reclassify":
+            entries = (p.get("reclassify") or {}).get("map") or p.get("map") or []
+            if is_root_opening:
+                issues.append(Issue("E_RECLASSIFY",
+                                    "reclassify operates on a FITTED parent — "
+                                    "the unfitted root A.0 has no light model "
+                                    "to re-identify (use a skeleton instead)",
+                                    action_id=aid))
+                continue
+            if not entries:
+                issues.append(Issue("E_RECLASSIFY", "reclassify with an empty "
+                                    "map", action_id=aid))
+                continue
+            parent_names = {(c.get("name") or "").lower()
+                            for c in parent_inventory}
+            targets_seen: set[str] = set()
+            changed = False
+            for e in entries:
+                frm = (e.get("from") or "").lower()
+                to = (e.get("to") or "").lower()
+                if not frm or not to:
+                    issues.append(Issue("E_RECLASSIFY",
+                                        "reclassify entry without from/to keys",
+                                        action_id=aid))
+                    continue
+                if frm not in parent_names:
+                    issues.append(Issue("E_RECLASSIFY",
+                                        f"reclassify source '{frm}' not in the "
+                                        f"parent inventory "
+                                        f"{sorted(n for n in parent_names if n)}",
+                                        action_id=aid))
+                    continue
+                if to not in RECLASSIFY_TARGETS:
+                    issues.append(Issue("E_RECLASSIFY",
+                                        f"reclassify target '{to}' outside the "
+                                        "shaped central slots "
+                                        f"{sorted(RECLASSIFY_TARGETS)} (agn/"
+                                        "companion/singlesersic are not "
+                                        "reclassify targets)", action_id=aid))
+                    continue
+                if to in targets_seen:
+                    issues.append(Issue("E_RECLASSIFY",
+                                        f"reclassify duplicate target '{to}' "
+                                        "(the map must be a same-slot "
+                                        "bijection)", action_id=aid))
+                    continue
+                targets_seen.add(to)
+                if frm != to:
+                    changed = True
+            if entries and not changed:
+                issues.append(Issue("E_RECLASSIFY",
+                                    "reclassify map is the identity (no "
+                                    "component actually re-typed) — either "
+                                    "change at least one target or drop the "
+                                    "candidate", action_id=aid))
 
     # ---- hypothetical inventory (non-strict: multiplicity checks fire below)
     hypo, err = apply_primitives_to_inventory(parent_inventory, prims, strict=False)

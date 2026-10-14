@@ -71,9 +71,9 @@ def test_beam_record_fit_auto_fails_on_mech_hard(galaxy):
     """KILOGAS_231 incident regression: a driver that never settles verdicts
     (no survey_round, no verdict_json) must not bypass the physicality gate —
     a state carrying mech-hard entries is auto-settled FAIL at record time."""
-    # make the fixture bar round (q=0.75 > 0.6) so a hard mech check surely fires
+    # make the fixture bar round (q=0.85 > 0.8 cap) so a hard mech check surely fires
     fitted = galaxy / "galfit.01"
-    fitted.write_text(fitted.read_text().replace("9) 0.3699", "9) 0.7500"),
+    fitted.write_text(fitted.read_text().replace("9) 0.3699", "9) 0.8500"),
                       encoding="utf-8")
     beam_init(str(galaxy), str(galaxy / "_iter1.feedme"))
     res = json.dumps(_run_result(galaxy))

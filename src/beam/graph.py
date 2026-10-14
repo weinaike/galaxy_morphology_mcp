@@ -47,7 +47,7 @@ GRAPH_FILE = "graph.json"
 BEAM_WIDTH = 5
 N_MAX = 7
 STAGNATION_MAX = 3  # 2026-10-10: 2 -> 3 (user call: at 2 the stop fired before hedges/repairs got their turn)
-PER_COMBO_CAP = 2
+PER_COMBO_CAP = 3  # 2026-10-14: 2 -> 3 (user call; history 4 -> 2 at the 2026-10-09 austerity profile)
 G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)

@@ -22,7 +22,7 @@ Check set (each grounded in a KILOGAS_319 round where the VLM applied it):
                         re_bulge (outerdisk above re_disk); survivors only;
                         3% relative tolerance (an inner Re may exceed the
                         adjacent outer Re by at most RE_CHAIN_TOL)
-  axis_ratio      hard  bar q > 0.7; bar q < 0.15 (needle degeneration;
+  axis_ratio      hard  bar q > 0.8; bar q < 0.15 (needle degeneration;
                         fixed astronomer-mandated floor, no PSF coupling);
                         any shaped component q < 0.05
                         (thin-line degeneracy) or q > 1.0
@@ -81,7 +81,7 @@ dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
   flux_share      hard  f_lens >= f_bar (a lens must not outshine its bar)
                   note  bar flux fraction outside 10-40%; lens outside 5-35%
   shape_prior     hard  bulge q < 0.3 (0.3-0.4 stays a note); lens q <= 0.5;
-                        bar q in (0.5, 0.7] becomes a note (round-bar watch)
+                        bar q in (0.5, 0.8] becomes a note (round-bar watch)
 
 Administrative disable switch (temporary experimentation): the env var
 ``GALMCP_DISABLE_MECH_CHECKS`` holds a comma-separated list of check families
@@ -109,7 +109,7 @@ RE_RANK = {"bulge": 0, "bar": 1, "lens": 2, "disk": 3, "edgedisk": 3, "outerdisk
 CENTRAL_CHAIN = {"disk", "edgedisk", "bulge", "bar", "lens", "outerdisk",
                  "agn", "singlesersic"}
 
-BAR_Q_HARD_MAX = 0.7
+BAR_Q_HARD_MAX = 0.8   # 2026-10-14: 0.7 -> 0.8 (user call; KILOGAS_113 bar q=0.795 vetoed)
 BAR_Q_NOTE_MAX = 0.5
 # Bar needle floor: a FIXED astronomer-mandated lower limit — q >= 0.15 hard,
 # 0.15-0.2 watch note (jwst/1071 retrospective: bulge-family slivers collapsed

@@ -217,10 +217,12 @@ def test_lens_q_hard():
 def test_bar_q_note_band():
     c = _checks([_comp("bar", q=0.55, re=4.0, n=0.5)])
     assert _has(c, "shape_prior", "note", "round-bar") and not _has(c, "axis_ratio", "hard")
-    # 0.5 < q <= 0.7 is the round-bar watch band (hard limit relaxed 0.6 -> 0.7)
+    # 0.5 < q <= 0.8 is the round-bar watch band (hard limit relaxed 0.6 -> 0.7 -> 0.8)
     c65 = _checks([_comp("bar", q=0.65, re=4.0, n=0.5)])
     assert _has(c65, "shape_prior", "note", "round-bar") and not _has(c65, "axis_ratio", "hard")
-    assert _has(_checks([_comp("bar", q=0.75, re=4.0, n=0.5)]), "axis_ratio", "hard")
+    c75 = _checks([_comp("bar", q=0.75, re=4.0, n=0.5)])
+    assert _has(c75, "shape_prior", "note", "round-bar") and not _has(c75, "axis_ratio", "hard")
+    assert _has(_checks([_comp("bar", q=0.85, re=4.0, n=0.5)]), "axis_ratio", "hard")
 
 
 def test_bar_q_needle_floor_fixed_no_psf_coupling():
@@ -241,7 +243,8 @@ def test_bar_q_needle_floor_fixed_no_psf_coupling():
 
 def test_q_bar_vs_q_lens():
     comps = [_comp("lens", q=0.7, re=6.0, n=0.3), _comp("bar", q=0.75, re=4.0, n=0.5)]
-    # bar q=0.75 > 0.7 also hard axis_ratio; shape_order must fire independently
+    # bar q=0.75 >= lens q=0.7 (axis-ratio hard only above the 0.8 cap);
+    # shape_order must fire independently of the axis_ratio family
     assert _has(_checks(comps), "shape_order", "hard", "q_bar")
     assert not _has(_checks([_comp("lens", q=0.7, re=6.0, n=0.3),
                              _comp("bar", q=0.4, re=4.0, n=0.5)]), "shape_order", "hard")

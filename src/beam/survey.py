@@ -425,6 +425,7 @@ def survey_round(
     # ---- bounded VLM + validation loop
     feedback = ""
     resp = None
+    last_parsed = None   # last schema-valid parse — the verdict-salvage source
     session_id = ""
     raw_analysis = ""
     attempts_issues: list[dict] = []
@@ -449,6 +450,7 @@ def survey_round(
             attempts_issues.append({"code": "E_SCHEMA", "message": verr})
             feedback = f"E_SCHEMA: {verr}. Fix the field types/shapes per the contract."
             continue
+        last_parsed = resp
         report = validate_survey(resp, graph, label)
         if report.ok:
             break
@@ -456,12 +458,57 @@ def survey_round(
         attempts_issues.extend({"code": i.code, "message": i.message} for i in report.errors)
         feedback = report.error_feedback()
     if resp is None:
-        graph.log_decision({"kind": "survey-validation-exhausted", "state": label,
-                            "session": session_id, "issues": attempts_issues})
+        # ---- verdict salvage (KILOGAS_386 A.4 retrospective, 2026-10-14)
+        # The Physicality Verdict judges the FIT and is independent of the
+        # candidates' legality. The old path returned here BEFORE
+        # apply_verdict, so a round whose every candidate was legality-gated
+        # (combo cap / AGN admission / ...) hung forever without a verdict —
+        # barred from s* by the verdict gate while possibly carrying the
+        # graph's best BIC. Salvage: settle the verdict from the LAST
+        # schema-valid response (mech checks still merge; apply_verdict is
+        # idempotent); the candidates stay discarded (unchanged behaviour).
+        salvaged_verdict = None
+        if last_parsed is not None and not is_opening:
+            vlm_verdict = last_parsed.physicality_verdict.model_dump()
+            graph.apply_verdict(label, vlm_verdict)
+            state = graph.state(label)
+            salvaged_verdict = state.get("verdict") or vlm_verdict
+        entry = {"kind": "survey-validation-exhausted", "state": label,
+                 "session": session_id, "issues": attempts_issues}
+        if salvaged_verdict is not None:
+            entry["verdict_salvaged"] = True
+        graph.log_decision(entry)
         graph.commit()
-        return {"status": "failure", "error": "validation retries exhausted",
-                "issues": attempts_issues, "session_id": session_id,
-                "partial_analysis": raw_analysis}
+        result = {"status": "failure", "error": "validation retries exhausted",
+                  "issues": attempts_issues, "session_id": session_id,
+                  "partial_analysis": raw_analysis}
+        if salvaged_verdict is not None:
+            result["verdict"] = salvaged_verdict
+            result["verdict_salvaged"] = True
+            # archive the raw exchange for audit even on the exhausted path
+            md_path = ""
+            if comparison and os.path.exists(comparison):
+                out_base = os.path.splitext(os.path.basename(comparison))[0]
+                md_path = os.path.join(os.path.dirname(os.path.abspath(comparison)),
+                                       f"{out_base}_survey_{label}_{session_id or uuid.uuid4().hex[:8]}.md")
+                try:
+                    with open(md_path, "w", encoding="utf-8") as f:
+                        f.write(f"# survey_round {label} (session {session_id}) — "
+                                f"candidates rejected, verdict salvaged\n\n"
+                                f"## Verdict (merged: surveyor + mechanical checks; "
+                                f"settled from the last schema-valid response)\n"
+                                f"{json.dumps(salvaged_verdict, indent=1, default=str)}\n\n"
+                                f"## Mechanical check table (code-computed)\n"
+                                + "".join(f"- [{m.get('severity')}] {m.get('check')}: {m.get('detail')}\n"
+                                          for m in (state.get("mech_checks") or []))
+                                + "\n## Rejected-candidate issues\n"
+                                + "".join(f"- {i.get('code')}: {i.get('message')}\n"
+                                          for i in attempts_issues)
+                                + f"\n## Raw VLM output\n\n{raw_analysis}\n")
+                except OSError:
+                    md_path = ""
+            result["candidates_file"] = md_path
+        return result
 
     # ---- settle the verdict on the state (mechanical checks merged in code)
     vlm_verdict = resp.physicality_verdict.model_dump()

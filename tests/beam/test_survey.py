@@ -5,6 +5,7 @@ arm (orchestrator_round) and the no_global_state digest arm."""
 import asyncio
 import importlib
 import json
+import os
 import shutil
 import sys
 from unittest.mock import patch
@@ -115,6 +116,52 @@ def test_survey_round_retry_exhaustion(galaxy, monkeypatch):
     g = BG.load(str(gdir))
     kinds = [e["kind"] for e in g.g.graph["decision_log"]]
     assert "survey-validation-exhausted" in kinds
+    # nothing parsed -> nothing to salvage; the verdict stays unset
+    assert not g.state(g.latest_state()).get("verdict")
+
+
+AGN_GATED_MD = """Analysis prose.
+```json
+{"physicality_verdict": {"verdict": "PASS", "failed_checks": [], "swap_hint": "none"},
+ "candidates": [
+  {"primitives": [{"op": "add", "add": {"structure_name": "agn", "component_type": "psf",
+                                        "mag": 17.5, "x_px": 752.60, "y_px": 740.30}}],
+   "physical_motivation": "central positive residual spike",
+   "expected_C_prime": "{disk,bulge,agn}",
+   "novelty_claim": "agn axis untested",
+   "expected_behavior_tag": "agn_add",
+   "local_benefit_sigma": 0.6}
+ ]}
+```
+"""
+
+
+def test_survey_round_verdict_salvage_on_gated_candidates(galaxy, monkeypatch):
+    """KILOGAS_386 A.4 regression: when EVERY candidate is legality-gated
+    (here E_AGN_ADMISSION — parent bulge Re=8px > 0.5px) the retries exhaust,
+    but the schema-valid Physicality Verdict must still settle on the state
+    (verdict settling is decoupled from candidate validation) so the round
+    can compete for s* instead of hanging "verdict gate bypassed" forever."""
+    gdir, label = galaxy
+    fake, calls = _mock_dispatch([AGN_GATED_MD])
+    monkeypatch.setattr("beam.survey._dispatch", fake)
+    r = survey_round(str(gdir), max_retries=1)
+    assert r["status"] == "failure"                    # candidates stay rejected
+    assert r["error"] == "validation retries exhausted"
+    assert any(i["code"] == "E_AGN_ADMISSION" for i in r["issues"])
+    assert len(calls) == 2                             # initial + 1 retry
+    # the salvage: verdict settled and returned
+    assert r["verdict_salvaged"] is True
+    assert r["verdict"]["verdict"] == "PASS"
+    g = BeamGraph.load(str(gdir))
+    assert g.state(label).get("verdict", {}).get("verdict") == "PASS"
+    assert g.g.graph.get("best_state") == label        # gate engaged, s* comparable
+    entry = [e for e in g.g.graph["decision_log"]
+             if e["kind"] == "survey-validation-exhausted"][-1]
+    assert entry.get("verdict_salvaged") is True
+    assert r["candidates_file"] and os.path.exists(r["candidates_file"])
+    with open(r["candidates_file"], encoding="utf-8") as f:
+        assert "verdict salvaged" in f.read()
 
 
 def test_survey_round_missing_artifacts(galaxy, monkeypatch):

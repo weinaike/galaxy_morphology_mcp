@@ -28,6 +28,7 @@ from tools.bar_lopsidedness_detection import (
 )
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
+from tools.bar_recognition import bar_recognition
 from tools.pix2radec import pix2radec, re_arcsec2pix
 from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1
 from starlette.responses import Response, JSONResponse
@@ -52,7 +53,7 @@ def _register_tools_and_prompts():
         app.add_tool(component_analysis)
         app.add_prompt(workflow_galfit)
         app.add_prompt(workflow_galfit_s1)
-        app.add_tool(detect_bar_lopsidedness)
+        app.add_tool(bar_recognition)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 
     if has_galfits:
@@ -61,6 +62,8 @@ def _register_tools_and_prompts():
         app.add_tool(run_galfits_sed_fitting)
         app.add_tool(run_galfits_image_sed_fitting)
         app.add_tool(detect_galfits_bar_lopsidedness)
+        app.add_tool(view_original_image)
+        app.add_tool(render_original)          
         app.add_tool(analyze_multiband_components)
         app.add_tool(check_lyric_file)
         app.add_tool(pix2radec)
@@ -70,10 +73,7 @@ def _register_tools_and_prompts():
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
 
     # Shared tools — always available
-    app.add_tool(view_original_image)
-    app.add_tool(render_original)  
     app.add_tool(fourier_mode_analysis)
-    app.add_tool(detect_bar_lopsidedness_from_isophote_tables)
 
     if not has_galfit and not has_galfits:
         logger.warning(

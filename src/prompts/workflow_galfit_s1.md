@@ -25,9 +25,13 @@
 
 ## workflow
 
-阶段一. 查看星系目录与原图分析
+阶段一. 查看星系目录与首轮拟合棒识别
 * **查看星系目录：** 确认所需的文件是存在的，包括 FITS 图像、掩膜文件、背景估计文件、feedme 文件等。
-* **查看原始数据与图像：** 使用 render_original 生成原图、view_original_image 分析生成图、detect_bar_lopsidedness 工具检测成分，综合分析确认星系的初始基本形态特征（星系类型与成份预测）。这将为后续的拟合提供初始猜测值。
+* **首轮拟合与棒识别：** 使用给定的初始 feedme 执行一次 `run_galfit`（首轮拟合）；随后调用 `bar_recognition` 工具（`fits_file` = 本轮返回的 `optimized_fits_file`，`param_file` = 本轮返回的 `output_param_file`），对首轮拟合结果进行棒识别。返回的 `warnings` / `guidance` 自带处理建议，照做即可。工具不写 working_note——**调用完成后，由你把工具返回的 `note_section` 原样追加到当前星系目录下的 `working_note.md`**（文件不存在则创建），作为 Round 0 记录。三层判决语义：
+    - Tier 1（80% 概率存在 bar）：记录棒 PA（`bar_pa_deg`）与投影轴比（`raw_ab`）；
+    - Tier 2（Uncertain）：存疑，是否加棒以专家成分组合 T 与残差证据共同裁决；
+    - Tier 3（80% 概率无 bar）：无棒，非经专家确认不得添加棒成分。
+  该判决仅作为初始形态参考（星系类型与成份预测）；阶段二仍严格以专家指定成分组合 T 为目标进行结构搜索。
 
 阶段二. 结构搜索与动态校验 (Structure Search & Dynamic Validation)
 *目标：以专家指定的成分组合 T 为目标，从单成分开始，每轮增加一个成分，逐步达到 T。当达到 T 后，固定成分组合，仅微调参数与约束。不追求参数极致收敛。*

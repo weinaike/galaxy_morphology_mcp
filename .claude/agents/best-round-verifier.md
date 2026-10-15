@@ -49,7 +49,7 @@ tools: Read, Grep, Glob, Bash
 4. 读懂配置文件中各成分 profile 类型与参数 fixed/free 状态：
    - **feedme**：`0)` 行为 profile 类型；`5)` 行末为 0（fixed）/1（free）；Bar n 固定表现为 `5) 0.5000 0`。
    - **lyric**：每参数为 `[initial_value, min, max, step, vary]` 五元组，`vary=0` 为固定，`vary=1` 为自由；profile 类型在 `Pa2)` 字段。
-5. 读 `working_note.md` 的 **Round 0**，记录"高概率存在成分"与 `detect_bar_lopsidedness` / `detect_galfits_bar_lopsidedness` 结论。
+5. 读 `working_note.md` 的 **Round 0**，记录"高概率存在成分"与 `bar_recognition`（单波段，Tier/bar_pa_deg/raw_ab）/ `detect_galfits_bar_lopsidedness`（多波段）结论。
 6. 读 `working_note.md` 所有 Round 记录，分析拟合成分的探索进展（用于维度 2 校验）。
 
 > 取证完成后，**先在报告中列出实际读到的文件清单与 locked 轮成分参数表**，再开始六维判定。
@@ -79,7 +79,7 @@ tools: Read, Grep, Glob, Bash
 | 校验项 | 量化与判定标准 | 判定 |
 |---|---|---|
 | **2a 成分探索完整度** | 对盘星系（Disk galaxy）而言，最期望的拟合目标是 `Disk + Bulge + Bar` 三成分组合。检查历史轮次中是否已**尝试过**此组合：<br>1. 若已尝试过但因拟合不收敛/参数非物理而回退，且在 `working_note.md` 中写明了回退理由 → **PASS**<br>2. 若从未尝试过此三成分组合 → **FAIL**（成分探索不完整，漏试最期望结构） | → **FAIL / PASS** |
-| **2b 高概率成分验证** | 交叉核对 `working_note.md` 的 Round 0 预测中“高概率存在”的成分（数据通常源自 `detect_bar_lopsidedness`）。<br>1. 若所有高概率成分都已在当前拟合中添加，或在历史轮次中被尝试过并有明确否决理由 → **PASS**<br>2. 若有高概率成分从未被添加或验证 → **FAIL** | → **FAIL** |
+| **2b 高概率成分验证** | 交叉核对 `working_note.md` 的 Round 0 预测中“高概率存在”的成分（单波段数据通常源自 `bar_recognition`（Tier 1 判棒时 Bar 属高概率成分），多波段源自 `detect_galfits_bar_lopsidedness`）。<br>1. 若所有高概率成分都已在当前拟合中添加，或在历史轮次中被尝试过并有明确否决理由 → **PASS**<br>2. 若有高概率成分从未被添加或验证 → **FAIL** | → **FAIL** |
 | **2c 低概率成分探索** | 检查在 Round 0 中预测可能存在但概率较低的成分是否也都进行过添加尝试或有排除依据。 | 缺失且无说明 → **WARN** |
 | **2d 调整决策收敛性** | 待锁轮次的 `component_analysis` 报告，判断当前成分配置是否处于未完善状态：<br>1. 出现“建议增加/删除/添加/移除 XXX 成分”且该建议尚未被后续轮次尝试验证 → **FAIL**（迭代未收敛）<br>2. 报告结论为“当前模型已充分”、“无需调整成分”或“当前成分合理” → **PASS** | → **FAIL / PASS** |
 

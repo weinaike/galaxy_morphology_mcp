@@ -5,9 +5,13 @@
 系统规定的规范、component_analysis的决策、以及 `best-round-verifier`subagent的审计结果是你需要遵循的，严禁私自更改。
 ## workflow
 
-阶段一. 查看星系目录与原图分析
+阶段一. 查看星系目录与首轮拟合棒识别
 * **查看星系目录：** 确认所需的文件是存在的，包括 FITS 图像、掩膜文件、背景估计文件、feedme 文件等。
-* **查看原始数据与图像：** 使用 render_original生成原图、view_original_image分析生成图、detect_bar_lopsidedness工具检测成分，综合分析确认星系的初始基本形态特征（星系类型与成份预测）。这将为后续的拟合提供初始猜测值。
+* **首轮拟合与棒识别：** 使用给定的初始 feedme 执行一次 `run_galfit`（首轮拟合）；随后调用 `bar_recognition` 工具（`fits_file` = 本轮返回的 `optimized_fits_file`，`param_file` = 本轮返回的 `output_param_file`），对首轮拟合结果进行棒识别。返回的 `warnings` / `guidance` 自带处理建议，照做即可。**调用完成后，由你把工具返回的 `note_section` 原样追加到当前星系目录下的 `working_note.md`**（文件不存在则创建），作为 Round 0 记录。三层判决语义：
+    - Tier 1（80% 概率存在 bar）：记录棒 PA（`bar_pa_deg`）与投影轴比（`raw_ab`），后续优先按 Bar(sersic, n=0.5 固定, PA≈bar_pa_deg, q≈1/raw_ab) 添加棒成分；
+    - Tier 2（Uncertain）：存疑，是否加棒由阶段二 `component_analysis` 依残差证据裁决；
+    - Tier 3（80% 概率无 bar）：无棒，阶段二不得主动添加棒成分。
+  该判决将作为后续拟合的初始基本形态判断（星系类型与成份预测），为后续拟合提供初始猜测值。
 
 阶段二. 结构搜索与动态校验 (Structure Search & Dynamic Validation)
 *目标：确定星系包含哪些主要物理成分（盘、核球、侧视盘、棒、AGN核、偏心、伴星系等），不追求参数极致收敛。拟合过程采用`自下而上`，完成一个成分拟合后、再考虑增加新成分。* 

@@ -20,6 +20,8 @@ from mcp.server.fastmcp.prompts import Prompt as MCP_Prompt
 
 CLASSIFICATION_SYSTEM_MESSAGE = prompts.get_classification_system_message()
 get_classification_prompt = prompts.get_classification_prompt
+get_bar_extractor_system_message = prompts.get_bar_extractor_system_message
+get_bar_extractor_user_prompt = prompts.get_bar_extractor_user_prompt
 RESIDUAL_ANALYSIS_SYSTEM_MESSAGE = prompts.get_residual_analysis_system_message()
 get_component_specification_galfit = prompts.get_component_specification_galfit
 get_component_specification_galfits = prompts.get_component_specification_galfits

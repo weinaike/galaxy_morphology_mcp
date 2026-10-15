@@ -90,14 +90,14 @@ G) galaxy.cons      # Parameter constraint file (empty string)
 # Working Note 的撰写规范
 
 - Working Note 是记录每轮拟合分析过程的核心文档，必须详细记录每轮的分析要点、参数设置、拟合结果以及距离预期目标的偏差等关键信息。 example示例中提到的 【必填】 的内容是必须包含的关键信息。
-- Working Note 中必须包含<Round 0: 原图成分预测>，必须明确指出<高概率存在的成分>。数据来源于 detect_bar_lopsidedness 的结论优先级更高。（仅作为初始猜测，实际以拟合效果为准）
+- Working Note 中必须包含<Round 0: 首轮形态与棒识别>，必须明确指出<高概率存在的成分>。数据来源于 bar_recognition（单波段，首轮拟合后调用，Tier/PA/raw_ab）或 detect_galfits_bar_lopsidedness（多波段）的结论优先级更高。（仅作为初始猜测，实际以拟合效果为准）
 - 严格按照以下示例的格式撰写 Working Note，确保信息的完整性和清晰度。
 
 <example>
 ## Working Note
-- Round 0 (20260624T011517.77c05864): 原图成分预测
+- Round 0 (20260624T011517.77c05864): 首轮形态与棒识别（原图成分预测）
   - 总体判断：这是 xxx星系，特征是xxx
-  - 【必填】detect_bar_lopsidedness 工具的结论：xxx
+  - 【必填】bar_recognition 工具的结论（单波段；多波段为 detect_galfits_bar_lopsidedness）：Tier=x, bar PA=xxx, raw_ab=xxx
   - 【必填】综合分析高概率存在成分:
     - Disk: 证据xxx, (需要描述是否包含 lopsidedness 及其关键参数)
     - Bulge: 证据xxx

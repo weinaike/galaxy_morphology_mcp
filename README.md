@@ -11,6 +11,7 @@
 | `run_galfit` | 执行 GALFIT 单波段拟合，返回优化的 FITS 文件、对比图像和拟合摘要 | 需设置 `GALFIT_BIN` |
 | `run_galfits` | 执行 GalfitS 多波段同时拟合，返回摘要文件、图像、SED 模型等结果 | 需设置 `GALFITS_BIN` |
 | `view_original_image` | 分析原始星系图像，提取形态分类和结构组件信息 | 要求提供2 panel图 |
+| `bar_recognition` | 神经-符号棒识别：对首轮拟合结果（FITS）渲染三视图，VLM 特征提取 + 客观测光 + 规则引擎，输出 Tier 1/2/3 三档结论（Tier 1 附棒 PA 与投影轴比），返回可直接追加的 working_note 小节（由 Agent 写入） | 需配置 VLM API key |
 | `component_analysis` | 分析拟合残差图像，诊断缺失或配置不当的物理组件（bulge、disk、bar、AGN 等）；多轮迭代中维护"最优轮次"登记并做轮间对比 | 始终可用 |
 
 ### 输出说明

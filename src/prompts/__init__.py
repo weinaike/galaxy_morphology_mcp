@@ -74,6 +74,15 @@ class Prompts(metaclass=SingletonMeta):
         filename = "classification_prompt.md"
         return self._read_prompt(filename=filename)
 
+    # --- Bar recognition (neuro-symbolic) extractor prompts ---
+    # Both files contain literal JSON braces -> _read_prompt only (no rendering).
+
+    def get_bar_extractor_system_message(self):
+        return self._read_prompt(filename="bar_extractor_system.md")
+
+    def get_bar_extractor_user_prompt(self):
+        return self._read_prompt(filename="bar_extractor_user.md")
+
     def get_residual_analysis_system_message(self):
         filename = "residual_analysis_message.md"
         return self._read_prompt(filename=filename)

@@ -155,6 +155,15 @@ Classify galaxy morphology from original image using VLM.
 - `source_id`: Source identifier
 - `custom_instructions`: Analysis guidance
 
+### mcp__galmcp__bar_recognition
+Neuro-symbolic bar recognition on the FIRST-round fitting result (single-band workflows call this in 阶段一 right after the first `run_galfit` round, replacing the former original-image analysis step).
+- `fits_file`: Path to the first-round output FITS with original/model/residual HDUs (`run_galfit` returns it as `optimized_fits_file`); GalfitS per-band `*_result.fits` also accepted
+- `param_file` (optional, recommended): first-round parameter file — pass `run_galfit`'s returned `output_param_file` as backup; auto-discovered next to the FITS (then parent dirs) when empty, and a missing file degrades gracefully (data-driven centering, no re_fit divergence gate, no external mask) with an explicit `warnings` entry
+- `source_id` / `band` / `re_obs_px` / `custom_instructions`: optional
+- Tier semantics: Tier 1 = 80% probability bar exists (returns `bar.pa_deg` = `bar_pa_deg`, `bar.projected_axis_ratio` = `raw_ab`); Tier 2 = Uncertain; Tier 3 = 80% probability no bar
+- The tool does NOT write working_note.md; it returns a ready-to-append `note_section` — the workflow instructs the Agent to append it to the galaxy's `working_note.md` as the Round 0 record
+- Algorithm: VLM 11-feature extraction (3 calibrated views rendered from the FITS) + objective photometry (m=2 Fourier, quadrupole contrast) + deterministic rule engine v2.4.1 — ported verbatim from the reference neuro-symbolic pipeline
+
 ### Important GalfitS CLI Parameters
 
 | Parameter | Purpose | When to Use |

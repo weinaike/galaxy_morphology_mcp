@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import shlex
@@ -19,12 +20,14 @@ from typing import Any, Annotated, List, Dict, Tuple
 from .pix2radec import suppress_stdout_stderr
 from .render_original import render_asinh_panel
 from .sb_profile import render_sb_profile
+from .fit_event_publisher import existing_artifacts, publish_fit_round
 from .parse_lyric import (
     parse_image_infos_from_lyric,
     parse_region_info_from_lyric,
     extract_component_attributes,
     generate_subcomps
 )
+
 
 WORKFLOW_OUTPUT_DIR_RE = re.compile(r"^\d{8}_\d{6}_.+(?:_iter\d+)?$")
 
@@ -651,6 +654,7 @@ def create_multiband_comparison_png(
 
     return png_filename, component_attr_file
 
+# modified by zl: emit multi-band round status and optional service events without API callbacks.
 async def run_galfits(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
     timeout_sec: Annotated[int, "timeout in seconds"] = 3600,
@@ -803,6 +807,25 @@ async def run_galfits(
     # Parse gssummary for structured statistics
     summary_stats = _parse_gssummary(summary_files[0]) if summary_files else {}
 
+    artifact_paths = existing_artifacts([
+        summary_files, imagefit_pngs, comparison_png, sedmodel_pngs, result_fits,
+        constrain_files, params_files, log_path,
+    ])
+    round_status_path = os.path.join(workplace_dir, "round_status.json")
+    with open(round_status_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "stage": "galfits_finished",
+            "status": "success",
+            "inputs": {"lyric": os.path.join(workplace_dir, os.path.basename(config_file))},
+            "outputs": artifact_paths,
+            "fit_statistics": summary_stats,
+        }, f, ensure_ascii=False, indent=2)
+    publish_fit_round({
+        "event": "fit_round_finished", "fitter": "galfits", "status": "success",
+        "round_id": os.path.basename(workplace_dir), "archive_dir": workplace_dir,
+        "round_status_file": round_status_path, "artifacts": artifact_paths,
+        "fit_statistics": summary_stats,
+    })
     return {
         "status": "success",
         "message": f"GalfitS completed successfully for {config_file}. Output files:\n"
@@ -827,6 +850,7 @@ async def run_galfits(
         "bic": summary_stats.get("bic"),
         "per_band_chisq": summary_stats.get("per_band_chisq", {}),
         "parameters": summary_stats.get("parameters", {}),
+        "round_status_file": round_status_path,
     }
 
 async def run_galfits_image_fitting(

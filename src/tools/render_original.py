@@ -1,9 +1,11 @@
 import os
+import re
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
+import matplotlib.patheffects as pe
 from astropy.io import fits
 from astropy.stats import sigma_clipped_stats
 from astropy.visualization import simple_norm
@@ -20,6 +22,21 @@ from .sb_profile import component_color
 # pure exponential the half-light (effective) radius Re = 1.678·h ≈ 1.68·h. sersic
 # param-4 is already Re. Normalize both to Re so contours are comparable across types.
 EXPDISK_RE_FACTOR = 1.68
+
+# companion-family STRUCTURE names: a psf-typed component with one of these
+# prefixes is a satellite/field source, NOT the main galaxy's AGN point core
+# (the + marker is AGN-only; companions stay unmarked)
+_COMPANION_NAME_RE = re.compile(
+    r"^(companion|comp|secondary|satellite)", re.IGNORECASE)
+
+
+def is_agn_point_core(comp: dict) -> bool:
+    """True when a parsed component is the main galaxy's AGN point core:
+    psf-typed AND not a companion-family name. This is the sole component
+    class that renders as a '+' crosshair instead of a 2·Re ellipse (a psf
+    has no Re — the ellipse would be a zero-size degenerate, invisible)."""
+    return ((comp.get("type") or "").lower() == "psf"
+            and not _COMPANION_NAME_RE.match(comp.get("name") or ""))
 
 
 def effective_re(comp: dict) -> float:
@@ -61,6 +78,24 @@ def draw_re_ellipses(ax, components, edgecolor: str = "cyan",
             ec = comp.get("color") or component_color(comp.get("name"), i)
         else:
             ec = edgecolor
+        if is_agn_point_core(comp):
+            # AGN point core: a psf has no Re — the 2·Re ellipse degenerates
+            # to zero size (invisible). Mark it with a colored '+' crosshair
+            # at its fitted centre instead (same semantic color as its legend
+            # entry and 1D SB curve, so the VLM can attribute it). Two stacked
+            # markers — a LARGER WHITE '+' underneath, the colored '+' on top —
+            # guarantee visibility on BOTH panel backgrounds (Greys_r maps the
+            # bright centre to BLACK; the agn's dark-brown semantic color
+            # alone vanishes on it, KILOGAS_452). A withStroke path effect was
+            # tried first and renders too thin on markers (~62 white px) — the
+            # stacked pair is the robust form. Companion psf components are
+            # excluded (field sources) and fall through to the degenerate
+            # ellipse below — deliberately unmarked.
+            ax.plot([cx], [cy], marker='+', color='white', markersize=22,
+                    markeredgewidth=5.0, linestyle='none', zorder=11)
+            ax.plot([cx], [cy], marker='+', color=ec, markersize=16,
+                    markeredgewidth=2.6, linestyle='none', zorder=12)
+            continue
         # 2·Re contour: full major-axis diameter = 4·Re, minor = 4·Re·(b/a).
         ax.add_patch(Ellipse(
             xy=(cx, cy),

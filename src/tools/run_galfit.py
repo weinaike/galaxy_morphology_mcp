@@ -317,6 +317,7 @@ def create_comparison_png(
         # ellipse geometry; PA follows the feedme convention (Y axis = 0° CCW,
         # treated as sky-PA under this workflow's N=+Y contract).
         if model_data is not None and components:
+            from .render_original import is_agn_point_core
             legend_handles = []
             for i, comp in enumerate(components):
                 parts = [f"{comp.get('name', '?')}"]
@@ -329,9 +330,17 @@ def create_comparison_png(
                     if key == 're' and v is not None:
                         v = effective_re(comp)
                     parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
-                legend_handles.append(Line2D(
-                    [0], [0], color=comp.get('color') or component_color(comp.get('name'), i),
-                    lw=2, ls='--', label=' '.join(parts)))
+                c = comp.get('color') or component_color(comp.get('name'), i)
+                if is_agn_point_core(comp):
+                    # AGN point core: on-panel marker is a '+' (drawn by
+                    # draw_re_ellipses) — the legend swatch mirrors it so
+                    # panel and legend read as the same mark
+                    legend_handles.append(Line2D(
+                        [0], [0], color=c, lw=0, marker='+', markersize=10,
+                        markeredgewidth=1.0, label=' '.join(parts)))
+                else:
+                    legend_handles.append(Line2D(
+                        [0], [0], color=c, lw=2, ls='--', label=' '.join(parts)))
             ax2.legend(handles=legend_handles, loc='upper left', fontsize=11,
                        frameon=True, fancybox=True, framealpha=0.8)
         ax2.set_title(

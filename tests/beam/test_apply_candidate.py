@@ -153,7 +153,7 @@ def test_apply_candidate_rechecks_combo_cap(galaxy):
     g = BeamGraph.load(str(galaxy))
     combo = g.state("A.1")["combo_key"]
     # exhaust the combo: per_combo_cap additional valid executions
-    cap = int(g.g.graph["meta"]["per_combo_cap"])
+    cap = int(g.g.graph["meta"]["class_caps"][g.state("A.1")["combo_key"].count("+") >= 2 and "c" or "b"])
     for i in range(cap):
         g.add_pending({"sigma": 0.4,
                        "primitives": [{"op": "tune", "structure_name": "bulge",

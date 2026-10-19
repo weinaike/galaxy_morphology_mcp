@@ -11,7 +11,7 @@ from beam.digest import (
 def test_global_digest_sections_and_line_budget(mini_graph):
     graph, label = mini_graph
     text = build_global_state_description(graph)
-    for section in ("[Meta]", "[Stage-1 conclusions]", "[State ledger",
+    for section in ("[Meta]", "[Stage-1 conclusions]", "[Component-family ledger]",
                     "[Rollback edges]", "[Verified basins]", "[Refuted hypotheses]",
                     "[Budget]", "[Temporary constraints]"):
         assert section in text, f"missing {section}"

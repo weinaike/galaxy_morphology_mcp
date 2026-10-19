@@ -621,10 +621,14 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
 
     # ---- combo cap
     combo = combo_identity(hypo)
-    if combo_counts.get(combo, 0) >= per_combo_cap:
-        issues.append(Issue("E_COMBO_EXHAUSTED",
-                            f"combination '{combo}' has exhausted its {per_combo_cap} "
-                            "attempts — diversify toward a different inventory",
+    from beam.cells import skeleton_class
+    from beam.graph import CLASS_CAPS
+    cls = skeleton_class(hypo)
+    if combo_counts.get(combo, 0) >= CLASS_CAPS[cls]:
+        issues.append(Issue("E_CLASS_CAP",
+                            f"skeleton class '{cls}' ({combo}) has exhausted its "
+                            f"{CLASS_CAPS[cls]} attempts — diversify toward a "
+                            "different family",
                             action_id=aid))
 
     # ---- ledger equivalence (structural R1 pre-check)
@@ -983,7 +987,7 @@ def validate_survey(resp: SurveyResponse, graph, state_label: str) -> Validation
         except OSError:
             parent_has_f1 = False
     combo_counts = graph.combo_counts()
-    cap = int(graph.g.graph["meta"].get("per_combo_cap", 4))
+    cap = 0  # placeholder — the class-cap check reads CLASS_CAPS directly
     refuted = graph.g.graph.get("refuted_hypotheses", [])
     temp = graph.g.graph.get("temporary_constraints", [])
     ledger = graph.input_ledger_signatures()

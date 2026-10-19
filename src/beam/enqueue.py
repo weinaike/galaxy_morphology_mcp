@@ -248,10 +248,13 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
     result = IngestResult()
     triggers = numeric_triggers or {}
     crash_kinds = graph.crash_kinds() if hasattr(graph, "crash_kinds") else {}
+    from beam.cells import CellLedger, skeleton_class
+    from beam.graph import CLASS_CAPS
+    cell_ledger = CellLedger.from_graph(graph)
+    cls_counts = graph.class_attempt_counts()
     parent = graph.state(parent_label)
     parent_inventory = parent.get("inventory", [])
     combo_counts = graph.combo_counts()
-    cap = int(graph.g.graph["meta"].get("per_combo_cap", 4))
     ledger = graph.input_ledger_signatures()
     zombie_map = {label: graph.state(label).get("zombies", [])
                   for label in graph.result_ledger_states()}
@@ -316,12 +319,30 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
                                 "tag": cand.expected_behavior_tag})
             continue
 
-        # ---- R0 combo cap (re-checked at enqueue: counts may have moved)
         hypo_combo = combo_identity(hypo)
-        if combo_counts.get(hypo_combo, 0) >= cap:
-            result.discarded.append({"reason": "COMBO_EXHAUSTED", "combo": hypo_combo})
-            graph.log_decision({"kind": "combo-exhausted-discard", "session": session_id,
-                                "combo": hypo_combo, "tag": cand.expected_behavior_tag})
+        # ---- R0 (2026-10-17 finalized scheme): per-component CELL filter +
+        # skeleton-class caps replace the retired per-combo cap.
+        # Cell dup: EVERY component's parameter cell already visited within
+        # this exact inventory — the same-basin re-entry hypothesis
+        # (warm-start children landing entirely in explored cells re-converge
+        # to the parent attractor; 138-galaxy replay: zero true best-kill).
+        if cell_ledger.is_dup(hypo):
+            result.discarded.append({"reason": "CELL_DUP",
+                                     "tag": cand.expected_behavior_tag})
+            graph.log_decision({"kind": "enqueue-discard", "session": session_id,
+                                "reason": "CELL_DUP (every component cell visited "
+                                          "in this inventory)",
+                                "tag": cand.expected_behavior_tag})
+            continue
+        # Class cap: skeleton-family budget a=2 / b=4 / c=5
+        cls = skeleton_class(hypo)
+        if cls_counts.get(cls, 0) >= CLASS_CAPS[cls]:
+            result.discarded.append({"reason": "CLASS_CAP", "class": cls,
+                                     "tag": cand.expected_behavior_tag})
+            graph.log_decision({"kind": "enqueue-discard", "session": session_id,
+                                "reason": f"CLASS_CAP: class {cls} exhausted "
+                                          f"{CLASS_CAPS[cls]} attempts",
+                                "tag": cand.expected_behavior_tag})
             continue
 
         # ---- R1 input-ledger equivalence (strict bands-aware form)

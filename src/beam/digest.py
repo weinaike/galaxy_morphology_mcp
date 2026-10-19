@@ -88,26 +88,7 @@ def build_global_state_description(g) -> str:
     lines.append("[Stage-1 conclusions] " + _stage1_line(stage1, skeletons))
 
     lines.append("")
-    lines.append("[State ledger (px)] one line per fitted state — compare your expected_C' "
-                 "line by line before generating each candidate:")
-    states = sorted(
-        ((s, a) for s, a in g.g.nodes(data=True) if a.get("global_iter_id", 0) > 0),
-        key=lambda kv: kv[1]["global_iter_id"])
-    if not states:
-        lines.append("  (no fitted states yet)")
-    for label, attrs in states:
-        inv = normalize_inventory(attrs.get("inventory", []))
-        combo = "+".join(_comp_line(c) for c in inv) or "(empty)"
-        metrics = attrs.get("metrics", {})
-        verdict = (attrs.get("verdict") or {}).get("verdict", "-")
-        notes = []
-        if attrs.get("zombies"):
-            notes.append("zombie:" + ",".join(attrs["zombies"]))
-        conv = (metrics.get("convergence") or {}).get("flag")
-        if conv and conv != "ok":
-            notes.append(f"[{conv}]")
-        lines.append(f"  | {label} | {combo} | BIC_eff={_fmt(metrics.get('bic_eff'))} | "
-                     f"{verdict} | {'; '.join(notes) or '-'}")
+    lines.append(_family_ledger(g))
 
     lines.append("")
     lines.append("[Rollback edges] confirmed closed-form equivalences (a hit means zero "
@@ -152,6 +133,92 @@ def build_global_state_description(g) -> str:
                      f"forbidden structures: {', '.join(t.get('forbid_structures', [])) or '-'}")
 
     return "\n".join(lines)
+
+
+def _family_ledger(g) -> str:
+    """Skeleton-family grouped state ledger (2026-10-17 redesign).
+
+    Groups every fitted state by its skeleton CLASS — (a) singlesersic
+    regime, (b) disk-bearing no bar, (c) disk-bearing bar — so the VLM
+    compares attempts WITHIN a family directly (what parameter changes did,
+    which family is winning) instead of mentally grouping a chronological
+    ledger. Per class header: attempt count + best BIC. Per attempt line:
+    label, <-parent label, inventory, INPUT params -> OUTPUT params (the
+    fitted deltas vs parent — the same-basin saturation pattern becomes
+    visible), dBIC_eff vs parent, chi2/A_psf, BIC_eff, verdict, tags.
+    Twin rounds (kept fit with |dBIC| < 1.0) are marked, not repeated.
+    """
+    states = sorted(
+        ((s, a) for s, a in g.g.nodes(data=True) if a.get("global_iter_id", 0) > 0),
+        key=lambda kv: kv[1]["global_iter_id"])
+    if not states:
+        return "[Component-family ledger] (no fitted states yet)"
+
+    def cls_of(attrs):
+        names = {(c.get("name") or "").lower()
+                 for c in (attrs.get("inventory") or [])}
+        if "singlesersic" in names:
+            return "a"
+        if "bar" in names:
+            return "c"
+        return "b"
+
+    families: dict[str, list] = {"a": [], "b": [], "c": []}
+    label_bic = {}
+    for label, attrs in states:
+        families[cls_of(attrs)].append((label, attrs))
+        label_bic[label] = (attrs.get("metrics") or {}).get("bic_eff")
+
+    CLASS_TITLES = {
+        "a": "(a) singlesersic regime",
+        "b": "(b) disk-bearing, no bar",
+        "c": "(c) disk + bar",
+    }
+    out = ["[Component-family ledger] attempts grouped by skeleton family — "
+           "compare within a family to judge parameter movements and which "
+           "family is winning; dBIC is vs the PARENT state."]
+    executed_bics = [label_bic[l] for l, a in states
+                     if label_bic[l] is not None]
+    for cls in ("a", "b", "c"):
+        entries = families[cls]
+        if not entries:
+            continue
+        bics = [label_bic[l] for l, _ in entries if label_bic[l] is not None]
+        best_bic = min(bics) if bics else None
+        out.append(f"{CLASS_TITLES[cls]} — {len(entries)} attempt(s), "
+                   f"best BIC_eff={_fmt(best_bic)}")
+        seen_bics = []
+        for label, attrs in entries:
+            inv = normalize_inventory(attrs.get("inventory", []))
+            combo = "+".join(_comp_line(c) for c in inv) or "(empty)"
+            metrics = attrs.get("metrics", {})
+            verdict = (attrs.get("verdict") or {}).get("verdict", "-")
+            parent = attrs.get("parent")
+            pbic = label_bic.get(parent) if parent else None
+            bic = label_bic.get(label)
+            dbic = ""
+            if bic is not None and pbic is not None:
+                dbic = f" dBIC_vs_parent={float(bic) - float(pbic):+.1f}"
+            elif bic is not None and parent:
+                dbic = " dBIC_vs_parent=n/a"
+            chi_a = ""
+            if metrics.get("chi2") and metrics.get("a_psf"):
+                chi_a = f" chi2/A_psf={float(metrics['chi2']) / float(metrics['a_psf']):.1f}"
+            notes = []
+            if attrs.get("zombies"):
+                notes.append("zombie:" + ",".join(attrs["zombies"]))
+            conv = (metrics.get("convergence") or {}).get("flag")
+            if conv and conv != "ok":
+                notes.append(f"[{conv}]")
+            twin = ""
+            if bic is not None and any(b is not None and abs(b - bic) < 1.0
+                                       for b in seen_bics):
+                twin = " [twin]"
+            seen_bics.append(bic)
+            out.append(f"  | {label}{'<' if parent else ''}{parent or ''} | {combo}{dbic}"
+                       f"{chi_a} | BIC_eff={_fmt(bic)} | {verdict}"
+                       f"{' ' + '; '.join(notes) if notes else ''}{twin} |")
+    return "\n".join(out)
 
 
 def _stage1_line(stage1: dict, graph_skeletons: list | None = None) -> str:

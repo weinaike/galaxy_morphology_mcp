@@ -29,7 +29,10 @@ def build_working_note(g, galaxy_dir: str) -> str:
     lines.append(f"- Galaxy ID: {gid}; fitting region H): "
                  f"{[_fmt(v) for v in region] if region else '?'}; single band")
     lines.append(f"- Beam width W = {meta.get('W', 5)}; global budget N_max = "
-                 f"{meta.get('N_max', 15)}; per-combination cap = {meta.get('per_combo_cap', 4)}")
+                 f"{meta.get('N_max', 15)}; class caps a/b/c = "
+                 f"{meta.get('class_caps', {}).get('a', 2)}/"
+                 f"{meta.get('class_caps', {}).get('b', 4)}/"
+                 f"{meta.get('class_caps', {}).get('c', 5)}")
     lines.append("- PA convention: N=+Y (+Y up = 0° counterclockwise, same frame as the "
                  "feedme 10) row); unit contract: pixels only (expdisk Rs conversion "
                  "Re=1.68·Rs applied by code)")
@@ -73,7 +76,7 @@ def build_working_note(g, galaxy_dir: str) -> str:
     lines.append("## Beam-state snapshot (overwritten after each round; do not append)")
     lines.append(f"- Beam config: W={meta.get('W', 5)}, N_max={meta.get('N_max', 15)}, "
                  f"stagnation_max={meta.get('stagnation_max', 5)}, "
-                 f"per_combo_cap={meta.get('per_combo_cap', 4)}, g_min={meta.get('g_min', 0.3)}")
+                 f"class_caps={meta.get('class_caps', {})}, g_min={meta.get('g_min', 0.3)}")
     if meta.get("ablations"):
         lines.append(f"- **Ablation arm (paper)**: {meta['ablations']} — this run is NOT the "
                      f"main configuration; keep the flag set for the whole run")

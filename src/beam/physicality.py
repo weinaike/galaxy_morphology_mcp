@@ -558,6 +558,40 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                              f"{outer} (max radius ratio {worst:.2f}; "
                                              f"q_{inner}={qi or 1:g}, q_{outer}={qo or 1:g})"})
 
+    # ---- multi-pin composite collapse rule (2026-10-17 VLM-verdict
+    # retirement compensation, KILOGAS_113): three simultaneous note-level
+    # pins on one sersic-family component — Re at the PSF-scale floor AND
+    # mag pinned at the lowest component magnitude AND n at its cap —
+    # synthesize to a hard "numerical artifact" (the VLM used to make this
+    # exact judgment; the per-parameter mech rules only see notes).
+    if psf:
+        for _nm in ("bulge", "singlesersic", "bar"):
+            c_ = by.get(_nm)
+            if not c_:
+                continue
+            _re_ = _f(c_.get("re_effective"))
+            if _re_ is None or _re_ > psf * 1.05:
+                continue          # the anchor condition: Re at the PSF floor
+            _n_ = _f(c_.get("n"))
+            _nband = (state.get("cons_effective") or {}).get(
+                f"{c_.get('number')}.n") if c_.get("number") else None
+            _ncap = float(_nband[1]) if _nband and _nband[1] else 8.0
+            _n_at_cap = _n_ is not None and _n_ >= 0.98 * _ncap
+            _mag_pin = any(m.get("check") == "bound_pin"
+                          and "mag" in str(m.get("detail", "") and _nm in str(m.get("detail", "")))
+                          for m in (state.get("mech_checks") or []))
+            _pins = (1 + (1 if _n_at_cap else 0) + (1 if _mag_pin else 0))
+            if _pins >= 2:
+                checks.append({
+                    "severity": "hard", "check": "shape_prior",
+                    "detail": f"{_nm} collapsed to a numerical artifact: "
+                              f"Re={_re_:.3f}px at the PSF-scale floor with "
+                              f"simultaneous parameter pins (n={_n_ if _n_ is None else round(_n_,2)} "
+                              f"at cap, {_nm} mag at a bound) — multiple bound "
+                              "pins + floor Re = the fit degenerated; re-seed "
+                              "or re-identify (point-source / role question), "
+                              "not a tuning problem"})
+
     # ---- flat-disk regime AREA CAPS (KILOGAS_114 A.1 retrospective): when
     # the directional layer is skipped (fitted disk q < ONION_SKIP_Q, or the
     # edgedisk slot which never runs it), tip-poking/crossing goes unchecked,

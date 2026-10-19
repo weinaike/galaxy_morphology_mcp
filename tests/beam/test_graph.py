@@ -104,14 +104,13 @@ def test_record_first_fit_sets_best(galaxy):
 
 
 def test_verdict_settles_after_record(galaxy):
-    """The natural order fit -> record -> survey: verdict arrives later via
-    apply_verdict and settles the best exactly once."""
+    """2026-10-17 mech-only verdict: settles AT record_fit time (no
+    survey_round wait). No mech-hard -> PASS immediately, s* updates."""
     g = _init(galaxy)
     label = g.record_fit(_run_result(galaxy, bic_eff=1000.0))
-    assert g.g.graph["best_state"] is None  # pending verdict
-    g.apply_verdict(label, {"verdict": "PASS"})
-    assert g.g.graph["best_state"] == "A.1"
-    g.apply_verdict(label, {"verdict": "FAIL"})  # idempotent
+    assert (g.state(label).get("verdict") or {}).get("verdict") == "PASS"
+    assert g.g.graph["best_state"] == "A.1"  # s* updated at record time
+    g.apply_verdict(label, {"verdict": "FAIL"})  # idempotent: no-op
     assert g.g.graph["best_state"] == "A.1"
     assert g.counters()["stagnation"] == 0
 
@@ -388,6 +387,9 @@ def test_floor_discharge_after_valid_execution(galaxy):
                   source_session="s3", parent_label="A.1")
     ok_aid = g.pending_queue()[-1]
     g.record_fit(_run_result(galaxy, bic_eff=1002.0), action_id=ok_aid)
+    # 2026-10-17: record-time verdict settles bump stagnation on the
+    # non-improving fixture rounds; zero it to isolate the discharge check
+    g.counters()["stagnation"] = 0
     assert g.floor_blockers() == []
     rec = g.pending_record(floor_aid)
     assert rec["status"] == "discarded"

@@ -102,16 +102,22 @@ def test_floor_survives_truncation(mini_graph):
 
 def test_combo_exhausted_discard(mini_graph):
     graph, label = mini_graph
-    cap = graph.g.graph["meta"]["per_combo_cap"]
     combo = graph.state(label)["combo_key"]
-    # burn the cap by re-recording equivalent fits is costly; patch counts directly
-    for lbl in [f"X.{i}" for i in range(cap)]:
-        graph.g.add_node(lbl, combo_key=combo, global_iter_id=100 + int(lbl.split(".")[1]))
+    cls = "c" if "bar" in combo else ("a" if "singlesersic" in combo else "b")
+    cap = graph.g.graph["meta"]["class_caps"][cls]
+    # burn the class cap by re-recording equivalent fits is costly; patch
+    # counts directly (inventory-bearing nodes so class_attempt_counts sees them)
+    from beam.cells import skeleton_class
+    inv = graph.state(label)["inventory"]
+    for i in range(cap):
+        lbl = f"X.{i}"
+        graph.g.add_node(lbl, combo_key=combo, global_iter_id=100 + i,
+                         inventory=inv, metrics={"convergence": {"flag": "ok"}})
     res = ingest(graph, [
         cand([{"op": "tune", "tune": {"structure_name": "bulge", "param": "mag",
                                       "value": 18.5}}], tag="mag_tune"),
     ], session_id="s1", parent_label=label)
-    assert res.discarded and res.discarded[0]["reason"] == "COMBO_EXHAUSTED"
+    assert res.discarded and res.discarded[0]["reason"] == "CLASS_CAP"
 
 
 def test_r2_zero_cost_rollback_not_enqueued(tmp_path, test_data_dir):

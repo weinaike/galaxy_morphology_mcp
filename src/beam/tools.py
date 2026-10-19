@@ -222,7 +222,7 @@ def beam_init(
             "q_iso_outer": q_iso_outer,
             "q_iso_sma_outer": q_iso_res.get("sma_outer"),
             "config": {k: meta.get(k) for k in
-                       ("W", "N_max", "stagnation_max", "per_combo_cap", "g_min")},
+                       ("W", "N_max", "stagnation_max", "class_caps", "g_min")},
             "ablations": meta.get("ablations", {}),
             "warnings": warnings,
             "message": "beam graph initialised; run the first fit (run_galfit on the root "

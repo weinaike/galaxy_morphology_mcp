@@ -47,7 +47,14 @@ GRAPH_FILE = "graph.json"
 BEAM_WIDTH = 5
 N_MAX = 7
 STAGNATION_MAX = 3  # 2026-10-10: 2 -> 3 (user call: at 2 the stop fired before hedges/repairs got their turn)
-PER_COMBO_CAP = 3  # 2026-10-14: 2 -> 3 (user call; history 4 -> 2 at the 2026-10-09 austerity profile)
+# 2026-10-17 finalized dedup scheme (138-galaxy replay-validated, zero true
+# best-kill): the per-combo cap is RETIRED — the skeleton-CLASS caps
+# (a=2, b=4, c=5; sub-converged rounds don't count) bound structural
+# exploration, and the per-component parameter-subspace cell filter (see
+# beam/cells.py) takes over same-inventory dedup with physically meaningful
+# bins (PA 4x45deg, Re factor-2, q/n bands) instead of arbitrary counts.
+# The 2026-10-14 per-combo 2 -> 3 change is hereby superseded.
+CLASS_CAPS = {"a": 2, "b": 4, "c": 5}
 G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)
@@ -99,7 +106,7 @@ class BeamGraph:
             "W": int(beam_width) if beam_width else BEAM_WIDTH,
             "N_max": int(n_max) if n_max else N_MAX,
             "stagnation_max": int(stagnation_max) if stagnation_max else STAGNATION_MAX,
-            "per_combo_cap": PER_COMBO_CAP,
+            "class_caps": dict(CLASS_CAPS),
             "g_min": G_MIN,
         }
         # Ablation arm (paper): persisted in the graph so every later call
@@ -626,13 +633,29 @@ class BeamGraph:
         if verdict is not None:
             self.apply_verdict(label, verdict, parent_label=parent_label)
         elif any(c.get("severity") == "hard" for c in mech):
-            # Fail-safe (KILOGAS_231 2026-09-16 incident): a driver that never
-            # settles verdicts (no survey_round, no verdict_json) must not be
-            # able to bypass the physicality gate — mech-hard entries alone
-            # settle FAIL here, exactly what merge_verdict would produce after
-            # any surveyor call. States without mech-hard stay unsettle-pending
-            # until survey_round runs.
+            # 2026-10-17 VLM-verdict retirement: the verdict is MECH-ONLY and
+            # settles HERE (record time), no longer waiting for survey_round
+            # (138-galaxy replay: 99.6% of VWE verdicts echoed the mech table
+            # verbatim; the 4 divergences were superseded-round FAILs, zero
+            # outcome change). Mech-hard entry vetoes PASS; swap_hint derives
+            # from the mech re_chain entry ({disk,bulge} exact inversion —
+            # the two free Seriscs swapped).
+            _names = {(c.get("name") or "").lower()
+                      for c in (fitted_inv or input_inv or [])}
+            _re_chain = any(c.get("check") == "re_chain"
+                           and "bulge" in str(c.get("detail", ""))
+                           and "disk" in str(c.get("detail", ""))
+                           and "bar" not in str(c.get("detail", ""))
+                           and "lens" not in str(c.get("detail", ""))
+                           for c in mech)
+            _hint = "disk_bulge_swap" if (_re_chain
+                                         and _names >= {"disk", "bulge"}
+                                         and not (_names & {"bar", "lens"})) else "none"
             self.apply_verdict(label, {"verdict": "FAIL", "failed_checks": [],
+                                       "swap_hint": _hint},
+                               parent_label=parent_label)
+        else:
+            self.apply_verdict(label, {"verdict": "PASS", "failed_checks": [],
                                        "swap_hint": "none"},
                                parent_label=parent_label)
         self.commit()
@@ -709,8 +732,24 @@ class BeamGraph:
         if (self.g.graph.get("meta", {}).get("ablations") or {}).get("no_verdict_gate"):
             verdict_pass = True
 
-        # mechanical best update: verdict-gated, sub-convergence-gated, BIC-first
-        eligible = verdict_pass and conv_ok and _metric_key(metrics) is not None
+        # mechanical best update: verdict-gated, BIC-first. The sub-converged
+        # gate is ASYMMETRIC (2026-10-17, 138-galaxy data: 29/57 kept
+        # sub-converged rounds carried >1 BIC improvement the old symmetric
+        # gate discarded): a sub-converged round whose BIC BEATS the current
+        # best is a real measured better model (the seed was good and the
+        # optimizer confirmed it) — it MAY update s*; its WORSE BIC remains
+        # inadmissible (refutation quarantine unchanged: no refuted entries
+        # from any sub-converged round).
+        current_best_pre = self.g.graph.get("best_state")
+        _cb_m = self.state(current_best_pre).get("metrics", {}) if current_best_pre else {}
+        conv_sub_but_better = (not conv_ok
+                               and _metric_key(metrics) is not None
+                               and current_best_pre is not None
+                               and _metric_key(_cb_m) is not None
+                               and _metric_key(metrics) < _metric_key(_cb_m))
+        eligible = (verdict_pass
+                    and (conv_ok or conv_sub_but_better)
+                    and _metric_key(metrics) is not None)
         current_best = self.g.graph.get("best_state")
         if eligible:
             best_metrics = self.state(current_best).get("metrics", {}) if current_best else {}
@@ -986,6 +1025,24 @@ class BeamGraph:
         return [label for label, attrs in self.g.nodes(data=True)
                 if attrs.get("global_iter_id", 0) > 0]
 
+    def class_attempt_counts(self) -> dict:
+        """Executed (convergence ok, non-F1-reserved) attempts per skeleton
+        class a/b/c — the unit of the 2026-10-17 class caps."""
+        from beam.cells import skeleton_class
+        pending = self.g.graph.get("pending", {})
+        counts: dict[str, int] = {"a": 0, "b": 0, "c": 0}
+        for _label, attrs in self.g.nodes(data=True):
+            if attrs.get("global_iter_id", 0) == 0:
+                continue
+            conv = ((attrs.get("metrics") or {}).get("convergence") or {}).get("flag")
+            if conv == "sub-converged":
+                continue
+            rec = pending.get(attrs.get("action_in") or "") or {}
+            if (rec.get("code_flags") or {}).get("f1_reserved"):
+                continue
+            counts[skeleton_class(attrs.get("inventory") or [])] += 1
+        return counts
+
     def combo_counts(self, valid_only: bool = True) -> dict[str, int]:
         """Executed attempts per combination (cap accounting).
 
@@ -1235,7 +1292,7 @@ class BeamGraph:
         meta = self.g.graph.get("meta", {})
         return {
             "config": {k: meta.get(k) for k in
-                       ("W", "N_max", "stagnation_max", "per_combo_cap", "g_min")},
+                       ("W", "N_max", "stagnation_max", "class_caps", "g_min")},
             "ablations": meta.get("ablations", {}),
             "best_state": best,
             "best_metrics": self.state(best).get("metrics", {}) if best else None,

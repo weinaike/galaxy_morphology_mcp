@@ -116,8 +116,10 @@ def test_survey_round_retry_exhaustion(galaxy, monkeypatch):
     g = BG.load(str(gdir))
     kinds = [e["kind"] for e in g.g.graph["decision_log"]]
     assert "survey-validation-exhausted" in kinds
-    # nothing parsed -> nothing to salvage; the verdict stays unset
-    assert not g.state(g.latest_state()).get("verdict")
+    # 2026-10-17 mech-only verdict: the verdict was settled at
+    # record_fit time (PASS here — no mech-hard); the survey failure no
+    # longer leaves it pending
+    assert (g.state(g.latest_state()).get("verdict") or {}).get("verdict") == "PASS"
 
 
 AGN_GATED_MD = """Analysis prose.
@@ -137,11 +139,11 @@ AGN_GATED_MD = """Analysis prose.
 
 
 def test_survey_round_verdict_salvage_on_gated_candidates(galaxy, monkeypatch):
-    """KILOGAS_386 A.4 regression: when EVERY candidate is legality-gated
-    (here E_AGN_ADMISSION — parent bulge Re=8px > 0.5px) the retries exhaust,
-    but the schema-valid Physicality Verdict must still settle on the state
-    (verdict settling is decoupled from candidate validation) so the round
-    can compete for s* instead of hanging "verdict gate bypassed" forever."""
+    """KILOGAS_386 A.4 regression (2026-10-17 form): when EVERY candidate is
+    legality-gated (here E_AGN_ADMISSION) the retries exhaust — but the
+    mech-only verdict was already settled AT record_fit, so the round's
+    verdict/best comparability never hung. The salvage machinery is retired;
+    the invariant it protected is now structural."""
     gdir, label = galaxy
     fake, calls = _mock_dispatch([AGN_GATED_MD])
     monkeypatch.setattr("beam.survey._dispatch", fake)
@@ -150,18 +152,16 @@ def test_survey_round_verdict_salvage_on_gated_candidates(galaxy, monkeypatch):
     assert r["error"] == "validation retries exhausted"
     assert any(i["code"] == "E_AGN_ADMISSION" for i in r["issues"])
     assert len(calls) == 2                             # initial + 1 retry
-    # the salvage: verdict settled and returned
-    assert r["verdict_salvaged"] is True
-    assert r["verdict"]["verdict"] == "PASS"
+    # verdict was settled at record time (record-fit mech verdict: no
+    # mech-hard -> PASS) — no salvage needed, and the failure return no
+    # longer carries verdict fields
+    assert "verdict_salvaged" not in r
     g = BeamGraph.load(str(gdir))
     assert g.state(label).get("verdict", {}).get("verdict") == "PASS"
-    assert g.g.graph.get("best_state") == label        # gate engaged, s* comparable
+    assert g.g.graph.get("best_state") == label        # s* comparable at record
     entry = [e for e in g.g.graph["decision_log"]
              if e["kind"] == "survey-validation-exhausted"][-1]
-    assert entry.get("verdict_salvaged") is True
-    assert r["candidates_file"] and os.path.exists(r["candidates_file"])
-    with open(r["candidates_file"], encoding="utf-8") as f:
-        assert "verdict salvaged" in f.read()
+    assert "verdict_salvaged" not in entry            # machinery retired
 
 
 def test_survey_round_missing_artifacts(galaxy, monkeypatch):

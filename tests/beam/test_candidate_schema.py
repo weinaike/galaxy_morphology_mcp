@@ -207,11 +207,13 @@ def test_re_chain_3pct_tolerance():
 
 # ----------------------------------------------------------------- combo cap
 def test_combo_exhausted():
-    counts = {"bar+bulge+disk": 4}
+    # class caps: a {disk,bulge,bar} parent (class c, cap 5) with 5 prior
+    # attempts on the same combination -> E_CLASS_CAP
+    counts = {"bar+bulge+disk": 5}
     parent = [comp("disk", "expdisk", re=13.7), comp("bulge", re=1.2), comp("bar", re=5.0)]
     c = make_cand([{"op": "tune", "tune": {"structure_name": "bar", "param": "pa_deg",
                                            "value": 90.0}}])
-    assert "E_COMBO_EXHAUSTED" in codes(_validate(c, parent=parent, combo_counts=counts))
+    assert "E_CLASS_CAP" in codes(_validate(c, parent=parent, combo_counts=counts))
 
 
 # ------------------------------------------------------------------- ledgers

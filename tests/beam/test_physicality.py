@@ -171,9 +171,15 @@ def test_merge_verdict_appends_to_vlm_fail():
 
 # ------------------------------------------------- graph integration (defect A)
 def test_apply_verdict_mech_veto_blocks_best(mini_graph):
+    # 2026-10-17: the mech veto settles at record_fit time. Simulate the
+    # mech-hard-at-record scenario: clear the already-settled verdict, then
+    # apply_verdict with a mech-hard table and a PASS input — the merge
+    # must veto to FAIL and block s*.
     graph, label = mini_graph
+    graph.g.nodes[label]["verdict"] = None   # un-settle (was auto-settled)
     graph.g.nodes[label]["mech_checks"] = [
         {"severity": "hard", "check": "axis_ratio", "detail": "bar q=0.9"}]
+    graph.g.graph["best_state"] = None  # simulate: no prior best
     graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": []})
     v = graph.state(label)["verdict"]
     assert v["verdict"] == "FAIL" and v["mech_veto"] is True
@@ -250,21 +256,27 @@ def test_aging_bonus_only_on_best_path(mini_graph):
         "round_status_file": "r.json",
         "fit_statistics": {"bic_eff": 2000.0, "convergence": {"flag": "ok"}},
     }, parent_label="A.0")
-    # best path = latest chain fallback: A.2 -> A.0 (no best_state yet)
-    assert graph.best_path_labels() == {"A.2", "A.0"}
+    # 2026-10-17: record-time verdict settling means best_state exists (A.1
+    # auto-PASS at record); the best path follows it, not the latest chain
+    assert graph.best_path_labels() == {"A.1", "A.0"}
 
-    # off-path candidate has the HIGHER base score and age; on-path wins via aging
-    _add_pending(graph, "A.2", "on_path", 0.50, age=10)   # eff 0.50 + 0.10
-    _add_pending(graph, "A.1", "off_path", 0.55, age=10)  # eff 0.55 (no bonus)
+    # A.1 is the record-time-settled best; the on-path candidate (parented
+    # A.1) has the lower base score but wins via the aging bonus; the
+    # off-path candidate (parented A.2) has the higher base score, no bonus
+    _add_pending(graph, "A.1", "on_path", 0.50, age=10)   # eff 0.50 + 0.10
+    _add_pending(graph, "A.2", "off_path", 0.55, age=10)  # eff 0.55 (no bonus)
     _reorder_queue(graph)
     assert graph.pending_queue()[0] == "on_path"
 
-    # settle a best on the other branch: aging follows the best path
+    # best stays A.1 under the new contract (auto-settled at record; the
+    # explicit applies are idempotent no-ops): the on-path candidate keeps
+    # the aging bonus and stays first; the off-path A.2-parented one
+    # cannot take it over despite the higher base score
     graph.apply_verdict("A.2", {"verdict": "FAIL", "failed_checks": []})
     graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": []})
-    assert graph.g.graph["best_state"] == label  # A.1 (BIC 1000 < 2000... FAIL A.2)
+    assert graph.g.graph["best_state"] == label  # A.1 (record-time best)
     _reorder_queue(graph)
-    assert graph.pending_queue()[0] == "off_path"  # now on the best path
+    assert graph.pending_queue()[0] == "on_path"  # aging follows the best path
 
 
 def test_snapshot_flags_off_best_path(mini_graph):

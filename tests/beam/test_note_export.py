@@ -52,8 +52,9 @@ def test_working_note_template_sections(seeded_graph, tmp_path):
     # stage-1: detection retired (2026-10-09); the header states the retirement
     # (legacy graphs with a detect block would render the zero-evidence wording)
     assert "detection retired" in text
-    # verdict recorded verbatim with the note
-    assert "PASS" in text and "[note] x" in text
+    # 2026-10-17 mech-only verdict: settled at record time (PASS);
+    # VLM-verdict notes are retired — mech notes land via the record merge
+    assert "PASS" in text
 
 
 def test_working_note_fail_verdict_marked(seeded_graph, tmp_path):

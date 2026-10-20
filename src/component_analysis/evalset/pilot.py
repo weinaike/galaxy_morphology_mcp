@@ -314,7 +314,7 @@ def _mark_size_disk_candidate(blocks: list[dict[str, Any]]) -> None:
     if positions:
         cx = sorted(x for x, _ in positions)[len(positions) // 2]
         cy = sorted(y for _, y in positions)[len(positions) // 2]
-        central = [block for block in unlabeled if abs(block["pos"][0] - cx) <= 10 and abs(block["pos"][1] - cy) <= 10]
+        central = [block for block in unlabeled if block.get("pos") and abs(block["pos"][0] - cx) <= 10 and abs(block["pos"][1] - cy) <= 10]
     else:
         central = unlabeled
     if not central:
@@ -383,6 +383,7 @@ def _atomic_actions(before_blocks: list[dict[str, Any]], after_blocks: list[dict
     """
     actions: list[dict[str, Any]] = []
     unresolvable = False
+    bookkeeping_retypes: list[dict[str, str]] = []
     after_by_key = {block["key"]: block for block in after_blocks}
     for block in before_blocks:
         after = after_by_key.get(block["key"])
@@ -393,6 +394,26 @@ def _atomic_actions(before_blocks: list[dict[str, Any]], after_blocks: list[dict
         added, removed = sorted(after_set - before_set), sorted(before_set - after_set)
         if not added and not removed:
             continue
+        # Bookkeeping re-type (2026-10-09 ruling): a lone state-marker Sersic
+        # (single_sersic) that keeps its model, keeps n within tolerance, and
+        # gains no label was NOT acted on — its multi-block fallback label
+        # (bulge) is bookkeeping, not an executed REPLACE.
+        if before_set <= {"single_sersic"} and len(added) == 1 and len(removed) == 1 and removed == ["single_sersic"]:
+            # Prefer the before round's FITTED n (the state's converged value):
+            # feedmes carry initial values on the pre side and converged-carried
+            # values on the post side, which inflates the apparent delta.
+            n_reference = block.get("fitted_n", block.get("n"))
+            n_after = after.get("n")
+            unchanged = (
+                block["model"] == after["model"]
+                and after.get("structure") is None
+                and n_reference is not None
+                and n_after is not None
+                and abs(n_reference - n_after) < 0.3
+            )
+            if unchanged:
+                bookkeeping_retypes.append({"from": "single_sersic", "to": added[0]})
+                continue
         promotable_source = "unclassified_sersic" in before_set or (
             single_band and before_set == {"single_sersic"} and "disk" in after_set
         )
@@ -411,17 +432,24 @@ def _atomic_actions(before_blocks: list[dict[str, Any]], after_blocks: list[dict
     for block in after_blocks:
         if block["key"] not in before_keys:
             actions.extend(_add(semantic) for semantic in block["semantics"])
-    return actions, unresolvable
+    return actions, unresolvable, bookkeeping_retypes
 
 
 def _add_removed(component: str) -> dict[str, Any]:
     return {"action_type": "PROPOSE_REMOVE", "component": component, "replace_from": None, "replace_to": None}
 
 
+def bookkeeping_retypes(before_blocks: list[dict[str, Any]], after_blocks: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Single-band bookkeeping re-types (marker -> fallback label) for a transition."""
+    rekeyed = _rekey_after_by_lineage(before_blocks, after_blocks)
+    _, _, retypes = _atomic_actions(before_blocks, rekeyed, single_band=True)
+    return retypes
+
+
 def _infer_action(before_blocks: list[dict[str, Any]], after_blocks: list[dict[str, Any]], single_band: bool = False) -> dict[str, Any]:
     if single_band:
         after_blocks = _rekey_after_by_lineage(before_blocks, after_blocks)
-    actions, unresolvable = _atomic_actions(before_blocks, after_blocks, single_band)
+    actions, unresolvable, _bookkeeping = _atomic_actions(before_blocks, after_blocks, single_band)
     if any(action.get("component") == "unidentified_sersic" or action.get("replace_from") == "unidentified_sersic" or action.get("replace_to") == "unidentified_sersic" for action in actions):
         unresolvable = True
     if unresolvable:
@@ -555,6 +583,8 @@ def _prelabel(candidate: dict[str, Any], before: dict[str, Any], after: dict[str
     if candidate["canonical_action"]["action_type"] == "COMPOUND":
         codes.append("COMPOUND_" + candidate["canonical_action"].get("compound_reason", ""))
     facts["components"] = {"source": before["components"], "post": after["components"]}
+    if before.get("bookkeeping_retypes"):
+        facts["components"]["bookkeeping_retypes"] = before["bookkeeping_retypes"]
     return {
         "schema_version": "evaluation-action-prelabel@v1",
         "sample_id": candidate["sample_id"],
@@ -711,6 +741,15 @@ def build_pilot(
         for index, (before, after) in enumerate(zip(rounds, rounds[1:]), start=1):
             if require_inputs and not (before.get("inputs_ok", True) and after.get("inputs_ok", True)):
                 continue
+            if selected["mode"] == "single_band":
+                before_blocks = before["blocks"]
+                if len(before_blocks) == 1 and before_blocks[0].get("semantics") == ["single_sersic"]:
+                    fitted = _round_blocks(Path(before["primary"]["path"]), "single_band")
+                    if fitted and fitted[0].get("n") is not None:
+                        before_blocks[0]["fitted_n"] = fitted[0]["n"]
+                before["bookkeeping_retypes"] = bookkeeping_retypes(before_blocks, after["blocks"])
+            else:
+                before["bookkeeping_retypes"] = []
             candidate = _candidate(entry, before, after, index, best_turn, sample_prefix=run_kind)
             candidates.append(candidate)
             prelabels.append(_prelabel(candidate, before, after))

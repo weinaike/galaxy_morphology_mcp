@@ -264,6 +264,11 @@ def _atoms_match_structure(candidate: dict[str, Any], record: dict[str, Any], pr
         return True
     post = _post_set(candidate, prelabel)
     pre = set(candidate["source_components"])
+    for retype in _stored_components(prelabel).get("bookkeeping_retypes", []):
+        # Bookkeeping re-types (2026-10-09 ruling) are not actions; align the
+        # expected structural delta with the skipped atom.
+        pre.discard(retype["from"])
+        pre.add(retype["to"])
     added, removed = post - pre, pre - post
     atom_adds: set[Any] = set()
     atom_removes: set[Any] = set()

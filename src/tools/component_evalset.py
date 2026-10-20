@@ -21,7 +21,7 @@ from schemas import validate
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("inventory", "pilot", "validate-pilot", "approve", "full", "adjudicate"))
+    parser.add_argument("mode", choices=("inventory", "pilot", "validate-pilot", "approve", "full", "adjudicate", "b0"))
     parser.add_argument("--single-band-root", type=Path, default=None)
     parser.add_argument("--multi-band-root", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=Path("artifacts/component-analysis-evalset"))
@@ -33,7 +33,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stage", choices=("prepare", "freeze"), default=None, help="full mode stage")
     parser.add_argument("--full-run", type=Path, default=None, help="full run directory for adjudicate")
     parser.add_argument("--redo", action="store_true", help="adjudicate: rewrite the adjudications file instead of appending")
+    parser.add_argument("--frozen-run", type=Path, default=None, help="b0: frozen run directory (evaluation-set-v1.jsonl)")
+    parser.add_argument("--limit", type=int, default=None, help="b0: process at most N pending samples")
     args = parser.parse_args(argv)
+    if args.mode == "b0" and (args.frozen_run is None or args.inventory is None):
+        parser.error("b0 requires --frozen-run and --inventory")
+
     if args.mode == "adjudicate":
         if args.full_run is None:
             parser.error("adjudicate requires --full-run")
@@ -58,6 +63,20 @@ def main(argv: list[str] | None = None) -> int:
         print(args.full_run)
         print(f"frozen pools: {result['counts']}")
         print(f"benchmark samples: {result['manifest']['sample_count']} across {result['manifest']['object_count']} objects")
+        return 0
+
+    if args.mode == "b0":
+        if args.frozen_run is None or args.inventory is None:
+            parser.error("b0 requires --frozen-run and --inventory")
+        from component_analysis.evalset.b0_runner import run_b0, score_b0, summarize_b0
+
+        out_dir = args.output_root / f"evalset-baseline-b0-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+        result = run_b0(args.frozen_run, out_dir, limit=args.limit, inventory_path=args.inventory)
+        score = score_b0(args.frozen_run, out_dir)
+        summarize_b0(out_dir, {"frozen_run": str(args.frozen_run)})
+        print(out_dir)
+        print(f"processed: {result['processed']}")
+        print(json.dumps(score["stats"]["ALL"], ensure_ascii=False))
         return 0
 
     if args.mode == "adjudicate":

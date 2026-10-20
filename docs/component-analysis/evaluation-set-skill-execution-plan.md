@@ -1,6 +1,6 @@
 # 成分分析评测集 Skill：Luna 执行计划
 
-状态：方案已获领导认可；Skill、抽取程序和正式评测集均尚未创建。
+状态：S0～S8 全部执行完成。Skill 位于 `.agents/skills/component-analysis-evalset/`，CLI 为 `python -m src.tools.component_evalset`，正式评测集已冻结（现行版本 run `evalset-20261009T100335Z`）；本文件仍是抽取程序与阶段门的实施权威，后续 v2 迭代继续以 §16 测试要求为准。
 
 更新日期：2026-09-10
 

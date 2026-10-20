@@ -226,9 +226,13 @@ def test_below_gmin_branch(monkeypatch, mini_graph):
 
     graph, label = mini_graph
     monkeypatch.setattr(enq, "G_MIN", 0.95)  # raise the bar to exercise the branch
+    # the tune must CROSS a cell bin (bulge Re 12.1 -> 3.0): a tune whose
+    # declared change is not a cell dimension (e.g. agn mag) lands on the
+    # parent's attractor cells and is correctly discarded as CELL_DUP
+    # before G_MIN is ever reached (2026-10-20 dual registration)
     res = enq.ingest(graph, [
-        cand([{"op": "tune", "tune": {"structure_name": "agn", "param": "mag",
-                                      "value": 12.5}}], sigma=0.4, tag="agn_mag"),
+        cand([{"op": "tune", "tune": {"structure_name": "bulge", "param": "re_px",
+                                      "value": 3.0}}], sigma=0.4, tag="bulge_re"),
     ], session_id="s1", parent_label=label)
     assert res.discarded and res.discarded[0]["reason"] == "BELOW_GMIN"
 

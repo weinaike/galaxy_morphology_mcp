@@ -516,6 +516,14 @@ class BeamGraph:
         """
         fit_stats_early = dict(run_result.get("fit_statistics") or {})
         conv_early = ((fit_stats_early.get("convergence") or {}).get("flag"))
+        # idempotency guard (2026-10-20): the same action recorded twice —
+        # beam_record_fit re-invoked on an already-executed candidate (the
+        # KILOGAS_266 A.6/A.7 phantom twins: same action_in, same archive,
+        # same BIC) — returns the existing state instead of adding a node
+        if action_id:
+            _prior = self.g.graph.get("pending", {}).get(action_id) or {}
+            if _prior.get("status") == "executed" and _prior.get("target_state"):
+                return _prior["target_state"]
         c = self.counters()
         if action_id:
             rec0 = self.g.graph["pending"].get(action_id) or {}
@@ -622,6 +630,65 @@ class BeamGraph:
             rec["status"] = "executed"
             rec["target_state"] = label
             self._drop_from_queue(action_id)
+
+        # ---- x/y dual cell registration + queue hygiene (2026-10-20):
+        # every executed fit registers BOTH its pre-transcribed INPUT cells
+        # (x) and its fitted OUTPUT attractor cells (y) into the persisted
+        # ledger; then queued candidates whose projected cells EQUAL y's
+        # attractor cells are purged (same-basin re-entries — they would
+        # re-converge to y's attractor and burn a fit). Protected entries
+        # (code_flags / surveyor_rank_pin) are never preempted; the reserved
+        # F1 round is exempt from registration entirely.
+        if not f1_reserved:
+            try:
+                from beam.cells import (CellLedger, cells_of,
+                                        primitives_carry_f1)
+                from beam.signature import apply_primitives_to_inventory
+
+                led = CellLedger.from_graph(self)
+                _prims = ((self.g.graph.get("pending", {}).get(action_id) or {})
+                          .get("primitives")) if action_id else None
+                fit_has_f1 = primitives_carry_f1(_prims or [])
+                led.register(input_inv or [], fitted_inv or [], fit_has_f1)
+                self.g.graph[CellLedger.GRAPH_KEY] = led.to_dict()
+
+                attractor = cells_of(fitted_inv or [], fit_has_f1)
+                if attractor:
+                    _pending = self.g.graph.get("pending", {})
+                    _queue = [a for a in self.g.graph.get("queue", [])
+                              if a in _pending]
+                    purged = []
+                    for aid in list(_queue):
+                        qrec = _pending.get(aid) or {}
+                        if qrec.get("status") != "pending":
+                            continue
+                        if any(k == "f1_reserved" or k.startswith("floor_")
+                               for k in (qrec.get("code_flags") or {})):
+                            continue  # floor channels / F1 slot never preempted
+                        qprims = qrec.get("primitives") or []
+                        if primitives_carry_f1(qprims) != fit_has_f1:
+                            continue  # different inventory scope
+                        qpar = qrec.get("parent")
+                        if not qpar:
+                            continue
+                        qpar_inv = self.state(qpar).get("inventory", [])
+                        hypo, _err = apply_primitives_to_inventory(qpar_inv, qprims)
+                        if hypo is None:
+                            continue
+                        if cells_of(hypo) == attractor:
+                            qrec["status"] = "discarded"
+                            qrec["discard_reason"] = "CELL_PREEMPTED"
+                            qrec["preempted_by"] = label
+                            _queue.remove(aid)
+                            purged.append(aid)
+                    self.g.graph["queue"] = _queue
+                    if purged:
+                        self.log_decision({"kind": "cell-preempt",
+                                           "fitted_state": label,
+                                           "purged": purged})
+            except Exception as e:  # never block fit recording on bookkeeping
+                self.g.graph.setdefault("meta", {}).setdefault(
+                    "warnings", []).append(f"cell-registration failed: {e}")
 
         if f1_reserved:
             # mark the reserved F1 slot consumed — beam_enqueue_f1 refuses a

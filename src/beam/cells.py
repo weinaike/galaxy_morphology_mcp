@@ -42,9 +42,12 @@ def _pa_norm(pa):
 
 
 def _re_eff(c):
-    re = c.get("re_effective", c.get("re"))
+    re_eff = c.get("re_effective")
+    if re_eff is not None:
+        return float(re_eff)   # already an effective radius (projection path)
+    re = c.get("re")
     if re is not None and (c.get("type") or "").lower() in ("expdisk", "edgedisk"):
-        re = float(re) * 1.68
+        re = float(re) * 1.68  # raw Rs -> effective radius
     return re
 
 
@@ -67,6 +70,21 @@ def comp_cell(c: dict):
     return (name or t or "?",)
 
 
+def primitives_carry_f1(prims: list) -> bool:
+    """Whether a primitive set carries an F1 row — the scope flag of the
+    ledger's inventory key (inventories parsed from feedmes do not record
+    F1 rows, so the pending record's primitives are the only source)."""
+    for p in prims or []:
+        if not isinstance(p, dict):
+            continue
+        if p.get("f1"):
+            return True
+        add = p.get("add")
+        if isinstance(add, dict) and add.get("f1"):
+            return True
+    return False
+
+
 def inventory_key(inv: list[dict], has_f1: bool = False):
     """Scope key: the sorted name multiset + F1 flag (F1-bearing and plain
     variants of the same inventory never collide)."""
@@ -84,52 +102,119 @@ def cells_of(inv: list[dict], has_f1: bool = False):
 
 
 class CellLedger:
-    """Visited-cell bookkeeping over the executed fits, scoped per inventory."""
+    """Dual visited-cell bookkeeping (2026-10-20 x/y registration design):
 
-    def __init__(self):
-        self._visited: dict = {}   # inventory_key -> {comp: set(cells)}
+    Two visited sets, both scoped per exact inventory:
+      - ``input`` cells: the pre-transcribed INPUT (x) of every executed
+        fit — "which starting cells have been fed to the optimiser";
+      - ``attractor`` cells: the FITTED OUTPUT (y) of every executed fit —
+        "which cells the optimiser has converged into". Warm-start child
+        inputs cluster near the parent OUTPUT, so a tiny-delta tune whose
+        declared change stays within cells lands on the parent attractor
+        cell set and is recognised as a same-basin re-entry.
+    Both are persisted in the graph (``cell_visited``) at record_fit time,
+    NOT rebuilt per ingest — the audit trail and the shadow replay need
+    them; the reserved F1 rounds are exempt from registration."""
 
-    def add(self, inv: list[dict], has_f1: bool = False):
-        k = inventory_key(inv, has_f1)
-        vis = self._visited.setdefault(k, {})
-        for nm, cell in cells_of(inv, has_f1).items():
-            vis.setdefault(nm, set()).add(cell)
+    GRAPH_KEY = "cell_visited"
 
-    def is_dup(self, inv: list[dict], has_f1: bool = False) -> bool:
-        """True when EVERY component's cell is already visited within this
-        exact inventory — the same-basin re-entry hypothesis. A component
-        set never tried before is meaningful (no entry in _visited)."""
-        k = inventory_key(inv, has_f1)
-        vis = self._visited.get(k)
-        if vis is None:
-            return False
-        for nm, cell in cells_of(inv, has_f1).items():
-            if cell not in vis.get(nm, set()):
-                return False
-        return True
+    def __init__(self, data: dict | None = None):
+        # {inventory_key: {"input": {comp: [cells]}, "attractor": {comp: [cells]}}}
+        self._data: dict = data or {}
+
+    # -- raw dict access (graph persistence) --
+    @staticmethod
+    def _c(cell):
+        """Normalise a cell to tuple form (JSON persistence turns the
+        in-memory tuples into lists; `tuple not in [list]` is silently
+        False, which would disarm the whole filter cross-process)."""
+        return tuple(cell) if isinstance(cell, list) else cell
+
+    def to_dict(self) -> dict:
+        return self._data
+
+    @classmethod
+    def from_dict(cls, data) -> "CellLedger":
+        led = cls()
+        if not isinstance(data, dict):
+            return led
+        for k, slot in data.items():
+            if not isinstance(slot, dict):
+                continue
+            norm = {}
+            for kind in ("input", "attractor"):
+                bucket = slot.get(kind)
+                if isinstance(bucket, dict):
+                    norm[kind] = {nm: [cls._c(c) for c in cells]
+                                  for nm, cells in bucket.items()
+                                  if isinstance(cells, (list, set, tuple))}
+            led._data[k] = norm
+        return led
 
     @classmethod
     def from_graph(cls, graph) -> "CellLedger":
-        """Build the ledger from every EXECUTED fit's INPUT inventory
-        (sub-converged included; the reserved F1 rounds are exempt)."""
+        """Load the PERSISTED ledger (registered at record_fit). Falls back
+        to a dual reconstruction from the executed states' stored
+        inventories (legacy graphs predating the persisted registration)."""
+        stored = graph.g.graph.get(cls.GRAPH_KEY)
+        if isinstance(stored, dict) and stored:
+            return cls.from_dict(stored)
         led = cls()
         pending = graph.g.graph.get("pending", {})
-        for label, attrs in sorted(graph.g.nodes(data=True),
-                                   key=lambda kv: kv[1].get("global_iter_id", 0)):
+        for _label, attrs in sorted(graph.g.nodes(data=True),
+                                      key=lambda kv: kv[1].get("global_iter_id", 0)):
             if attrs.get("global_iter_id", 0) == 0:
                 continue
             aid = attrs.get("action_in") or ""
             rec = pending.get(aid) or {}
             if (rec.get("code_flags") or {}).get("f1_reserved"):
                 continue
-            inv = attrs.get("input_inventory") or []
-            if not inv:
+            inv_in = attrs.get("input_inventory") or []
+            if not inv_in:
                 continue
-            prims = rec.get("primitives") or []
-            has_f1 = any(p.get("f1") or (p.get("add") or {}).get("f1")
-                         for p in prims if isinstance(p, dict))
-            led.add(inv, has_f1)
+            has_f1 = primitives_carry_f1(rec.get("primitives") or [])
+            led.register(inv_in, attrs.get("inventory") or [], has_f1)
         return led
+
+    # -- registration --
+    def register(self, x_inv: list[dict], y_inv: list[dict], has_f1: bool = False):
+        """Register one executed fit: x = pre-transcribed INPUT cells,
+        y = fitted OUTPUT (attractor) cells. Persisted form: lists (json)."""
+        k = str(inventory_key(x_inv, has_f1))
+        slot = self._data.setdefault(k, {"input": {}, "attractor": {}})
+        for kind, inv in (("input", x_inv), ("attractor", y_inv)):
+            for nm, cell in cells_of(inv, has_f1).items():
+                cell = self._c(cell)
+                bucket = slot[kind].setdefault(nm, [])
+                if cell not in bucket:
+                    bucket.append(cell)
+
+    # -- queries --
+    def _matches(self, vis: dict, cells: dict) -> bool:
+        for nm, cell in cells.items():
+            if cell not in vis.get(nm, ()):
+                return False
+        return True
+
+    def is_dup(self, inv: list[dict], has_f1: bool = False) -> bool:
+        """Dup iff EVERY component's cell matches a visited INPUT cell set
+        OR a visited ATTRACTOR cell set within this exact inventory."""
+        k = str(inventory_key(inv, has_f1))
+        slot = self._data.get(k)
+        if slot is None:
+            return False
+        cells = cells_of(inv, has_f1)
+        return self._matches(slot["input"], cells) or self._matches(slot["attractor"], cells)
+
+    def attractor_cells(self, y_inv: list[dict], has_f1: bool = False):
+        """The attractor cell dict of a fitted output (queue-hygiene pass)."""
+        return cells_of(y_inv, has_f1)
+
+    def matches_cells(self, cells: dict, inv: list[dict],
+                     has_f1: bool = False) -> bool:
+        """Does a cell dict match (every component) — used by the queue
+        purge pass against a specific fitted output's cells."""
+        return self._matches(cells, cells_of(inv, has_f1)) if cells else False
 
 
 def skeleton_class(inv_or_names) -> str:

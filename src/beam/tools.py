@@ -368,8 +368,8 @@ def apply_candidate(
     Status values: ``success`` (feedme written, run the fit), ``failure``
     (fatal; nothing was consumed), ``discarded`` (normal non-fatal outcome —
     the candidate died at a dequeue-time legality gate, e.g. the apply-time
-    combo-cap re-check; treat it as "continue with the next queue entry",
-    NOT as an error).
+    class-cap / cell-dup re-check; treat it as "continue with the next
+    queue entry", NOT as an error).
     """
     try:
         from beam.transcribe import transcribe
@@ -400,35 +400,53 @@ def apply_candidate(
         meta = graph.g.graph.get("meta", {})
 
         # R0 re-check at dequeue time (Plate0295 incident 2026-09-17): the
-        # candidate was validated at enqueue, but attempts may have executed
-        # since; a pending record enqueued when its combo was fresh must not
-        # run after the combo hit the per-combination cap. Floor flags do
-        # NOT exempt it — floor discharge is hypothesis-based
-        # (graph._discharge_satisfied_floors), not cap-exempt. Sole
-        # exception: the reserved F1 arbitration round (f1_reserved) — it
-        # targets the best state by construction and must run even when that
-        # inventory already exhausted its attempts (the F1 slot rides on top
-        # of N_max precisely to be spent once, regardless of combo state).
+        # candidate was validated at enqueue, but rounds may have executed
+        # since — a pending record enqueued when its skeleton class or its
+        # parameter cells were fresh must not run after the class exhausted
+        # its budget or every component cell filled (2026-10-17 finalized
+        # scheme; 2026-10-20 dual registration). Floor flags exempt the
+        # CELL re-check (mandated-retention channels) but not the class
+        # cap. Sole exception for both: the reserved F1 arbitration round
+        # (f1_reserved — it targets the best state by construction and
+        # rides on top of N_max precisely to be spent once).
         f1_reserved = bool((rec.get("code_flags") or {}).get("f1_reserved"))
-        from beam.signature import apply_primitives_to_inventory, combo_identity
+        from beam.signature import apply_primitives_to_inventory
 
-        cap = int(meta.get("per_combo_cap", 4))
         hypo_inv, _err = apply_primitives_to_inventory(
             parent.get("inventory", []), rec.get("primitives", []))
         if hypo_inv is not None and not f1_reserved:
-            hypo_combo = combo_identity(hypo_inv)
-            if graph.combo_counts().get(hypo_combo, 0) >= cap:
+            from beam.cells import (CellLedger, primitives_carry_f1,
+                                    skeleton_class)
+            from beam.graph import CLASS_CAPS
+            cls = skeleton_class(hypo_inv)
+            if graph.class_attempt_counts().get(cls, 0) >= CLASS_CAPS[cls]:
                 graph.mark_discarded(
                     action_id,
-                    f"COMBO_EXHAUSTED: {hypo_combo} reached {cap} attempts "
-                    f"(apply-time R0 re-check)")
-                graph.log_decision({"kind": "combo-exhausted-discard",
-                                    "action_id": action_id, "combo": hypo_combo,
+                    f"CLASS_EXHAUSTED: class {cls} reached {CLASS_CAPS[cls]} "
+                    f"attempts (apply-time R0 re-check)")
+                graph.log_decision({"kind": "class-cap-discard",
+                                    "action_id": action_id, "class": cls,
                                     "stage": "apply"})
                 graph.commit()
                 return {"status": "discarded", "action_id": action_id,
-                        "combo": hypo_combo,
-                        "message": "combo hit the per-combination attempt cap "
+                        "class": cls,
+                        "message": "skeleton class hit its attempt cap after "
+                                   "enqueue — candidate discarded; continue "
+                                   "with the next queue entry"}
+            if not any(k.startswith("floor_")
+                       for k in (rec.get("code_flags") or {})) \
+                    and CellLedger.from_graph(graph).is_dup(
+                        hypo_inv,
+                        primitives_carry_f1(rec.get("primitives") or [])):
+                graph.mark_discarded(
+                    action_id, "CELL_DUP (apply-time R0 re-check)")
+                graph.log_decision({"kind": "enqueue-discard",
+                                    "action_id": action_id,
+                                    "reason": "CELL_DUP (apply-time re-check)",
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": "every component cell already visited "
                                    "after enqueue — candidate discarded; "
                                    "continue with the next queue entry"}
 

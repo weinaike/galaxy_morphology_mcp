@@ -51,7 +51,7 @@ Soft visual signals (area ratios, shape-prior quirks, brighter inner layers) go 
 
 ## Phase 2: candidate generation (your authority; code checks legality)
 
-You have seen the residual image — **you rank what gets explored next**. The code side enforces mechanical legality (dedup, combo caps, floors) and never rewrites your candidates: an invalid candidate is discarded whole, so follow the contract exactly.
+You have seen the residual image — **you rank what gets explored next**. The code side enforces mechanical legality (dedup, class caps + cell filter, floors) and never rewrites your candidates: an invalid candidate is discarded whole, so follow the contract exactly.
 
 ### 🔒 Restricted Action Space (branch-level hard rule — restrict-disk-bulge-bar-agn)
 The allowed ACTION targets are **Disk (expdisk) / Bulge / Bar / AGN (psf) / F1 (riding the disk) / SingleSersic** only. **Companion, Lens, OuterDisk (envelope / 2nd expdisk) and edgedisk are outside the solution space**: no add/tune/remove/convert/reclassify may target them (E_RESTRICTED_SPACE discards the candidate; `check_feedme_file` rejects them structurally). Your RECOGNITION ability is unchanged — Phase-1 may still describe lens-type bumps, companion-type blobs or edge-on morphology as unfitted residual CONTEXT (e.g. "a companion-like blob at px(x,y) — not fittable on this branch", "a lens-scale mid-radius bump, context only"), but such features are never converted into candidates. Repair guidance mentioning lens/outerdisk elsewhere in this prompt is overridden here: re-identify among the allowed slots or remove instead.
@@ -91,7 +91,7 @@ The allowed ACTION targets are **Disk (expdisk) / Bulge / Bar / AGN (psf) / F1 (
     parent disk's values verbatim plus `"f1": {"am": <0.02-0.1>, "theta_m": <N=+Y deg>}`; the expdisk
     add must NOT carry an `n` field (n≡1 by type; an `n` triggers E_PARAM_TYPE).
 - **Sky**: never a search dimension — candidates touching sky are invalid.
-- **State-ledger usage**: compare every candidate's landed inventory against [State ledger] within the tolerance bands (Re ±20%, n ±0.5, q ±0.1, PA ±10°, position <8 px; naming swaps bulge n=0.5≡bar allowed); equivalent-to-ledger candidates need a novelty_claim naming the untested parameter axis. remove-only/revert candidates whose projection hits a ledger state or rollback edge are zero-cost rollbacks — do not propose them. Combos marked exhausted (4 attempts) are closed — diversify the inventory instead.
+- **State-ledger usage**: compare every candidate's landed inventory against [State ledger] within the tolerance bands (Re ±20%, n ±0.5, q ±0.1, PA ±10°, position <8 px; naming swaps bulge n=0.5≡bar allowed); equivalent-to-ledger candidates need a novelty_claim naming the untested parameter axis. remove-only/revert candidates whose projection hits a ledger state or rollback edge are zero-cost rollbacks — do not propose them. Skeleton classes marked exhausted (caps a/b/c = 2/4/5) are closed — diversify toward a different class; and a candidate whose every component lands in already-visited parameter bins (PA 45°/Re factor-2/q/n bands) is a same-basin re-entry the code discards — move at least one component across a bin boundary instead.
 - **Queue re-ranking**: you may return queue_reorder for pending candidates based on what you just saw (only non-floor-flagged entries; floor flags protect mandatory hypotheses).
 
 ### JSON contract (return EXACTLY ONE fenced ```json object; no other JSON blocks)
@@ -145,7 +145,7 @@ Your output is parsed and validated in code. **Errors** return this block to you
 - E_RE_CHAIN — Re triplet/init violates total-order adjacency (message carries the numbers).
 - E_CRASH_PATTERN — the candidate's primitive kind already crashed GALFIT twice (banned for this run).
 - E_F1_MULTIPLICITY — the parent already carries an F1 row; at most one m=1 mode exists.
-- E_COMBO_EXHAUSTED / E_R1_LEDGER / E_R2_EXACT — the landed state is closed or already known (diversify).
+- E_CLASS_CAP / CELL_DUP / E_R1_LEDGER / E_R2_EXACT — the landed state or parameter cells are closed or already known (diversify: another class, or a component across a bin boundary).
 - E_RESTRICTED_SPACE — the candidate targets Companion/Lens/OuterDisk/edgedisk — forbidden action slots on this branch (recognition as context stays legal).
 - E_RECLASSIFY — malformed reclassify map: unknown source name, target outside {disk,edgedisk,bulge,bar,lens,outerdisk}, duplicate target (must be a same-slot bijection), identity map (nothing re-typed), or used on the unfitted root A.0.
 - E_BULGE_N_FREE — the bulge n is free from creation: `add(bulge, n fixed)`, a fixed-n opening-skeleton bulge, and `tune(bulge, n→fixed)` are all banned (initial 4 or 1, never a fixed toggle).

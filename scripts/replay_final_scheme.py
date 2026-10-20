@@ -52,7 +52,10 @@ def _pa_norm(pa):
 
 
 def _re_eff(c):
-    re = c.get("re_effective", c.get("re"))
+    re_eff = c.get("re_effective")
+    if re_eff is not None:
+        return float(re_eff)   # already effective (projection path)
+    re = c.get("re")
     if re is not None and (c.get("type") or "").lower() in ("expdisk", "edgedisk"):
         re = float(re) * 1.68
     return re

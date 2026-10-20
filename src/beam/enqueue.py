@@ -248,7 +248,8 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
     result = IngestResult()
     triggers = numeric_triggers or {}
     crash_kinds = graph.crash_kinds() if hasattr(graph, "crash_kinds") else {}
-    from beam.cells import CellLedger, skeleton_class
+    from beam.cells import (CellLedger, cells_of, primitives_carry_f1,
+                            skeleton_class)
     from beam.graph import CLASS_CAPS
     cell_ledger = CellLedger.from_graph(graph)
     cls_counts = graph.class_attempt_counts()
@@ -320,20 +321,9 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
             continue
 
         hypo_combo = combo_identity(hypo)
-        # ---- R0 (2026-10-17 finalized scheme): per-component CELL filter +
-        # skeleton-class caps replace the retired per-combo cap.
-        # Cell dup: EVERY component's parameter cell already visited within
-        # this exact inventory — the same-basin re-entry hypothesis
-        # (warm-start children landing entirely in explored cells re-converge
-        # to the parent attractor; 138-galaxy replay: zero true best-kill).
-        if cell_ledger.is_dup(hypo):
-            result.discarded.append({"reason": "CELL_DUP",
-                                     "tag": cand.expected_behavior_tag})
-            graph.log_decision({"kind": "enqueue-discard", "session": session_id,
-                                "reason": "CELL_DUP (every component cell visited "
-                                          "in this inventory)",
-                                "tag": cand.expected_behavior_tag})
-            continue
+        # ---- R0 (2026-10-17 finalized scheme): skeleton-class caps replace
+        # the retired per-combo cap (the CELL filter moved below the code
+        # flags — floors are exempt from it).
         # Class cap: skeleton-family budget a=2 / b=4 / c=5
         cls = skeleton_class(hypo)
         if cls_counts.get(cls, 0) >= CLASS_CAPS[cls]:
@@ -423,6 +413,27 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
             flags["persistent_protection"] = True
             result.protected.append(direction_key)
 
+        # ---- R0 cell filter (2026-10-17 finalized scheme; 2026-10-20 dual
+        # registration): a candidate whose EVERY component cell is already
+        # visited (input OR attractor set, same inventory scope) is a
+        # same-basin re-entry — discard (138-galaxy replay: zero true
+        # best-kill). FLOOR candidates alone are EXEMPT: mandated-retention
+        # channels land in visited cells deliberately (a disk-Re growth tune
+        # must survive a same-bin revisit to escape a bottleneck). Other
+        # flags do NOT shelter a cell: an opening_alternate skeleton twin
+        # with fully-visited cells is redundant (KILOGAS_110/269 replay —
+        # a sheltered phantom twin consumed class-cap quota and killed the
+        # real best).
+        _cell_exempt = any(k.startswith("floor_") for k in flags)
+        if not _cell_exempt and cell_ledger.is_dup(hypo, primitives_carry_f1(prims)):
+            result.discarded.append({"reason": "CELL_DUP",
+                                     "tag": cand.expected_behavior_tag})
+            graph.log_decision({"kind": "enqueue-discard", "session": session_id,
+                                "reason": "CELL_DUP (every component cell visited "
+                                          "in this inventory)",
+                                "tag": cand.expected_behavior_tag})
+            continue
+
         g, _ = _score_candidate(cand, hypo_combo, combo_counts, queued_directions,
                                 direction_key, verdict_fail,
                                 parent_inventory=parent_inventory)
@@ -436,6 +447,52 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
                                      "tag": cand.expected_behavior_tag})
             graph.log_decision({"kind": "enqueue-discard", "session": session_id,
                                 "reason": f"g < {G_MIN} (g={g:.3f})",
+                                "tag": cand.expected_behavior_tag})
+            continue
+
+        # ---- cell refresh (2026-10-20): a queued non-protected twin whose
+        # projected cells are IDENTICAL to this candidate's is replaced by
+        # the fresher one (a later VLM call scores the same cell more
+        # accurately — the sigma carries the newer evidence, and the
+        # projection rides the newer parent state). A PROTECTED twin keeps
+        # its slot and shelters the cell: the new candidate is the
+        # redundant one.
+        cand_has_f1 = primitives_carry_f1(prims)
+        new_cells = cells_of(hypo)
+        _pending = graph.g.graph.get("pending", {})
+        _queue = [a for a in graph.g.graph.get("queue", []) if a in _pending]
+        twin, twin_protected = None, False
+        for _aid in _queue:
+            _rec = _pending.get(_aid) or {}
+            if _rec.get("status") != "pending":
+                continue
+            _qprims = _rec.get("primitives") or []
+            if primitives_carry_f1(_qprims) != cand_has_f1:
+                continue  # different inventory scope
+            _qpar = _rec.get("parent")
+            if not _qpar:
+                continue
+            _qh, _e = apply_primitives_to_inventory(
+                graph.state(_qpar).get("inventory", []), _qprims)
+            if _qh is None:
+                continue
+            if cells_of(_qh) == new_cells:
+                twin = _aid
+                # only floor channels (and the reserved F1 slot) shelter a
+                # cell — surveyor_rank_pin is a per-batch ordering artifact,
+                # and opening_alternate/persistent shelter queue survival,
+                # not cell ownership
+                twin_protected = any(
+                    k == "f1_reserved" or k.startswith("floor_")
+                    for k in (_rec.get("code_flags") or {}))
+                break
+        if twin is not None and twin_protected:
+            result.discarded.append({"reason": "CELL_QUEUED_PROTECTED",
+                                     "queued_twin": twin,
+                                     "tag": cand.expected_behavior_tag})
+            graph.log_decision({"kind": "enqueue-discard", "session": session_id,
+                                "reason": f"CELL_QUEUED_PROTECTED (protected twin "
+                                          f"{twin} occupies this cell)",
                                 "tag": cand.expected_behavior_tag})
             continue
 
@@ -454,6 +511,18 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
                                   "sigma": cand.local_benefit_sigma,
                                   "action_id": action_id, "executed": False})
         queued_directions.add(direction_key)
+        if twin is not None:
+            # non-protected twin: the fresher candidate takes over the cell
+            old = _pending[twin]
+            old["status"] = "discarded"
+            old["discard_reason"] = "CELL_REFRESHED"
+            old["replaced_by"] = action_id
+            # re-read the queue — add_pending just appended the successor
+            graph.g.graph["queue"] = [a for a in graph.g.graph.get("queue", [])
+                                      if a != twin]
+            graph.log_decision({"kind": "cell-refresh", "session": session_id,
+                                "replaced": twin, "by": action_id,
+                                "tag": cand.expected_behavior_tag})
 
     # defect E fix: pin this batch's highest-g new candidate (the code-ranked
     # pick) so queue truncation — stale floors/aged entries occupying all W

@@ -146,14 +146,16 @@ def test_registration_includes_apply():
                 sys.path.remove("src")
 
 
-def test_apply_candidate_rechecks_combo_cap(galaxy):
-    """Regression (Plate0295 A.12): a pending candidate enqueued while its
-    combo was fresh must be discarded at apply time once the combo has
-    reached the per-combination attempt cap (valid rounds only)."""
+def test_apply_candidate_rechecks_class_cap(galaxy):
+    """Regression (Plate0295 A.12; 2026-10-17 class caps): a pending
+    candidate enqueued while its skeleton class was fresh must be discarded
+    at apply time once the class reached its attempt cap. Floor flags do
+    NOT exempt the class cap (only the cell re-check)."""
+    from beam.cells import skeleton_class
+
     g = BeamGraph.load(str(galaxy))
-    combo = g.state("A.1")["combo_key"]
-    # exhaust the combo: per_combo_cap additional valid executions
-    cap = int(g.g.graph["meta"]["class_caps"][g.state("A.1")["combo_key"].count("+") >= 2 and "c" or "b"])
+    cls = skeleton_class(g.state("A.1")["inventory"])
+    cap = int(g.g.graph["meta"]["class_caps"][cls])
     for i in range(cap):
         g.add_pending({"sigma": 0.4,
                        "primitives": [{"op": "tune", "structure_name": "bulge",
@@ -171,10 +173,10 @@ def test_apply_candidate_rechecks_combo_cap(galaxy):
         }, action_id=aid)
     g.commit()
     g2 = BeamGraph.load(str(galaxy))
-    # A.1 (the fixture's first fit) + cap filler rounds all share the combo
-    assert g2.combo_counts().get(combo) == cap + 1
+    # A.1 (the fixture's first fit) + cap filler rounds all share the class
+    assert g2.class_attempt_counts().get(cls) == cap + 1
 
-    # a pending candidate landing on the exhausted combo (enqueued late,
+    # a pending candidate landing on the exhausted class (enqueued late,
     # bypassing survey validation, e.g. a stale floor-flagged entry)
     g2.add_pending({"action_id": "stale-floor", "sigma": 0.3,
                     "code_flags": {"floor_n_release": True},
@@ -183,16 +185,43 @@ def test_apply_candidate_rechecks_combo_cap(galaxy):
                     "expected_behavior_tag": "bulge_n_free"},
                    source_session="late", parent_label="A.1")
     g2.commit()
-    stag0 = BeamGraph.load(str(galaxy)).counters()["stagnation"]
 
     r = apply_candidate(str(galaxy), "stale-floor")
     assert r["status"] == "discarded", r
-    assert r["combo"] == combo
+    assert r["class"] == cls
     g3 = BeamGraph.load(str(galaxy))
     rec = g3.pending_record("stale-floor")
     assert rec["status"] == "discarded"
-    assert "COMBO_EXHAUSTED" in rec["discard_reason"]
-    kinds = [e["kind"] for e in g3.g.graph["decision_log"]]
-    assert "combo-exhausted-discard" in kinds
-    # R0 discard stagnates the search per the workflow
-    assert g3.counters()["stagnation"] == stag0 + 1
+    assert "CLASS_EXHAUSTED" in rec["discard_reason"]
+
+
+def test_apply_candidate_rechecks_cell_dup_input_side(galaxy):
+    """The apply-time CELL re-check's independent coverage: a pending
+    candidate whose cells match another fit's INPUT cells (not the latest
+    attractor — the record-time purge misses it) is discarded at apply."""
+    from beam.cells import CellLedger
+    from beam.signature import apply_primitives_to_inventory
+
+    g = BeamGraph.load(str(galaxy))
+    prims = [{"op": "tune", "structure_name": "bulge",
+              "param": "q", "value": 0.31, "toggle": 1}]
+    # the twin's executed fit registered these INPUT cells (simulated via
+    # the ledger API — the unit under test is the apply-time re-check)
+    hypo, _err = apply_primitives_to_inventory(
+        g.state("A.1")["inventory"], prims)
+    led = CellLedger.from_graph(g)
+    led.register(hypo, hypo, False)
+    g.g.graph[CellLedger.GRAPH_KEY] = led.to_dict()
+    # the stale sibling stays pending (its cells were fresh at enqueue
+    # before the twin ran)
+    aid_stale = g.add_pending({"action_id": "stale-cell", "sigma": 0.4,
+                               "primitives": prims,
+                               "expected_behavior_tag": "stale"},
+                              source_session="s1", parent_label="A.1")
+    g.commit()
+
+    r = apply_candidate(str(galaxy), "stale-cell")
+    assert r["status"] == "discarded", r
+    rec = BeamGraph.load(str(galaxy)).pending_record("stale-cell")
+    assert rec["status"] == "discarded"
+    assert "CELL_DUP" in rec["discard_reason"]

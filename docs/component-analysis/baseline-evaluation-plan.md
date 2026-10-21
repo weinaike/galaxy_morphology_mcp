@@ -1,8 +1,14 @@
-# 成分分析基线评测模块方案（B0 讨论稿）
+# 成分分析基线评测方案（B0 已完成，B1/B2 待启动）
 
-状态：**待小鱼儿确认，未执行**。
-更新日期：2026-09-22（按小鱼儿裁定分两部分：B0 先行、全量测；B1/B2 延后）。
-数据基础：冻结评测集 `artifacts/component-analysis-evalset/evalset-20260921T055138Z`（benchmark 388 条：单波段 345／多波段 43；audit 7,661 作否决集与错误分析）。
+状态：**Part 1（B0）已执行完成（2026-10-13）**；Part 2（B1/B2）待 N23～N27 修复＋canary 通过后启动。
+更新日期：2026-10-21。
+数据基础：冻结评测集 `artifacts/component-analysis-evalset/evalset-20261009T100335Z`（簿记重记修正版，benchmark 388 条：单波段 345／多波段 43；audit 7,661 作否决集与错误分析）。
+
+---
+
+# Part 1 执行结果（2026-10-13 完成）
+
+B0 已按下列方案全量执行：run `artifacts/component-analysis-evalset/evalset-baseline-b0-20261010T014917Z/`（388 条，OK 387／INPUT_MISSING 1；输入 sha 校验＋本地暂存、归档零写入；断点续作）。核心结果：action_type_accuracy 主口径 **42.9%**（对象级整群 bootstrap CI95 [39.0%, 47.0%]；第一步口径 26.9%）、component_accuracy 37.3%、converged_recall 10/79、unsafe_action_rate 11.9%、parse_to_action_rate 100%。失败模式五类归因（终止信号缺失 67／语义动作超出结构契约 69／多原子合并 16／删除保守 28／成分级错误 110）见 `baseline-failures.md`；双口径定义见 §B0.4b；与历史重放（57.4%）差 14.5pp＝working note 上下文贡献＋VLM 漂移。以下为原始方案文本，保留作执行依据。
 
 ---
 

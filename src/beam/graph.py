@@ -49,9 +49,9 @@ N_MAX = 7
 STAGNATION_MAX = 3  # 2026-10-10: 2 -> 3 (user call: at 2 the stop fired before hedges/repairs got their turn)
 # 2026-10-17 finalized dedup scheme (138-galaxy replay-validated, zero true
 # best-kill): the per-combo cap is RETIRED — the skeleton-CLASS caps
-# (a=2, b=4, c=5; sub-converged rounds don't count) bound structural
-# exploration, and the per-component parameter-subspace cell filter (see
-# beam/cells.py) takes over same-inventory dedup with physically meaningful
+# (a=2, b=4, c=5) bound structural exploration, and the per-component
+# parameter-subspace cell filter (see beam/cells.py) takes over
+# same-inventory dedup with physically meaningful
 # bins (PA 4x45deg, Re factor-2, q/n bands) instead of arbitrary counts.
 # The 2026-10-14 per-combo 2 -> 3 change is hereby superseded.
 CLASS_CAPS = {"a": 2, "b": 4, "c": 5}
@@ -59,9 +59,6 @@ G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)
 REPAIR_BUDGET_CAP = 4
-# sub-converged rounds are budget-free (non-information); stop after this
-# many — the seeding/optimisation is then systematically broken
-SUB_CONVERGED_LIMIT = 3
 
 
 def _now() -> str:
@@ -506,16 +503,11 @@ class BeamGraph:
         rides on top of N_max ("7+1"), and it runs exactly once (the guard
         lives in beam_enqueue_f1 / meta["f1"]).
 
-        A [sub-converged] round is likewise counted in ``n_sub_converged``,
-        not in ``n_executed`` (KILOGAS_73 austerity rerun: fits 5-6 burned
-        2/7 of the budget on frozen-optimiser rounds that carried no
-        information — the Refutation validity rule already declares them
-        non-evidence, the combo cap already exempts them; the budget now
-        does too, bounded by the ``sub_converged_limit`` termination
-        condition so a systematically broken seeding cannot loop forever).
+        Every other successful fit counts toward ``n_executed`` (the
+        sub-converged budget exemption was RETIRED 2026-10-21: the cell
+        filter covers same-basin re-entry deduplication, and budget-free
+        sub-converged rounds cost extra fits).
         """
-        fit_stats_early = dict(run_result.get("fit_statistics") or {})
-        conv_early = ((fit_stats_early.get("convergence") or {}).get("flag"))
         # idempotency guard (2026-10-20): the same action recorded twice —
         # beam_record_fit re-invoked on an already-executed candidate (the
         # KILOGAS_266 A.6/A.7 phantom twins: same action_in, same archive,
@@ -532,8 +524,6 @@ class BeamGraph:
             f1_reserved = False
         if f1_reserved:
             c["n_f1_reserved"] = int(c.get("n_f1_reserved", 0)) + 1
-        elif conv_early == "sub-converged":
-            c["n_sub_converged"] = int(c.get("n_sub_converged", 0)) + 1
         else:
             c["n_executed"] = int(c.get("n_executed", 0)) + 1
 
@@ -563,7 +553,6 @@ class BeamGraph:
         metrics = {k: fit_stats.get(k) for k in
                    ("chi2_nu", "chisq1d_nu", "bic1d", "bic_eff", "sky_value",
                     "psf_fwhm", "a_psf", "n_free", "n_data")}
-        metrics["convergence"] = fit_stats.get("convergence", {"flag": "ok"})
 
         input_param_file = run_result.get("input_param_file", "")
         output_param_file = run_result.get("output_param_file", "")
@@ -791,7 +780,6 @@ class BeamGraph:
                                      verdict: dict | None) -> None:
         state = self.state(label)
         metrics = state.get("metrics", {})
-        conv_ok = (metrics.get("convergence") or {}).get("flag", "ok") != "sub-converged"
         verdict_pass = not (verdict and verdict.get("verdict") == "FAIL")
         # ablation arm no_verdict_gate: metric-only best selection — FAIL
         # rounds may take s* (verdicts are still recorded, so post-hoc
@@ -799,24 +787,11 @@ class BeamGraph:
         if (self.g.graph.get("meta", {}).get("ablations") or {}).get("no_verdict_gate"):
             verdict_pass = True
 
-        # mechanical best update: verdict-gated, BIC-first. The sub-converged
-        # gate is ASYMMETRIC (2026-10-17, 138-galaxy data: 29/57 kept
-        # sub-converged rounds carried >1 BIC improvement the old symmetric
-        # gate discarded): a sub-converged round whose BIC BEATS the current
-        # best is a real measured better model (the seed was good and the
-        # optimizer confirmed it) — it MAY update s*; its WORSE BIC remains
-        # inadmissible (refutation quarantine unchanged: no refuted entries
-        # from any sub-converged round).
-        current_best_pre = self.g.graph.get("best_state")
-        _cb_m = self.state(current_best_pre).get("metrics", {}) if current_best_pre else {}
-        conv_sub_but_better = (not conv_ok
-                               and _metric_key(metrics) is not None
-                               and current_best_pre is not None
-                               and _metric_key(_cb_m) is not None
-                               and _metric_key(metrics) < _metric_key(_cb_m))
-        eligible = (verdict_pass
-                    and (conv_ok or conv_sub_but_better)
-                    and _metric_key(metrics) is not None)
+        # mechanical best update: verdict-gated, BIC-first (the sub-converged
+        # gate was RETIRED 2026-10-21 together with the flag itself — every
+        # recorded fit is a valid measurement; same-basin repeats are the
+        # cell filter's business, not the best-gate's)
+        eligible = verdict_pass and _metric_key(metrics) is not None
         current_best = self.g.graph.get("best_state")
         if eligible:
             best_metrics = self.state(current_best).get("metrics", {}) if current_best else {}
@@ -832,14 +807,8 @@ class BeamGraph:
         else:
             self.counters()["stagnation"] = int(self.counters().get("stagnation", 0)) + 1
 
-        # refuted-hypothesis gating: only valid rounds may ground refutations
-        if not conv_ok:
-            self.log_decision({
-                "kind": "sub-converged-quarantine", "state": label,
-                "frozen": (metrics.get("convergence") or {}).get("frozen_free_params", []),
-                "note": "inadmissible as refutation evidence (Refutation validity rule)",
-            })
-            return
+        # refuted-hypothesis gating: FAIL-verdict rounds ground a physicality
+        # refutation; BIC-worse PASS rounds ground a bic refutation
         if verdict and verdict.get("verdict") == "FAIL":
             self.g.graph.setdefault("refuted_hypotheses", []).append({
                 "state": label,
@@ -851,7 +820,7 @@ class BeamGraph:
                 "reopening": "a repair candidate restoring the onion structure",
             })
             return
-        if parent_label and conv_ok:
+        if parent_label:
             parent_metrics = self.state(parent_label).get("metrics", {})
             new_key, old_key = _metric_key(metrics), _metric_key(parent_metrics)
             if new_key is not None and old_key is not None and new_key >= old_key + REFUTE_DBIC:
@@ -1093,16 +1062,13 @@ class BeamGraph:
                 if attrs.get("global_iter_id", 0) > 0]
 
     def class_attempt_counts(self) -> dict:
-        """Executed (convergence ok, non-F1-reserved) attempts per skeleton
-        class a/b/c — the unit of the 2026-10-17 class caps."""
+        """Executed (non-F1-reserved) attempts per skeleton class a/b/c —
+        the unit of the 2026-10-17 class caps."""
         from beam.cells import skeleton_class
         pending = self.g.graph.get("pending", {})
         counts: dict[str, int] = {"a": 0, "b": 0, "c": 0}
         for _label, attrs in self.g.nodes(data=True):
             if attrs.get("global_iter_id", 0) == 0:
-                continue
-            conv = ((attrs.get("metrics") or {}).get("convergence") or {}).get("flag")
-            if conv == "sub-converged":
                 continue
             rec = pending.get(attrs.get("action_in") or "") or {}
             if (rec.get("code_flags") or {}).get("f1_reserved"):
@@ -1113,17 +1079,11 @@ class BeamGraph:
     def combo_counts(self, valid_only: bool = True) -> dict[str, int]:
         """Executed attempts per combination (cap accounting).
 
-        valid_only=True (default, per-combination attempt cap): [sub-converged]
-        rounds are excluded — the Refutation validity rule declares the
-        optimiser never explored, so the attempt never happened and a
-        corrected re-run must remain legal (KILOGAS_432/353, Plate0295
-        A.10→A.11 chain). The reserved F1 arbitration round is ALSO excluded:
-        it is exempt from the combo gates at apply time by construction, and
+        valid_only=True (default) excludes the reserved F1 arbitration round
+        (it is exempt from the combo gates at apply time by construction, and
         counting it exhausted the best inventory right after the F1 retention
-        (KILOGAS_73 austerity rerun: the post-F1 survey's candidates were
-        E_COMBO_EXHAUSTED-rejected in a retry storm). valid_only=False counts
-        every fit that ran (used by never_executed_precheck: a sub-converged
-        round still proves the inventory was executed).
+        — KILOGAS_73 austerity rerun retry storm). valid_only=False counts
+        every fit that ran (used by never_executed_precheck).
         """
         pending = self.g.graph.get("pending", {})
         counts: dict[str, int] = {}
@@ -1131,9 +1091,6 @@ class BeamGraph:
             if attrs.get("global_iter_id", 0) == 0:
                 continue
             if valid_only:
-                conv = ((attrs.get("metrics") or {}).get("convergence") or {}).get("flag")
-                if conv == "sub-converged":
-                    continue
                 rec = pending.get(attrs.get("action_in") or "") or {}
                 if (rec.get("code_flags") or {}).get("f1_reserved"):
                     continue
@@ -1184,11 +1141,11 @@ class BeamGraph:
 
         Discharge rule (Plate0295 incident 2026-09-17): a floor is
         SATISFIED — and its pending candidate auto-discarded — once the
-        same inventory already has a valid (convergence ok) executed round
-        testing the same floor hypothesis. Re-running a mandatory
-        experiment on a combo that has already validly run it burns budget
-        without new information (A.12: n-release re-executed after A.11
-        had already provided the valid release on the same combo).
+        same inventory already has an executed round testing the same
+        floor hypothesis. Re-running a mandatory experiment on a combo
+        that has already validly run it burns budget without new
+        information (A.12: n-release re-executed after A.11 had already
+        provided the valid release on the same combo).
         """
         self._discharge_satisfied_floors()
         out = []
@@ -1206,11 +1163,10 @@ class BeamGraph:
         hypothesis already has a valid executed test on the same inventory.
 
         Satisfaction = an executed pending record whose target state has
-        convergence flag 'ok', the same hypothesized combo, and primitives
-        matching the same floor predicate (the same experiment, not merely
-        the same inventory). Idempotent; commits only when it discharged
-        something. Floor-flagged records keep their queue eviction
-        protection until discharged here.
+        the same hypothesized combo and primitives matching the same floor
+        predicate (the same experiment, not merely the same inventory).
+        Idempotent; commits only when it discharged something. Floor-flagged
+        records keep their queue eviction protection until discharged here.
         """
         from beam.enqueue import FLOOR_PREDICATES
         from beam.signature import (
@@ -1227,9 +1183,6 @@ class BeamGraph:
             if target not in self.g.nodes:
                 continue
             node = self.state(target)
-            conv = ((node.get("metrics") or {}).get("convergence") or {}).get("flag")
-            if conv != "ok":
-                continue
             # the executed round's OWN parent disk Re: floor_disk_re must
             # only be satisfied by a growth tune, never a shrink
             executed.append((node.get("combo_key"), rec.get("primitives", []),
@@ -1314,10 +1267,6 @@ class BeamGraph:
             conditions.append("budget_exhausted")
         if int(self.counters().get("stagnation", 0)) >= int(meta.get("stagnation_max", STAGNATION_MAX)):
             conditions.append("stagnation")
-        # sub-converged rounds are budget-free (non-information); this is the
-        # bound that keeps a systematically broken seeding from looping
-        if int(self.counters().get("n_sub_converged", 0)) >= SUB_CONVERGED_LIMIT:
-            conditions.append("sub_converged_limit")
         blockers = self.never_executed_precheck()
         floors = self.floor_blockers()
         left = self.budget_left()

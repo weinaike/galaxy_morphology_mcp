@@ -207,9 +207,6 @@ def _family_ledger(g) -> str:
             notes = []
             if attrs.get("zombies"):
                 notes.append("zombie:" + ",".join(attrs["zombies"]))
-            conv = (metrics.get("convergence") or {}).get("flag")
-            if conv and conv != "ok":
-                notes.append(f"[{conv}]")
             twin = ""
             if bic is not None and any(b is not None and abs(b - bic) < 1.0
                                        for b in seen_bics):
@@ -303,12 +300,6 @@ def build_local_state_description(g, state_label: str,
                      "different seeding grounded in NEW residual evidence.")
     lines.append("  inventory: " + ("; ".join(_comp_line(c) for c in inv) or "(empty)"))
     metrics = state.get("metrics", {})
-    conv = (metrics.get("convergence") or {}).get("flag", "ok")
-    if conv != "ok":
-        frozen = (metrics.get("convergence") or {}).get("frozen_free_params", [])
-        lines.append(f"  [sub-converged] frozen free params: {', '.join(frozen) or '-'} "
-                     "(this round is inadmissible as refutation evidence; corrected "
-                     "re-run prescriptions: band re-encode / init adjust / mag reapportion)")
 
     # ---- bound-hit list (effective bands)
     hits = _scan_hits(g, state)
@@ -520,10 +511,6 @@ def _flux_misallocation(g, state, inv) -> list[str]:
                          f"{tail[0][1]:.2f}->{tail[1][1]:.2f}->{tail[2][1]:.2f} "
                          f"({tail[0][0]}/{tail[1][0]}/{tail[2][0]}; monotonic, "
                          f"avg {abs(d1 + d2) / 2:.2f} mag/round x2).")
-    conv = (state.get("metrics", {}).get("convergence") or {}).get("flag")
-    if conv and conv != "ok":
-        facts.append("Flux-misallocation signal D: round flagged [sub-converged]; mag "
-                     "initial-value reapportionment is available in the corrected re-run.")
     return facts
 
 

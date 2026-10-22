@@ -250,8 +250,8 @@ def beam_record_fit(
     Creates the child state (label branch.local_round), parses the fitted
     galfit.NN inventory (names recovered from the input feedme), decodes
     effective .cons bands, computes zombie flags, updates counters /
-    stagnation / mechanical best (verdict- and sub-convergence-gated), grounds
-    refuted-hypothesis entries only on converged rounds, and commits.
+    stagnation / mechanical best (verdict-gated), grounds refuted-hypothesis
+    entries, and commits.
     """
     try:
         run_result = _parse_json(run_galfit_result_json, None)
@@ -324,7 +324,7 @@ def beam_enqueue_f1(
     the best state's fitted disk. Runs at most ONCE per run (also refused when
     the best state already carries an F1 row): execute it, compare the fitted
     BIC against the pre-F1 best, keep the F1-bearing round only when the BIC
-    improves; a sub-converged F1 round is NOT re-run. The fit is counted in
+    improves; the F1 round is never re-run. The fit is counted in
     ``n_f1_reserved`` (outside N_max) and is exempt from the combo-cap gates.
 
     Typical sequence: fourier_mode_analysis on the best round's comparison

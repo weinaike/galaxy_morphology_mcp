@@ -169,9 +169,10 @@ def test_no_verdict_gate_ablation_arm(galaxy):
     assert g.counters()["stagnation"] == 0           # best update reset stagnation
 
 
-def test_subconverged_round_is_quarantined(galaxy):
-    """Regression (KILOGAS_353 A.6): a sub-converged round grounds no refutation,
-    does not count as combo evidence, and does not update s*."""
+def test_subconverged_retired_round_treated_normally(galaxy):
+    """2026-10-21 sub-converged retirement: a round whose input stats carry a
+    legacy convergence flag is a normal round — no quarantine, counts toward
+    the budget, eligible for s*, and grounds refutations on its numbers."""
     g = _init(galaxy)
     g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
     g.add_pending({"sigma": 0.5, "expected_behavior_tag": "bulge_n_free",
@@ -182,10 +183,12 @@ def test_subconverged_round_is_quarantined(galaxy):
     label = g.record_fit(
         _run_result(galaxy, bic_eff=1200.0, conv_flag="sub-converged"), action_id=aid)
     g.apply_verdict(label, {"verdict": "PASS"})
-    assert g.g.graph["best_state"] == "A.1"
-    assert g.g.graph["refuted_hypotheses"] == []
+    assert g.counters()["n_executed"] == 2               # budget counts it
     kinds = [e["kind"] for e in g.g.graph["decision_log"]]
-    assert "sub-converged-quarantine" in kinds
+    assert "sub-converged-quarantine" not in kinds
+    # worse BIC vs parent (>= +10) grounds a normal refutation entry now
+    assert any(r["state"] == label for r in g.g.graph.get("refuted_hypotheses", []))
+    assert g.g.graph["best_state"] == "A.1"              # worse BIC: no s* change
 
 
 # --------------------------------------------------------- failure / discard
@@ -339,9 +342,9 @@ def test_traversal_orders_states_and_crashes(galaxy):
 
 
 # ---------------------------------------- Plate0295 incident 2026-09-17
-def test_combo_counts_exclude_subconverged(galaxy):
-    """Cap accounting follows the Refutation validity rule: a [sub-converged]
-    round is not a counted attempt, so a corrected re-run stays legal."""
+def test_combo_counts_include_legacy_subconverged(galaxy):
+    """2026-10-21 sub-converged retirement: cap accounting counts every
+    executed round (valid_only excludes ONLY the reserved F1 round)."""
     g = _init(galaxy)
     g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
     combo = g.state("A.1")["combo_key"]
@@ -352,17 +355,16 @@ def test_combo_counts_exclude_subconverged(galaxy):
     aid = g.pending_queue()[0]
     g.record_fit(_run_result(galaxy, bic_eff=1010.0, conv_flag="sub-converged"),
                  action_id=aid)
-    assert g.combo_counts().get(combo) == 1                # valid rounds only
-    assert g.combo_counts(valid_only=False).get(combo) == 2  # every fit that ran
-    # the precheck still sees the combo as executed (a fit did run)
+    assert g.combo_counts().get(combo) == 2     # legacy conv flag irrelevant
+    assert g.combo_counts(valid_only=False).get(combo) == 2
     assert all(e["combo"] != combo for e in g.never_executed_precheck())
 
 
-def test_floor_discharge_after_valid_execution(galaxy):
+def test_floor_discharge_after_execution(galaxy):
     """Regression (Plate0295 A.12): a floor-flagged pending candidate must not
-    suspend termination once the SAME combo has a valid (convergence ok)
-    executed round testing the SAME floor hypothesis; a sub-converged round
-    does not discharge it."""
+    suspend termination once the SAME combo has an executed round testing the
+    SAME floor hypothesis (2026-10-21: any executed round discharges it —
+    the sub-converged exception is retired)."""
     g = _init(galaxy)
     g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
     n_release = [{"op": "tune", "structure_name": "bulge",
@@ -373,22 +375,13 @@ def test_floor_discharge_after_valid_execution(galaxy):
     floor_aid = g.pending_queue()[0]
     assert g.floor_blockers() == [floor_aid]
 
-    # executor round lands sub-converged: floor must stay armed
+    # an executed round on the same combo with the same predicate discharges
+    # the floor — even one whose input stats carry a legacy sub-converged flag
     g.add_pending({"sigma": 0.3, "primitives": n_release},
                   source_session="s2", parent_label="A.1")
-    sub_aid = g.pending_queue()[-1]
+    exec_aid = g.pending_queue()[-1]
     g.record_fit(_run_result(galaxy, bic_eff=1005.0, conv_flag="sub-converged"),
-                 action_id=sub_aid)
-    assert g.floor_blockers() == [floor_aid]
-    assert g.pending_record(floor_aid)["status"] == "pending"
-
-    # a valid n-release on the same combo discharges the floor
-    g.add_pending({"sigma": 0.3, "primitives": n_release},
-                  source_session="s3", parent_label="A.1")
-    ok_aid = g.pending_queue()[-1]
-    g.record_fit(_run_result(galaxy, bic_eff=1002.0), action_id=ok_aid)
-    # 2026-10-17: record-time verdict settles bump stagnation on the
-    # non-improving fixture rounds; zero it to isolate the discharge check
+                 action_id=exec_aid)
     g.counters()["stagnation"] = 0
     assert g.floor_blockers() == []
     rec = g.pending_record(floor_aid)

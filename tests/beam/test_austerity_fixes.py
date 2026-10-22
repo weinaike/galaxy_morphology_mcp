@@ -65,7 +65,10 @@ def _run_result(feedme, out, bic, flag):
                                "convergence": {"flag": flag}}}
 
 
-def test_sub_converged_budget_free_and_limited(tmp_path, test_data_dir):
+def test_every_fit_counts_toward_budget(tmp_path, test_data_dir):
+    """2026-10-21 sub-converged retirement: a round whose input stats still
+    carry a legacy convergence flag counts toward n_executed like any other
+    fit — no budget-free channel, no sub_converged_limit stop."""
     import shutil
 
     gdir = tmp_path / "SUB"
@@ -80,23 +83,12 @@ def test_sub_converged_budget_free_and_limited(tmp_path, test_data_dir):
                              "action_id": f"a{i}"},
                             "s", "A.1")
         g.record_fit(_run_result(feedme, "", float(i) * 10, flag), action_id=aid)
-    # keep the queue non-empty so only the counters can stop the run
-    g.add_pending({"action_id": "live", "sigma": 0.6, "primitives": [],
-                   "score": 0.6, "expected_behavior_tag": "live"}, "s", "A.1")
     c = g.counters()
-    assert c.get("n_sub_converged") == 2
-    assert c.get("n_executed") == 1                      # budget untouched
-    assert g.budget_left() == 6                          # 7 - 1 valid fit
+    assert c.get("n_sub_converged") is None
+    assert c.get("n_executed") == 3                      # every fit counts
+    assert g.budget_left() == 4
     term = g.termination_check()
-    # (stagnation may fire from the fixture inventory's mech-hard FAILs —
-    # irrelevant here; the sub-converged limit itself must NOT have fired)
     assert "sub_converged_limit" not in term["conditions"]
-    # the third sub-converged round trips the limit
-    aid = g.add_pending({"sigma": 0.6, "primitives": [], "score": 0.6,
-                         "action_id": "a4"}, "s", "A.1")
-    g.record_fit(_run_result(feedme, "", 40.0, "sub-converged"), action_id=aid)
-    term = g.termination_check()
-    assert "sub_converged_limit" in term["conditions"] and term["stop"] is True
 
 
 # --------------------------------------- 3. F1 round exempt from combos

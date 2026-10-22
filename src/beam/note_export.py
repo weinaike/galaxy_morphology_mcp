@@ -163,9 +163,6 @@ def build_working_note(g, galaxy_dir: str) -> str:
         notes = []
         if a.get("zombies"):
             notes.append("zombie:" + ",".join(a["zombies"]))
-        conv = ((a.get("metrics", {}).get("convergence") or {}).get("flag"))
-        if conv and conv != "ok":
-            notes.append(f"[{conv}]")
         lines.append(f"| {lbl} | {sig} | {_fmt((a.get('metrics') or {}).get('bic_eff'))} | "
                      f"{v} | {'; '.join(notes) or '-'} |")
     lines.append("")

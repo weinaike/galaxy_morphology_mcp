@@ -79,8 +79,8 @@ def load_fits(gdir):
         })
     rb = None
     for ft in fits:
-        elig = (ft["verdict"] == "PASS" and ft["conv"] != "sub-converged"
-                and ft["bic"] is not None)
+        # 2026-10-21 sub-converged retirement: every executed round is valid
+        elig = (ft["verdict"] == "PASS" and ft["bic"] is not None)
         ft["improved"] = bool(elig and (rb is None or ft["bic"] < rb - 1e-9))
         if elig and (rb is None or ft["bic"] < rb - 1e-9):
             rb = ft["bic"]
@@ -127,14 +127,13 @@ def replay_dual(fits):
             filt.append((ft, f"cell-{kind}"))
             continue
         cls = skeleton_class(ft["names"])
-        if ft["conv"] != "sub-converged" and cls_counts[cls] >= CLASS_CAPS[cls]:
+        if cls_counts[cls] >= CLASS_CAPS[cls]:
             filt.append((ft, f"cap-{cls}"))
             continue
         _add_visit(ft["inv_in"], ft["has_f1"], visited, "input")
         if ft["inv_out"]:
             _add_visit(ft["inv_out"], ft["has_f1"], visited, "attractor")
-        if ft["conv"] != "sub-converged":
-            cls_counts[cls] += 1
+        cls_counts[cls] += 1
     return filt
 
 

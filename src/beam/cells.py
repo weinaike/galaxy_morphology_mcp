@@ -3,8 +3,8 @@
 The pre-transcription INPUT of every executed fit is mapped to per-component
 JOINT bin cells (the user-specified bins, replay-validated on 138 galaxies
 with zero true best-kill). Visited sets are scoped per EXACT inventory and
-accumulated from every EXECUTED fit (sub-converged included — they are real
-optimizer starts; a same-cell retry of a frozen run just freezes again).
+accumulated from every EXECUTED fit (all recorded rounds are real optimizer
+starts; a same-cell retry of a frozen run just freezes again).
 
 A candidate is a DUP when EVERY component's cell is already visited within
 its inventory (same-basin re-entry hypothesis: warm-start children whose

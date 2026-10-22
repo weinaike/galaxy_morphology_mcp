@@ -418,8 +418,7 @@ When all trigger conditions hold, you **must** produce a `tune(disk, larger Re)`
 | # | Trigger (numeric part from the orchestrator; residual part from your Phase 1) | Meaning |
 |---|---|---|
 | **A — flux-evidence contradiction** | a main-galaxy component's ΔMag vs the disk > 3 (flux < ~6% of the disk) **AND** Phase 1 still shows significant residual features (≳ ±0.1 mag) within that component's radial zone | the component has been starved of flux its zone still needs — faintness and residual evidence contradict each other |
-| **B — chronic flux bleed** | a component's fitted Mag has drifted monotonically by ≥ 0.3 mag/round over ≥ 2 consecutive rounds (trajectory quoted in local_state_description) | the optimiser is slowly abandoning the component — a bad allocation basin (complementary to the frozen-parameter [sub-converged] signature) |
-| **D — sub-convergence repair** | this round was flagged [sub-converged] and local_state_description lists mag initial-value reapportionment among the re-run prescriptions | breaking the frozen allocation is part of the corrected re-run |
+| **B — chronic flux bleed** | a component's fitted Mag has drifted monotonically by ≥ 0.3 mag/round over ≥ 2 consecutive rounds (trajectory quoted in local_state_description) | the optimiser is slowly abandoning the component — a bad allocation basin |
 
 ### Action
 
@@ -427,7 +426,7 @@ When all trigger conditions hold, you **must** produce a `tune(disk, larger Re)`
 
 - mag stays **free** (toggle 1) after the move. Do **NOT** write `.cons` mag bands: a relative mag band would constrain the optimiser's free reallocation (against "flux reallocation is part of the search") and bare-number bands re-risk the input-relative encoding trap. Initial-value moves only.
 - Size the delta from the residual evidence, not from thin air: a ±0.1 mag systematic residual across the component's zone ≈ reapportion ~0.5–1 mag; keep the new init within ±1.5 mag of the parent converged value (this is a **basin escape**, not a re-invention — order-of-magnitude jumps violate the Class-B fill range).
-- May bundle with at most one cohesively-related primitive of the same repair goal (e.g. the band re-encode of the same [sub-converged] re-run); never with unrelated structural changes.
+- May bundle with at most one cohesively-related primitive of the same repair goal; never with unrelated structural changes.
 
 ### Priority and waiver
 

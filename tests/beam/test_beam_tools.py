@@ -13,6 +13,13 @@ import pytest
 from beam.tools import beam_init, beam_mark_failure, beam_record_fit, beam_status
 
 
+def _touch(path):
+    from pathlib import Path
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("{}")
+    return path
+
+
 @pytest.fixture
 def galaxy(tmp_path, test_data_dir):
     gdir = tmp_path / "GALAXY"
@@ -20,6 +27,8 @@ def galaxy(tmp_path, test_data_dir):
     shutil.copy(test_data_dir / "NGC1097.feedme", gdir / "_iter1.feedme")
     shutil.copy(test_data_dir / "NGC1097_clean.07", gdir / "galfit.01")
     shutil.copy(test_data_dir / "PSF-1.composite.fits", gdir / "PSF-1.composite.fits")
+    shutil.copy(test_data_dir / "NGC1097_comparison.png", gdir / "cmp.png")
+    shutil.copy(test_data_dir / "NGC1097_summary.md", gdir / "summary.md")
     return gdir
 
 
@@ -30,7 +39,7 @@ def _run_result(galaxy, *, bic_eff=1000.0):
         "output_param_file": str(galaxy / "galfit.01"),
         "image_file": str(galaxy / "cmp.png"),
         "summary_file": str(galaxy / "summary.md"),
-        "round_status_file": str(galaxy / "archives" / "x" / "round_status.json"),
+        "round_status_file": _touch(str(galaxy / "archives" / "x" / "round_status.json")),
         "fit_statistics": {"bic_eff": bic_eff, "chisq1d_nu": 0.9,
                            "convergence": {"flag": "ok"}},
     }

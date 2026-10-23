@@ -59,6 +59,10 @@ G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)
 REPAIR_BUDGET_CAP = 4
+# a component NAME that is just its type string = the name-recovery fallback
+# fired (input feedme carried no # STRUCTURE: names) — a record-time lesion
+_TYPE_NAMES_AS_NAMES = {"sersic", "expdisk", "edgedisk", "psf", "ferrer",
+                        "moffat", "gaussian", "king"}
 
 
 def _now() -> str:
@@ -562,6 +566,22 @@ class BeamGraph:
         input_inv = list(number_components(input_param_file).values()) \
             if input_param_file else []
 
+        # bare-type-name guard (2026-10-23 incident): names are recovered from
+        # the INPUT feedme's # STRUCTURE: comments; a name-less input (or a
+        # missing input_param_file) silently degrades every component to its
+        # type name (expdisk/sersic) — a lesion that later explodes as
+        # E_PARAM_TYPE retry storms in survey (VLM retries can never fix a
+        # graph-side naming problem). Reject at record time instead.
+        _bare = sorted({(c.get("name") or "?").lower()
+                        for c in (fitted_inv or input_inv)
+                        if (c.get("name") or "").lower() in _TYPE_NAMES_AS_NAMES})
+        if _bare:
+            raise ValueError(
+                f"E_RECORD_TYPE_NAMES: fitted/input inventory carries bare type names "
+                f"{_bare} — the input feedme lacks '# STRUCTURE:' semantic names (or "
+                f"input_param_file was wrong). Nothing recorded. Fix the input feedme's "
+                f"names and re-record by reference (round_status_file=...)")
+
         cons_effective = self._decode_cons_for(input_param_file, input_inv)
 
         zombies = find_zombies(fitted_inv) if fitted_inv else []
@@ -833,6 +853,61 @@ class BeamGraph:
                     "reason": "bic_worse",
                     "reopening": "new residual evidence absent at refutation time",
                 })
+
+    # --------------------------------------------------- artifact repair
+    def repair_state_artifacts(self, label: str, run_result: dict) -> dict:
+        """Repair a recorded state's artifacts / inventories BY REFERENCE
+        (2026-10-23 incident: a hand-transcribed record dropped
+        ``input_param_file``; the idempotency guard then refused re-recording
+        and the graph had to be hand-edited). Rebuilds ONLY the derived
+        record fields — artifacts, input_inventory, inventory, signature,
+        combo_key, cons_effective, zombies, archive_dir — never metrics /
+        verdict / best / counters (the fit's measurements and the search
+        bookkeeping stand as recorded)."""
+        if label not in self.g.nodes:
+            raise KeyError(f"state {label} not found in the graph")
+        input_param_file = run_result["input_param_file"]
+        output_param_file = run_result["output_param_file"]
+        fitted_inv = list(number_components(output_param_file,
+                                            name_file=input_param_file).values())
+        input_inv = list(number_components(input_param_file).values())
+        _bare = sorted({(c.get("name") or "?").lower()
+                        for c in (fitted_inv or input_inv)
+                        if (c.get("name") or "").lower() in _TYPE_NAMES_AS_NAMES})
+        if _bare:
+            raise ValueError(
+                f"E_RECORD_TYPE_NAMES: reference feedme still yields bare type names "
+                f"{_bare} — fix the feedme's '# STRUCTURE:' names first")
+        cons_effective = self._decode_cons_for(input_param_file, input_inv)
+        zombies = find_zombies(fitted_inv) if fitted_inv else []
+        archive_dir = None
+        if run_result.get("round_status_file"):
+            archive_dir = os.path.dirname(os.path.abspath(run_result["round_status_file"]))
+        elif input_param_file:
+            archive_dir = os.path.dirname(os.path.abspath(input_param_file))
+        self.g.nodes[label].update({
+            "signature": canonical_signature(fitted_inv or input_inv,
+                                             cons_bands=cons_effective),
+            "inventory": fitted_inv or input_inv,
+            "input_inventory": input_inv,
+            "zombies": zombies,
+            "archive_dir": archive_dir,
+            "artifacts": {
+                "feedme": input_param_file,
+                "galfit_nn": output_param_file,
+                "comparison_png": run_result.get("image_file", ""),
+                "summary": run_result.get("summary_file", ""),
+                "round_status": run_result.get("round_status_file", ""),
+            },
+            "cons_effective": cons_effective,
+            "combo_key": combo_identity(fitted_inv or input_inv),
+        })
+        self.log_decision({"kind": "artifact-repair", "state": label,
+                           "round_status": run_result.get("round_status_file", "")})
+        return {"state": label,
+                "inventory": [c.get("name") for c in (fitted_inv or input_inv)],
+                "combo_key": combo_identity(fitted_inv or input_inv),
+                "archive_dir": archive_dir}
 
     # ------------------------------------------------------------ failures
     def mark_failed(self, action_id: str, reason: str,

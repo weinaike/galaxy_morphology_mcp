@@ -29,6 +29,14 @@ VALID_MD = """```json
 """
 
 
+def _touch(path):
+    """Record fail-fast requires every referenced path to exist on disk."""
+    from pathlib import Path
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("{}")
+    return path
+
+
 @pytest.fixture
 def galaxy(tmp_path, test_data_dir):
     gdir = tmp_path / "LOOP"
@@ -41,6 +49,8 @@ def galaxy(tmp_path, test_data_dir):
     r = beam_init(str(gdir), str(gdir / "_iter1.feedme"),
                   stage1_morphology="barred spiral")
     assert r["status"] == "success"
+    (gdir / "archives" / "x").mkdir(parents=True)   # record fail-fast: paths must exist
+    (gdir / "archives" / "x" / "round_status.json").write_text("{}")
     rr = beam_record_fit(str(gdir), json.dumps({
         "input_param_file": str(gdir / "_iter1.feedme"),
         "output_param_file": str(gdir / "galfit.01"),
@@ -87,7 +97,7 @@ def test_closed_loop_apply_and_record(galaxy, monkeypatch):
         "output_param_file": str(galaxy / "galfit.01"),  # fixture output reused
         "image_file": str(galaxy / "cmp.png"),
         "summary_file": str(galaxy / "summary.md"),
-        "round_status_file": str(galaxy / "archives" / "y" / "round_status.json"),
+        "round_status_file": _touch(str(galaxy / "archives" / "y" / "round_status.json")),
         "fit_statistics": {"bic_eff": 900.0, "chisq1d_nu": 0.8,
                            "convergence": {"flag": "ok"}},
     }), action_id=aid)

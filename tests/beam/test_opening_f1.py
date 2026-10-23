@@ -185,10 +185,15 @@ def test_opening_round_vlm_authored_end_to_end(tmp_path, test_data_dir, monkeypa
     cons = open(ap["cons"], encoding="utf-8").read()
     assert "x   offset" in cons and "y   offset" in cons  # concentric chain
 
-    # record the first fit -> A.1, combo bar+bulge+disk
+    # record the first fit -> A.1, combo bar+bulge+disk (fail-fast record:
+    # every referenced path must exist — stub the artefacts the fake run
+    # would have produced; the output parse may reuse the input feedme)
+    (gdir / "archives" / "open").mkdir(parents=True, exist_ok=True)
+    (gdir / "archives" / "open" / "round_status.json").write_text("{}")
     rec = beam_record_fit(str(gdir), json.dumps({
-        "input_param_file": ap["feedme"], "output_param_file": "",
-        "image_file": "", "summary_file": "", "round_status_file": "",
+        "input_param_file": ap["feedme"], "output_param_file": ap["feedme"],
+        "image_file": str(gdir / "orig.png"), "summary_file": str(gdir / "orig.png"),
+        "round_status_file": str(gdir / "archives" / "open" / "round_status.json"),
         "fit_statistics": {"bic_eff": 13844.0, "chisq1d_nu": 86.0,
                            "convergence": {"flag": "ok"}},
     }), action_id=rr["next_candidate"])

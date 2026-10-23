@@ -232,18 +232,76 @@ def beam_init(
         return {"status": "failure", "error": str(e)}
 
 
+# fields record_fit needs; used by the by-reference form and fail-fast checks
+_RUN_RESULT_REQUIRED = ("input_param_file", "output_param_file", "image_file",
+                        "summary_file", "round_status_file")
+
+
+def _run_result_from_round_status(round_status_file: str) -> dict[str, Any]:
+    """Build a run_result dict BY REFERENCE from run_galfit's archived
+    round_status.json (2026-10-23 incident: hand-transcribing the run_galfit
+    return dropped input_param_file and mangled a PNG path — the orchestrator
+    passes a path, never values)."""
+    with open(round_status_file, encoding="utf-8") as f:
+        rs = json.load(f)
+    inputs = rs.get("inputs") or {}
+    outputs = rs.get("outputs") or {}
+    fit_stats = rs.get("fit_statistics") or {}
+    return {
+        "input_param_file": inputs.get("feedme", ""),
+        "output_param_file": outputs.get("output_param", ""),
+        "image_file": outputs.get("comparison", ""),
+        "summary_file": outputs.get("summary", ""),
+        "round_status_file": round_status_file,
+        "fit_statistics": fit_stats,
+    }
+
+
+def _validate_run_result(run_result: dict, action_id: str) -> str | None:
+    """Fail-fast record validation: required fields present and their paths
+    exist. Returns an error string or None. The error is returned (not
+    raised) WITH the action_id so the orchestrator can immediately re-record
+    by reference — the fit already ran and must not be lost."""
+    missing = [k for k in _RUN_RESULT_REQUIRED
+               if not run_result.get(k)]
+    if missing:
+        return (f"E_RECORD_INCOMPLETE: run result is missing {missing} — the state was "
+                f"NOT recorded. Re-record by reference: beam_record_fit(galaxy_dir, "
+                f"action_id={action_id or '<action_id>'}, round_status_file=<archived "
+                f"round_status.json path>)")
+    nonexistent = [k for k in _RUN_RESULT_REQUIRED
+                   if not os.path.exists(run_result.get(k, ""))]
+    if nonexistent:
+        return (f"E_RECORD_PATH_INVALID: paths do not exist: "
+                f"{ {k: run_result[k] for k in nonexistent} } — the state was NOT "
+                f"recorded. Re-record by reference (round_status_file=...) instead of "
+                f"hand-copying paths")
+    if not run_result.get("fit_statistics"):
+        return "E_RECORD_INCOMPLETE: fit_statistics block is empty — the state was NOT recorded"
+    return None
+
+
 def beam_record_fit(
     galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
     run_galfit_result_json: Annotated[str, "JSON-serialised return dict of a successful "
                                           "run_galfit call (needs input_param_file, "
                                           "output_param_file, image_file, summary_file, "
-                                          "round_status_file, fit_statistics)"],
+                                          "round_status_file, fit_statistics). Pass the "
+                                          "run_galfit return VERBATIM (json.dumps of the "
+                                          "whole dict) — never hand-type fields; prefer "
+                                          "the round_status_file reference form below"] = "",
     action_id: Annotated[str, "action_id of the executed pending candidate (empty string "
                               "for the deterministic first fit of the root feedme)"] = "",
     verdict_json: Annotated[str, "Optional JSON of the surveyor Physicality Verdict "
                                  "({\"verdict\": \"PASS|FAIL\", \"failed_checks\": [...], "
                                  "\"swap_hint\": \"none|disk_bulge_swap\"}); normally the "
                                  "verdict arrives via survey_round instead"] = "",
+    round_status_file: Annotated[str, "PREFERRED by-reference form: absolute path of the "
+                                      "run_galfit archive's round_status.json — every "
+                                      "field (input/output paths + fit_statistics) is "
+                                      "read from the archive, making transcription "
+                                      "errors structurally impossible. When given, "
+                                      "run_galfit_result_json is ignored"] = "",
 ) -> dict[str, Any]:
     """Register a successful fit as a new state node in the beam graph.
 
@@ -252,12 +310,31 @@ def beam_record_fit(
     effective .cons bands, computes zombie flags, updates counters /
     stagnation / mechanical best (verdict-gated), grounds refuted-hypothesis
     entries, and commits.
+
+    Fail-fast (2026-10-23): a run result missing required fields or carrying
+    nonexistent paths is REJECTED (nothing recorded) — the failure names the
+    action_id and the by-reference re-record path. A fitted inventory whose
+    component names are bare type names (expdisk/sersic — the input feedme
+    carried no `# STRUCTURE:` names) is likewise rejected at record time,
+    instead of poisoning later survey rounds.
     """
     try:
-        run_result = _parse_json(run_galfit_result_json, None)
-        if not isinstance(run_result, dict) or not run_result.get("fit_statistics"):
-            return {"status": "failure",
-                    "error": "run_galfit_result_json is not a valid run_galfit return dict"}
+        if round_status_file:
+            if not os.path.exists(round_status_file):
+                return {"status": "failure", "action_id": action_id,
+                        "error": f"E_RECORD_PATH_INVALID: round_status_file does not "
+                                 f"exist: {round_status_file}"}
+            run_result = _run_result_from_round_status(round_status_file)
+        else:
+            run_result = _parse_json(run_galfit_result_json, None)
+            if not isinstance(run_result, dict) or not run_result.get("fit_statistics"):
+                return {"status": "failure",
+                        "error": "run_galfit_result_json is not a valid run_galfit return "
+                                 "dict; prefer the by-reference form "
+                                 "(round_status_file=<archive>/round_status.json)"}
+        err = _validate_run_result(run_result, action_id)
+        if err:
+            return {"status": "failure", "action_id": action_id, "error": err}
         verdict = _parse_json(verdict_json, None)
         graph = _load_graph(galaxy_dir)
         label = graph.record_fit(run_result, action_id=action_id, verdict=verdict)
@@ -281,6 +358,42 @@ def beam_record_fit(
             "opening_alternates": opening_alternates,
             "termination": graph.termination_check(),
         }
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_repair_artifacts(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    state_label: Annotated[str, "Label of the recorded state to repair (e.g. 'A.1')"],
+    round_status_file: Annotated[str, "Absolute path of the run_galfit archive's "
+                                      "round_status.json for that round — all fields "
+                                      "are read from the archive by reference"],
+) -> dict[str, Any]:
+    """Repair a recorded state's artifacts/inventories BY REFERENCE (2026-10-23).
+
+    For a state whose record was corrupted (missing input_param_file, bare
+    type-name inventories, dangling artifact paths) — where the record-time
+    idempotency guard correctly refuses a re-record — this rebuilds ONLY the
+    derived record fields (artifacts, input_inventory, inventory, signature,
+    combo_key, cons_effective, zombies, archive_dir) from the archive.
+    Metrics, verdict, best-state and counters are never touched. When the
+    reference feedme still yields bare type names, the repair is refused
+    (fix the feedme's # STRUCTURE: names first).
+    """
+    try:
+        if not os.path.exists(round_status_file):
+            return {"status": "failure",
+                    "error": f"round_status_file does not exist: {round_status_file}"}
+        run_result = _run_result_from_round_status(round_status_file)
+        err = _validate_run_result(run_result, "")
+        if err:
+            return {"status": "failure", "error": err}
+        graph = _load_graph(galaxy_dir)
+        out = graph.repair_state_artifacts(state_label, run_result)
+        graph.commit()
+        return {"status": "success", **out,
+                "message": "artifacts/inventories rebuilt by reference; metrics, "
+                           "verdict, best and counters untouched"}
     except Exception as e:
         return {"status": "failure", "error": str(e)}
 

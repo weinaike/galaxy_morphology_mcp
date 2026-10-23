@@ -262,6 +262,40 @@ def survey_round(
     state = graph.state(label)
 
     is_opening = int(state.get("global_iter_id", 0)) == 0
+    if not is_opening:
+        # ---- E_GRAPH_STATE preflight (2026-10-23 incident): validate the
+        # PARENT STATE before ANY VLM call. A graph-side lesion (inventory
+        # carrying bare type names because the record missed input_param_file,
+        # or dangling artifact paths) makes every VLM candidate fail
+        # validation (E_PARAM_TYPE "target not found") no matter what the VLM
+        # returns — the retry loop then burns real VLM calls on an unfixable
+        # error (KILOGAS_4/1023: ~3 wasted calls). Abort before the first
+        # call and point at the repair channel instead.
+        import os as _os
+        from beam.graph import _TYPE_NAMES_AS_NAMES
+
+        inv_names = [(c.get("name") or "").lower()
+                     for c in (state.get("inventory") or [])]
+        bare = sorted(n for n in inv_names if n in _TYPE_NAMES_AS_NAMES)
+        if bare or not inv_names:
+            return {"status": "failure", "code": "E_GRAPH_STATE",
+                    "error": f"state {label}'s inventory carries bare type names "
+                             f"{bare or ['(empty)']} — a graph-side naming lesion no "
+                             f"VLM retry can fix. Repair the graph first: "
+                             f"beam_repair_artifacts(galaxy_dir, state_label='{label}', "
+                             f"round_status_file=<that round's archived "
+                             f"round_status.json>); do NOT re-call the surveyor"}
+        artifacts = state.get("artifacts", {})
+        dangling = [k for k, v in (("feedme", artifacts.get("feedme")),
+                                   ("galfit_nn", artifacts.get("galfit_nn")),
+                                   ("comparison_png", artifacts.get("comparison_png")))
+                    if not v or not _os.path.exists(v)]
+        if dangling:
+            return {"status": "failure", "code": "E_GRAPH_STATE",
+                    "error": f"state {label}'s artifacts are missing/nonexistent: "
+                             f"{dangling} — fix via beam_repair_artifacts(by reference) "
+                             f"before surveying; do NOT re-call the surveyor"}
+
     artifacts = state.get("artifacts", {})
     feedme = artifacts.get("feedme")
     if is_opening:

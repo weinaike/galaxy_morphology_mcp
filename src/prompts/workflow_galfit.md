@@ -86,8 +86,19 @@ while beam_status(galaxy_dir).termination.stop is False:
          reason, archive_dir=<the failed run_galfit's archive_dir if returned>)
          and continue — crash forensics (console.log + the exact input) are
          auto-archived under archives/ by run_galfit itself
-    4. beam_record_fit(galaxy_dir, run_galfit_result_json=<full return dict>,
-       action_id=next)
+    4. beam_record_fit(galaxy_dir, action_id=next,
+       round_status_file=<the run's archived round_status.json path>) — the
+       PREFERRED by-reference form (every field is read from the archive;
+       hand-transcribing the run_galfit return is forbidden — the 2026-10-23
+       incident dropped input_param_file and mangled a PNG path, poisoning the
+       graph). The legacy run_galfit_result_json form accepts ONLY the return
+       dict passed VERBATIM (never re-typed), and the record is fail-fast:
+       missing fields / nonexistent paths / bare type-name inventories are
+       rejected with the action_id — re-record by reference when refused. A
+       recorded-but-lesioned state is repaired with
+       beam_repair_artifacts(galaxy_dir, state_label, round_status_file) —
+       never hand-edit graph.json; and an E_GRAPH_STATE survey failure means
+       the parent state is broken (repair it, do NOT re-call the surveyor).
     5. survey_round(galaxy_dir)  → returns verdict, enqueued/discarded candidates,
        queue snapshot, next_candidate, termination
     6. (on demand) beam_export_note(galaxy_dir) → regenerates working_note.md from the graph (audit projection; not part of the loop)

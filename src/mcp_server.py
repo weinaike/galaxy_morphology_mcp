@@ -41,6 +41,7 @@ from beam.tools import (
     beam_init,
     beam_mark_failure,
     beam_record_fit,
+    beam_repair_artifacts,
     beam_set_constraint,
     beam_status,
     beam_enqueue_candidates,
@@ -73,6 +74,7 @@ def _register_tools_and_prompts():
         app.add_tool(check_feedme_file)
         app.add_tool(beam_init)
         app.add_tool(beam_record_fit)
+        app.add_tool(beam_repair_artifacts)
         app.add_tool(beam_mark_failure)
         app.add_tool(beam_enqueue_f1)
         app.add_tool(beam_status)

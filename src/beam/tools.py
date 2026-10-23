@@ -1,6 +1,6 @@
 """MCP tool wrappers for the mechanised beam search (stage-1 set).
 
-The orchestrator protocol (workflow_galfit_v2):
+The orchestrator protocol (workflow_galfit):
 
     beam_init -> run_galfit(first fit) -> beam_record_fit -> survey_round ->
     apply_candidate(action_id from survey's next_candidate) -> run_galfit ->
@@ -561,6 +561,21 @@ def apply_candidate(
                 return {"status": "discarded", "action_id": action_id,
                         "message": "every component cell already visited "
                                    "after enqueue — candidate discarded; "
+                                   "continue with the next queue entry"}
+            # constraint re-check (2026-10-23): a constraint registered after
+            # this candidate was enqueued (an expert-T restriction or a user
+            # exclusion) must bind at dequeue too — add/tune/skeleton/
+            # reclassify of a forbidden structure never executes
+            from beam.enqueue import _temp_constraint_violation
+            _viol = _temp_constraint_violation(graph, rec.get("primitives") or [])
+            if _viol:
+                graph.mark_discarded(action_id, f"E_TEMP_CONSTRAINT: {_viol}")
+                graph.log_decision({"kind": "temporary-constraint-discard",
+                                    "action_id": action_id, "detail": _viol,
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": f"{_viol} — candidate discarded; "
                                    "continue with the next queue entry"}
 
         region = meta.get("fit_region")

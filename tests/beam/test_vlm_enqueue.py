@@ -286,3 +286,48 @@ def test_queue_reorder_pin_applied_and_persists(mini_graph):
     graph.age_pending()
     _reorder_queue(graph)
     assert graph.pop_next() == "older_c"              # pin survives re-sorts
+
+
+def test_temp_constraint_binds_opening_skeletons(mini_graph):
+    """2026-10-23 expert-guided s1: the forbid list must bind round-0
+    SKELETON candidates too, not just later add/tune moves — otherwise the
+    expert's target-complement restriction leaks through the opening."""
+    graph, label = mini_graph
+    graph.g.graph.setdefault("temporary_constraints", []).append({
+        "active": True,
+        "text": "expert target inventory forbids bar",
+        "forbid_structures": ["bar"],
+    })
+    graph.commit()
+    res = ingest(graph, [
+        cand([{"op": "skeleton", "skeleton": {"components": [
+            {"structure_name": "disk", "component_type": "expdisk",
+             "re_px": 20.0, "mag": 16.0, "q": 0.5, "pa_deg": 0.0},
+            {"structure_name": "bulge", "component_type": "sersic",
+             "re_px": 3.0, "mag": 17.0, "q": 0.8, "pa_deg": 0.0, "n": 2.0},
+            {"structure_name": "bar", "component_type": "sersic",
+             "re_px": 6.0, "mag": 17.5, "q": 0.3, "pa_deg": 10.0},
+        ]}}], sigma=0.9, tag="skeleton_with_bar"),
+    ], session_id="s1", parent_label=label)
+    assert res.discarded and res.discarded[0]["reason"] == "E_TEMP_CONSTRAINT"
+    assert not res.enqueued
+
+
+def test_temp_constraint_binds_reclassify_targets(mini_graph):
+    """2026-10-23: reclassify-to-forbidden-slot must not smuggle a banned
+    structure in under a new name (expert T = disk+bulge, bar forbidden)."""
+    graph, label = mini_graph
+    graph.g.graph.setdefault("temporary_constraints", []).append({
+        "active": True, "text": "expert T forbids bar",
+        "forbid_structures": ["bar"],
+    })
+    graph.commit()
+    res = ingest(graph, [
+        cand([{"op": "reclassify", "reclassify": {"map": [
+            {"from": "bulge", "to": "bar"}]}}], sigma=0.8, tag="recl_to_bar"),
+        cand([{"op": "reclassify", "reclassify": {"map": [
+            {"from": "disk", "to": "bulge"}]}}], sigma=0.8, tag="recl_legal"),
+    ], session_id="s1", parent_label=label)
+    assert any(d.get("reason") == "E_TEMP_CONSTRAINT" and "bar" in str(d.get("detail"))
+               for d in res.discarded)
+    assert any(e["tag"] == "recl_legal" for e in res.enqueued)

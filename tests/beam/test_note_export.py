@@ -1,4 +1,4 @@
-"""Tests for working_note export and the v2 workflow prompt registration."""
+"""Tests for working_note export and the workflow prompt registration."""
 
 import asyncio
 import importlib
@@ -80,22 +80,7 @@ def test_beam_export_note_tool(seeded_graph, tmp_path):
     assert "working_note.md" in r["working_note"]
 
 
-def test_v2_prompt_renders_argument():
-    from prompts import prompts
-
-    class _Fake:
-        pass
-
-    # prompt object renders via the registered MCP prompt function
-    from tools.prompt import workflow_galfit_v2
-
-    text = workflow_galfit_v2.fn(argument="/some/galaxy/dir")
-    assert "/some/galaxy/dir" in text
-    assert "survey_round" in text and "beam_record_fit" in text
-    assert "never hand-edit" in text.lower() or "never do any of it" in text.lower()
-
-
-def test_registration_includes_export_note_and_v2_prompt():
+def test_registration_includes_export_note_and_prompts():
     with patch.dict(sys.modules, {}), patch.dict(
         "os.environ", {"GALFIT_BIN": "/usr/bin/true"}
     ):
@@ -109,8 +94,9 @@ def test_registration_includes_export_note_and_v2_prompt():
             assert "beam_export_note" in names
             prompts_list = asyncio.run(mcp_server.app.list_prompts())
             pnames = {p.name for p in prompts_list}
-            assert "workflow_galfit_v2" in pnames
-            assert "workflow_galfit" in pnames  # v1 coexists
+            assert "workflow_galfit" in pnames
+            assert "workflow_galfit_s1" in pnames
+            assert "workflow_galfit_v2" not in pnames  # retired (merged into v1)
         finally:
             if "src" in sys.path:
                 sys.path.remove("src")

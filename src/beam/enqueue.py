@@ -562,6 +562,35 @@ def _temp_constraint_violation(graph, prims: list[dict]) -> str | None:
                     name = (p.get("structure_name") or "").lower()
                 elif p.get("op") == "tune":
                     name = (p.get("structure_name") or "").lower()
+                elif p.get("op") == "skeleton":
+                    # opening skeletons declare whole inventories — a forbidden
+                    # component inside one violates the constraint equally
+                    # (2026-10-23 expert-guided s1: T's complement must bind
+                    # the round-0 skeletons, not just later add/tune moves)
+                    comps = ((p.get("skeleton") or {}).get("components")
+                             or p.get("components") or [])
+                    names = {(c.get("structure_name") or "").lower() for c in comps}
+                    hit = next((n for n in names
+                                if n == struct.lower()
+                                or companion_re.match(n)
+                                and companion_re.match(struct.lower())), None)
+                    if hit:
+                        return f"{tc.get('text', 'temporary constraint')} forbids " \
+                               f"skeleton component '{hit}'"
+                    continue
+                elif p.get("op") == "reclassify":
+                    # identity reassignment to a forbidden slot smuggles the
+                    # structure in under a new name — the map's targets are
+                    # subject to the forbid list like any add
+                    mapping = ((p.get("reclassify") or {}).get("map")
+                               or p.get("map") or [])
+                    hit = next((m.get("to", "").lower() for m in mapping
+                                if (m.get("to") or "").lower() == struct.lower()),
+                               None)
+                    if hit:
+                        return f"{tc.get('text', 'temporary constraint')} forbids " \
+                               f"reclassify target '{hit}'"
+                    continue
                 if name and (name == struct.lower()
                              or companion_re.match(name) and companion_re.match(struct.lower())):
                     return f"{tc.get('text', 'temporary constraint')} forbids '{name}'"

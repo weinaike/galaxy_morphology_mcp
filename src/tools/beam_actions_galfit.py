@@ -213,7 +213,7 @@ def generate_galfit_beam_actions(
     fitted_param_file: Annotated[str, "Absolute path to the parent state's fitted parameter file (galfit.NN, e.g. the archived output_param_file returned by run_galfit)"],
     comparison_file: Annotated[str, "Absolute path to the 2x3 comparison PNG produced by the parent state's run_galfit call"],
     summary_file: Annotated[str, "Absolute path to the markdown summary produced by the parent state's run_galfit call (only its statistics table is parsed; may be empty)"] = "",
-    global_state_description: Annotated[str, "Cross-round stable facts for the stateless VLM, distilled by the orchestrator from working_note.md (NOT the raw note). Fixed schema per workflow_galfit.md 'Generation spec for global_state_description / local_state_description': [Meta (pixel contract)]/[Stage-1 conclusions]/[State ledger (px)]/[Rollback edges]/[Verified basins]/[Refuted hypotheses]/[Budget]. Keep <= ~50 lines."] = "",
+    global_state_description: Annotated[str, "Cross-round stable facts for the stateless VLM, distilled by the orchestrator from the beam graph (graph digest, NOT the raw graph). Fixed schema per workflow_galfit.md 'Generation spec for global_state_description / local_state_description': [Meta (pixel contract)]/[Stage-1 conclusions]/[State ledger (px)]/[Rollback edges]/[Verified basins]/[Refuted hypotheses]/[Budget]. Keep <= ~50 lines."] = "",
     local_state_description: Annotated[str, "Current-round objective description: parent component inventory C + key params, bound-hit parameters (⚠️ + values vs .cons bounds), residual features, identity anomalies, and orchestrator numeric-rule delegations (disk-Re bottleneck / flux-misallocation signals / flat-bulge trigger values). Must NOT suggest candidate directions."] = "",
     branch_id: Annotated[str, "Current beam branch identifier (e.g. 'A', 'B'). Used in candidate action_ids."] = "A",
     parent_label: Annotated[str, "Parent round label inside the branch (e.g. 'A.3'). Used in candidate action_ids."] = "",
@@ -384,7 +384,7 @@ def generate_galfit_beam_actions(
         "in s* updates (workflow_galfit.md Step e physicality gate), and protected recovery "
         "candidates must be generated per the Recovery Protocol for Non-Physical Results; when "
         "swap_hint=disk_bulge_swap, confirm the candidates include one in the disk <-> bulge "
-        "label-swap direction. Record the verdict block verbatim in working_note; do not rewrite it.\n"
+        "label-swap direction. Record the verdict block verbatim in the graph state; do not rewrite it.\n"
         "- Apply semantic deduplication to every candidate (compare against the (s_j, a_j) already "
         "in Q; if equivalent, keep the one with the higher g).\n"
         "- Equivalence criteria (all three must hold):\n"
@@ -733,7 +733,7 @@ def check_feedme_file(
             "Feedme structure check passed. 'components' is the canonical component "
             "inventory (px units, PA in the N=+Y contract); use it directly as the source for "
             "beam-state signatures and warm-start backfill. psf_fwhm_px / a_psf_px2 "
-            "(when present) characterise the PSF: record them in the working_note header "
+            "(when present) characterise the PSF: record them in the graph stage1 meta "
             "and the [Meta] line of global_state_description (psf_fwhm feeds the default "
             "Re lower bound)."
         ),

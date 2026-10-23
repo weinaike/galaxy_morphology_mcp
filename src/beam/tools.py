@@ -512,12 +512,13 @@ def apply_candidate(
 def beam_export_note(
     galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
 ) -> dict[str, Any]:
-    """Regenerate working_note.md from the state graph (audit projection).
+    """Regenerate working_note.md from the state graph (ON-DEMAND audit export).
 
     The graph is the single source of truth; the note follows the §Multi-Branch
     working_note template (header + overwrite snapshot + ledgers + branch
-    rounds + failure archive + decision log) for the best-round-verifier and
-    the paper trail.
+    rounds + failure archive + decision log) purely as a human-readable /
+    paper-trail export. Per-round maintenance is RETIRED (2026-10-21); call
+    this only when an audit render is explicitly wanted.
     """
     try:
         from beam.note_export import export_working_note
@@ -534,9 +535,9 @@ def beam_grant_repair_budget(
     rounds: Annotated[int, "Extra fits to grant (clamped to the remaining cumulative "
                            "cap of 4)"] = 2,
     reason: Annotated[str, "Why the grant is made (verbatim into the decision log; "
-                           "normally the best-round-verifier FAIL blocking issues)"] = "",
+                           "the failed lock check blocking issues)"] = "",
 ) -> dict[str, Any]:
-    """Grant bounded extra fits after a best-round-verifier FAIL (defect B fix).
+    """Grant bounded extra fits after a failed lock check (defect B fix).
 
     The Stage-3 repair path ('fix per blocking issues, refit, re-audit') is
     otherwise dead when N_max is exhausted. Cumulative grants are capped;

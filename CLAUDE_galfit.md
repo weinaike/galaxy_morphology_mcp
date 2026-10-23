@@ -213,19 +213,11 @@ On this branch companions are **outside the solution space** (see the branch res
 
 
 
-# Working-note authoring specification (Beam Search multi-branch edition)
+# Working note (RETIRED as a per-round duty, 2026-10-21)
 
-- The working note is the core record of the whole beam search and its **single source of truth**: the priority queue Q's contents, the current best s\*, the counters n / stagnation / global_iter_id, and the state ledgers (input ledger + result ledger + rollback edges) are all governed by it — read it before every decision.
-- **Its structure must strictly follow the §Multi-Branch working_note Template of `workflow_galfit.md`** (header with basic information + beam-state snapshot [overwritten] + state ledgers [appended] + branch sections [appended] + failure archive + cross-branch decision log [appended]).
-- Header [mandatory]: the Stage-1 opening conclusions — the morphology judgement and the **ranked opening skeleton candidates authored by the surveyor VLM in the round-0 opening survey** (`survey_round(state_label="A.0", opening_image=<rendered original>)`; alphabet singlesersic XOR {disk, bulge, bar}; top-ranked = the first fit, alternates queued). The standalone `detect_bar_lopsidedness` call is **RETIRED from the flow (2026-10-09)** — bar/lop existence is settled by residual-driven trial and error in the fit; a structure outside every proposed skeleton is written "not in the opening proposal (zero evidence, non-determinative)", never a bare "absent".
-- Temporary user constraints (if any): recorded verbatim in the working_note header (issue date + lifting condition) and carried in the `[Temporary constraints]` field of every `generate_galfit_beam_actions` `global_state_description` (mechanism and the currently active constraints: see `workflow_galfit.md` §Generation Spec); the companion exclusion issued 2026-09-04 was **REVOKED 2026-09-07** — companion candidates (`add(Companion, ...)`) are fully admissible again; galaxies run under the exclusion keep it in their graphs as provenance (do not retro-edit).
-- Each branch-round section [mandatory]:
-  - the round's action (action_id and primitives summary) and the `_iter{n}.feedme` / `iter{n}.cons` used;
-  - post-fit component types and key parameters (position px, magnitudes, sizes, shape parameters; expdisk annotated with Rs and effective radius Re), reduced_χ² (chisq1d_nu) / BIC (BIC_eff);
-  - **the VLM Physicality Verdict (verdict / failed_checks summary; record verbatim, never rewrite)**;
-  - the candidate action_ids returned by `generate_galfit_beam_actions` and their enqueue/truncation fate;
-  - [mandatory] the deviation from the expected goal.
-- Prefer overwriting to appending: the beam-state snapshot is overwritten after every main-loop iteration; only branch sections and the cross-branch decision log append.
+- The beam graph (`beam_state/graph.json`) is the **single source of truth**: the queue, s\*, the counters, the ledgers, the verdicts, the decision log and the temporary constraints all live there — read `beam_status` (not any note) before decisions.
+- `working_note.md` is an **on-demand audit projection** only: `beam_export_note(galaxy_dir)` renders it from the graph whenever a human-readable audit trail / paper-trail export is wanted. It is never a per-round maintenance duty, never required reading, and never an input to any decision.
+- Stage-1 opening conclusions and temporary user constraints live in the graph (`stage1` / `temporary_constraints`, written by `beam_init` / `beam_set_constraint`).
 
 # Criteria for locking the best round
 - Component criterion: image and residual observations suggest full identification — every existing component has been added.
@@ -236,13 +228,12 @@ On this branch companions are **outside the solution space** (see the branch res
   - The Bar's n is fixed at 0.5.
   - All main-galaxy components' x,y positions are constrained as offset, ensuring concentricity.
   - Other parameters (Re, mag, …) are not over-constrained and may adjust within reasonable ranges.
-- Verification criterion: the best round must be one analysed by `generate_galfit_beam_actions` (its archives directory contains `*_beam_actions_*.md` candidate artefacts, and the working_note records that round's Physicality Verdict). If a suspected-best round lacks beam-action artefacts or a verdict record, call `generate_galfit_beam_actions` once more (with that round's feedme / galfit.NN / comparison image as input) to generate them and support the optimality check.
+- Verification criterion: the best round must be one whose candidates were generated (`survey_round` ran on it — its archives directory contains `*_beam_actions_*.md` candidate artefacts, and the graph state node carries a settled Physicality Verdict). If a suspected-best round lacks beam-action artefacts or a verdict record, call `generate_galfit_beam_actions` once more (with that round's feedme / galfit.NN / comparison image as input) to generate them and support the optimality check.
 - Metric criterion: with the component, fit, physics, attempt and verification criteria above all satisfied, select on residual quality:
   - every `generate_galfit_beam_actions` call outputs a Physicality Verdict (visual residual judgement) and a candidate list; together with the χ²/BIC statistics returned by `run_galfit` they are key references for residual quality (the BIC used for model comparison is always **BIC_eff** = χ²/A_psf + k·ln(N/A_psf); see the summary statistics table — the 1D BIC is reference only).
   - **F1 arbitration (7+1 rule)**: the best model without an F1 row gets exactly ONE reserved F1 fit on the best state (`beam_enqueue_f1`, counted outside N_max); retention is settled by the **BIC comparison** against the pre-F1 best (BIC_eff improves → keep the F1-bearing round; otherwise keep the previous best). The fitted amplitude is a reported fact, not the gate. The reserved round is never re-run.
 
-### Lock-enforcing audit (enforcement)
-These six criteria are easily overlooked in execution, so **before formally locking the best round, the subagent `best-round-verifier` must be called** (defined in `.claude/agents/best-round-verifier.md`) to audit the candidate round independently, mechanically and traceably:
-- The subagent is a **read-only audit**: it checks every criterion with evidence and returns `verdict: PASS|FAIL`.
-- `FAIL` → locking is strictly forbidden; fix per its "blocking issues" list, refit and re-audit to `PASS`; only `PASS` (WARN allowed) may lock.
-- The Stage-3 locking steps of the workflows (`workflow_galfit` / `workflow_galfits`) embed this audit gate.
+### Lock check (enforcement; 2026-10-21 — the `best-round-verifier` subagent is RETIRED)
+- Before locking, the orchestrator verifies the six criteria above **directly against the graph and the best round's archives** — every criterion is mechanically checkable there: verdict-PASS state (`beam_status`), concentric `.cons` compliance (the archived `iter{n}.cons` carries the paired `x/y offset` chain), component completeness and parameter state (the archived feedme/galfit.NN), residual quality (the archived comparison PNG + statistics).
+- A failed check → do not lock: either fix the configuration and refit, or grant bounded repair fits (`beam_grant_repair_budget`, cumulative cap 4) and run repair rounds (`survey_round(directives=...)`) until the check is clean.
+

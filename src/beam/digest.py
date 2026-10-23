@@ -1,6 +1,6 @@
 """Programmatic generation of the surveyor's global/local state descriptions
 and the pending-queue digest — replaces the orchestrator's hand distillation
-of working_note.md (the graph is the single source of truth).
+rendered by beam_export_note (the graph is the single source of truth; the note is an on-demand audit export).
 
 ``build_local_state_description`` also returns the numeric-trigger flags that
 arm the enqueue floors (disk_re_bottleneck / lens_relax_d / flat_bulge_bar).

@@ -200,7 +200,7 @@ class BeamGraph:
             }
 
     def grant_repair_budget(self, rounds: int, reason: str = "") -> dict:
-        """Grant extra fits after a best-round-verifier FAIL (bounded).
+        """Grant extra fits after a failed lock check (bounded).
 
         Cumulative grants are capped at ``cap``; crash/failure rounds do not
         count toward stagnation, so a repair loop keeps moving while budget

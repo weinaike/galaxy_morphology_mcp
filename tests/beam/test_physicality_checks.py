@@ -217,11 +217,12 @@ def test_lens_q_hard():
 def test_bar_q_note_band():
     c = _checks([_comp("bar", q=0.55, re=4.0, n=0.5)])
     assert _has(c, "shape_prior", "note", "round-bar") and not _has(c, "axis_ratio", "hard")
-    # 0.5 < q <= 0.8 is the round-bar watch band (hard limit relaxed 0.6 -> 0.7 -> 0.8)
+    # 0.5 < q <= 0.7 is the round-bar watch band (cap 0.8 -> 0.7, 2026-10-28
+    # expert call: q>0.7 is not bar-like; KILOGAS_113/291/361 ruled non-bar)
     c65 = _checks([_comp("bar", q=0.65, re=4.0, n=0.5)])
     assert _has(c65, "shape_prior", "note", "round-bar") and not _has(c65, "axis_ratio", "hard")
     c75 = _checks([_comp("bar", q=0.75, re=4.0, n=0.5)])
-    assert _has(c75, "shape_prior", "note", "round-bar") and not _has(c75, "axis_ratio", "hard")
+    assert _has(c75, "axis_ratio", "hard")          # above the 0.7 cap now
     assert _has(_checks([_comp("bar", q=0.85, re=4.0, n=0.5)]), "axis_ratio", "hard")
 
 
@@ -243,7 +244,7 @@ def test_bar_q_needle_floor_fixed_no_psf_coupling():
 
 def test_q_bar_vs_q_lens():
     comps = [_comp("lens", q=0.7, re=6.0, n=0.3), _comp("bar", q=0.75, re=4.0, n=0.5)]
-    # bar q=0.75 >= lens q=0.7 (axis-ratio hard only above the 0.8 cap);
+    # bar q=0.75 >= lens q=0.7 (also above the 0.7 cap since 2026-10-28);
     # shape_order must fire independently of the axis_ratio family
     assert _has(_checks(comps), "shape_order", "hard", "q_bar")
     assert not _has(_checks([_comp("lens", q=0.7, re=6.0, n=0.3),
@@ -368,7 +369,8 @@ def test_disable_mech_checks_env(monkeypatch):
     base = _raw(inv)
     assert _present(base, "mu0_order", "hard", "mu0_bulge")
     assert _present(base, "flux_share", "hard", "lens flux fraction")
-    assert _present(base, "flux_share", "note", "bar flux fraction")
+    # bar at ~0.15% share: the HARD existence floor (2026-10-28), not a note
+    assert _present(base, "flux_share", "hard", "existence floor")
     assert _present(base, "re_chain", "hard", "re inversion")
 
     # production setting: whole mu0_order family + flux_share hard severity only
@@ -376,7 +378,7 @@ def test_disable_mech_checks_env(monkeypatch):
     disabled = _raw(inv)
     assert not any(ck == "mu0_order" for ck, _, _ in disabled)
     assert not _present(disabled, "flux_share", "hard")
-    assert _present(disabled, "flux_share", "note", "bar flux fraction")  # notes kept
+    # the starved bar's entry WAS the hard floor -> fully disabled with :hard
     assert _present(disabled, "re_chain", "hard", "re inversion")         # others intact
 
     # bare family name disables both severities
@@ -434,3 +436,29 @@ def test_round_disk_no_flat_caps():
         _comp("bulge", q=0.9, re=34.40, n=3.76, mag=14.82),  # dq=0.3>0.25
     ])
     assert not _has(checks, "onion", "hard", "flat disk's area")
+
+
+def test_flux_existence_floors():
+    """Expert floors 2026-10-28 (HARD): bulge <3% / bar <5% of total model
+    light -> the component should not exist or its flux was over-absorbed —
+    mech-FAIL; distinct from the 10-40% band note."""
+    # disk 16.0 dominates; bulge mag 22 (~1% of disk+bulge light) -> below floor
+    c = _checks([_comp("disk", "expdisk", re=12.0, mag=16.0),
+                 _comp("bulge", q=0.9, re=1.5, n=2.0, mag=22.0)])
+    assert _has(c, "flux_share", "hard", "existence floor") and \
+        _has(c, "flux_share", "hard", "bulge flux fraction")
+    # a healthy bulge share (mag 18 vs disk 16 -> ~9%) -> no existence note
+    ok = _checks([_comp("disk", "expdisk", re=12.0, mag=16.0),
+                  _comp("bulge", q=0.9, re=1.5, n=2.0, mag=18.0)])
+    assert not any("existence floor" in str(v) for v in ok.values())
+    # bar at mag 23 (~1.6%) -> below the 5% floor (existence note, not band note)
+    cb = _checks([_comp("disk", "expdisk", re=12.0, mag=16.0),
+                  _comp("bar", q=0.3, re=4.0, n=0.5, mag=23.0)])
+    assert _has(cb, "flux_share", "hard", "existence floor") and \
+        _has(cb, "flux_share", "hard", "bar flux fraction")
+    # bar at mag 18.8 (~7.6% of total: above the 5% floor, below the 10%
+    # band edge -> band-note wording, no existence floor)
+    cband = _checks([_comp("disk", "expdisk", re=12.0, mag=16.0),
+                     _comp("bar", q=0.3, re=4.0, n=0.5, mag=18.8)])
+    notes = [str(v) for v in cband.values() if "bar flux" in str(v)]
+    assert notes and not any("existence floor" in n for n in notes)

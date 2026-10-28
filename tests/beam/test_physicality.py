@@ -65,7 +65,7 @@ def test_re_chain_3pct_tolerance(mini_graph):
 
 def test_axis_ratio_limits(mini_graph):
     graph, _ = mini_graph
-    # bar above the hard limit (cap 0.7 -> 0.8, 2026-10-14)
+    # bar above the hard limit (cap 0.8 -> 0.7, 2026-10-28 expert call)
     inv = [_comp("disk", 40.0), _comp("bar", 8.0, q=0.85)]
     hard = _by(_hards(_checks(graph, inv)), "axis_ratio")
     assert any("bar q=0.85" in c["detail"] for c in hard)

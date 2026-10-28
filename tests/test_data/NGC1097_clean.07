@@ -65,7 +65,7 @@ P) 0                   # Choose: 0=optimize, 1=model, 2=imgblock, 3=subcomps
 # Component number: 3
  0) ferrer                 #  Component type
  1) 752.6981 740.2468 1 1  #  Position x, y 
- 3) 13.5000     1          #  Central surface brghtness  [mag/arcsec^2]
+ 3) 12.0000     1          #  Central surface brghtness  [mag/arcsec^2]
  4) 60.0000     1          #  Outer truncation radius  [pix]
  5) 5.9054      1          #  Alpha (outer truncation sharpness) 
  6) 1.0820      1          #  Beta (central slope)

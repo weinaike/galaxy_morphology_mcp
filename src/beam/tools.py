@@ -663,7 +663,8 @@ def beam_grant_repair_budget(
     rounds: Annotated[int, "Extra fits to grant (clamped to the remaining cumulative "
                            "cap of 4)"] = 2,
     reason: Annotated[str, "Why the grant is made (verbatim into the decision log; "
-                           "the failed lock check blocking issues)"] = "",
+                           "the user's instruction / the failed lock check — this "
+                           "tool is USER-DIRECTED ONLY, never agent-initiated)"] = "",
 ) -> dict[str, Any]:
     """Grant bounded extra fits after a failed lock check (defect B fix).
 
@@ -671,6 +672,13 @@ def beam_grant_repair_budget(
     otherwise dead when N_max is exhausted. Cumulative grants are capped;
     crash rounds no longer count toward stagnation, so a repair loop keeps
     moving while repair budget remains.
+
+    USER-DIRECTED ONLY (2026-10-28): the orchestrating agent must not call
+    this on its own judgement — empirically 0/5 agent-initiated grants
+    (precheck exploration, F1-repair chases) ever improved the best
+    (KILOGAS_108/291/95/426/172); a never-executed inventory at budget
+    exhaustion is NOT a grant reason. Reserved for the user's explicit
+    instruction (e.g. a requested reclassify exploration).
     """
     try:
         graph = _load_graph(galaxy_dir)

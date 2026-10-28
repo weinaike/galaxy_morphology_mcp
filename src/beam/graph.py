@@ -204,7 +204,8 @@ class BeamGraph:
             }
 
     def grant_repair_budget(self, rounds: int, reason: str = "") -> dict:
-        """Grant extra fits after a failed lock check (bounded).
+        """Grant extra fits after a failed lock check (bounded; user-directed
+        only since 2026-10-28 — agents must not self-grant).
 
         Cumulative grants are capped at ``cap``; crash/failure rounds do not
         count toward stagnation, so a repair loop keeps moving while budget
@@ -715,7 +716,8 @@ class BeamGraph:
             # verbatim; the 4 divergences were superseded-round FAILs, zero
             # outcome change). Mech-hard entry vetoes PASS; swap_hint derives
             # from the mech re_chain entry ({disk,bulge} exact inversion —
-            # the two free Seriscs swapped).
+            # the two free Sersics swapped; the hint's required repair is a
+            # RECLASSIFY bijection, never a bare label swap).
             _names = {(c.get("name") or "").lower()
                       for c in (fitted_inv or input_inv or [])}
             _re_chain = any(c.get("check") == "re_chain"

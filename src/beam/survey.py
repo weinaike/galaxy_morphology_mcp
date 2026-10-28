@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import datetime
 from typing import Any
 
 from beam.candidate_schema import parse_survey_response, validate_survey
@@ -408,7 +409,11 @@ def survey_round(
                 "input-feedme references (mag split ~3:7 bulge:disk for two "
                 "components, bar between; disk Re from the reference Re, bulge Re "
                 "1/5-1/3 of it, bar Re between the two; disk q/PA/centre from the "
-                "references).\n"
+                "references). A BAR component's q comes from the centre's OWN "
+                "measured axis ratio on the HIGH-DR panel — linear/rectangular -> "
+                "0.2-0.4, fat oval (q >= 0.5) -> the measured value (0.5-0.7); never "
+                "default every bar to 0.3 (KILOGAS_11: the fat oval-bar basin q~0.65 "
+                "beat the default thin-bar basin by dBIC_eff 152).\n"
                 "**PA measurement rule (N=+Y; KILOGAS_13 rerun — the sign trap)**: "
                 "PA is measured from the UPWARD axis, increasing COUNTERCLOCKWISE "
                 "(toward the left). The two diagonals are 90° apart, not the same "
@@ -456,6 +461,26 @@ def survey_round(
     except Exception as e:
         return {"status": "failure", "error": f"prompt assembly failed: {e}"}
 
+    # ---- request dump (debug aid, 2026-10-24): the exact prompt sent to the
+    # VLM goes to its OWN file, separate from the response archive — written
+    # incrementally (system prompt once; every retry attempt's turns appended
+    # before dispatch), so the file is complete no matter how the loop exits.
+    # OSError is silently ignored: a debug dump must never break the survey.
+    _req_ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+    _req_base = os.path.splitext(os.path.basename(comparison))[0]
+    _req_path = os.path.join(os.path.dirname(os.path.abspath(comparison)),
+                             f"{_req_base}_{'opening_' if is_opening else 'survey_'}"
+                             f"request_{label}_{_req_ts}.md")
+    try:
+        with open(_req_path, "w", encoding="utf-8") as f:
+            f.write(f"# survey_round REQUEST dump {label} (state survey; "
+                    f"{'opening' if is_opening else 'fitted-state'} mode)\n\n"
+                    f"- image: {comparison}\n"
+                    f"- state: {label}\n\n"
+                    f"## System prompt\n\n{system_message}\n")
+    except OSError:
+        _req_path = ""
+
     # ---- bounded VLM + validation loop
     feedback = ""
     resp = None
@@ -465,6 +490,15 @@ def survey_round(
     attempts_issues: list[dict] = []
     for _attempt in range(max_retries + 1):
         turns = [turn1, turn2 + (f"\n\n## Your previous output was rejected — fix and return the corrected JSON only:\n{feedback}" if feedback else "")]
+        if _req_path:
+            try:
+                with open(_req_path, "a", encoding="utf-8") as f:
+                    f.write(f"\n---\n\n## Attempt {_attempt + 1} — turn 1 (visual extraction)\n\n"
+                            f"{turns[0]}\n\n"
+                            f"## Attempt {_attempt + 1} — turn 2 (candidate generation"
+                            f"{' + retry feedback' if feedback else ''})\n\n{turns[1]}\n")
+            except OSError:
+                pass
         analysis, session_id, error = _dispatch(system_message, turns, comparison)
         if error:
             result: dict[str, Any] = {"status": "failure", "error": error}
@@ -584,6 +618,7 @@ def survey_round(
         "termination": graph.termination_check(),
         "session_id": session_id,
         "candidates_file": md_path,
+        "request_dump": _req_path,
     }
 
 

@@ -29,7 +29,7 @@ The following acquisition rules are common to all model types:
 - If Bar signatures are visible in the residual map and the original image, consider adding a Bar component:
   - Initial Bar parameters:
     - n fixed at 0.5,
-    - initial axis ratio b/a in the range 0.2–0.4,
+    - initial axis ratio b/a is **EVIDENCE-CONDITIONAL** (KILOGAS_11 retrospective: the 0.2–0.4 default seeded the thin-bar basin on an oval-bar galaxy and the whole run searched the wrong decomposition — the fat-bar basin q≈0.65 won by ΔBIC_eff 152 with a small pseudobulge instead of a big n≈7.6 bulge + thin bar): a linear/rectangular centre seeds **0.2–0.4**; a fat OVAL centre (measured q ≳ 0.5 on the HIGH-DR panel) seeds **the measured value (0.5–0.7)**; when the shape is ambiguous, hedge BOTH q variants as separate candidates (the same logic as the PA hedge),
     - PA initialised from the measured major-axis direction of the bar in the image,
     - size parameter R_e set between those of the bulge and the disk,
     - mag set following the flux-split tiers above,

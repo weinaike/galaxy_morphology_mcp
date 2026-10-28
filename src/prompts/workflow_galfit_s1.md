@@ -51,7 +51,7 @@
    - 异常处置：survey 返回 **E_GRAPH_STATE** → 父态损坏，按错误信息 `beam_repair_artifacts` 修复后重试（勿重调 VLM）；run_galfit 崩溃 → `beam_mark_failure` 后继续下一候选
 3. **预算与去重由引擎执行：** N_max=7 次探索拟合 + 1 次保留 F1（记在 n_f1_reserved，不计入 7）；同格子候选、class 配额、队列截断均由代码裁决——不要因为"专家目标还没到"而绕过引擎手工加轮。
 4. **提前锁定（专家模式的效率条款）：** 当图中已存在 **combo==T、verdict=PASS**、且 CLAUDE.md 六条锁定准则全部满足的轮次时，可不等预算耗尽直接进入阶段三（省下的预算留给 F1 仲裁；用 `beam_status` 确认队列中已无 T 内的未执行方向）。
-5. **锁定：** 优先在 **combo==T** 的轮次中择优（`beam_status` 的 best_state 与 State ledger）；按 CLAUDE.md 的六条锁定准则直接对照图与最佳轮归档核验（verdict-PASS、concentric `.cons` 链、成分完整性、参数状态）；未通过则修复重拟合，或 `beam_grant_repair_budget` 批量修复拟合，检查干净方可落锁。
+5. **锁定：** 优先在 **combo==T** 的轮次中择优（`beam_status` 的 best_state 与 State ledger）；按 CLAUDE.md 的六条锁定准则直接对照图与最佳轮归档核验（verdict-PASS、concentric `.cons` 链、成分完整性、参数状态）；未通过则在剩余预算内修复重拟合；`beam_grant_repair_budget` **仅限用户显式授权（2026-10-28），agent 不得自主调用**（历史 0/5 的自主授权曾改善 best）——预算耗尽且检查不过时，向用户报告失败项，由用户决定。
 
 ### 专家中断协议（拟合过程中的额外指令）
 

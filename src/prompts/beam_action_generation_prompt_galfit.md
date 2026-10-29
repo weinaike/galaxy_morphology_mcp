@@ -183,7 +183,11 @@ A compact Sérsic bulge's **Re and n are strongly degenerate**: a small-Re/high-
 
 **Trigger (any one):** a free bulge n pinned at the 8 cap; bulge Re pinned at the PSF-scale floor or in the 0.2–0.5 px border zone; a bulge-involved re_chain inversion or onion area hard-fail; or ≥2 consecutive mech-FAIL rounds on the bulge family.
 
-**Rule:** the next bulge repair candidate tunes **(Re, n) JOINTLY** — `tune(bulge, re_px = <crossing a factor-2 bin>)` + `tune(bulge, n = <reseed ≈2–4 or ≈1 pseudobulge>)` as the composite's two cohesive atomic operations (exactly the "at most 2" cap, one physical goal). Growing Re is what gives a pinned n room to de-pin: the joint move changes the profile SHAPE, not just its scale, and lands in a genuinely fresh parameter cell.
+**Rule:** the next bulge repair candidate tunes **(Re, n) JOINTLY** — `tune(bulge, re_px = <crossing a factor-2 bin>)` + `tune(bulge, n = <reseed ≈2–4 or ≈1 pseudobulge>)` as the composite's two cohesive atomic operations (exactly the "at most 2" cap, one physical goal). The joint move changes the profile SHAPE, not just its scale, and lands in a genuinely fresh parameter cell.
+
+**Re DIRECTION (KILOGAS_98 retrospective)**: which way to move Re depends on the failure mode:
+- **n pinned at the 8 cap, no flat/needle collapse** → Re **LARGER** (crossing a factor-2 bin upward): growing Re is what gives a pinned n room to de-pin.
+- **Bulge flat/needle (q < 0.3) alongside a bar** → Re **SMALLER** (seed a compact round core near the PSF scale, ≈1–2 px): a large-Re bulge overlapping the bar region competes for the same light, and the optimiser flattens it along the bar axis — the collapse mechanism. A tiny round bulge (Re ≈ 1 px, q ≈ 0.65, n ≈ 0.5 pseudobulge) sits inside the bar without competing. **Re is the more sensitive knob here** — re-rounding q alone rarely holds because the optimiser pulls it back (the Re overlap with the bar drives the stretch, not the initial q).
 
 **Do NOT bundle q/PA into the joint move**: a near-round compact bulge's q and PA are ill-determined (seed them from the disk per the PA rule) — (Re, n) is the pair that carries the physics. The AGN branch (`add(agn, psf)` + joint re-warm, when a central <5 px spike is present) remains the competing candidate; this rule is the bulge-retention version of that repair.
 

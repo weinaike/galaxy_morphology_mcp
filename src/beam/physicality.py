@@ -75,9 +75,10 @@ dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
                         candidate-declared bands: with the default bound set
                         only, self-imposed caps no longer exist to hit)
   mu0_order       hard  central surface brightness (analytic): mu0_bulge >=
-                        mu0_disk, mu0_bar > mu0_disk/0.90 (bar may be fainter
-                        only within the 0.90 tolerance), mu0_agn >= mu0_bulge
-                        (psf peak via the A_psf proxy)
+                        mu0_disk, mu0_agn >= mu0_bulge
+                        (psf peak via the A_psf proxy; the mu0_bar variant was
+                        retired 2026-10-29 — bar dimness is judged by the < 5%
+                        flux existence floor alone)
   flux_share      hard  f_lens >= f_bar (a lens must not outshine its bar);
                         bulge < 3% / bar < 5% existence floors (2026-10-28
                         expert call, hard: the component should not exist or
@@ -156,7 +157,6 @@ ONION_BULGE_MISMATCH = 0.25  # round bulge in a flat bar/lens: normal config
 ONION_Q_ISO_TOL = 0.15
 _EDGE_ON_RE = re.compile(r"edge[- ]?on|dust[- ]lane", re.IGNORECASE)
 # central surface brightness ordering
-MU0_BAR_TOL = 0.90
 # flux-share windows (fractions of the total model light)
 BAR_FLUX_WIN = (0.10, 0.40)
 LENS_FLUX_WIN = (0.05, 0.35)
@@ -355,6 +355,24 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                           f"{RE_CHAIN_TOL:.0%} (required decrease outward "
                           f"bulge < bar < lens < disk < outerdisk, 3% tolerance)",
             })
+
+    # ---- bulge Re <= 0.5 * disk Re (hard; expert call 2026-10-29): a bulge
+    # exceeding half the disk's effective radius is oversized — physically the
+    # bulge should be a compact central concentration, not rival the disk.
+    # Re comparison is in EFFECTIVE radii: an expdisk's raw `re` is Rs, the
+    # record path stores re_effective = 1.68*Rs, which is what we read here.
+    _b_c = next((c for c in shaped if c.get("name") == "bulge"), None)
+    _d_c = next((c for c in shaped if c.get("name") in ("disk", "edgedisk")), None)
+    _re_b = _f(_b_c.get("re_effective")) if _b_c else None
+    _re_d = _f(_d_c.get("re_effective")) if _d_c else None
+    if _re_b is not None and _re_d is not None and _re_b > 0.5 * _re_d:
+        checks.append({
+            "severity": "hard", "check": "re_ratio",
+            "detail": f"re_bulge({_re_b:g}px) > 0.5 * re_disk({_re_d:g}px) — "
+                      f"the bulge is oversized relative to the disk (must be "
+                      f"at most half the disk's effective radius; expdisk "
+                      f"compared in Re = 1.68*Rs)",
+        })
 
     # ---- axis_ratio (hard; all shaped components incl. companions) + priors (note)
     for c in shaped:
@@ -722,12 +740,6 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                        "detail": f"mu0_agn={m_agn:.2f} >= mu0_bulge={m_bulge:.2f} "
                                  "(the AGN peak is not the brightest central source "
                                  "— A_psf proxy)"})
-    if m_bar is not None and m_disk is not None and m_bar > m_disk / MU0_BAR_TOL:
-        checks.append({"severity": "hard", "check": "mu0_order",
-                       "detail": f"mu0_bar={m_bar:.2f} > mu0_disk/{MU0_BAR_TOL:g}="
-                                 f"{m_disk / MU0_BAR_TOL:.2f} (bar far fainter than "
-                                 "the disk at centre — diffuse-bar identity question)"})
-
     # ---- flux share: fractions of the total model light
     lum_list = [10.0 ** (-0.4 * _f(c.get("mag")))
                 for c in inv if _f(c.get("mag")) is not None]

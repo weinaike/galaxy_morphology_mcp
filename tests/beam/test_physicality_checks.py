@@ -286,21 +286,16 @@ def test_mu0_bulge_disk_inversion():
     assert _has(_checks(comps), "mu0_order", "hard", "mu0_bulge")
 
 
-def test_mu0_bar_tolerance():
-    # bar slightly fainter than disk at centre passes; far fainter (over the
-    # /0.90 tolerance) fails
-    comps_ok = [
-        _comp("disk", "expdisk", re=12.0, mag=16.5, q=0.8),
-        _comp("bar", q=0.35, re=5.0, n=0.5, mag=16.6),
-        _comp("bulge", q=0.8, re=1.5, n=2.0, mag=18.0),
-    ]
-    assert not _has(_checks(comps_ok), "mu0_order", "hard", "mu0_bar")
-    comps_bad = [
+def test_mu0_bar_check_retired():
+    """The mu0_bar > mu0_disk/0.90 check was RETIRED (2026-10-29, user call):
+    bar dimness is judged by the < 5% flux existence floor alone — even a far
+    fainter bar must not trigger mu0_order here."""
+    comps_far_fainter = [
         _comp("disk", "expdisk", re=4.0, mag=16.0, q=0.8),
         _comp("bar", q=0.35, re=15.0, n=0.5, mag=18.0),
         _comp("bulge", q=0.8, re=1.0, n=2.0, mag=19.0),
     ]
-    assert _has(_checks(comps_bad), "mu0_order", "hard", "mu0_bar")
+    assert not _has(_checks(comps_far_fainter), "mu0_order", "hard", "mu0_bar")
 
 
 def test_mu0_agn_proxy():
@@ -462,3 +457,19 @@ def test_flux_existence_floors():
                      _comp("bar", q=0.3, re=4.0, n=0.5, mag=18.8)])
     notes = [str(v) for v in cband.values() if "bar flux" in str(v)]
     assert notes and not any("existence floor" in n for n in notes)
+
+
+def test_bulge_re_at_most_half_disk():
+    """re_ratio (hard, expert call 2026-10-29): with both bulge and disk,
+    re_bulge must not exceed 0.5 * re_disk — compared in EFFECTIVE radii
+    (expdisk re_effective = 1.68 * Rs, the record path's stored field)."""
+    # bulge 5.5 vs 0.5*10.08=5.04 -> hard (Rs conversion exercised)
+    inv = [_comp("disk", "expdisk", re=6.0),   # Rs=6 -> re_eff=10.08
+           _comp("bulge", q=0.9, re=5.5, n=2.0)]
+    assert _has(_checks(inv), "re_ratio", "hard", "re_bulge")
+    # bulge 4.9 vs 5.04 -> clean
+    ok = _checks([_comp("disk", "expdisk", re=6.0),
+                  _comp("bulge", q=0.9, re=4.9, n=2.0)])
+    assert not _has(ok, "re_ratio")
+    # no disk -> never fires
+    assert not _has(_checks([_comp("singlesersic", re=5.0)]), "re_ratio")

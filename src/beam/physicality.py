@@ -86,6 +86,13 @@ dual_agents_w5, 925 rounds — scripts/replay_physicality_checks.py):
                   note  bar flux fraction outside 10-40%; lens outside 5-35%
   shape_prior     hard  bulge q < 0.3 (0.3-0.4 stays a note); lens q <= 0.5;
                         bar q in (0.5, 0.7] becomes a note (round-bar watch)
+  bar_identity     note bar Re < 4 px AND q > 0.3 with no bulge present — a
+                        compact, only mildly elongated central component is
+                        more plausibly a misidentified bulge (inner oval);
+                        suggested repair reclassify(bar->bulge) alone
+                        (complete by itself); add(bar) with a LARGER Re,
+                        seeded from the residual feature, ONLY when residual
+                        evidence warrants (2026-10-30 expert call)
 
 Administrative disable switch (temporary experimentation): the env var
 ``GALMCP_DISABLE_MECH_CHECKS`` holds a comma-separated list of check families
@@ -166,6 +173,16 @@ LENS_FLUX_WIN = (0.05, 0.35)
 # bulge + central spike) the AGN replacement channel
 BULGE_EXIST_FLOOR = 0.03
 BAR_EXIST_FLOOR = 0.05
+# Bar compactness identity (2026-10-30 expert call): a bar with Re below
+# BAR_COMPACT_RE_PX, q above BAR_COMPACT_Q and no bulge in the model is more
+# plausibly a misidentified bulge/inner oval than a bar — real bars are
+# extended structures. NOTE-level advisory: suggest reclassify(bar->bulge)
+# (light parameters carried; the n=0.5 mandate releases on transcription)
+# — a complete repair by itself; an add(bar) with a LARGER Re follows ONLY
+# when the residual evidence warrants it (parameters seeded from that
+# residual feature).
+BAR_COMPACT_RE_PX = 4.0
+BAR_COMPACT_Q = 0.3
 
 # ---- administrative disable switch (GALMCP_DISABLE_MECH_CHECKS) -----------
 DISABLE_ENV = "GALMCP_DISABLE_MECH_CHECKS"
@@ -173,7 +190,7 @@ _MECH_CHECK_NAMES = frozenset({
     "re_chain", "axis_ratio", "containment", "concentric", "degeneracy",
     "bound_pin", "onion", "shape_order", "profile_prior", "mu0_order",
     "flux_share", "shape_prior", "prior", "zombie", "internal",
-    "disk_shape_inconsistency",
+    "disk_shape_inconsistency", "bar_identity",
 })
 _warned_unknown: set[str] = set()
 _disable_announced = False
@@ -674,6 +691,37 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
             checks.append({"severity": "hard", "check": "shape_order",
                            "detail": f"q_bar={qb:g} >= q_lens={ql:g} "
                                      "(a bar must be flatter than the lens)"})
+
+    # ---- bar compactness identity (note; 2026-10-30 expert call): a bar with
+    # Re < BAR_COMPACT_RE_PX, q > BAR_COMPACT_Q and NO bulge in the model is
+    # more plausibly a misidentified bulge/inner oval than a bar — real bars
+    # are extended structures, and a compact, only mildly elongated central
+    # component is the bulge signature. Advisory identity repair (note, never
+    # a veto): reclassify(bar->bulge) — a same-slot bijection carrying the
+    # fitted light parameters verbatim, the n=0.5 bar mandate releasing on
+    # transcription — is a COMPLETE repair by itself when the residuals show
+    # no extended elongated feature; ONLY IF such a feature remains is an
+    # additional add(bar) warranted, with an Re LARGER than the current one
+    # and its parameters seeded from that residual feature.
+    if bar_c and "bulge" not in by:
+        _rb = _f(bar_c.get("re_effective"))
+        _qb = _f(bar_c.get("q"))
+        if _rb is not None and _qb is not None \
+                and _rb < BAR_COMPACT_RE_PX and _qb > BAR_COMPACT_Q:
+            checks.append({
+                "severity": "note", "check": "bar_identity",
+                "detail": f"bar Re={_rb:g}px < {BAR_COMPACT_RE_PX:g}px with "
+                          f"q={_qb:g} > {BAR_COMPACT_Q:g} and no bulge in the "
+                          "model — a compact, only mildly elongated central "
+                          "component is more plausibly a bulge (inner oval) "
+                          "than a bar; suggested repair: reclassify(bar->bulge) "
+                          "(fitted light parameters carried verbatim) — a "
+                          "COMPLETE repair by itself when the residuals show "
+                          "no extended elongated feature; ONLY IF such a "
+                          "feature remains, additionally add(bar) with a "
+                          "LARGER Re, its Re/q/PA/mag seeded from that "
+                          "residual feature's measured geometry",
+            })
 
     # ---- profile priors (hard): lens/outerdisk n
     if lens_c:

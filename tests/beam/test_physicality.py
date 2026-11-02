@@ -81,6 +81,32 @@ def test_axis_ratio_limits(mini_graph):
                for c in _by(checks, "prior"))
 
 
+def test_bar_compact_identity_note(mini_graph):
+    """Bar compactness identity (2026-10-30 expert call): a compact (Re < 4px),
+    only mildly elongated (q > 0.3) bar with NO bulge present is a note
+    suggesting reclassify(bar->bulge); the add(bar) with a LARGER Re is
+    CONDITIONAL — only when residual evidence shows an extended elongated
+    feature remains (the bare reclassify is a complete repair by itself)."""
+    graph, _ = mini_graph
+    # fires: compact round-ish bar, no bulge
+    inv = [_comp("disk", 40.0), _comp("bar", 3.5, q=0.45)]
+    notes = [c for c in _checks(graph, inv)
+             if c["severity"] == "note" and c["check"] == "bar_identity"]
+    assert notes and "reclassify(bar->bulge)" in notes[0]["detail"] \
+        and "COMPLETE repair by itself" in notes[0]["detail"] \
+        and "ONLY IF" in notes[0]["detail"] \
+        and "LARGER Re" in notes[0]["detail"]
+    # a bulge present suppresses it
+    inv = [_comp("disk", 40.0), _comp("bar", 3.5, q=0.45), _comp("bulge", 1.5)]
+    assert not _by(_checks(graph, inv), "bar_identity")
+    # a genuinely thin compact bar (q <= 0.3) does not fire
+    inv = [_comp("disk", 40.0), _comp("bar", 3.5, q=0.25)]
+    assert not _by(_checks(graph, inv), "bar_identity")
+    # an extended bar (Re >= 4px) does not fire
+    inv = [_comp("disk", 40.0), _comp("bar", 8.0, q=0.45)]
+    assert not _by(_checks(graph, inv), "bar_identity")
+
+
 def test_containment_hard(mini_graph):
     graph, _ = mini_graph
     graph.g.graph["meta"]["fit_region"] = [1.0, 297.0, 1.0, 297.0]

@@ -365,20 +365,27 @@ _RUN_RESULT_REQUIRED = ("input_param_file", "output_param_file", "image_file",
 
 
 def _run_result_from_round_status(round_status_file: str) -> dict[str, Any]:
-    """Build a run_result dict BY REFERENCE from run_galfit's archived
+    """Build a run_result dict BY REFERENCE from the runner's archived
     round_status.json (2026-10-23 incident: hand-transcribing the run_galfit
     return dropped input_param_file and mangled a PNG path — the orchestrator
-    passes a path, never values)."""
+    passes a path, never values). Key-sniffed across runners: run_galfit
+    writes inputs.feedme / outputs.output_param; run_galfits writes
+    inputs.lyric / outputs.summary_files (a .gssummary list) — the engine
+    contract is format-neutral (input_param_file / output_param_file)."""
     with open(round_status_file, encoding="utf-8") as f:
         rs = json.load(f)
     inputs = rs.get("inputs") or {}
     outputs = rs.get("outputs") or {}
     fit_stats = rs.get("fit_statistics") or {}
+    summary_files = outputs.get("summary_files") or []
     return {
-        "input_param_file": inputs.get("feedme", ""),
-        "output_param_file": outputs.get("output_param", ""),
-        "image_file": outputs.get("comparison", ""),
-        "summary_file": outputs.get("summary", ""),
+        "input_param_file": inputs.get("feedme") or inputs.get("lyric", ""),
+        "output_param_file": outputs.get("output_param")
+        or (summary_files[0] if summary_files else ""),
+        "image_file": outputs.get("comparison")
+        or outputs.get("comparison_png", ""),
+        "summary_file": outputs.get("summary")
+        or (summary_files[0] if summary_files else ""),
         "round_status_file": round_status_file,
         "fit_statistics": fit_stats,
     }
@@ -590,6 +597,119 @@ def beam_enqueue_f1(
         return {"status": "failure", "error": str(e)}
 
 
+def _apply_candidate_mb(graph, action_id: str, rec: dict, parent: dict,
+                        galaxy_dir: str) -> dict:
+    """The galfits-mode apply path: mb projection for the R0 re-check,
+    transcribe_mb for the child lyric (+ .constrain), check_lyric_file as
+    the structural gate. Mirrors the galfit tail's contract (iter_id
+    consumption, in-flight marking, decision log)."""
+    try:
+        from beam_mb.candidate_schema_mb import project_mb_inventory
+        from beam_mb.lyric_doc import parse_lyric_doc
+        from beam_mb.transcribe_mb import transcribe_mb
+
+        meta = graph.g.graph.get("meta", {})
+        bands_meta = meta.get("bands", {}) or {}
+        prims = rec.get("primitives", [])
+        is_skeleton = any(p.get("op") == "skeleton" for p in prims)
+        artifacts = parent.get("artifacts", {})
+        p_lyric = artifacts.get("lyric")
+        p_gss = artifacts.get("gssummary")
+        missing = [k for k, v in (("lyric", p_lyric),
+                                  ("gssummary", p_gss if not is_skeleton
+                                   else p_lyric))
+                   if not v or not os.path.exists(v)]
+        if missing:
+            return {"status": "failure",
+                    "error": f"parent state {rec['parent']} lacks artefacts "
+                             f"{missing}"}
+
+        # R0 re-check at dequeue (shared discipline, mb projection)
+        f1_reserved = bool((rec.get("code_flags") or {}).get("f1_reserved"))
+        if not f1_reserved:
+            hypo = project_mb_inventory(parent.get("inventory", []), prims,
+                                        bands_meta)
+            from beam.cells import CellLedger, skeleton_class
+            from beam.graph import CLASS_CAPS
+
+            cls = skeleton_class(hypo)
+            if graph.class_attempt_counts().get(cls, 0) >= CLASS_CAPS[cls]:
+                graph.mark_discarded(
+                    action_id,
+                    f"CLASS_EXHAUSTED: class {cls} reached {CLASS_CAPS[cls]} "
+                    f"attempts (apply-time R0 re-check)")
+                graph.log_decision({"kind": "class-cap-discard",
+                                    "action_id": action_id, "class": cls,
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "class": cls,
+                        "message": "skeleton class hit its attempt cap after "
+                                   "enqueue — candidate discarded"}
+            if not any(k.startswith("floor_")
+                       for k in (rec.get("code_flags") or {})) \
+                    and CellLedger.from_graph(graph).is_dup(hypo, False):
+                graph.mark_discarded(
+                    action_id, "CELL_DUP (apply-time R0 re-check)")
+                graph.log_decision({"kind": "enqueue-discard",
+                                    "action_id": action_id,
+                                    "reason": "CELL_DUP (apply-time re-check)",
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": "every component cell already visited "
+                                   "after enqueue — candidate discarded"}
+            from beam.enqueue import _temp_constraint_violation
+            _viol = _temp_constraint_violation(graph, prims)
+            if _viol:
+                graph.mark_discarded(action_id, f"E_TEMP_CONSTRAINT: {_viol}")
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": f"{_viol} — candidate discarded"}
+
+        c = graph.counters()
+        iter_id = int(c.get("global_iter_id", 0)) + 1
+        out_lyric = os.path.join(galaxy_dir, f"_iter{iter_id}.lyric")
+        result = transcribe_mb(p_lyric, p_gss if not is_skeleton else None,
+                               prims, out_lyric, bands_meta=bands_meta)
+        if result.get("status") != "success":
+            graph.mark_discarded(action_id,
+                                 "E_TRANSCRIBE: " + result.get("error", ""))
+            graph.commit()
+            return {"status": "failure",
+                    "error": "transcription rejected the candidate",
+                    "detail": result.get("error"),
+                    "errors": result.get("errors"),
+                    "action_id": action_id}
+
+        c["global_iter_id"] = iter_id
+        rec["iter_id"] = iter_id
+        rec["status"] = "applied"
+        graph._drop_from_queue(action_id)
+        graph.log_decision({
+            "kind": "apply-candidate", "action_id": action_id,
+            "iter_id": iter_id, "lyric": out_lyric,
+            "constrain": result.get("constrain"),
+            "notes": result.get("notes", [])})
+        graph.commit()
+        constrain = result.get("constrain")
+        extra = f', constrain_file={constrain}' if constrain else ""
+        return {
+            "status": "success", "action_id": action_id, "iter_id": iter_id,
+            "lyric": out_lyric, "constrain": constrain,
+            "inventory": result.get("inventory"),
+            "agn_blocks": result.get("agn_blocks", []),
+            "notes": result.get("notes", []),
+            "message": "next: run_galfits_image_fitting("
+                       f"config_file={out_lyric}, extra_args="
+                       f"['--fit_method','ES']{', --parconstrain ' + os.path.basename(constrain) if constrain else ''})"
+                       f"{extra}, then beam_record_fit(action_id=..., "
+                       "run_galfits_result_json=...)",
+        }
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
 def apply_candidate(
     galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
     action_id: Annotated[str, "action_id of the pending candidate to transcribe "
@@ -624,6 +744,9 @@ def apply_candidate(
 
         parent = graph.state(rec["parent"])
         artifacts = parent.get("artifacts", {})
+        if graph.mode == "galfits":
+            return _apply_candidate_mb(graph, action_id, rec, parent,
+                                       galaxy_dir)
         p_feedme = artifacts.get("feedme")
         p_nn = artifacts.get("galfit_nn")
         # round-0 opening skeletons are applied on the unfitted root A.0 —

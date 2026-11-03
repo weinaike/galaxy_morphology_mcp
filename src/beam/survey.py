@@ -18,6 +18,18 @@ from datetime import datetime
 from typing import Any
 
 from beam.candidate_schema import parse_survey_response, validate_survey
+
+
+def _schema_pair(mode: str):
+    """(parse_survey_response, validate_survey) for the graph's format mode
+    — the mb variant keeps the identical JSON shells and report interface,
+    only the primitive models + rule engine differ."""
+    if (mode or "galfit").lower() == "galfits":
+        from beam_mb.candidate_schema_mb import (
+            parse_survey_response_mb, validate_mb_survey)
+
+        return parse_survey_response_mb, validate_mb_survey
+    return parse_survey_response, validate_survey
 from beam.digest import (
     build_global_state_description,
     build_local_state_description,
@@ -513,13 +525,13 @@ def survey_round(
             attempts_issues.append({"code": "E_SCHEMA", "message": perr})
             feedback = f"E_SCHEMA: {perr}. Return ONE fenced ```json object with the physicality_verdict and candidates keys, nothing else."
             continue
-        resp, verr = parse_survey_response(payload)
+        resp, verr = _schema_pair(graph.mode)[0](payload)
         if resp is None:
             attempts_issues.append({"code": "E_SCHEMA", "message": verr})
             feedback = f"E_SCHEMA: {verr}. Fix the field types/shapes per the contract."
             continue
         last_parsed = resp
-        report = validate_survey(resp, graph, label)
+        report = _schema_pair(graph.mode)[1](resp, graph, label)
         if report.ok:
             break
         resp = None
@@ -651,10 +663,10 @@ def orchestrator_round(galaxy_dir: str, response_json: str,
         payload = json.loads(response_json)
     except json.JSONDecodeError as e:
         return {"status": "failure", "error": f"E_SCHEMA: response_json is not valid JSON: {e}"}
-    resp, verr = parse_survey_response(payload)
+    resp, verr = _schema_pair(graph.mode)[0](payload)
     if resp is None:
         return {"status": "failure", "error": f"E_SCHEMA: {verr}"}
-    report = validate_survey(resp, graph, label)
+    report = _schema_pair(graph.mode)[1](resp, graph, label)
     if not report.ok:
         return {"status": "failure", "error": "validation failed (fix the flagged "
                                               "fields and re-call)",

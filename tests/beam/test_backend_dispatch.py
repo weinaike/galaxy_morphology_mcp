@@ -40,18 +40,26 @@ def test_unknown_mode_rejected(mini_graph):
         graph.backend()
 
 
-def test_galfits_stub_fails_loudly(tmp_path, test_data_dir):
-    """mode='galfits' init must raise the stub's NotImplementedError, not
-    silently run galfit parsing on a lyric file."""
+def test_galfits_init_uses_mb_backend(tmp_path, test_data_dir):
+    """P2 landed: mode='galfits' init runs the mb backend (arcsec inventory,
+    lyric artifact key) — never galfit parsing on a lyric file. A root
+    violating the strict invariants still fails loudly at init."""
     import shutil
 
     gdir = tmp_path / "MB"
     gdir.mkdir()
     lyric = gdir / "obj.lyric"
     shutil.copy(test_data_dir / "mb" / "mb_root.lyric", lyric)
-    with pytest.raises(NotImplementedError, match="P2"):
-        BeamGraph.init(str(gdir), str(lyric), stage1={"morphology": "t"},
-                       mode="galfits")
+    graph = BeamGraph.init(str(gdir), str(lyric), stage1={"morphology": "t"},
+                           mode="galfits")
+    assert graph.mode == "galfits"
+    assert graph.state("A.0")["artifacts"]["lyric"].endswith("obj.lyric")
+    # pathological root (band-dropping) rejected by the strict invariants
+    bad = gdir / "bad.lyric"
+    shutil.copy(test_data_dir / "mb" / "mb_agn_dangling_band.lyric", bad)
+    from beam_mb.lyric_doc import LyricError
+    with pytest.raises(LyricError, match="strict invariants"):
+        BeamGraph.init(str(gdir), str(bad), stage1={}, mode="galfits")
 
 
 def test_f1_reserved_refused_on_mb_mode(mini_graph):

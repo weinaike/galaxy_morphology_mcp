@@ -94,6 +94,106 @@ def measure_outer_iso_q(feedme: str) -> dict:
     return out
 
 
+def _mb_root_meta(root_lyric: str) -> dict:
+    """Multi-band root-lyric gate + per-band measurement table for beam_init.
+
+    Validates via check_lyric_file (static gate) AND the LyricDoc strict
+    invariants (no dangling bands/components/nuclei — the historical
+    KILOGAS band-drop pathology fails here), then measures per band the
+    PSF (FWHM_px / A_psf_px2 via compute_psf_area) and the pixel scale
+    (image WCS), returning {bands: {band: {...}}} plus best-effort
+    warnings. Structural problems return {"status": "failure", ...}.
+    """
+    warnings: list[str] = []
+    try:
+        from tools.modify_lyric import check_lyric_file
+    except Exception as e:  # pragma: no cover - import env
+        return {"status": "failure", "error": f"check_lyric_file unavailable: {e}"}
+    check = check_lyric_file(root_lyric)
+    if check.get("status") == "failure":
+        return {"status": "failure",
+                "error": f"check_lyric_file rejected the root lyric: "
+                         f"{check.get('message', '')[:400]}"}
+    try:
+        from beam_mb.lyric_doc import parse_lyric_doc
+        doc = parse_lyric_doc(root_lyric)
+        errs = doc.strict_invariant_errors()
+        if errs:
+            return {"status": "failure",
+                    "error": f"root lyric violates the strict invariants: "
+                             f"{'; '.join(errs)[:400]}"}
+    except Exception as e:
+        return {"status": "failure",
+                "error": f"LyricDoc parse failed: {e}"}
+
+    from tools.extract_summary_galfit import compute_psf_area
+
+    def _path_of(v):
+        """Extract the file path from an I-block row value. Lyric image/
+        psf/mask/sigma rows hold BARE unquoted paths inside brackets
+        (``Ia1) [/abs/path.fits, 0]``) — ast.literal_eval rejects them, so
+        the tokenizer stores the raw bracketed string; split it manually.
+        (A path containing a comma would break this — none exist in the
+        corpora.)"""
+        if isinstance(v, (list, tuple)) and v:
+            return str(v[0])
+        if isinstance(v, str):
+            s = v.strip()
+            if s.startswith("[") and s.endswith("]"):
+                inner = s[1:-1].split(",")[0].strip()
+                return inner.strip("'\"")
+            return s.strip("'\"")
+        return None
+
+    def _resolve(path, base_dir):
+        """Lyric I-blocks carry absolute paths from their originating
+        machine (e.g. /media/data/...); remap to the galaxy dir by basename
+        when the recorded path is stale."""
+        if not path:
+            return path
+        if os.path.exists(path):
+            return path
+        cand = os.path.join(base_dir, os.path.basename(path))
+        return cand if os.path.exists(cand) else path
+
+    base_dir = os.path.dirname(os.path.abspath(root_lyric))
+    bands: dict[str, dict] = {}
+    for lbl in (doc.atlas.value(2) if doc.atlas else []) or []:
+        img = doc.images.get(lbl)
+        band = str(img.value(2)) if img else lbl
+        entry: dict = {"label": lbl}
+        psf_file = _resolve(_path_of(img.value(4)) if img else None, base_dir)
+        if psf_file and os.path.exists(psf_file):
+            res = compute_psf_area(psf_file)
+            if res:
+                entry["fwhm_px"] = res[0]
+                entry["a_psf_px2"] = res[1]
+            else:
+                warnings.append(f"PSF fit failed for band {band}")
+        else:
+            warnings.append(f"PSF file missing for band {band}: {psf_file!r}")
+        image_file = _resolve(_path_of(img.value(1)) if img else None,
+                              base_dir)
+        if image_file and os.path.exists(image_file):
+            try:
+                from astropy.io import fits
+                from astropy.wcs import WCS
+                from astropy.wcs.utils import proj_plane_pixel_scales
+
+                with fits.open(image_file) as hdul:
+                    hdr = hdul[0].header
+                    shape = list(hdul[0].data.shape[-2:])
+                scales = proj_plane_pixel_scales(WCS(hdr))
+                entry["pixscale"] = float(abs(scales[0]) * 3600.0)
+                entry["region"] = [1.0, float(shape[1]), 1.0, float(shape[0])]
+            except Exception as e:
+                warnings.append(f"WCS/pixscale failed for band {band}: {e}")
+        else:
+            warnings.append(f"image file missing for band {band}: {image_file!r}")
+        bands[band] = entry
+    return {"status": "success", "bands": bands, "warnings": warnings}
+
+
 def beam_init(
     galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory "
                                "(the beam graph is created at <galaxy_dir>/beam_state/graph.json)"],
@@ -136,6 +236,9 @@ def beam_init(
                                    "selection, physicality FAIL rounds may take s*), "
                                    "{\"single_agent\": true} (provenance marker: candidates "
                                    "come from beam_enqueue_candidates, no VLM)"] = "",
+    mode: Annotated[str, "Format mode of this run: 'galfit' (single-band "
+                         "feedme; default) or 'galfits' (multi-band .lyric "
+                         "— root_feedme then points at the root lyric)"] = "galfit",
 ) -> dict[str, Any]:
     """Create (or reset) the beam-search state graph for a galaxy.
 
@@ -159,27 +262,47 @@ def beam_init(
 
         psf_fwhm_px = a_psf_px2 = None
         warnings: list[str] = []
-        try:
-            from tools.beam_actions_galfit import check_feedme_file
+        bands_meta: dict = {}
+        q_iso_res: dict = {}
+        q_iso_outer = None
+        mode = (mode or "galfit").lower()
 
-            check = check_feedme_file(root_feedme)
-            warnings = list(check.get("warnings", []))
-            if check.get("status") == "failure":
-                errors = check.get("errors") or [check.get("error", "unknown")]
-                return {"status": "failure", "error": "check_feedme_file rejected the feedme",
-                        "errors": errors, "warnings": warnings}
-            psf_fwhm_px = check.get("psf_fwhm_px")
-            a_psf_px2 = check.get("a_psf_px2")
-        except Exception as e:  # PSF measurement is best-effort
-            warnings.append(f"check_feedme_file/PSF measurement failed: {e}")
+        if mode == "galfits":
+            mb = _mb_root_meta(root_feedme)
+            if mb.get("status") == "failure":
+                return mb
+            warnings = list(mb.get("warnings", []))
+            bands_meta = mb.get("bands", {})
+            # conservative single anchors for the shared floor formulas:
+            # the widest PSF (largest FWHM in arcsec-equivalent terms governs
+            # the Re floor) and the reference (first) band's A_psf
+            fwhms = [b.get("fwhm_px") for b in bands_meta.values()
+                     if b.get("fwhm_px")]
+            psf_fwhm_px = max(fwhms) if fwhms else None
+            ref = next(iter(bands_meta.values()), None)
+            a_psf_px2 = (ref or {}).get("a_psf_px2")
+        else:
+            try:
+                from tools.beam_actions_galfit import check_feedme_file
 
-        # Outer-isophote anchor q_iso (onion flat-disk skip corroboration);
-        # best-effort — a failed measurement leaves the legacy skip behaviour
-        q_iso_res = measure_outer_iso_q(root_feedme)
-        q_iso_outer = q_iso_res.get("q_iso")
-        if q_iso_outer is None and q_iso_res.get("error"):
-            warnings.append(f"outer-isophote anchor measurement failed: "
-                            f"{q_iso_res['error']}")
+                check = check_feedme_file(root_feedme)
+                warnings = list(check.get("warnings", []))
+                if check.get("status") == "failure":
+                    errors = check.get("errors") or [check.get("error", "unknown")]
+                    return {"status": "failure", "error": "check_feedme_file rejected the feedme",
+                            "errors": errors, "warnings": warnings}
+                psf_fwhm_px = check.get("psf_fwhm_px")
+                a_psf_px2 = check.get("a_psf_px2")
+            except Exception as e:  # PSF measurement is best-effort
+                warnings.append(f"check_feedme_file/PSF measurement failed: {e}")
+
+            # Outer-isophote anchor q_iso (onion flat-disk skip corroboration);
+            # best-effort — a failed measurement leaves the legacy skip behaviour
+            q_iso_res = measure_outer_iso_q(root_feedme)
+            q_iso_outer = q_iso_res.get("q_iso")
+            if q_iso_outer is None and q_iso_res.get("error"):
+                warnings.append(f"outer-isophote anchor measurement failed: "
+                                f"{q_iso_res['error']}")
 
         stage1 = {
             "morphology": stage1_morphology,
@@ -211,8 +334,12 @@ def beam_init(
             n_max=n_max or None,
             stagnation_max=stagnation_max or None,
             ablations=ablations,
+            mode=mode,
         )
         meta = graph.g.graph["meta"]
+        if bands_meta:
+            meta["bands"] = bands_meta
+            graph.commit()
         return {
             "status": "success",
             "graph_file": graph.path,

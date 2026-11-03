@@ -177,3 +177,44 @@ def test_mb_record_fit_full_path(tmp_path, test_data_dir):
     assert graph.state(label)["verdict"]["verdict"] == "FAIL"
     assert graph.state(label)["verdict"].get("mech_veto") is True
     assert graph.g.graph["best_state"] is None
+
+
+def test_run_result_from_flat_list_outputs(tmp_path, test_data_dir):
+    """Regression (real-data 2026-11-03): this machine's run_galfits writes
+    round_status.json with ``outputs`` as a FLAT PATH LIST (the
+    existing_artifacts result), not the dict keyed summary_files/
+    comparison_png. The by-reference builder must sniff the mb artifacts
+    out of the list — beam_record_fit crashed with "'list' object has no
+    attribute 'get'" before the sniff."""
+    import json as _json
+
+    import shutil
+
+    from beam.tools import _run_result_from_round_status, _validate_run_result
+
+    arch = tmp_path / "20261103_161946__iter1"
+    arch.mkdir()
+    shutil.copy(test_data_dir / MB / "mb_iter3.lyric", arch / "_iter1.lyric")
+    shutil.copy(test_data_dir / MB / "mb_iter3.gssummary", arch / "G.gssummary")
+    shutil.copy(test_data_dir / MB / "mb_iter3_component_attributes.txt",
+                arch / "component_attributes.txt")
+    (arch / "all_bands_comparison.png").write_bytes(b"png")
+    rs_path = arch / "round_status.json"
+    rs_path.write_text(_json.dumps({
+        "stage": "galfits_finished", "status": "success",
+        "inputs": {"lyric": str(arch / "_iter1.lyric")},
+        "outputs": [str(arch / "G.gssummary"),
+                    str(arch / "all_bands_comparison.png"),
+                    str(arch / "component_attributes.txt")],
+        "fit_statistics": {"reduced_chisq": 0.91, "bic": 1088963.625},
+    }))
+    rr = _run_result_from_round_status(str(rs_path))
+    assert rr["input_param_file"].endswith("_iter1.lyric")
+    assert rr["output_param_file"].endswith("G.gssummary")
+    assert rr["image_file"].endswith("all_bands_comparison.png")
+    assert rr["summary_file"].endswith("G.gssummary")
+    assert _validate_run_result(rr, "") is None
+    from beam_mb.backend import parse_fit
+    parsed = parse_fit(rr)
+    assert parsed["metrics"]["bic"] == 1088963.625
+    assert parsed["metrics"]["chi2_nu"] == 0.91

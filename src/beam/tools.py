@@ -377,7 +377,19 @@ def _run_result_from_round_status(round_status_file: str) -> dict[str, Any]:
     inputs = rs.get("inputs") or {}
     outputs = rs.get("outputs") or {}
     fit_stats = rs.get("fit_statistics") or {}
-    summary_files = outputs.get("summary_files") or []
+    if isinstance(outputs, list):
+        # some run_galfits versions write outputs as a flat path list —
+        # sniff the mb artifacts out of it by extension/name
+        outputs_list = outputs
+        summary_files = [p for p in outputs_list if str(p).endswith(".gssummary")]
+        outputs = {}
+        if summary_files:
+            outputs["summary_files"] = summary_files
+        comps = [p for p in outputs_list if "all_bands_comparison" in str(p)]
+        if comps:
+            outputs["comparison"] = comps[0]
+    else:
+        summary_files = outputs.get("summary_files") or []
     return {
         "input_param_file": inputs.get("feedme") or inputs.get("lyric", ""),
         "output_param_file": outputs.get("output_param")

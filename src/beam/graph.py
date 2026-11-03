@@ -23,12 +23,26 @@ from datetime import datetime, timezone
 
 import networkx as nx
 
-from beam.cons_decode import decode_cons_file, effective_band, number_components
 from beam.signature import (
     canonical_signature,
     combo_identity,
     find_zombies,
 )
+
+# format-backend registry (P0 of the multi-band port, docs/design_mb_beam.md
+# §0): the seams in init()/record_fit() route on meta["mode"]; "galfit" is
+# the default and the historical behaviour (graphs predating the mode field
+# load as galfit). "galfits" = the multi-band .lyric backend (beam_mb).
+_BACKENDS = {"galfit": "beam.backend", "galfits": "beam_mb.backend"}
+
+
+def _backend_for(mode: str):
+    import importlib
+
+    mod = _BACKENDS.get((mode or "galfit").lower())
+    if mod is None:
+        raise ValueError(f"unknown beam mode {mode!r} (valid: {sorted(_BACKENDS)})")
+    return importlib.import_module(mod)
 
 SCHEMA_VERSION = 1
 GRAPH_SUBDIR = "beam_state"
@@ -59,10 +73,6 @@ G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)
 REPAIR_BUDGET_CAP = 4
-# a component NAME that is just its type string = the name-recovery fallback
-# fired (input feedme carried no # STRUCTURE: names) — a record-time lesion
-_TYPE_NAMES_AS_NAMES = {"sersic", "expdisk", "edgedisk", "psf", "ferrer",
-                        "moffat", "gaussian", "king"}
 
 
 def _now() -> str:
@@ -70,8 +80,10 @@ def _now() -> str:
 
 
 def _metric_key(metrics: dict) -> float | None:
-    """BIC convention: BIC_eff first, fall back to bic1d, then chi2."""
-    for key in ("bic_eff", "bic1d", "chi2_nu"):
+    """BIC convention: gssummary BIC first (mb), fall back to BIC_eff
+    (galfit — its fit_statistics never carries a bare "bic", so the added
+    head of the chain changes nothing for galfit graphs), then bic1d/chi2."""
+    for key in ("bic", "bic_eff", "bic1d", "chi2_nu"):
         v = metrics.get(key)
         if v is not None:
             try:
@@ -87,6 +99,15 @@ class BeamGraph:
         self.path = path
         self._lock = threading.Lock()
 
+    # ------------------------------------------------------- format backend
+    @property
+    def mode(self) -> str:
+        return (self.g.graph.get("meta", {}).get("mode") or "galfit").lower()
+
+    def backend(self):
+        """The format backend module for this graph's mode (lazy import)."""
+        return _backend_for(self.mode)
+
     # ------------------------------------------------------------------ init
     @classmethod
     def init(cls, galaxy_dir: str, root_feedme: str, stage1: dict,
@@ -95,12 +116,15 @@ class BeamGraph:
              temporary_constraints: list[dict] | None = None,
              beam_width: int | None = None, n_max: int | None = None,
              stagnation_max: int | None = None,
-             ablations: dict | None = None) -> "BeamGraph":
+             ablations: dict | None = None,
+             mode: str = "galfit") -> "BeamGraph":
+        backend = _backend_for(mode)
         g = nx.DiGraph()
         g.graph["schema_version"] = SCHEMA_VERSION
         g.graph["meta"] = {
             "galaxy_dir": os.path.abspath(galaxy_dir),
             "created_at": _now(),
+            "mode": backend.MODE,
             "psf_fwhm_px": psf_fwhm_px,
             "a_psf_px2": a_psf_px2,
             "q_iso_outer": q_iso_outer,
@@ -129,19 +153,11 @@ class BeamGraph:
         g.graph["decision_log"] = []     # cross-branch decision log entries
         g.graph["repair_budget"] = {"granted": 0, "cap": REPAIR_BUDGET_CAP, "log": []}
 
-        fit_region = None
-        try:
-            from tools.parse_feedme import parse_feedme
-            header = parse_feedme(root_feedme)
-            region = header.get("fit_region")
-            if region and len(region) == 4:
-                fit_region = tuple(float(v) for v in region)
-        except Exception:
-            header = {}
-        if fit_region:
-            g.graph["meta"]["fit_region"] = list(fit_region)
+        root_facts = backend.parse_root(root_feedme)
+        if root_facts["fit_region"]:
+            g.graph["meta"]["fit_region"] = list(root_facts["fit_region"])
 
-        inventory = list(number_components(root_feedme).values())
+        inventory = root_facts["inventory"]
         root_label = "A.0"
         g.add_node(root_label, **{
             "label": root_label,
@@ -155,7 +171,7 @@ class BeamGraph:
             "zombies": [],
             "depth": 0,
             "archive_dir": None,
-            "artifacts": {"feedme": os.path.abspath(root_feedme)},
+            "artifacts": backend.root_artifacts(root_feedme),
             "cons_effective": {},
             "is_best": False,
             "combo_key": combo_identity(inventory),
@@ -337,6 +353,12 @@ class BeamGraph:
 
         Returns (action_id, "") on success or (None, reason) on refusal.
         """
+        if self.mode != "galfit":
+            # mb F1 is the disk's P2 type-switch sersic -> sersic_f (P4 of
+            # the multi-band port, docs/design_mb_beam.md §11) — the
+            # feedme-row primitive pair below is galfit-specific
+            return None, ("the reserved F1 arbitration slot for multi-band "
+                          "(disk -> sersic_f switch) lands with P4")
         if (self.g.graph.get("meta", {}).get("f1") or {}).get("used"):
             return None, "the reserved F1 arbitration slot was already consumed"
         best = self.g.graph.get("best_state")
@@ -554,36 +576,19 @@ class BeamGraph:
         parent = self.state(parent_label)
         label = f"{branch}.{self._next_local_round(branch)}"
 
-        fit_stats = dict(run_result.get("fit_statistics") or {})
-        metrics = {k: fit_stats.get(k) for k in
-                   ("chi2_nu", "chisq1d_nu", "bic1d", "bic_eff", "sky_value",
-                    "psf_fwhm", "a_psf", "n_free", "n_data")}
-
+        backend = self.backend()
+        parsed = backend.parse_fit(run_result)
+        metrics = parsed["metrics"]
+        fitted_inv = parsed["fitted_inv"]
+        input_inv = parsed["input_inv"]
         input_param_file = run_result.get("input_param_file", "")
-        output_param_file = run_result.get("output_param_file", "")
-        fitted_inv = list(number_components(output_param_file,
-                                            name_file=input_param_file).values()) \
-            if output_param_file else []
-        input_inv = list(number_components(input_param_file).values()) \
-            if input_param_file else []
 
-        # bare-type-name guard (2026-10-23 incident): names are recovered from
-        # the INPUT feedme's # STRUCTURE: comments; a name-less input (or a
-        # missing input_param_file) silently degrades every component to its
-        # type name (expdisk/sersic) — a lesion that later explodes as
-        # E_PARAM_TYPE retry storms in survey (VLM retries can never fix a
-        # graph-side naming problem). Reject at record time instead.
-        _bare = sorted({(c.get("name") or "?").lower()
-                        for c in (fitted_inv or input_inv)
-                        if (c.get("name") or "").lower() in _TYPE_NAMES_AS_NAMES})
-        if _bare:
-            raise ValueError(
-                f"E_RECORD_TYPE_NAMES: fitted/input inventory carries bare type names "
-                f"{_bare} — the input feedme lacks '# STRUCTURE:' semantic names (or "
-                f"input_param_file was wrong). Nothing recorded. Fix the input feedme's "
-                f"names and re-record by reference (round_status_file=...)")
+        # format-specific record-time lesion guard (galfit: bare type names
+        # from a name-less input feedme — 2026-10-23 incident; see
+        # beam.backend.record_guard)
+        backend.record_guard(fitted_inv, input_inv)
 
-        cons_effective = self._decode_cons_for(input_param_file, input_inv)
+        cons_effective = backend.decode_cons_effective(input_param_file, input_inv)
 
         zombies = find_zombies(fitted_inv) if fitted_inv else []
         archive_dir = None
@@ -609,13 +614,7 @@ class BeamGraph:
             "zombies": zombies,
             "depth": int(parent.get("depth", 0)) + 1,
             "archive_dir": archive_dir,
-            "artifacts": {
-                "feedme": input_param_file,
-                "galfit_nn": output_param_file,
-                "comparison_png": run_result.get("image_file", ""),
-                "summary": run_result.get("summary_file", ""),
-                "round_status": run_result.get("round_status_file", ""),
-            },
+            "artifacts": backend.artifacts(run_result),
             "cons_effective": cons_effective,
             "is_best": False,
             "combo_key": combo_identity(fitted_inv or input_inv),
@@ -768,36 +767,6 @@ class BeamGraph:
                                            verdict)
         self.commit()
 
-    def _decode_cons_for(self, feedme: str, input_inv: list[dict]) -> dict:
-        """Effective .cons bands {(number, param): (lo, hi)} for a feedme."""
-        if not feedme:
-            return {}
-        try:
-            from tools.parse_feedme import parse_feedme
-            cons_rel = parse_feedme(feedme).get("constraint")
-        except Exception:
-            return {}
-        if not cons_rel or cons_rel.lower() == "none":
-            return {}
-        cons_file = cons_rel if os.path.isabs(cons_rel) else \
-            os.path.join(os.path.dirname(os.path.abspath(feedme)), cons_rel)
-        if not os.path.exists(cons_file):
-            return {}
-        decoded = decode_cons_file(cons_file)
-        bands: dict[str, tuple[float, float]] = {}
-        for row in decoded.numeric_rows():
-            number = int(row.comp_spec)
-            comp = next((c for c in input_inv if c.get("number") == number), None)
-            if comp is None:
-                continue
-            input_value = comp.get({"re": "re", "n": "n", "q": "ba"}.get(row.param, row.param))
-            if input_value is None:
-                continue
-            band = effective_band(row, float(input_value))
-            if band:
-                bands[f"{number}.{row.param}"] = band
-        return bands
-
     def _update_best_and_refutations(self, label: str, parent_label: str,
                                      verdict: dict | None) -> None:
         state = self.state(label)
@@ -868,19 +837,12 @@ class BeamGraph:
         bookkeeping stand as recorded)."""
         if label not in self.g.nodes:
             raise KeyError(f"state {label} not found in the graph")
+        backend = self.backend()
+        parsed = backend.parse_fit(run_result)
+        fitted_inv, input_inv = parsed["fitted_inv"], parsed["input_inv"]
         input_param_file = run_result["input_param_file"]
-        output_param_file = run_result["output_param_file"]
-        fitted_inv = list(number_components(output_param_file,
-                                            name_file=input_param_file).values())
-        input_inv = list(number_components(input_param_file).values())
-        _bare = sorted({(c.get("name") or "?").lower()
-                        for c in (fitted_inv or input_inv)
-                        if (c.get("name") or "").lower() in _TYPE_NAMES_AS_NAMES})
-        if _bare:
-            raise ValueError(
-                f"E_RECORD_TYPE_NAMES: reference feedme still yields bare type names "
-                f"{_bare} — fix the feedme's '# STRUCTURE:' names first")
-        cons_effective = self._decode_cons_for(input_param_file, input_inv)
+        backend.record_guard(fitted_inv, input_inv, context="repair")
+        cons_effective = backend.decode_cons_effective(input_param_file, input_inv)
         zombies = find_zombies(fitted_inv) if fitted_inv else []
         archive_dir = None
         if run_result.get("round_status_file"):
@@ -894,13 +856,7 @@ class BeamGraph:
             "input_inventory": input_inv,
             "zombies": zombies,
             "archive_dir": archive_dir,
-            "artifacts": {
-                "feedme": input_param_file,
-                "galfit_nn": output_param_file,
-                "comparison_png": run_result.get("image_file", ""),
-                "summary": run_result.get("summary_file", ""),
-                "round_status": run_result.get("round_status_file", ""),
-            },
+            "artifacts": backend.artifacts(run_result),
             "cons_effective": cons_effective,
             "combo_key": combo_identity(fitted_inv or input_inv),
         })

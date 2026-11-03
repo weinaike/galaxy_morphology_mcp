@@ -273,7 +273,7 @@ def survey_round(
         # error (KILOGAS_4/1023: ~3 wasted calls). Abort before the first
         # call and point at the repair channel instead.
         import os as _os
-        from beam.graph import _TYPE_NAMES_AS_NAMES
+        from beam.backend import TYPE_NAMES_AS_NAMES as _TYPE_NAMES_AS_NAMES
 
         inv_names = [(c.get("name") or "").lower()
                      for c in (state.get("inventory") or [])]

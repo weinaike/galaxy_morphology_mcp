@@ -20,12 +20,14 @@ ALL_BANDS = [
     "nircam_f277w", "nircam_f356w", "nircam_f410m",
     "nircam_f444w",
     "sloan_r", "sloan_g", "sloan_u", "sloan_i", "sloan_z",
+    "decam_u", "decam_g", "decam_r", "decam_i", "decam_z", "decam_y",
 ]
 MAG_ZERO_POINTS = [
     28.96697568756239, 28.96697568756239, 28.96697568756239,
     27.461825709242483, 27.461825709242483, 27.461825709242483,
     27.461825709242483,
     22.5, 22.5, 22.5, 22.5, 22.5,
+    22.5, 22.5, 22.5, 22.5, 22.5, 22.5,
 ]
 BANDS_ZEROPOINTS = {band: zp for band, zp in zip (ALL_BANDS, MAG_ZERO_POINTS)}
 

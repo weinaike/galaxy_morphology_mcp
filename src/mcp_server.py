@@ -20,14 +20,12 @@ from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
-from tools.beam_actions import generate_beam_actions
 from tools.beam_actions_galfit import generate_galfit_beam_actions, check_feedme_file
 from tools.re_ordering_check import check_re_ordering
 from tools.fourier_mode_analysis import fourier_mode_analysis
 from tools.bar_lopsidedness_detection import (
     detect_bar_lopsidedness,
     detect_bar_lopsidedness_from_isophote_tables,
-    detect_galfits_bar_lopsidedness,
 )
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
@@ -72,6 +70,31 @@ def _register_tools_and_prompts():
         app.add_tool(detect_bar_lopsidedness)
         app.add_tool(generate_galfit_beam_actions)
         app.add_tool(check_feedme_file)
+        logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
+
+    if has_galfits:
+
+        app.add_tool(run_galfits_image_fitting)
+        app.add_tool(run_galfits_sed_fitting)
+        app.add_tool(run_galfits_image_sed_fitting)
+        app.add_tool(analyze_multiband_components)
+        app.add_tool(check_lyric_file)
+        app.add_tool(pix2radec)
+        app.add_tool(re_arcsec2pix)
+        app.add_tool(re_pix2arcsec)
+        app.add_tool(check_re_ordering)
+        app.add_tool(pixel2arcsec_offset)
+        app.add_prompt(workflow_galfits)
+        logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
+
+    # Beam engine tools — format-neutral since the multi-band port (mode
+    # dispatch inside beam_init/graph/apply): registered whenever EITHER
+    # fitter is available. (2026-11-03 real-data fix: they used to live in
+    # the GALFIT_BIN block, so GALFITS_BIN-only sessions had no beam tools.)
+    # Retired alongside: generate_beam_actions and
+    # detect_galfits_bar_lopsidedness (the detection-driven mb flow —
+    # candidates now come solely from survey_round's VLM).
+    if has_galfit or has_galfits:
         app.add_tool(beam_init)
         app.add_tool(beam_record_fit)
         app.add_tool(beam_repair_artifacts)
@@ -84,24 +107,7 @@ def _register_tools_and_prompts():
         app.add_tool(beam_export_note)
         app.add_tool(beam_grant_repair_budget)
         app.add_tool(beam_set_constraint)
-        logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
-
-    if has_galfits:
-
-        app.add_tool(run_galfits_image_fitting)
-        app.add_tool(run_galfits_sed_fitting)
-        app.add_tool(run_galfits_image_sed_fitting)
-        app.add_tool(detect_galfits_bar_lopsidedness)
-        app.add_tool(analyze_multiband_components)
-        app.add_tool(generate_beam_actions)
-        app.add_tool(check_lyric_file)
-        app.add_tool(pix2radec)
-        app.add_tool(re_arcsec2pix)
-        app.add_tool(re_pix2arcsec)
-        app.add_tool(check_re_ordering)
-        app.add_tool(pixel2arcsec_offset)
-        app.add_prompt(workflow_galfits)
-        logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
+        logger.info("Registered beam engine tools (GALFIT_BIN or GALFITS_BIN is set)")
 
     # Shared tools — always available
     app.add_tool(view_original_image)

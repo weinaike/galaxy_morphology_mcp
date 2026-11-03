@@ -218,8 +218,13 @@ def test_full_opening_round_mb_mocked_vlm(tmp_path, test_data_dir, monkeypatch):
     res = survey_mod.survey_round(str(gdir), state_label="A.0",
                                   opening_image=str(opening_png))
     assert res.get("status") == "success", res.get("error")
-    # the mb OPENING override was used (skeleton alphabet wording)
-    assert "OPENING ROUND" in captured["turns"][1]
+    # the mb OPENING preamble is present AND the full JSON contract kept
+    # (the galfit-style prepend composition — a bare replacement dropped
+    # the contract and the VLM returned primitives without the wrapper)
+    t2 = captured["turns"][1]
+    assert "OPENING ROUND" in t2
+    assert "physicality_verdict" in t2 and "primitives" in t2
+    assert "local_benefit_sigma" in t2 and "panel_band" in t2
     assert captured["image"] == str(opening_png)
     nxt = res.get("next_candidate")
     assert nxt, res.get("candidates")

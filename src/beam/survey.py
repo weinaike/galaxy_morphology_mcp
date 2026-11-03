@@ -426,7 +426,15 @@ def survey_round(
                                           else "(none)"),
             )
             if is_opening:
-                turn2 = MB_OPENING_TURN2
+                # PREPEND the opening preamble and keep the full standard
+                # turn2 (the JSON contract with the physicality_verdict
+                # wrapper + per-candidate required fields) — mirroring the
+                # galfit composition. A wholesale replacement drops the
+                # contract and the VLM returns bare primitives (real-data
+                # KILOGAS_25: "candidates.0.primitives: Field required").
+                turn2 = (MB_OPENING_TURN2 +
+                         "\n\nReturn physicality_verdict PASS (placeholder — "
+                         "nothing is fitted yet).\n\n" + turn2)
         else:
             from tools.beam_actions_galfit import (
                 _build_summary_content_galfit, _galfit_system_message)

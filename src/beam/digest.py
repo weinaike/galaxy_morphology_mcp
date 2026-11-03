@@ -229,7 +229,8 @@ def _family_ledger(g) -> str:
     label_bic = {}
     for label, attrs in states:
         families[cls_of(attrs)].append((label, attrs))
-        label_bic[label] = (attrs.get("metrics") or {}).get("bic_eff")
+        _m = attrs.get("metrics") or {}
+        label_bic[label] = _m.get("bic_eff", _m.get("bic"))  # mb: gssummary BIC
 
     CLASS_TITLES = {
         "a": "(a) singlesersic regime",

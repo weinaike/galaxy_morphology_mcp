@@ -234,3 +234,30 @@ def test_apply_and_record_end_to_end(tmp_path, test_data_dir):
     # (component_attributes discovery under its canonical archive layout is
     # covered in test_mb_backend.test_artifacts_mb_keys)
     assert graph.g.graph["pending"][aid]["status"] == "executed"
+
+
+def test_singlesersic_to_multi_implicit_conversion(tmp_path, test_data_dir):
+    """Real-data KILOGAS_25 A.1 regression: add(bulge) on a singlesersic
+    parent is the IMPLICIT conversion (singlesersic -> disk) — the
+    validator must project {disk, bulge} (not {singlesersic, bulge}) or
+    the candidate is E_MULTIPLICITY-killed and the survey exhausts."""
+    graph = _mb_graph(tmp_path, test_data_dir)
+    # swap the recorded state's inventory to a singlesersic regime
+    # (graph.state returns a COPY — mutate the node dict directly)
+    label = graph.latest_state()
+    graph.g.nodes[label]["inventory"] = [{
+        "name": "singlesersic", "type": "sersic", "re": 7.975,
+        "re_effective": 7.975, "n": 3.77, "q": 0.785, "pa": 1.0,
+        "x": 0.0, "y": 0.0, "mags": {"decam_g": 15.3}, "toggles": {}}]
+    graph.commit()
+    r = _validate(graph, [{"op": "add", "structure_name": "bulge",
+                           "re_px": 4.0, "q": 0.85, "pa_sky_deg": 0.0,
+                           "dx_px": 0.0, "dy_px": 0.0,
+                           "panel_band": "decam_g"}], "conv1")
+    assert not r.errors, [f"{i.code}: {i.message}" for i in r.errors]
+    # add(disk) on singlesersic = the conversion itself, no duplicate
+    r = _validate(graph, [{"op": "add", "structure_name": "disk",
+                           "re_px": 30.0, "q": 0.7, "pa_sky_deg": 0.0,
+                           "dx_px": 0.0, "dy_px": 0.0,
+                           "panel_band": "decam_g"}], "conv2")
+    assert not r.errors, [f"{i.code}: {i.message}" for i in r.errors]

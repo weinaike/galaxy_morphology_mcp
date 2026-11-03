@@ -10,6 +10,7 @@ our clean-increment contract deliberately differs there).
 """
 
 import os
+import shutil
 
 import pytest
 
@@ -198,3 +199,51 @@ def test_output_passes_check_lyric_file(tmp_path, test_data_dir):
             "panel_band": "decam_g"}}])
     check = check_lyric_file(out)
     assert check["status"] == "success", check.get("message")
+
+
+def test_singlesersic_to_multi_conversion_transcription(tmp_path, test_data_dir):
+    """The transcriber side of the implicit conversion: add(bulge) on a
+    singlesersic parent renames it to disk (n=1 mandate), warm-starts the
+    disk from the parent's singlesersic_* fitted values, and appends the
+    bulge with default bands + constrain binding."""
+    import json as _json
+
+    from beam_mb.transcribe_mb import transcribe_mb
+
+    # build a singlesersic parent: lyric + a gssummary with fitted values
+    gdir = tmp_path / "SS"
+    gdir.mkdir()
+    # a fitted singlesersic parent (the real flow's _iter1: the opening
+    # skeleton renamed obj0 -> singlesersic)
+    (gdir / "p.lyric").write_text(
+        (test_data_dir / "mb" / "mb_root.lyric").read_text()
+        .replace("Pa1) obj0", "Pa1) singlesersic"))
+    gss = gdir / "p.gssummary"
+    gss.write_text(
+        "# BIC: 100.0\n# reduced chisq: 0.9\n"
+        "# free parameters:\npname    best_value\n"
+        "singlesersic_Re    7.9751\nsinglesersic_ang    1.0\n"
+        "singlesersic_axrat    0.785\nsinglesersic_xcen    0.01\n"
+        "singlesersic_ycen    -0.02\nsinglesersic_n    3.77\n"
+        "# fixed parameters:\npname    fixed_value\n")
+    out = str(gdir / "_iter2.lyric")
+    r = transcribe_mb(str(gdir / "p.lyric"), str(gss), [
+        {"op": "add", "structure_name": "bulge", "re_px": 4.0, "q": 0.85,
+         "pa_sky_deg": 0.0, "dx_px": 0.0, "dy_px": 0.0,
+         "panel_band": "decam_g"}], out, bands_meta=BM)
+    assert r["status"] == "success", r.get("error")
+    assert any("singlesersic -> disk conversion" in n for n in r["notes"])
+    doc = parse_lyric_doc(out)
+    assert [(c.name, c.ptype) for c in doc.components] == \
+        [("disk", "sersic"), ("bulge", "sersic")]
+    disk, bulge = doc.components
+    # disk mandate + warm-start from singlesersic_* fitted values
+    assert disk.slot_five("n") == (1.0, 0.5, 2.0, 0.1, 0)
+    assert disk.slot_five("re")[0] == pytest.approx(7.9751, abs=1e-3)
+    assert disk.slot_five("pa")[0] == pytest.approx(1.0)
+    assert disk.slot_five("q")[0] == pytest.approx(0.785)
+    # bulge n free-from-creation; chained subordinate centre
+    assert bulge.slot_five("n")[4] == 1 and bulge.slot_five("xcen")[4] == 0
+    assert doc.galaxies["a"].value(2) == ["a", "b"]
+    text = open(r["constrain"]).read()
+    assert "pardictlc['bulge_xcen'] = 1 * pardictlc['disk_xcen']" in text

@@ -254,6 +254,11 @@ class MbTranscriber:
             for lbl, nb in self.doc.nuclei.items()]
         self.main_galaxy = next(iter(self.doc.galaxies), None)
         self.declared: set[tuple[str, str]] = set()
+        # warm-start source override for RENAMED components (the implicit
+        # singlesersic->disk conversion: the renamed disk backfills the
+        # parent's singlesersic_* fitted values, not disk_* which don't
+        # exist in the parent gssummary)
+        self._warm_source: dict[str, str] = {}
 
     # ------------------------------------------------------------ ops
     def _gss(self, name: str, suffix: str):
@@ -349,6 +354,27 @@ class MbTranscriber:
         if name == "agn":
             self._add_agn(p)
             return
+        # ---- implicit singlesersic -> multi transition: the FIRST add of
+        # a central component converts the parent's singlesersic into the
+        # disk (rename + n=1-fixed mandate; its fitted/initial light
+        # parameters are carried). add(disk) IS the conversion itself.
+        if name in CENTRAL_STRUCTURES:
+            ss = next((c for c in self.comps if c.name == "singlesersic"),
+                      None)
+            if ss is not None:
+                ss.name = "disk"
+                ss.rows[6] = list(N_MANDATE["disk"])
+                self._warm_source["disk"] = "singlesersic"
+                self.notes.append(
+                    "singlesersic -> disk conversion (first central add): "
+                    "renamed, n=1 fixed by mandate")
+                if name == "disk":
+                    # the add's declared params re-seed the converted disk
+                    new_rows = self._new_structural_rows("disk", p, False)
+                    for idx in (3, 4, 5, 7, 8):
+                        ss.rows[idx] = new_rows[idx]
+                    self._mark_declared("disk", p)
+                    return
         if any(c.name == name for c in self.comps):
             raise LyricError(f"component {name!r} already exists")
         central_n = sum(1 for c in self.comps
@@ -495,10 +521,11 @@ class MbTranscriber:
         (fitted n keeps its mandate vary-flag: a mandated-fixed row never
         frees, and a mandated-free row takes [fitted, 0.1, 8, 0.1, 1])."""
         for comp in self.comps:
+            lookup = self._warm_source.get(comp.name, comp.name)
             for idx, (prm, suf) in _STRUCT.items():
                 if (comp.name, prm) in self.declared:
                     continue
-                fitted = self._gss(comp.name, suf)
+                fitted = self._gss(lookup, suf)
                 if fitted is None:
                     continue
                 f = comp.five(idx)

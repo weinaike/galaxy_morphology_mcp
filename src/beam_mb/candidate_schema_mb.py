@@ -225,6 +225,19 @@ def project_mb_inventory(parent_inv: list[dict], primitives: list[dict],
     inventory (names/types/Re in arcsec) — the multiplicity / re-chain
     pre-check substrate. Re from px uses the declared panel_band scale."""
     inv = [dict(c) for c in parent_inv]
+
+    def _implicit_convert():
+        """The singlesersic -> multi transition: the FIRST add of a central
+        component converts the singlesersic into the disk (rename; the
+        transcriber applies the n=1-fixed mandate) — the projected regime
+        must reflect it, or every such candidate is E_MULTIPLICITY-killed."""
+        for c in inv:
+            if (c.get("name") or "").lower() == "singlesersic":
+                c["name"] = "disk"
+                c["type"] = "sersic"
+                return True
+        return False
+
     for p in primitives:
         op = p.get("op")
         if op == "skeleton":
@@ -237,6 +250,23 @@ def project_mb_inventory(parent_inv: list[dict], primitives: list[dict],
                             "q": c.get("q"), "pa": c.get("pa_sky_deg"),
                             "x": 0.0, "y": 0.0})
         elif op == "add":
+            name = (p.get("structure_name") or "").lower()
+            has_ss = any((c.get("name") or "").lower() == "singlesersic"
+                         for c in inv)
+            if name in CENTRAL_SLOTS and has_ss:
+                _implicit_convert()
+                if name == "disk":
+                    # add(disk) on a singlesersic parent IS the conversion
+                    # (the rename above) — no duplicate disk is appended
+                    s = _pixscale(bands_meta, p.get("panel_band") or "")
+                    if s and p.get("re_px") is not None:
+                        for c in inv:
+                            if c["name"] == "disk":
+                                c["re"] = c["re_effective"] = \
+                                    p["re_px"] * s
+                                c["q"] = p.get("q", c.get("q"))
+                                c["pa"] = p.get("pa_sky_deg", c.get("pa"))
+                    continue
             s = _pixscale(bands_meta, p.get("panel_band") or "")
             re = (p.get("re_px", 0) * s) if s else None
             inv.append({"name": p.get("structure_name"), "type": "sersic",

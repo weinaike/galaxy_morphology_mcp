@@ -1,0 +1,91 @@
+# target: KILOGAS_110
+# config file: /home/jiangbo/galaxy_morphology_mcp/galfits/kilogas_mb/KILOGAS_110/_iter2.lyric
+# fitting mode: images - photometry
+# fiting method: ES
+# chisq: 370796.21875
+# free parameters (k): 18
+# dof (N - k): 596032.0
+# reduced chisq: 0.6221079230308533
+# BIC: 371035.59375
+# fitting time: 0.45297017494837444 mins
+############# data summary ############## 
+# image atals: img_list
+#    image number: 0  band: decam_g  chisq: [186028.6]  dof: [299470.]  reduced chisq: [0.62119275]
+#    image number: 1  band: decam_r  chisq: [184767.62]  dof: [296580.]  reduced chisq: [0.62299424]
+############ fitting summary ############ 
+# num_generations: 5000  popsize: 10 
+# free parameters:
+pname    best_value
+csx_decam_g    -0.8024
+csy_decam_g    0.0952
+csx_decam_r    -0.8888
+csy_decam_r    0.1656
+csx_decam_z    1.6073
+csy_decam_z    -0.2371
+logNorm_disk_decam_g    -6.5189
+logNorm_disk_decam_r    -6.2262
+disk_xcen    0.0079
+disk_ycen    -0.3255
+disk_Re    6.2080
+disk_ang    -54.7861
+disk_axrat    0.4974
+logNorm_bulge_decam_g    -8.5026
+logNorm_bulge_decam_r    -7.7277
+bulge_Re    0.3930
+bulge_ang    -46.5357
+bulge_axrat    0.5000
+# fixed parameters:
+# pname    fixed_value
+sky_decam_g    0.0000
+sky_decam_r    0.0000
+sky_decam_z    0.0000
+disk_f_cont_bin1    -2.0000
+disk_f_cont_bin2    -2.0000
+disk_f_cont_bin3    -2.0000
+disk_f_cont_bin4    -2.0000
+disk_f_cont_bin5    -2.0000
+disk_Z_value    0.0100
+disk_Av_value    0.7000
+disk_sigma    100.0000
+logM_disk    9.0000
+logU_disk    -2.0000
+AVbump_disk    3.0000
+logMdust_disk    8.1400
+Umin_disk    1.0000
+qPAH_disk    1.0000
+alphad_disk    1.0000
+gammad_disk    0.1000
+Mag_disk_decam_g    16.2972
+Mag_disk_decam_r    15.5655
+disk_n    1.0000
+bulge_f_cont_bin1    -2.0000
+bulge_f_cont_bin2    -2.0000
+bulge_f_cont_bin3    -2.0000
+bulge_f_cont_bin4    -2.0000
+bulge_f_cont_bin5    -2.0000
+bulge_Z_value    0.0100
+bulge_Av_value    0.7000
+bulge_sigma    100.0000
+logM_bulge    9.0000
+logU_bulge    -2.0000
+AVbump_bulge    3.0000
+logMdust_bulge    8.1400
+Umin_bulge    1.0000
+qPAH_bulge    1.0000
+alphad_bulge    1.0000
+gammad_bulge    0.1000
+Mag_bulge_decam_g    21.2564
+Mag_bulge_decam_r    19.3193
+bulge_xcen    0.0079
+bulge_ycen    -0.3255
+bulge_n    4.0000
+z_a    0.0527
+scale_a    1.0594
+r0_a    0.0000
+rt_a    3.0000
+v0_a    150.0000
+vc_a    0.0000
+LineSigma_a    50.0000
+logsfr_disk    0.3010
+logsfr_bulge    0.3010
+######################################### 

@@ -84,6 +84,9 @@ TYPE_ROW_MAP: dict[str, dict[str, int]] = {
     'GauRing':    {'r0': 5, 'sig': 6, 'pa': 7, 'q': 8},
     'Gaussian':   {'re': 5, 'pa': 7, 'q': 8},   # width/PA/q; P6 unused
 }
+# universal rows shared by every profile type (centre offsets, arcsec)
+for _m in TYPE_ROW_MAP.values():
+    _m.update({'xcen': 3, 'ycen': 4})
 
 # extra rows REQUIRED by type beyond the common P1-P8 core: a sersic_f block
 # missing P17-P24 key-errors inside GalfitS at load time — caught statically

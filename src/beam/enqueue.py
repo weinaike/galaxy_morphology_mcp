@@ -311,7 +311,19 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
                         and parent_re is not None:
                     parent_re = float(parent_re) * 1.68
 
-        hypo, err = apply_primitives_to_inventory(parent_inventory, prims)
+        if (graph.g.graph.get("meta", {}).get("mode") or "galfit").lower() \
+                == "galfits":
+            # mb projection (px+panel_band primitives; galfit's projector
+            # does not know the mb tune keys and would leave Re unmoved —
+            # every mb tune would then look same-cell and be CELL_DUP'd)
+            from beam_mb.candidate_schema_mb import project_mb_inventory
+
+            hypo = project_mb_inventory(
+                parent_inventory, prims,
+                graph.g.graph.get("meta", {}).get("bands") or {})
+            err = None
+        else:
+            hypo, err = apply_primitives_to_inventory(parent_inventory, prims)
         if hypo is None:
             result.discarded.append({"reason": "E_APPLY", "detail": err,
                                      "tag": cand.expected_behavior_tag})

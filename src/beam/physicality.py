@@ -349,7 +349,26 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
     if not inv:
         return checks
     meta = graph.g.graph.get("meta", {})
-    psf = _f(meta.get("psf_fwhm_px")) or 1.0
+    _mode = (meta.get("mode") or "galfit").lower()
+    _is_mb = _mode == "galfits"
+    _bands = meta.get("bands") or {} if _is_mb else {}
+    if _is_mb:
+        # canonical mb inventory is ARCSEC — derive the PSF scale from the
+        # widest band (FWHM_px x pixscale) so the degeneracy / multi-pin
+        # comparisons stay unit-consistent (P5)
+        _fw = [float(v["fwhm_px"]) * float(v["pixscale"])
+               for v in _bands.values()
+               if v.get("fwhm_px") and v.get("pixscale")]
+        psf = max(_fw) if _fw else 1.0
+        _ref_band = next(iter(_bands.values()), None) or {}
+        _ref_scale = float(_ref_band.get("pixscale") or 0.0)
+        # px-denominated thresholds -> arcsec equivalents on the reference band
+        _bar_compact = BAR_COMPACT_RE_PX * _ref_scale if _ref_scale \
+            else BAR_COMPACT_RE_PX
+    else:
+        psf = _f(meta.get("psf_fwhm_px")) or 1.0
+        _ref_scale = 0.0
+        _bar_compact = BAR_COMPACT_RE_PX
     region = meta.get("fit_region")
 
     main = [c for c in inv if not _COMPANION_RE.match(c.get("name") or "")]
@@ -706,11 +725,12 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
     if bar_c and "bulge" not in by:
         _rb = _f(bar_c.get("re_effective"))
         _qb = _f(bar_c.get("q"))
+        _unit = 'arcsec (ref band)' if _is_mb else 'px'
         if _rb is not None and _qb is not None \
-                and _rb < BAR_COMPACT_RE_PX and _qb > BAR_COMPACT_Q:
+                and _rb < _bar_compact and _qb > BAR_COMPACT_Q:
             checks.append({
                 "severity": "note", "check": "bar_identity",
-                "detail": f"bar Re={_rb:g}px < {BAR_COMPACT_RE_PX:g}px with "
+                "detail": f"bar Re={_rb:g} < {_bar_compact:g} {_unit} with "
                           f"q={_qb:g} > {BAR_COMPACT_Q:g} and no bulge in the "
                           "model — a compact, only mildly elongated central "
                           "component is more plausibly a bulge (inner oval) "
@@ -772,7 +792,11 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                          "grabs envelope flux)"})
 
     # ---- mu0 ordering (hard; analytic central surface brightness)
+    # mb: A_psf is px^2 of the reference band while mu0 differences run on
+    # arcsec Re — convert to arcsec^2 so the AGN proxy stays consistent
     a_psf = _f(meta.get("a_psf_px2"))
+    if _is_mb and a_psf and _ref_scale:
+        a_psf = a_psf * _ref_scale * _ref_scale
     m_disk = _comp_mu0(by["disk"], a_psf) if "disk" in by else None
     m_bulge = _comp_mu0(by["bulge"], a_psf) if "bulge" in by else None
     m_bar = _comp_mu0(by["bar"], a_psf) if "bar" in by else None

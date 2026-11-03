@@ -299,10 +299,15 @@ def survey_round(
                              f"round_status_file=<that round's archived "
                              f"round_status.json>); do NOT re-call the surveyor"}
         artifacts = state.get("artifacts", {})
-        dangling = [k for k, v in (("feedme", artifacts.get("feedme")),
-                                   ("galfit_nn", artifacts.get("galfit_nn")),
-                                   ("comparison_png", artifacts.get("comparison_png")))
-                    if not v or not _os.path.exists(v)]
+        if graph.mode == "galfits":
+            _req = (("lyric", artifacts.get("lyric")),
+                    ("gssummary", artifacts.get("gssummary")),
+                    ("comparison_png", artifacts.get("comparison_png")))
+        else:
+            _req = (("feedme", artifacts.get("feedme")),
+                    ("galfit_nn", artifacts.get("galfit_nn")),
+                    ("comparison_png", artifacts.get("comparison_png")))
+        dangling = [k for k, v in _req if not v or not _os.path.exists(v)]
         if dangling:
             return {"status": "failure", "code": "E_GRAPH_STATE",
                     "error": f"state {label}'s artifacts are missing/nonexistent: "
@@ -310,7 +315,8 @@ def survey_round(
                              f"before surveying; do NOT re-call the surveyor"}
 
     artifacts = state.get("artifacts", {})
-    feedme = artifacts.get("feedme")
+    is_mb = graph.mode == "galfits"
+    feedme = artifacts.get("lyric" if is_mb else "feedme")
     if is_opening:
         # round-0: no galfit.NN / comparison exist; the rendered original is
         # the survey image and the root feedme is the header/sky/reference
@@ -323,9 +329,10 @@ def survey_round(
                     "error": f"opening round is missing inputs: {missing}; "
                              "run render_original and pass opening_image"}
     else:
-        fitted = artifacts.get("galfit_nn")
+        fitted = artifacts.get("gssummary" if is_mb else "galfit_nn")
         comparison = artifacts.get("comparison_png")
-        missing = [k for k, v in (("feedme", feedme), ("galfit_nn", fitted),
+        _fitted_key = "gssummary" if is_mb else "galfit_nn"
+        missing = [k for k, v in (("feedme", feedme), (_fitted_key, fitted),
                                   ("comparison_png", comparison)) if not v or not os.path.exists(v)]
         if missing:
             return {"status": "failure",
@@ -338,19 +345,26 @@ def survey_round(
     if is_opening:
         triggers = {}
         ref_lines = ""
-        try:
-            from tools.beam_actions_galfit import check_feedme_file as _cff
+        if is_mb:
+            try:
+                from beam_mb.survey_mb import mb_opening_ref_lines
+                ref_lines = mb_opening_ref_lines(feedme)
+            except Exception as e:  # reference formatting is best-effort
+                ref_lines = f"(root lyric reference parse failed: {e})"
+        else:
+            try:
+                from tools.beam_actions_galfit import check_feedme_file as _cff
 
-            refs = _cff(feedme).get("components", [])
-            ref_lines = "; ".join(
-                f"{c.get('name')} ({c.get('type')}): Re_eff="
-                f"{(c.get('params') or {}).get('re_effective_px')}px, mag="
-                f"{(c.get('params') or {}).get('mag')}, q={(c.get('params') or {}).get('q')}, "
-                f"PA={(c.get('params') or {}).get('pa_deg')}deg, centre=("
-                f"{(c.get('params') or {}).get('x_px')},"
-                f"{(c.get('params') or {}).get('y_px')})px" for c in refs) or "(unparsed)"
-        except Exception as e:  # reference formatting is best-effort
-            ref_lines = f"(input feedme reference parse failed: {e})"
+                refs = _cff(feedme).get("components", [])
+                ref_lines = "; ".join(
+                    f"{c.get('name')} ({c.get('type')}): Re_eff="
+                    f"{(c.get('params') or {}).get('re_effective_px')}px, mag="
+                    f"{(c.get('params') or {}).get('mag')}, q={(c.get('params') or {}).get('q')}, "
+                    f"PA={(c.get('params') or {}).get('pa_deg')}deg, centre=("
+                    f"{(c.get('params') or {}).get('x_px')},"
+                    f"{(c.get('params') or {}).get('y_px')})px" for c in refs) or "(unparsed)"
+            except Exception as e:  # reference formatting is best-effort
+                ref_lines = f"(input feedme reference parse failed: {e})"
         local_desc = (
             "Round-0 OPENING survey: NO fit exists yet — the image is the RENDERED "
             "ORIGINAL (asinh stretch + isophote contours), NOT a comparison panel; "
@@ -381,33 +395,67 @@ def survey_round(
     # ---- prompt assembly (system message mirrors the legacy generator)
     try:
         from prompts import prompts as prompt_singleton
-        from tools.beam_actions_galfit import _build_summary_content_galfit, _galfit_system_message
 
-        system_message = _galfit_system_message()
-        component_spec = prompt_singleton.get_component_specification_galfit()
-        if component_spec:
-            system_message = system_message + "\n\n" + component_spec
-        if is_opening:
-            summary_content = ("(round-0 opening: no fitted parameters — seed from the "
-                               "input-feedme references in the local supplement)")
+        if is_mb:
+            from beam_mb.survey_mb import (MB_OPENING_TURN2,
+                                           mb_summary_content,
+                                           mb_system_message)
+
+            system_message = mb_system_message()
+            if is_opening:
+                summary_content = ("(round-0 opening: no fitted parameters — seed "
+                                   "from the root-lyric references in the local "
+                                   "supplement)")
+            else:
+                summary_content = mb_summary_content(
+                    artifacts.get("gssummary") or fitted,
+                    artifacts.get("component_attributes") or "")
+            turn1 = prompt_singleton.get_survey_visual_extraction_mb(
+                global_state_description=global_desc)
+            turn2 = prompt_singleton.get_survey_candidate_generation_mb(
+                summary_content=summary_content,
+                global_state_description=global_desc,
+                local_state_description=local_desc,
+                branch_id=label.split(".")[0],
+                parent_label=state.get("parent") or label,
+                depth=int(state.get("depth", 1)),
+                queue_digest=queue_digest,
+                directives=directives or ("(round-0 opening — skeleton primitives "
+                                          "only; return physicality_verdict PASS "
+                                          "as a placeholder)" if is_opening
+                                          else "(none)"),
+            )
+            if is_opening:
+                turn2 = MB_OPENING_TURN2
         else:
-            summary_content = _build_summary_content_galfit(
-                feedme, artifacts.get("galfit_nn"), artifacts.get("summary") or "")
-        turn1 = prompt_singleton.get_survey_visual_extraction(
-            global_state_description=global_desc)
-        turn2 = prompt_singleton.get_survey_candidate_generation(
-            summary_content=summary_content,
-            global_state_description=global_desc,
-            local_state_description=local_desc,
-            branch_id=label.split(".")[0],
-            parent_label=state.get("parent") or label,
-            depth=int(state.get("depth", 1)),
-            queue_digest=queue_digest,
-            directives=directives or ("(round-0 opening — skeleton primitives only; "
-                                      "return physicality_verdict PASS as a "
-                                      "placeholder)" if is_opening else "(none)"),
-        )
-        if is_opening:
+            from tools.beam_actions_galfit import (
+                _build_summary_content_galfit, _galfit_system_message)
+
+            system_message = _galfit_system_message()
+            component_spec = prompt_singleton.get_component_specification_galfit()
+            if component_spec:
+                system_message = system_message + "\n\n" + component_spec
+            if is_opening:
+                summary_content = ("(round-0 opening: no fitted parameters — seed from the "
+                                   "input-feedme references in the local supplement)")
+            else:
+                summary_content = _build_summary_content_galfit(
+                    feedme, artifacts.get("galfit_nn"), artifacts.get("summary") or "")
+            turn1 = prompt_singleton.get_survey_visual_extraction(
+                global_state_description=global_desc)
+            turn2 = prompt_singleton.get_survey_candidate_generation(
+                summary_content=summary_content,
+                global_state_description=global_desc,
+                local_state_description=local_desc,
+                branch_id=label.split(".")[0],
+                parent_label=state.get("parent") or label,
+                depth=int(state.get("depth", 1)),
+                queue_digest=queue_digest,
+                directives=directives or ("(round-0 opening — skeleton primitives only; "
+                                          "return physicality_verdict PASS as a "
+                                          "placeholder)" if is_opening else "(none)"),
+            )
+        if is_opening and not is_mb:
             turn2 = (
                 "## OPENING ROUND (round-0; the parent is the unfitted root A.0)\n"
                 "Return 1-3 RANKED opening skeleton candidates. Each candidate uses "

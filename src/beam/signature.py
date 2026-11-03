@@ -68,6 +68,10 @@ def normalize_entry(entry: dict) -> dict:
         "x": entry.get("x"),
         "y": entry.get("y"),
         "mag": entry.get("mag"),
+        # mb inventories carry per-band magnitudes — passed through for the
+        # digest rendering (signature comparisons ignore extra keys)
+        "mags": dict(entry["mags"]) if isinstance(entry.get("mags"), dict)
+        else None,
         "re": re_raw,
         "re_effective": re_eff,
         "n": entry.get("n"),

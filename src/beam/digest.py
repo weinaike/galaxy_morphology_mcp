@@ -27,7 +27,9 @@ def _fmt(v, digits=4):
     return f"{f:.{digits}g}"
 
 
-def _comp_line(c: dict) -> str:
+def _comp_line(c: dict, bands_meta: dict | None = None) -> str:
+    if bands_meta is not None:
+        return _comp_line_mb(c, bands_meta)
     name = c.get("name") or "?"
     re_eff = c.get("re_effective")
     if re_eff is None and c.get("re") is not None:
@@ -59,10 +61,61 @@ def _comp_line(c: dict) -> str:
     return f"{name}({','.join(parts)})" if parts else name
 
 
+def _comp_line_mb(c: dict, bands_meta: dict) -> str:
+    """mb inventory line: arcsec structural values + per-band mags (+ the
+    reference band's px rendering when its pixscale is known, so the VLM
+    can diff against its panel reading)."""
+    name = c.get("name") or "?"
+    parts = [f"Re={_fmt(c.get('re_effective'))}\""]
+    ref = next(iter(bands_meta), "") if bands_meta else ""
+    s = ((bands_meta or {}).get(ref) or {}).get("pixscale")
+    if s and c.get("re_effective") is not None:
+        parts.append(f"(={float(c['re_effective']) / float(s):.1f}px @{ref})")
+    mags = c.get("mags") or {}
+    if mags:
+        parts.append("Mag[" + ",".join(
+            f"{b}={_fmt(m, 3)}" for b, m in mags.items()) + "]")
+    elif c.get("mag") is not None:
+        parts.append(f"M={_fmt(c.get('mag'), 4)}")
+    if c.get("n") is not None:
+        tog = (c.get("toggles") or {}).get("n", 1)
+        parts.append(f"n={_fmt(c.get('n'), 3)}{'f' if not tog else ''}")
+    if c.get("q") is not None:
+        parts.append(f"q={_fmt(c.get('q'), 3)}")
+    if c.get("pa") is not None:
+        parts.append(f"skyPA={_fmt(c.get('pa'), 4)}")
+    return f"{name}({','.join(parts)})" if parts else name
+
+
 # --------------------------------------------------------------------- global
 def build_global_state_description(g) -> str:
     meta = g.g.graph.get("meta", {})
     lines: list[str] = []
+    is_mb = (meta.get("mode") or "galfit").lower() == "galfits"
+
+    if is_mb:
+        bands = meta.get("bands") or {}
+        bl = "; ".join(f"{b}: FWHM={_fmt((v or {}).get('fwhm_px'))}px, "
+                       f"pixscale={_fmt((v or {}).get('pixscale'), 4)}\"/px"
+                       for b, v in bands.items()) or "(unmeasured)"
+        lines.append("[Meta] Unit contract (multi-band): the fitted table below is "
+                     "in ARCSEC (canonical) with per-band mags; YOUR measurements "
+                     "and candidate values are px OF ONE NAMED BAND (panel_band) — "
+                     "the transcription layer converts; never write arcsec.")
+        lines.append(f"      Bands: {bl}")
+        lines.append("      PA convention: sky-PA (0=N, CCW toward E — read "
+                     "against the panel compass).")
+        best = g.g.graph.get("best_state")
+        if best:
+            bm = g.state(best).get("metrics", {})
+            lines.append(f"      Current best s*: {best} (BIC={_fmt(bm.get('bic'))}, "
+                         f"red_chisq={_fmt(bm.get('reduced_chisq'))}, combo="
+                         f"{g.state(best).get('combo_key')}).")
+        stage1 = g.g.graph.get("stage1", {})
+        if stage1.get("morphology"):
+            lines.append(f"      Stage-1: {str(stage1['morphology'])[:400]}")
+        lines.extend(_shared_global_tail(g, meta))
+        return "\n".join(lines)
 
     lines.append("[Meta] Pixel contract: every Re/position below is px, same frame as the "
                  "panels and the feedme rows (no unit conversion exists; arcsec forbidden).")
@@ -86,7 +139,14 @@ def build_global_state_description(g) -> str:
     except Exception:
         skeletons = []
     lines.append("[Stage-1 conclusions] " + _stage1_line(stage1, skeletons))
+    lines.extend(_shared_global_tail(g, meta))
+    return "\n".join(lines)
 
+
+def _shared_global_tail(g, meta: dict) -> list[str]:
+    """Mode-neutral digest sections: family ledger, rollback edges,
+    verified basins, refuted hypotheses, budget, temporary constraints."""
+    lines: list[str] = []
     lines.append("")
     lines.append(_family_ledger(g))
 
@@ -131,8 +191,7 @@ def build_global_state_description(g) -> str:
     for t in tcs:
         lines.append(f"  - ACTIVE {t.get('issued', '?')} ({t.get('text', '')}) "
                      f"forbidden structures: {', '.join(t.get('forbid_structures', [])) or '-'}")
-
-    return "\n".join(lines)
+    return lines
 
 
 def _family_ledger(g) -> str:
@@ -148,6 +207,9 @@ def _family_ledger(g) -> str:
     visible), dBIC_eff vs parent, chi2/A_psf, BIC_eff, verdict, tags.
     Twin rounds (kept fit with |dBIC| < 1.0) are marked, not repeated.
     """
+    _meta = g.g.graph.get("meta", {})
+    bands_meta = _meta.get("bands") \
+        if (_meta.get("mode") or "galfit").lower() == "galfits" else None
     states = sorted(
         ((s, a) for s, a in g.g.nodes(data=True) if a.get("global_iter_id", 0) > 0),
         key=lambda kv: kv[1]["global_iter_id"])
@@ -190,7 +252,7 @@ def _family_ledger(g) -> str:
         seen_bics = []
         for label, attrs in entries:
             inv = normalize_inventory(attrs.get("inventory", []))
-            combo = "+".join(_comp_line(c) for c in inv) or "(empty)"
+            combo = "+".join(_comp_line(c, bands_meta) for c in inv) or "(empty)"
             metrics = attrs.get("metrics", {})
             verdict = (attrs.get("verdict") or {}).get("verdict", "-")
             parent = attrs.get("parent")
@@ -260,6 +322,9 @@ def build_local_state_description(g, state_label: str,
     """Objective description of the state being surveyed + trigger flags."""
     state = g.state(state_label)
     inv = normalize_inventory(state.get("inventory", []))
+    _meta = g.g.graph.get("meta", {})
+    bands_meta = _meta.get("bands") \
+        if (_meta.get("mode") or "galfit").lower() == "galfits" else None
     injected = injected or {}
     triggers: dict[str, bool] = {}
     lines: list[str] = []
@@ -298,7 +363,8 @@ def build_local_state_description(g, state_label: str,
                      ">=2 crashes is BANNED (code discards its candidates); do "
                      "NOT re-propose a once-crashed kind without a materially "
                      "different seeding grounded in NEW residual evidence.")
-    lines.append("  inventory: " + ("; ".join(_comp_line(c) for c in inv) or "(empty)"))
+    lines.append("  inventory: " + ("; ".join(_comp_line(c, bands_meta) for c in inv)
+                                   or "(empty)"))
     metrics = state.get("metrics", {})
 
     # ---- bound-hit list (effective bands)

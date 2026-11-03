@@ -202,4 +202,33 @@ class Prompts(metaclass=SingletonMeta):
             template = template.replace("{" + key + "}", str(value) if value is not None else "")
         return template
 
+    # --- Surveyor (mechanised beam search, GalfitS multi-band) ---
+    # beam_survey_prompt_galfits.md, same phase markers and placeholder
+    # names as the galfit variant — survey.py swaps the pair by mode.
+
+    def _survey_galfits_phases(self):
+        return self._read_phases("beam_survey_prompt_galfits.md")
+
+    def get_survey_visual_extraction_mb(self, global_state_description=""):
+        template = self._survey_galfits_phases()["_first"]
+        return template.replace("{global_state_description}",
+                                str(global_state_description or ""))
+
+    def get_survey_candidate_generation_mb(self, summary_content,
+                                           global_state_description="",
+                                           local_state_description="",
+                                           branch_id="", parent_label="", depth=1,
+                                           queue_digest="", directives=""):
+        template = self._survey_galfits_phases()["candidate_generation"]
+        for key, value in [("summary_content", summary_content),
+                           ("global_state_description", global_state_description),
+                           ("local_state_description", local_state_description),
+                           ("branch_id", branch_id),
+                           ("parent_label", parent_label),
+                           ("depth", depth),
+                           ("queue_digest", queue_digest),
+                           ("directives", directives)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
+
 prompts = Prompts()

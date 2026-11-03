@@ -30,7 +30,8 @@ def test_parse_root_initial_inventory(test_data_dir):
     assert facts["bands"] == ["decam_g", "decam_r", "decam_z"]
     assert facts["center"] == (326.27075, -7.40769)
     (obj,) = facts["inventory"]
-    assert obj["name"] == "obj0" and obj["type"] == "sersic"
+    assert obj["name"] == "singlesersic" and obj["type"] == "sersic"
+    assert any("normalised" in n for n in facts["notes"])
     # initial values from the five-tuples, arcsec / sky-PA
     assert obj["re"] == 3.0 and obj["re_effective"] == 3.0
     assert obj["n"] == 2.5 and obj["q"] == 0.5 and obj["pa"] == 45.0
@@ -147,7 +148,7 @@ def test_mb_record_fit_full_path(tmp_path, test_data_dir):
                            mode="galfits")
     assert graph.mode == "galfits"
     root = graph.state("A.0")
-    assert [c["name"] for c in root["inventory"]] == ["obj0"]
+    assert [c["name"] for c in root["inventory"]] == ["singlesersic"]
 
     label = graph.record_fit({
         "input_param_file": _p(test_data_dir, "mb_iter3.lyric"),
@@ -218,3 +219,31 @@ def test_run_result_from_flat_list_outputs(tmp_path, test_data_dir):
     parsed = parse_fit(rr)
     assert parsed["metrics"]["bic"] == 1088963.625
     assert parsed["metrics"]["chi2_nu"] == 0.91
+
+
+def test_parse_root_normalises_starter_name(test_data_dir):
+    """obj0 -> singlesersic at the GRAPH level (the mb analog of galfit's
+    root.feedme name-insertion — GalfitS keeps names in P1 rows, so no
+    file rewrite: the root file itself stays untouched)."""
+    r = parse_root(_p(test_data_dir, "mb_root.lyric"))
+    (obj,) = r["inventory"]
+    assert obj["name"] == "singlesersic"
+    assert any("normalised" in n for n in r["notes"])
+    # the FILE is untouched: reparsing still sees obj0, and re-normalising
+    # is idempotent at the graph layer
+    from beam_mb.lyric_doc import parse_lyric_doc
+    assert parse_lyric_doc(_p(test_data_dir, "mb_root.lyric")) \
+        .components[0].name == "obj0"
+    # a meaningful name survives as-is (no false renames)
+    import shutil as _sh
+    import pathlib as _pl
+    named = _pl.Path(_p(test_data_dir, "mb_root.lyric")).read_text() \
+        .replace("Pa1) obj0", "Pa1) disk")
+    t = _pl.Path(_p(test_data_dir, "mb_root.lyric")).parent
+    # (in-place fixture editing is unsafe — parse from text via tmp file)
+    import tempfile as _tf
+    with _tf.NamedTemporaryFile("w", suffix=".lyric", delete=False) as fh:
+        fh.write(named)
+        tmp_named = fh.name
+    r2 = parse_root(tmp_named)
+    assert r2["inventory"][0]["name"] == "disk" and not r2["notes"]

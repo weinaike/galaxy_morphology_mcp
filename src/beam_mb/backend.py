@@ -201,16 +201,38 @@ def _inventory_from_doc(doc: LyricDoc, params: dict | None) -> list[dict]:
 def parse_root(root_config: str) -> dict:
     """Root-lyric facts for ``BeamGraph.init`` (arcsec inventory from the
     initial five-tuples; strict invariants enforced — a pathological root
-    like the KILOGAS_110 _iter7 band-dropping lyric fails loudly)."""
+    like the KILOGAS_110 _iter7 band-dropping lyric fails loudly).
+
+    Starter-name normalisation: a root lyric's single luminous block is a
+    MEANINGLESS placeholder name (``obj0``/``comp0``/... — the mb analog
+    of galfit's # STRUCTURE: insertion step, which exists there because
+    GALFIT drops names from outputs; GalfitS keeps names in the P1 row,
+    so no file rewrite is needed). The graph renames a lone non-slot
+    starter to ``singlesersic`` so the opening digest/reference lines,
+    combo/class keys and any fallback fit all speak the alphabet. The
+    FILE is never modified; the opening skeleton replaces the block
+    anyway."""
     doc = parse_lyric_doc(root_config)
     errs = doc.strict_invariant_errors()
     if errs:
         raise LyricError(
             f"root lyric violates the strict invariants: {'; '.join(errs)}")
+    inventory = _inventory_from_doc(doc, None)
+    notes: list[str] = []
+    _KNOWN = {"disk", "bulge", "bar", "agn", "singlesersic", "lens",
+              "outerdisk", "edgedisk"}
+    if len([c for c in inventory if c.get("type") != "psf"]) == 1:
+        c = inventory[0]
+        if (c.get("name") or "").lower() not in _KNOWN:
+            notes.append(
+                f"starter name '{c.get('name')}' normalised to "
+                f"'singlesersic' (graph-level; the root file is untouched)")
+            c["name"] = "singlesersic"
     return {"fit_region": None,
-            "inventory": _inventory_from_doc(doc, None),
+            "inventory": inventory,
             "bands": doc.band_names,
-            "center": doc.center}
+            "center": doc.center,
+            "notes": notes}
 
 
 def _fit_stats(run_result: dict) -> dict:

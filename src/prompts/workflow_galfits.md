@@ -20,36 +20,42 @@
 2. `beam_init(galaxy_dir, root_feedme=<根 .lyric>, mode="galfits", stage1_morphology="<你对原图的形态学自由文本判断>")`。
    - 引擎执行：`check_lyric_file` 静态门 + 严格不变量（I/P/N 块的装配完整性）双校验；逐波段测量 PSF FWHM/A_psf 与 pixscale 写入图 meta；解析根 lyric 的初值库存为 A.0。
    - 形态学判断就是自由文本（可含你看到的 bar/盘/核球描述），**不调用任何检测工具**，检测结论不构成候选触发条件。
-3. **首次拟合（确定性）**：把根 lyric 原样拷贝为星系主目录 `_iter1.lyric` → `run_galfits_image_fitting(config_file=<_iter1.lyric>, extra_args=["--fit_method","ES"])` → `beam_record_fit(galaxy_dir, action_id="", round_status_file=<workplace>/round_status.json)`。
-   - 引擎按引用登记（`inputs.lyric` / `outputs.summary_files` 自动映射），解析 gssummary（free+fixed 两段）为 arcsec 库存，BIC 直接作为状态指标。
 
-### 步骤 1. 主循环（在终止条件触发前持续）
+### 步骤 1. 开局（与 workflow_galfit.md 同构：VLM 先看图 → 转录 → 才拟合）
+
+初始状态 A.0 是**未拟合**的根（根 lyric 结构的机械拷贝，BIC=⊥）——**A.0 永不直接拟合**。
+
+1. **Round-0 opening survey（开局由 VLM 出题）**：`survey_round(galaxy_dir, state_label="A.0", opening_image=<开局图>)` ——surveyor 读原图 + 引擎注入的根 lyric obj0 参考参数，返回 **1–3 个排名 skeleton 候选**（每个候选用单个 `skeleton` 原语声明整份光度模型及每成分参数 `re_px / q / pa_sky_deg / dx_px / dy_px / panel_band`；字母表 = singlesersic 单独 XOR 含 disk 的 {disk, bulge, bar} 子集；组件数由 VLM 依图像决定，无固定阶梯）。引擎校验（解空间/两机制/arcsec Re 链预检）后以 A.0 为父入队并返回 `next_candidate`（首位骨架）；无 verdict 结算（尚无拟合）。obj0 参考参数是 **seeding 参考**（总量级/Re 量级/q/PA/中心的锚点），不是照抄模板；其余骨架候选带 `opening_alternate` 标记留队——主线不佳时束搜索花费的未试方向，豁免截断与老化淘汰。
+2. **首拟合（标准循环接管）**：`apply_candidate(galaxy_dir, action_id=<next_candidate>)`（转录出 `_iter1.lyric` + K≥2 时 `iter1.constrain`；骨架自带全部初值，无 gssummary 回填）→ `run_galfits_image_fitting(config_file=<_iter1.lyric>, extra_args=["--fit_method","ES"] (+ "--parconstrain","iter1.constrain"))` → `beam_record_fit(galaxy_dir, action_id=<该骨架 id>, round_status_file=<workplace>/round_status.json)`（按引用登记：`inputs.lyric` / outputs 自动嗅探；gssummary free+fixed 两段解析为 arcsec 库存，BIC 为状态指标）→ `survey_round(galaxy_dir)`（第一轮普通 survey：结算 A.1 的 verdict 并入队残差驱动候选）。
+   - 首拟合失败（无 summary/对比图）：骨架 seeding 已坏——不继续循环；检查 opening survey 工件、按其信息修复（或带 directives 重跑 opening survey），从 1 重来。
+
+### 步骤 2. 主循环（在终止条件触发前持续）
 
 ```
 while beam_status 显示队列非空且预算未耗尽:
+    1. next = <上一次 survey_round 返回的 next_candidate>        # 引擎排序
+    2. apply_candidate(galaxy_dir, action_id=next)
+       → _iter{n}.lyric (+ iter{n}.constrain)；R0 复检（class caps / cells /
+         临时约束）、热启动回填、默认边界集、类型强制全部由引擎完成
+    3. run_galfits_image_fitting(config_file=<_iter{n}.lyric>,
+          extra_args=["--fit_method","ES"] (+ "--parconstrain","iter{n}.constrain"))
+    4. beam_record_fit(galaxy_dir, action_id=next,
+          round_status_file=<workplace>/round_status.json)
+       → 登记状态 + mech 检查（arcsec 口径）+ verdict 门控 + BIC 更新 s*/队列/停滞
+    5. survey_round(galaxy_dir)
+       → VLM 读对比图给 Phase 1.5 判定（视觉半）+ 1–4 候选（px + panel_band，
+         sky-PA 罗盘）；引擎合并 mech 表（hard 一票否决 PASS）、schema 校验、
+         cells/class caps/账本去重后入队，返回 next_candidate
+    失败处置：run_galfits 异常 → beam_mark_failure(galaxy_dir, action_id)，回 1。
 ```
 
-a. **survey_round(galaxy_dir)**：引擎组装本轮请求（mb 提示词 + digest + 每波段拟合表）并调 VLM——
-   - VLM 直接读对比图（各波段 Original/Model/Residual/1D 面板），给出 Phase 1.5 物理性判定（视觉半）与 1–4 个候选（JSON 契约：长度 px + `panel_band`，PA 为 sky-PA 按罗盘读）；
-   - 引擎侧：mb schema 校验（解空间/多重性/两机制/arcsec Re 链 3% 预检/panel_band 必带/mandate 不可调）、mech 表（存在性下限、Re 链、μ0、bar_identity 等，arcsec 口径）合并为最终 verdict（mech hard 一票否决 PASS）、cells/class caps/账本去重后入队。编排模型不做任何打分或去重。
+循环纪律（与单波段一致）：**拟合成功后永不跳过 survey_round**（诊断回路原则——FAIL/BIC 反升轮同样要 survey，其后续候选就是修复路径）；`survey_round` 校验重试耗尽/VLM 出错不致命——重试一次，再失败则照常登记该轮、用现有队列继续（`beam_status` 给出队首）；`termination.suspended_by_never_executed == true`（仅限预算内）时按其列出的未执行 inventory 花费队首，预算耗尽则停（未执行 inventory 不构成修复预算理由）。
 
-b. **apply_candidate(galaxy_dir, action_id=<队首>)**：引擎转录——
-   - 未声明参数一律热启动回填父 gssummary 收敛值；结构行五元组一律默认边界集（候选只准声明初值）；
-   - 类型强制：disk n=1 fixed、bar n=0.5 fixed、bulge n 创建即自由；`add(agn)` 产出 N 块反简并模板（Na10 固定、Na26 唯一流量自由度、Na11 固定 + Na18=4）；
-   - K≥2 中心成分自动生成 `iter{n}.constrain`（成对绑定到 disk；AGN 用 `xcen_<Na1>` 名）；
-   - 产出 `_iter{n}.lyric`（若 lyric 引用旧机器绝对路径，引擎按 basename 回落到星系目录解析图像/PSF）。
-
-c. **run_galfits_image_fitting(config_file=<_iter{n}.lyric>, extra_args=["--fit_method","ES"] (+ "--parconstrain","iter{n}.constrain" 当返回携带))**。
-
-d. **beam_record_fit(galaxy_dir, action_id, round_status_file=<workplace>/round_status.json)**：登记新状态、运行 mech 检查、按 BIC 更新队列/s*/停滞计数；返回的 `termination` 字段指示是否停。
-
-e. 失败处置：run_galfits 异常 → `beam_mark_failure(galaxy_dir, action_id)`，回 a。
-
-### 步骤 2. 终止（任一满足即停；`beam_status` 直接给出）
+### 步骤 3. 终止（任一满足即停；`beam_status` 直接给出）
 
 - 队列空；拟合数达 N_max（默认 7）；停滞达上限（默认 3）。
 
-### 步骤 3. 收尾与锁定
+### 步骤 4. 收尾与锁定
 
 1. `beam_status(galaxy_dir)` 复核：s* 的 verdict 为 PASS、mech 表无未处置 hard 项、同心 constrain 合规（决策日志中该轮带 `--parconstrain`）。
 2. 六准则（成分识别完整、1D/2D 残差干净、参数关系物理、无过度约束、候选已生成过、指标最优）由编排模型对照图与归档直接核查；不满足 → `beam_grant_repair_budget` + `survey_round(directives=...)` 定向修复轮。

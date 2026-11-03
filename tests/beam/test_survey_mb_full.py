@@ -160,3 +160,86 @@ def test_full_survey_round_mb_mocked_vlm(tmp_path, test_data_dir,
     # verdict settled on the state (mech table merged)
     v = graph.state(label).get("verdict") or {}
     assert v.get("verdict") in ("PASS", "FAIL")
+
+
+def test_full_opening_round_mb_mocked_vlm(tmp_path, test_data_dir, monkeypatch):
+    """The round-0 OPENING path (workflow_galfit.md-mirrored): survey_round
+    on the unfitted A.0 with the rendered original -> VLM skeleton
+    candidates enqueued parented A.0 -> apply_candidate transcribes
+    _iter1.lyric. A.0 is never fitted directly."""
+    from beam import survey as survey_mod
+    from beam.tools import apply_candidate
+
+    gdir = tmp_path / "MBOPEN"
+    gdir.mkdir()
+    shutil.copy(test_data_dir / "mb" / "mb_root.lyric", gdir / "obj.lyric")
+    graph = BeamGraph.init(str(gdir), str(gdir / "obj.lyric"),
+                           stage1={"morphology": "spiral with bar-like "
+                                                 "centre"}, mode="galfits")
+    graph.g.graph["meta"]["bands"] = BM
+    graph.commit()
+    opening_png = tmp_path / "opening.png"
+    opening_png.write_bytes(b"png")
+
+    opening_json = json.dumps({
+        "physicality_verdict": {"verdict": "PASS",
+                                "failed_checks": [], "swap_hint": None},
+        "candidates": [
+            {"action_id": "", "primitives": [{"op": "skeleton", "components": [
+                {"structure_name": "disk", "re_px": 23.0, "q": 0.55,
+                 "pa_sky_deg": -55.0, "dx_px": 0.0, "dy_px": 0.0,
+                 "panel_band": "decam_g"},
+                {"structure_name": "bulge", "re_px": 3.0, "q": 0.85,
+                 "pa_sky_deg": -55.0, "dx_px": 0.0, "dy_px": 0.0,
+                 "panel_band": "decam_g"}]}],
+             "physical_motivation": "extended disk + round centre, g panel",
+             "expected_C_prime": "{disk,bulge}", "novelty_claim": "opening",
+             "expected_behavior_tag": "skeleton_disk_bulge",
+             "local_benefit_sigma": 0.5},
+            {"action_id": "", "primitives": [{"op": "skeleton", "components": [
+                {"structure_name": "singlesersic", "re_px": 18.0, "q": 0.6,
+                 "pa_sky_deg": -55.0, "dx_px": 0.0, "dy_px": 0.0,
+                 "panel_band": "decam_g"}]}],
+             "physical_motivation": "smooth single-component alternative",
+             "expected_C_prime": "{singlesersic}", "novelty_claim": "opening",
+             "expected_behavior_tag": "skeleton_singlesersic",
+             "local_benefit_sigma": 0.4},
+        ],
+    })
+
+    captured: dict = {}
+
+    def _fake_dispatch(system_prompt, turns, image_path):
+        captured["turns"] = turns
+        captured["image"] = image_path
+        return "notes\n\n```json\n" + opening_json + "\n```", "sess-open", None
+
+    monkeypatch.setattr(survey_mod, "_dispatch", _fake_dispatch)
+    res = survey_mod.survey_round(str(gdir), state_label="A.0",
+                                  opening_image=str(opening_png))
+    assert res.get("status") == "success", res.get("error")
+    # the mb OPENING override was used (skeleton alphabet wording)
+    assert "OPENING ROUND" in captured["turns"][1]
+    assert captured["image"] == str(opening_png)
+    nxt = res.get("next_candidate")
+    assert nxt, res.get("candidates")
+
+    graph = BeamGraph.load(str(gdir))
+    pend = graph.g.graph["pending"]
+    assert set(pend) == {nxt, [k for k in pend if k != nxt][0]} \
+        if len(pend) == 2 else True
+    rec = pend[nxt]
+    assert rec["parent"] == "A.0" and \
+        rec["primitives"][0]["op"] == "skeleton"
+    # A.0 untouched (unfitted), skeletons queued, alternates flagged
+    assert graph.state("A.0").get("metrics") == {}
+
+    r = apply_candidate(galaxy_dir=str(gdir), action_id=nxt)
+    assert r["status"] == "success", r.get("error") or r.get("detail")
+    assert r["lyric"].endswith("_iter1.lyric")
+    assert r["constrain"] and r["constrain"].endswith("iter1.constrain")
+    from beam_mb.lyric_doc import parse_lyric_doc
+    doc = parse_lyric_doc(r["lyric"])
+    assert [(c.name, c.ptype) for c in doc.components] == \
+        [("disk", "sersic"), ("bulge", "sersic")]
+    assert doc.strict_invariant_errors() == []

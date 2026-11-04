@@ -452,6 +452,15 @@ class BeamGraph:
         x_arc, y_arc = target.get("x"), target.get("y")
         if re_arc is None:
             return None, "the best state's disk carries no fitted Re"
+        # m=1 dipole phase is defined mod 180 (theta == theta+180: the
+        # brighter-side and darker-side directions are the same mode) and
+        # the lyric P23 default band is [0, 180] — normalise HERE so any
+        # equivalent representation from fourier_mode_analysis / the caller
+        # converges into the legal domain (real-data 2026-11-04: a raw
+        # 230 deg phase sat in pending and died at E_TRANSCRIBE). The
+        # amplitude is clamped into the P22 band (0, 0.5].
+        _phase = float(phase_deg) % 180.0
+        _am = min(max(float(amplitude), 0.001), 0.5)
         add_params: dict = {
             "structure_name": "disk", "component_type": "sersic_f",
             "re_px": round(float(re_arc) / scale, 4),
@@ -460,7 +469,7 @@ class BeamGraph:
             "dx_px": round(-float(x_arc) / scale, 4) if x_arc is not None else 0.0,
             "dy_px": round(float(y_arc) / scale, 4) if y_arc is not None else 0.0,
             "panel_band": ref_band,
-            "f1": {"amplitude": float(amplitude), "phase_deg": float(phase_deg)},
+            "f1": {"amplitude": _am, "phase_deg": _phase},
         }
         add_params = {k: v for k, v in add_params.items() if v is not None}
         primitives = [{"op": "remove", "target": "disk"},

@@ -38,9 +38,12 @@ RE_CHAIN_TOL = 0.03
 
 class MbF1Params(BaseModel):
     """m=1 Fourier warm start on a sersic_f disk: am (0-0.5, typical seed
-    0.05) and theta_m (sky-PA of the dipole's brighter side, mod 180)."""
+    0.05) and theta_m (sky-PA of the dipole's brighter side). The phase is
+    mod 180 (theta == theta+180); any equivalent representation in
+    [-360, 360] is accepted and the transcription layer normalises it into
+    the P23 band [0, 180]."""
     amplitude: float = Field(gt=0, le=0.5)
-    phase_deg: float = Field(ge=-180, le=180)
+    phase_deg: float = Field(ge=-360, le=360)
 
 
 class MbAddParams(BaseModel):

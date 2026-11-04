@@ -301,3 +301,47 @@ def test_mb_f1_reserved_slot_end_to_end(tmp_path, test_data_dir, monkeypatch):
     # once only: a second enqueue is refused while the first is pending
     aid2, why2 = graph.add_f1_reserved(0.05, 30.0)
     assert aid2 is None and "already pending" in why2
+
+
+def test_mb_f1_phase_normalisation(tmp_path, test_data_dir):
+    """m=1 dipole phase is mod 180 (theta == theta+180); the lyric P23
+    band is [0,180]. Real-data regression: a raw 230 deg phase from
+    fourier_mode_analysis sat in pending and died at E_TRANSCRIBE —
+    every seam now normalises (reserved-slot builder, schema accepts
+    equivalent representations, transcriber belt-and-braces)."""
+    graph, gdir = _mb_graph(tmp_path, test_data_dir)
+    best = graph.latest_state()
+    graph.g.nodes[best]["mech_checks"] = []
+    graph.g.nodes[best]["verdict"] = None
+    graph.apply_verdict(best, {"verdict": "PASS", "failed_checks": []})
+
+    aid, why = graph.add_f1_reserved(0.07, 230.0)     # 230 == 50 (mod 180)
+    assert aid, why
+    ad = graph.g.graph["pending"][aid]["primitives"][1]
+    assert ad["f1"]["phase_deg"] == 50.0
+
+    from beam.tools import apply_candidate
+    r = apply_candidate(galaxy_dir=gdir, action_id=aid)
+    assert r["status"] == "success", r.get("error") or r.get("detail")
+    from beam_mb.lyric_doc import parse_lyric_doc
+    disk = parse_lyric_doc(r["lyric"]).component("disk")
+    assert disk.slot_five("theta_m")[0] == 50.0
+
+    # VLM-side equivalence: -30 and 150 are the same mode; schema accepts
+    # both, transcription normalises into [0,180)
+    from beam_mb.candidate_schema_mb import parse_survey_response_mb
+    for phase in (-30.0, 150.0):
+        resp, err = parse_survey_response_mb({
+            "physicality_verdict": {"verdict": "PASS"},
+            "candidates": [{"action_id": "c", "primitives": [
+                {"op": "remove", "target": "disk"},
+                {"op": "add", "structure_name": "disk",
+                 "component_type": "sersic_f", "re_px": 23.7, "q": 0.6,
+                 "pa_sky_deg": -55.0, "dx_px": 0.0, "dy_px": 0.0,
+                 "panel_band": "decam_g",
+                 "f1": {"amplitude": 0.05, "phase_deg": phase}}],
+                "physical_motivation": "m",
+                "expected_C_prime": "{disk,bulge}",
+                "expected_behavior_tag": "t",
+                "local_benefit_sigma": 0.5}]})
+        assert resp is not None, err

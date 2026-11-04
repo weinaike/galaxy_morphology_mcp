@@ -314,8 +314,8 @@ class MbTranscriber:
         (fourier_mode_analysis's am / theta_m), theta_m defaulting to the
         sky-PA when no warm start exists."""
         f1 = p.get("f1") or {}
-        am = float(f1.get("amplitude", 0.05))
-        theta_m = float(f1.get("phase_deg", p.get("pa_sky_deg") or 0.0))
+        am = min(max(float(f1.get("amplitude", 0.05)), 0.001), 0.5)
+        theta_m = float(f1.get("phase_deg", p.get("pa_sky_deg") or 0.0)) % 180.0
         r_in = round(0.2 * re_arcsec, 4) if re_arcsec else 3.0
         r_out = round(0.6 * re_arcsec, 4) if re_arcsec else 8.0
         return {17: [r_in, 0.3, max(4.0, r_in * 2), 0.1, 1],

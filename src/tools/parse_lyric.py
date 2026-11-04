@@ -412,6 +412,7 @@ def extract_component_attributes(
 
     # 解析图像元数据
     wcs = None
+    _delta_ang = 0.0   # pixel-frame rotation; only nonzero via the FITS path
     if fits_file is not None:
         _shape, _pixsc, _x0, _y0, _delta_ang, _wcs = extract_fits_metadata(
             fits_file, ra=ra, dec=dec)
@@ -445,12 +446,16 @@ def extract_component_attributes(
         'width', 'alpha_rc', 'theta_out', 'm', 'am',
         'theta_m', 'i_arm',
     }
+    # longest-suffix-first: 'disk_theta_m' must resolve against 'theta_m'
+    # (prefix 'disk'), not against 'm' (spurious prefix 'disk_theta' — the
+    # real KILOGAS_25 iter7 attribute file carries that ghost row)
+    _suffixes_by_len = sorted(_known_suffixes, key=len, reverse=True)
     comp_names = set()
     for key in params:
         if key.startswith('logM_'):
             comp_names.add(key[5:])
         else:
-            for suf in _known_suffixes:
+            for suf in _suffixes_by_len:
                 if key.endswith('_' + suf):
                     prefix = key[:-(len(suf) + 1)]
                     if prefix:
@@ -546,6 +551,40 @@ def extract_component_attributes(
                 comp_attrs['i_arm'] = float(p('i_arm')) 
 
         result.append(comp_attrs)
+
+    # ---- AGN (N-block) components — suffix-first naming, invisible to the
+    # galaxy-comp harvest above: gssummary keys are ``xcen_<Na1>`` /
+    # ``ycen_<Na1>`` / ``<Na1>_<band>_logL`` / ``Ni_<Na1>_<atlas>`` (the AGN
+    # lives in the fitter's psfmodel_list, not gmodel_list — real-data
+    # KILOGAS_25 iter7: the AGN row was missing from component_attributes).
+    # Point source: x/y only (+ per-band logL); no re/n/ba/pa, mag=None
+    # (logL is a luminosity, not a magnitude — conversion needs the SED
+    # chain and stays out of this rendering).
+    import re as _re
+    _agn_names = []
+    for key in params:
+        m = _re.match(r'^xcen_(\w+)$', key)
+        if m and not any(key.endswith('_' + s) for s in _known_suffixes):
+            if m.group(1) not in _agn_names:
+                _agn_names.append(m.group(1))
+    for agn_name in _agn_names:
+        xcen_arcsec = float(params.get(f'xcen_{agn_name}', 0.0) or 0.0)
+        ycen_arcsec = float(params.get(f'ycen_{agn_name}', 0.0) or 0.0)
+        if wcs is not None and ra is not None and dec is not None:
+            x_pix, y_pix = wcs.all_world2pix(
+                ra + xcen_arcsec / 3600., dec + ycen_arcsec / 3600., 1)
+        else:
+            x_pix = x0 - xcen_arcsec / pixsc
+            y_pix = y0 + ycen_arcsec / pixsc
+        agn_attrs = {
+            'name': agn_name, 'type': 'psf',
+            'x': float(x_pix), 'y': float(y_pix), 'mag': None,
+            're': None, 're_arcsec': None, 'n': None, 'ba': None,
+            'pa': None, 'sky_pa': None,
+        }
+        if band is not None and params.get(f'{agn_name}_{band}_logL') is not None:
+            agn_attrs[f'logL_{band}'] = float(params[f'{agn_name}_{band}_logL'])
+        result.append(agn_attrs)
 
     return result
 

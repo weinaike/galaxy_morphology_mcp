@@ -354,11 +354,7 @@ class BeamGraph:
         Returns (action_id, "") on success or (None, reason) on refusal.
         """
         if self.mode != "galfit":
-            # mb F1 is the disk's P2 type-switch sersic -> sersic_f (P4 of
-            # the multi-band port, docs/design_mb_beam.md §11) — the
-            # feedme-row primitive pair below is galfit-specific
-            return None, ("the reserved F1 arbitration slot for multi-band "
-                          "(disk -> sersic_f switch) lands with P4")
+            return self._add_f1_reserved_mb(amplitude, phase_deg, action_id)
         if (self.g.graph.get("meta", {}).get("f1") or {}).get("used"):
             return None, "the reserved F1 arbitration slot was already consumed"
         best = self.g.graph.get("best_state")
@@ -404,6 +400,85 @@ class BeamGraph:
         self.log_decision({"kind": "f1-reserved-enqueue", "action_id": aid,
                            "parent": best, "amplitude": float(amplitude),
                            "phase_deg": float(phase_deg)})
+        self.commit()
+        return aid, ""
+
+    def _add_f1_reserved_mb(self, amplitude: float, phase_deg: float,
+                            action_id: str) -> tuple[str | None, str]:
+        """The mb form of the 7+1 reserved slot: F1 rides ONLY on the main
+        disk as its P2 type-switch ``sersic -> sersic_f`` (m=1; the user's
+        decision #4). Built as the remove+add rebuild pair the transcriber
+        already accepts — the add carries component_type='sersic_f' with
+        the best state's fitted disk parameters (arcsec -> px of the
+        reference band) plus the f1 warm start (am / theta_m from
+        fourier_mode_analysis); the transcription layer seeds the Fourier
+        rows P17-P24 (r_in~0.2*Re, r_out~0.6*Re, am, theta_m)."""
+        meta = self.g.graph.get("meta", {})
+        if (meta.get("f1") or {}).get("used"):
+            return None, "the reserved F1 arbitration slot was already consumed"
+        for rec in (self.g.graph.get("pending") or {}).values():
+            if (rec.get("code_flags") or {}).get("f1_reserved"):
+                return None, ("an F1 arbitration candidate is already pending "
+                              f"({rec.get('action_id')}) — run it and record "
+                              "before enqueuing again")
+        best = self.g.graph.get("best_state")
+        if not best or best not in self.g.nodes:
+            return None, "no best_state yet — the F1 arbitration needs a fitted best"
+        best_state = self.state(best)
+        # refuse when the best already carries a sersic_f disk
+        lyric = (best_state.get("artifacts") or {}).get("lyric") or ""
+        if lyric and os.path.exists(lyric):
+            try:
+                from beam_mb.lyric_doc import parse_lyric_doc
+                _doc = parse_lyric_doc(lyric)
+                if any(c.ptype in ("sersic_f", "sersic_rf", "sersic_bf")
+                       for c in _doc.components):
+                    return None, f"state {best} already carries a Fourier disk"
+            except Exception:
+                pass
+        target = next((c for c in best_state.get("inventory", [])
+                        if (c.get("name") or "").lower() == "disk"), None)
+        if target is None:
+            return None, ("mb F1 rides only on the main disk — the best "
+                          "state carries none")
+        bands = meta.get("bands") or {}
+        ref_band, ref = next(iter(bands.items()), (None, None))
+        scale = float((ref or {}).get("pixscale") or 0.0)
+        if not ref_band or not scale:
+            return None, ("graph meta lacks the bands table (beam_init mb "
+                          "measures it) — cannot convert the fitted disk "
+                          "to px for the rebuild primitive")
+        re_arc = target.get("re_effective", target.get("re"))
+        x_arc, y_arc = target.get("x"), target.get("y")
+        if re_arc is None:
+            return None, "the best state's disk carries no fitted Re"
+        add_params: dict = {
+            "structure_name": "disk", "component_type": "sersic_f",
+            "re_px": round(float(re_arc) / scale, 4),
+            "q": target.get("q"),
+            "pa_sky_deg": target.get("pa"),
+            "dx_px": round(-float(x_arc) / scale, 4) if x_arc is not None else 0.0,
+            "dy_px": round(float(y_arc) / scale, 4) if y_arc is not None else 0.0,
+            "panel_band": ref_band,
+            "f1": {"amplitude": float(amplitude), "phase_deg": float(phase_deg)},
+        }
+        add_params = {k: v for k, v in add_params.items() if v is not None}
+        primitives = [{"op": "remove", "target": "disk"},
+                      {"op": "add", **add_params}]
+        aid = self.add_pending({
+            "action_id": action_id, "sigma": 0.5,
+            "expected_behavior_tag": "f1_arbitration",
+            "expected_C_prime": f"{best}+sersic_f", "novelty_claim":
+                "Stage-3 reserved F1 arbitration (disk -> sersic_f, m=1) on "
+                "the current best state",
+            "primitives": primitives,
+            "code_flags": {"f1_reserved": True}, "score": 0.95,
+        }, source_session="f1-arbitration", parent_label=best)
+        self.g.graph["pending"][aid]["surveyor_rank_pin"] = 1
+        self.log_decision({"kind": "f1-reserved-enqueue", "action_id": aid,
+                           "parent": best, "amplitude": float(amplitude),
+                           "phase_deg": float(phase_deg),
+                           "mode": "galfits"})
         self.commit()
         return aid, ""
 

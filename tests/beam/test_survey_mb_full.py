@@ -248,3 +248,56 @@ def test_full_opening_round_mb_mocked_vlm(tmp_path, test_data_dir, monkeypatch):
     assert [(c.name, c.ptype) for c in doc.components] == \
         [("disk", "sersic"), ("bulge", "sersic")]
     assert doc.strict_invariant_errors() == []
+
+
+def test_mb_f1_reserved_slot_end_to_end(tmp_path, test_data_dir, monkeypatch):
+    """The mb 7+1 reserved F1 (design §11): beam-side enqueue builds the
+    remove(disk)+add(disk, sersic_f) rebuild pair from the BEST state's
+    fitted disk (arcsec -> ref-band px) with the am/theta_m warm start;
+    apply_candidate transcribes a sersic_f disk whose P17-P24 are seeded
+    (r_in~0.2*Re, r_out~0.6*Re, am, theta_m) and whose n is the disk
+    mandate; the fit counts in n_f1_reserved, not n_executed."""
+    from beam.tools import apply_candidate
+
+    graph, gdir = _mb_graph(tmp_path, test_data_dir)
+    best = graph.latest_state()
+    # iter3's mech table carries hard entries (starved bulge/bar floors):
+    # record_fit's fail-safe already auto-settled a FAIL verdict, and
+    # apply_verdict is idempotent — reset BOTH to make the state
+    # best-eligible for this test
+    graph.g.nodes[best]["mech_checks"] = []
+    graph.g.nodes[best]["verdict"] = None
+    graph.apply_verdict(best, {"verdict": "PASS", "failed_checks": []})
+    assert graph.g.graph["best_state"] == best
+
+    aid, why = graph.add_f1_reserved(0.07, 128.0)
+    assert aid and not why, why
+    rec = graph.g.graph["pending"][aid]
+    assert rec["code_flags"]["f1_reserved"] is True
+    rm, ad = rec["primitives"]
+    assert rm == {"op": "remove", "target": "disk"}
+    assert ad["component_type"] == "sersic_f"
+    assert ad["panel_band"] == "decam_g"
+    assert ad["f1"] == {"amplitude": 0.07, "phase_deg": 128.0}
+    # arcsec -> px round-trip of the fitted disk (Re 6.2057" / 0.262)
+    assert ad["re_px"] == pytest.approx(23.686, abs=0.01)
+
+    r = apply_candidate(galaxy_dir=gdir, action_id=aid)
+    assert r["status"] == "success", r.get("error") or r.get("detail")
+    from beam_mb.lyric_doc import parse_lyric_doc
+    doc = parse_lyric_doc(r["lyric"])
+    disk = doc.component("disk")
+    assert disk.ptype == "sersic_f"
+    assert disk.slot_five("n") == (1.0, 0.5, 2.0, 0.1, 0)   # disk mandate
+    f17 = disk.slot_five("r_in")
+    f18 = disk.slot_five("r_out")
+    f22 = disk.slot_five("am")
+    f23 = disk.slot_five("theta_m")
+    assert f17[0] == pytest.approx(0.2 * 6.206, abs=0.01)
+    assert f18[0] == pytest.approx(0.6 * 6.206, abs=0.01)
+    assert f22[0] == 0.07 and f23[0] == 128.0
+    assert disk.slot_value("m") == 1 and disk.slot_five("m") is None
+    assert doc.strict_invariant_errors() == []
+    # once only: a second enqueue is refused while the first is pending
+    aid2, why2 = graph.add_f1_reserved(0.05, 30.0)
+    assert aid2 is None and "already pending" in why2

@@ -55,7 +55,16 @@ while beam_status 显示队列非空且预算未耗尽:
 
 - 队列空；拟合数达 N_max（默认 7）；停滞达上限（默认 3）。
 
-### 步骤 4. 收尾与锁定
+### 步骤 4. F1 仲裁（7+1 保留槽；锁定前必做，与单波段同构）
+
+mb 的 F1 形态是**主 disk 的 `Pa2` 类型切换 `sersic → sersic_f`（m=1）**——只有 sersic_f 能承载 F1，且只挂在 main disk 上（VLM 不可直接提议；此槽保留给代码）。当最优状态不含 sersic_f disk 时：
+
+1. `fourier_mode_analysis(image_file=<最优轮对比图>, source_id=<星系名>)` ——从最优残差读 m=1 初始参数（am / theta_m 热启动）。
+2. `beam_enqueue_f1(galaxy_dir, amplitude=<am>, phase_deg=<theta_m>)` ——引擎在最优状态上构造重建对 `remove(disk)+add(disk, sersic_f, ...)`：拟合 disk 参数 arcsec→参考波段 px 回填、`r_in≈0.2·Re / r_out≈0.6·Re` 播种、am/theta_m 热启动；每 run 恰好一次，计数在 `n_f1_reserved`（N_max 之外）。
+3. `apply_candidate → run_galfits_image_fitting → beam_record_fit(action_id=<f1 id>)` 照常执行。
+4. **BIC 仲裁**：`beam_status` 比较 F1 轮与 pre-F1 最优的 BIC——改善则保留 F1 轮为新最优，否则保留原最优（拟合的 am 是报告事实，不是门限）；保留判据另有 am > 0.02 的物理性参考。保留槽永不重跑。
+
+### 步骤 5. 收尾与锁定
 
 1. `beam_status(galaxy_dir)` 复核：s* 的 verdict 为 PASS、mech 表无未处置 hard 项、同心 constrain 合规（决策日志中该轮带 `--parconstrain`）。
 2. 六准则（成分识别完整、1D/2D 残差干净、参数关系物理、无过度约束、候选已生成过、指标最优）由编排模型对照图与归档直接核查；不满足 → `beam_grant_repair_budget` + `survey_round(directives=...)` 定向修复轮。

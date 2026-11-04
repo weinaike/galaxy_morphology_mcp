@@ -62,11 +62,14 @@ def test_galfits_init_uses_mb_backend(tmp_path, test_data_dir):
         BeamGraph.init(str(gdir), str(bad), stage1={}, mode="galfits")
 
 
-def test_f1_reserved_refused_on_mb_mode(mini_graph):
+def test_f1_reserved_mb_guards(mini_graph):
+    """mb F1 is now implemented (disk -> sersic_f rebuild pair, design §11);
+    the guards refuse gracefully when the prerequisites are absent."""
     graph, _ = mini_graph
     graph.g.graph["meta"]["mode"] = "galfits"
+    # no best_state yet -> refusal names the prerequisite
     aid, reason = graph.add_f1_reserved(0.05, 30.0)
-    assert aid is None and "sersic_f" in reason
+    assert aid is None and ("best_state" in reason or "bands table" in reason)
 
 
 def test_metric_key_bic_head():

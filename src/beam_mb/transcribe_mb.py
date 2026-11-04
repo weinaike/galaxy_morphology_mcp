@@ -307,14 +307,24 @@ class MbTranscriber:
         rows[8] = [float(p.get("q") or 0.7), 0.05, 1.0, 0.02, 1]
         return rows
 
-    def _fourier_rows(self, p: dict) -> dict[int, Any]:
-        return {17: [3.0, 0.3, 4.0, 0.1, 1],
-                18: [8.0, 3.0, 20.0, 0.1, 1],
+    def _fourier_rows(self, p: dict, re_arcsec: float | None = None) -> dict[int, Any]:
+        """P17-P24 for a sersic_f block. Seeded from the design doc §11:
+        r_in ~ 0.2*Re, r_out ~ 0.6*Re (when the declared Re is known —
+        the reserved F1 rebuild), am/theta_m from the f1 warm start
+        (fourier_mode_analysis's am / theta_m), theta_m defaulting to the
+        sky-PA when no warm start exists."""
+        f1 = p.get("f1") or {}
+        am = float(f1.get("amplitude", 0.05))
+        theta_m = float(f1.get("phase_deg", p.get("pa_sky_deg") or 0.0))
+        r_in = round(0.2 * re_arcsec, 4) if re_arcsec else 3.0
+        r_out = round(0.6 * re_arcsec, 4) if re_arcsec else 8.0
+        return {17: [r_in, 0.3, max(4.0, r_in * 2), 0.1, 1],
+                18: [r_out, max(3.0, r_out * 0.4), max(20.0, r_out * 2), 0.1, 1],
                 19: [0.7, 0.5, 3.0, 0.1, 1],
                 20: [90.0, 30, 130, 1, 1],
                 21: 1,
-                22: [0.05, 0.0, 0.5, 0.01, 1],
-                23: [float(p.get("pa_sky_deg") or 0.0), 0, 180, 1, 1],
+                22: [am, 0.0, 0.5, 0.01, 1],
+                23: [theta_m, 0, 180, 1, 1],
                 24: [55.0, 0, 90, 1, 1]}
 
     def _mark_declared(self, name: str, p: dict) -> None:
@@ -342,7 +352,8 @@ class MbTranscriber:
             rows = self._new_structural_rows(name, c, chained)
             rows.update(dict(SED_TEMPLATE))
             if ptype == "sersic_f":
-                rows.update(self._fourier_rows(c))
+                _re0 = rows[5][0] if isinstance(rows.get(5), list) else None
+                rows.update(self._fourier_rows(c, _re0))
             comps.append(_Comp(chr(ord("a") + i), name, ptype, rows))
             self._mark_declared(name, c)
         self.comps = comps
@@ -385,7 +396,8 @@ class MbTranscriber:
         rows = self._new_structural_rows(name, p, chained)
         rows.update(dict(SED_TEMPLATE))
         if (p.get("component_type") or "sersic") == "sersic_f":
-            rows.update(self._fourier_rows(p))
+            _re0 = rows[5][0] if isinstance(rows.get(5), list) else None
+            rows.update(self._fourier_rows(p, _re0))
         self.comps.append(_Comp(self._next_label(), name,
                                 p.get("component_type") or "sersic", rows))
         self._mark_declared(name, p)

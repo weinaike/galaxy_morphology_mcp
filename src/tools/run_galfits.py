@@ -451,11 +451,22 @@ def create_multiband_comparison_png(
         comp_imgs, comp_names = [], []
         if all_subcomps and band in all_subcomps:
             comp_imgs, comp_names = all_subcomps[band]['comp_images'], all_subcomps[band]['comp_names']
-        comp_names = [name.split("_")[-1] for name in comp_names]  # Remove galaxy prefix from names  
+        comp_names = [name.split("_")[-1] for name in comp_names]  # Remove galaxy prefix from names
         name2type = {comp["name"]: comp["type"] for comp in components}
         comp_types = [name2type[name] for name in comp_names]
         components_dict = {comp["name"]: comp for comp in components}
         components_sorted = [components_dict[name] for name in comp_names]
+        # The subcomps.fits name list carries GALAXY components only
+        # (GalfitS's gmodel_list; the AGN lives in psfmodel_list — gsfit
+        # gsfitter splits them), so psf components from the attribute
+        # extractor are appended here or the model panel '+' crosshair and
+        # the legend would silently drop them (KILOGAS_25 iter7).
+        _listed = set(comp_names)
+        for comp in components:
+            if (comp.get("type") or "").lower() == "psf" \
+                    and comp["name"] not in _listed:
+                components_sorted.append(comp)
+                comp_types.append(comp["type"])
         # Per-instance colors shared by every palette consumer of this band
         # (model-panel 2·Re ellipses, legend, 1D SB-profile curves): repeated
         # types — companion2/companion3 — get distinct variant hues instead of
@@ -609,13 +620,22 @@ def create_multiband_comparison_png(
             legend_handles = []
             for i, comp in enumerate(components_sorted):
                 parts = [f"{comp.get('name', '?')}"]
-                for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
-                                              ('re', 'Re', '.1f', 'px'),
-                                              ('n', 'n', '.2f', ''),
-                                              ('ba', 'q', '.2f', ''),
-                                              ('sky_pa', 'PA(sky)', '.0f', '°')):
-                    v = comp.get(key)
-                    parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
+                if (comp.get('type') or '').lower() == 'psf':
+                    # Point source (the N-block AGN): no Re/n/q/PA exist —
+                    # show its per-band luminosity instead of a '--' row
+                    parts.append('psf')
+                    _ll = next((v for k, v in comp.items()
+                                if k.startswith('logL_') and v is not None), None)
+                    if _ll is not None:
+                        parts.append(f'logL={_ll:.2f}')
+                else:
+                    for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
+                                                  ('re', 'Re', '.1f', 'px'),
+                                                  ('n', 'n', '.2f', ''),
+                                                  ('ba', 'q', '.2f', ''),
+                                                  ('sky_pa', 'PA(sky)', '.0f', '°')):
+                        v = comp.get(key)
+                        parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
                 legend_handles.append(Line2D(
                     [0], [0], color=comp.get('color') or component_color(comp.get('name'), i),
                     lw=2, ls='--', label=' '.join(parts)))

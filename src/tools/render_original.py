@@ -70,7 +70,9 @@ def draw_re_ellipses(ax, components, edgecolor: str = "cyan",
         cx, cy = comp["x"], comp["y"]
         ba = comp["ba"]
         # GALFIT PA: from +Y axis, CCW (Up=0, Left=90); matplotlib: from +X axis, CCW.
-        pa_mpl = comp["pa"] + 90.0
+        # psf point cores carry pa=None (no orientation) — 0.0 is inert: the
+        # '+' marker below ignores it and the degenerate ellipse is invisible.
+        pa_mpl = (comp["pa"] + 90.0) if comp.get("pa") is not None else 0.0
         re = effective_re(comp)
         if edgecolor is None:
             # Precomputed per-instance color (repeated types get variant hues),

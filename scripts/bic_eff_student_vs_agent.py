@@ -87,19 +87,28 @@ def _bic_eff(chi2: float, ndof: int, nfree: int, a_psf: float) -> float:
 
 
 def _ours(gdir: str) -> dict | None:
-    """Our best round: metrics (a_psf/bic_eff) + archive stats for
-    self-validation. archive_dir in the graph is a stale absolute path —
-    remap by basename into our dataset root."""
+    """Our best round = the LOWEST-BIC_eff fitted state with verdict !=
+    FAIL (PASS or unset), not necessarily the graph's best_state: the F1
+    reserved rounds record with verdict=None and never enter the
+    verdict-gated s* (10/138 historical graphs — 5 F1 rounds whose BIC
+    arbitration says KEEP, 5 unsurveyed final rounds); for a level
+    comparison the actual best fit is what counts. archive_dir in the
+    graph is a stale absolute path — remap by basename."""
     gp = os.path.join(gdir, "beam_state", "graph.json")
     if not os.path.exists(gp):
         return None
     g = json.load(open(gp))
-    best = (g.get("graph") or {}).get("best_state")
-    if not best:
+    cands = [n for n in g.get("nodes", [])
+             if (n.get("metrics") or {}).get("bic_eff") is not None
+             and n.get("global_iter_id", 0) > 0
+             and (n.get("verdict") or {}).get("verdict") != "FAIL"]
+    if not cands:
+        cands = [n for n in g.get("nodes", [])
+                 if n.get("label") == (g.get("graph") or {}).get("best_state")]
+    if not cands:
         return None
-    node = next((n for n in g.get("nodes", []) if n.get("label") == best), None)
-    if node is None:
-        return None
+    node = min(cands, key=lambda n: n["metrics"]["bic_eff"])
+    best = node["label"]
     metrics = node.get("metrics") or {}
     arch = node.get("archive_dir") or ""
     arch_local = os.path.join(gdir, "archives", os.path.basename(arch)) \

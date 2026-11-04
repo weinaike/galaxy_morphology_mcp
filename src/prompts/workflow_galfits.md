@@ -8,7 +8,7 @@
 
 **bar/lop 检测已退役（2026-11-03，与单波段 2026-10-09 的退役对齐）**：`detect_galfits_bar_lopsidedness` 不再进入任何阶段；不存在"检出 → 触发候选"的规则。所有候选（包括 bar、Fourier）一律由 VLM 在 `survey_round` 中直接读残差图生成，并提供每个成分的参数。旧工具 `generate_beam_actions`（Markdown 契约 + depth-1 触发规则）同步退役，不得调用。
 
-**解空间（与单波段现分支一致）**：disk / bulge / bar / agn(N 块) / singlesersic。lens、outerdisk、edgedisk、companion、sersic_f/Fourier 变体在解空间之外（VLM 可将其描述为未拟合残差背景，不得转为候选；F1 的 mb 形态 = disk 的 `Pa2` 切 `sersic_f`，其保留槽机制落地前禁用）。
+**解空间（与单波段现分支一致）**：disk / bulge / bar / agn(N 块) / singlesersic，以及 **sersic_f（m=1 傅里叶载体，仅限主 disk）**——F1 可在前 N_max 次内由 surveyor 依偶极残差证据提出（见步骤 2），终止时 best 仍无 sersic_f 才走 7+1 保留槽（见步骤 4）。lens、outerdisk、edgedisk、companion 及其它傅里叶变体在解空间之外（VLM 可将其描述为未拟合残差背景，不得转为候选）。
 
 **真源**：`beam_state/graph.json`（队列、s*、账本、verdict、决策日志、临时约束全部在图里）。`working_note.md` 不是每轮职责——需要人读的审计导出时调 `beam_export_note`。
 
@@ -44,7 +44,8 @@ while beam_status 显示队列非空且预算未耗尽:
        → 登记状态 + mech 检查（arcsec 口径）+ verdict 门控 + BIC 更新 s*/队列/停滞
     5. survey_round(galaxy_dir)
        → VLM 读对比图给 Phase 1.5 判定（视觉半）+ 1–4 候选（px + panel_band，
-         sky-PA 罗盘）；引擎合并 mech 表（hard 一票否决 PASS）、schema 校验、
+         sky-PA 罗盘；偶极/单侧不对称残差可提出 disk→sersic_f 的 F1 切换候选，
+         计入 N_max）；引擎合并 mech 表（hard 一票否决 PASS）、schema 校验、
          cells/class caps/账本去重后入队，返回 next_candidate
     失败处置：run_galfits 异常 → beam_mark_failure(galaxy_dir, action_id)，回 1。
 ```
@@ -57,7 +58,7 @@ while beam_status 显示队列非空且预算未耗尽:
 
 ### 步骤 4. F1 仲裁（7+1 保留槽；锁定前必做，与单波段同构）
 
-mb 的 F1 形态是**主 disk 的 `Pa2` 类型切换 `sersic → sersic_f`（m=1）**——只有 sersic_f 能承载 F1，且只挂在 main disk 上（VLM 不可直接提议；此槽保留给代码）。当最优状态不含 sersic_f disk 时：
+mb 的 F1 形态是**主 disk 的 `Pa2` 类型切换 `sersic → sersic_f`（m=1）**——只有 sersic_f 能承载 F1，且只挂在 main disk 上。F1 可以在前 N_max 次拟合内由 surveyor 依偶极残差证据直接提出（计入预算）；**仅当终止时最优状态仍不含 sersic_f disk** 时执行保留槽：
 
 1. `fourier_mode_analysis(image_file=<最优轮对比图>, source_id=<星系名>)` ——从最优残差读 m=1 初始参数（am / theta_m 热启动）。
 2. `beam_enqueue_f1(galaxy_dir, amplitude=<am>, phase_deg=<theta_m>)` ——引擎在最优状态上构造重建对 `remove(disk)+add(disk, sersic_f, ...)`：拟合 disk 参数 arcsec→参考波段 px 回填、`r_in≈0.2·Re / r_out≈0.6·Re` 播种、am/theta_m 热启动；每 run 恰好一次，计数在 `n_f1_reserved`（N_max 之外）。

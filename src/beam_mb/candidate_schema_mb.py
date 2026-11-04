@@ -36,9 +36,16 @@ RE_RANK = {"bulge": 0, "bar": 1, "disk": 2}
 RE_CHAIN_TOL = 0.03
 
 
+class MbF1Params(BaseModel):
+    """m=1 Fourier warm start on a sersic_f disk: am (0-0.5, typical seed
+    0.05) and theta_m (sky-PA of the dipole's brighter side, mod 180)."""
+    amplitude: float = Field(gt=0, le=0.5)
+    phase_deg: float = Field(ge=-180, le=180)
+
+
 class MbAddParams(BaseModel):
     structure_name: str
-    component_type: Literal["sersic"] = "sersic"
+    component_type: Literal["sersic", "sersic_f"] = "sersic"
     re_px: float = Field(gt=0)
     q: float = Field(gt=0, le=1)
     pa_sky_deg: float = Field(ge=-180, le=180)
@@ -46,6 +53,7 @@ class MbAddParams(BaseModel):
     dy_px: float = 0.0
     panel_band: str
     n: Optional[float] = None
+    f1: Optional[MbF1Params] = None
 
 
 class MbSkeletonParams(BaseModel):
@@ -63,7 +71,7 @@ class MbSkeletonParams(BaseModel):
 class MbAddPrimitive(BaseModel):
     op: Literal["add"]
     structure_name: str
-    component_type: Literal["sersic"] = "sersic"
+    component_type: Literal["sersic", "sersic_f"] = "sersic"
     re_px: float = Field(gt=0)
     q: float = Field(gt=0, le=1)
     pa_sky_deg: float = Field(ge=-180, le=180)
@@ -71,6 +79,7 @@ class MbAddPrimitive(BaseModel):
     dy_px: float = 0.0
     panel_band: str
     n: Optional[float] = None
+    f1: Optional[MbF1Params] = None
 
 
 class MbRemovePrimitive(BaseModel):
@@ -331,6 +340,9 @@ def validate_mb_candidate(cand: MbCandidate,
     def reject(code, msg):
         issues.append(Issue(code, msg, aid))
 
+    names = set(names_parent)   # working set: prior primitives in the SAME
+    #                            candidate take effect (remove(disk)+add(disk,
+    #                            sersic_f) must not trip the slot check)
     for p in prims:
         op = p.get("op")
         if op == "skeleton":
@@ -351,25 +363,32 @@ def validate_mb_candidate(cand: MbCandidate,
             if nm in RESTRICTED_SLOTS:
                 reject("E_RESTRICTED_SPACE",
                        f"add({nm}) is outside the mb solution space "
-                       f"{sorted(ALLOWED_SLOTS)} (sersic_f returns with the "
-                       "mb F1 design)")
+                       f"{sorted(ALLOWED_SLOTS)}")
             elif nm not in ALLOWED_SLOTS:
                 reject("E_ALPHABET", f"unknown structure_name {nm!r}")
-            if nm in names_parent:
+            if (p.get("component_type") or "sersic") == "sersic_f" \
+                    and nm != "disk":
+                reject("E_PARAM_TYPE",
+                       "component_type sersic_f (the m=1 Fourier carrier) "
+                       "is legal ONLY on the main disk")
+            if nm in names:
                 reject("E_MULTIPLICITY", f"add({nm}): slot already occupied")
+            else:
+                names.add(nm)
             if nm != "agn" and not ({"disk", "bulge", "bar"} & names_parent
                                     or nm == "disk") and \
                     "singlesersic" in names_parent:
                 pass   # the singlesersic->disk conversion is implicit here
         elif op == "remove":
             nm = (p.get("target") or "").lower()
-            if nm not in names_parent:
+            if nm not in names:
                 reject("E_TARGET", f"remove: {nm!r} not in the parent "
-                                   f"inventory {sorted(names_parent)}")
-            surviving = names_parent - {nm}
-            if nm == "singlesersic" and not surviving - {"agn"}:
-                pass   # empty model is caught by regime below
-            _regime_errors(surviving, _StubReport(issues, aid), aid)
+                                   f"inventory {sorted(names)}")
+            else:
+                names.discard(nm)
+            # NO mid-op regime check: a pair like remove(disk)+add(disk,
+            # sersic_f) transiently looks diskless — the FINAL projected
+            # regime check (below) governs
         elif op == "tune":
             nm = (p.get("target") or "").lower()
             if nm not in names_parent:

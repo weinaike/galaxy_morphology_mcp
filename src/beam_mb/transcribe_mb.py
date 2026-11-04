@@ -384,6 +384,11 @@ class MbTranscriber:
                     new_rows = self._new_structural_rows("disk", p, False)
                     for idx in (3, 4, 5, 7, 8):
                         ss.rows[idx] = new_rows[idx]
+                    if (p.get("component_type") or "sersic") == "sersic_f":
+                        ss.ptype = "sersic_f"
+                        _re0 = new_rows[5][0] if isinstance(new_rows.get(5),
+                                                           list) else None
+                        ss.rows.update(self._fourier_rows(p, _re0))
                     self._mark_declared("disk", p)
                     return
         if any(c.name == name for c in self.comps):

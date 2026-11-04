@@ -87,11 +87,13 @@ def test_restricted_space(tmp_path, test_data_dir):
                                "re_px": 5.0, "q": 0.7, "pa_sky_deg": 0.0,
                                "panel_band": "decam_g"}], f"t-{bad_name}")
         assert any(i.code == "E_RESTRICTED_SPACE" for i in r.errors), bad_name
-    # sersic_f is refused at the PYDANTIC level until the mb F1 design lands
-    assert parse_survey_response_mb(_payload(
-        [{"op": "add", "structure_name": "disk", "component_type": "sersic_f",
-          "re_px": 20.0, "q": 0.6, "pa_sky_deg": 0.0,
-          "panel_band": "decam_g"}]))[0] is None
+    # sersic_f is legal ONLY on the disk (E_PARAM_TYPE elsewhere);
+    # pydantic-level field sanity: f1 amplitude bounded
+    r = _validate(graph, [{"op": "add", "structure_name": "bulge",
+                           "component_type": "sersic_f", "re_px": 5.0,
+                           "q": 0.7, "pa_sky_deg": 0.0,
+                           "panel_band": "decam_g"}], "sf-bulge")
+    assert any(i.code == "E_PARAM_TYPE" for i in r.errors)
 
 
 def test_panel_band_contract(tmp_path, test_data_dir):
@@ -261,3 +263,40 @@ def test_singlesersic_to_multi_implicit_conversion(tmp_path, test_data_dir):
                            "dx_px": 0.0, "dy_px": 0.0,
                            "panel_band": "decam_g"}], "conv2")
     assert not r.errors, [f"{i.code}: {i.message}" for i in r.errors]
+
+
+def test_f1_switch_candidate_in_main_loop(tmp_path, test_data_dir):
+    """F1 proposable INSIDE the main loop (user rule): the remove(disk)+
+    add(disk, sersic_f, f1) pair validates on a disk-bearing parent and
+    transcribes to a sersic_f disk with the seeded Fourier rows."""
+    from beam_mb.transcribe_mb import transcribe_mb as _tx
+
+    graph = _mb_graph(tmp_path, test_data_dir)      # parent {disk,bulge,bar}
+    disk = next(c for c in graph.state(graph.latest_state())["inventory"]
+                if c["name"] == "disk")
+    r = _validate(graph, [
+        {"op": "remove", "target": "disk"},
+        {"op": "add", "structure_name": "disk", "component_type": "sersic_f",
+         "re_px": 23.7, "q": disk["q"], "pa_sky_deg": disk["pa"],
+         "dx_px": 0.0, "dy_px": 0.0, "panel_band": "decam_g",
+         "f1": {"amplitude": 0.06, "phase_deg": 125.0}}], "f1-in-loop")
+    assert not r.errors, [f"{i.code}: {i.message}" for i in r.errors]
+
+    out = str(tmp_path / "_iterF1.lyric")
+    tx = _tx(str(test_data_dir / "mb" / "mb_iter3.lyric"),
+             str(test_data_dir / "mb" / "mb_iter3.gssummary"),
+             [{"op": "remove", "target": "disk"},
+              {"op": "add", "structure_name": "disk",
+               "component_type": "sersic_f", "re_px": 23.7, "q": disk["q"],
+               "pa_sky_deg": disk["pa"], "dx_px": 0.0, "dy_px": 0.0,
+               "panel_band": "decam_g",
+               "f1": {"amplitude": 0.06, "phase_deg": 125.0}}],
+             out, bands_meta=BM)
+    assert tx["status"] == "success", tx.get("error")
+    from beam_mb.lyric_doc import parse_lyric_doc
+    doc = parse_lyric_doc(out)
+    d = doc.component("disk")
+    assert d.ptype == "sersic_f"
+    assert d.slot_five("am")[0] == 0.06 and d.slot_five("theta_m")[0] == 125.0
+    assert d.slot_five("n") == (1.0, 0.5, 2.0, 0.1, 0)
+    assert doc.strict_invariant_errors() == []

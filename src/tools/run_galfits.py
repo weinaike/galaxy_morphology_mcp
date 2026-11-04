@@ -799,6 +799,41 @@ def create_multiband_comparison_png(
     return png_filename, component_attr_file
 
 # modified by zl: emit multi-band round status and optional service events without API callbacks.
+def _discover_parconstrain(config_file: str) -> str | None:
+    """Auto-discover the concentric .constrain for a .lyric config.
+
+    The image-fitting configs (_iter{n}.lyric) sit next to their transcriber-
+    written iter{n}.constrain; the SED-generated joint configs
+    (<base>_for_image_sed_fitting.lyric) live in a FRESH output workplace
+    with no sibling constrain — the correct file is the source round's
+    iter{n}.constrain in the galaxy dir. Discovery chain: same-dir
+    iter{n}.constrain (iter{n} extracted from the stem) -> galaxy-root
+    iter{n}.constrain -> same-dir <stem>.constrain -> de-suffixed stem ->
+    newest iter*.constrain in the galaxy root. None when the round needs
+    no concentric binding (K<=1: the transcriber never wrote one)."""
+    import re as _re
+
+    cfg = os.path.abspath(config_file)
+    d, stem = os.path.split(os.path.splitext(cfg)[0])
+    gal = d
+    if os.path.basename(os.path.dirname(d)) == "output":
+        gal = os.path.dirname(os.path.dirname(d))
+    cands: list[str] = []
+    m = _re.search(r"iter(\d+)", stem)
+    if m:
+        cands.append(os.path.join(d, f"iter{m.group(1)}.constrain"))
+        cands.append(os.path.join(gal, f"iter{m.group(1)}.constrain"))
+    cands.append(os.path.join(d, stem + ".constrain"))
+    cands.append(os.path.join(
+        d, stem.replace("_for_image_sed_fitting", "") + ".constrain"))
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    found = sorted(glob(os.path.join(gal, "iter*.constrain")),
+                   key=os.path.getmtime)
+    return found[-1] if found else None
+
+
 async def run_galfits(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
     timeout_sec: Annotated[int, "timeout in seconds"] = 3600,
@@ -862,6 +897,20 @@ async def run_galfits(
 
     if extra_args:
         cmd.extend([str(x) for x in extra_args])
+
+    # Concentric-constrain auto-attachment (2026-11-04, real-data fix: the
+    # image-SED joint phase forgot --parconstrain — the SED-generated config
+    # has no sibling constrain and the orchestrator had to remember the
+    # source round's file by hand). Explicit --parconstrain in extra_args
+    # wins; otherwise discover the matching .constrain (absolute path) and
+    # attach it. Nothing is attached when no file exists (K<=1 rounds carry
+    # no concentric binding).
+    if not any(str(a) == "--parconstrain"
+               or str(a).startswith("--parconstrain=")
+               for a in cmd):
+        _pc = _discover_parconstrain(config_file)
+        if _pc:
+            cmd.extend(["--parconstrain", _pc])
 
     # Add --prior for mass/size constraints
     if prior_file:

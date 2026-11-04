@@ -247,3 +247,30 @@ def test_parse_root_normalises_starter_name(test_data_dir):
         tmp_named = fh.name
     r2 = parse_root(tmp_named)
     assert r2["inventory"][0]["name"] == "disk" and not r2["notes"]
+
+
+def test_parconstrain_auto_discovery(tmp_path):
+    """The image-SED joint phase forgot --parconstrain (real-data
+    2026-11-04): the SED-generated config lives in a fresh output
+    workplace with no sibling constrain. The runner auto-discovers the
+    source round's file — explicit extra_args still win, K<=1 rounds
+    attach nothing."""
+    from tools.run_galfits import _discover_parconstrain
+
+    gal = tmp_path / "G"
+    (gal / "output" / "20261104_120000__iter7_sed").mkdir(parents=True)
+    (gal / "_iter7.lyric").write_text("R1) x")
+    (gal / "iter7.constrain").write_text("def U(p): pass")
+
+    # image-fitting config: sibling discovered
+    assert _discover_parconstrain(str(gal / "_iter7.lyric")) == \
+        str(gal / "iter7.constrain")
+    # SED joint config in the fresh workplace: galaxy-root file found via
+    # the iter{N} extracted from the stem
+    joint = gal / "output" / "20261104_120000__iter7_sed" / \
+        "_iter7_for_image_sed_fitting.lyric"
+    joint.write_text("R1) x")
+    assert _discover_parconstrain(str(joint)) == str(gal / "iter7.constrain")
+    # K<=1 round: no constrain exists -> nothing attached
+    (gal / "_iter2.lyric").write_text("R1) x")
+    assert _discover_parconstrain(str(gal / "_iter2.lyric")) is None

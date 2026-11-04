@@ -1078,6 +1078,20 @@ async def run_galfits_sed_fitting(
         galaxy_dir = os.path.dirname(output_parent)
     else:
         galaxy_dir = config_dir
+    # Hard gate (2026-11-04, real-data fix): the analysis report is the
+    # normative deliverable of the image-fitting phase (workflow 步骤 5 —
+    # downstream automation parses its skeleton/JSON). SED fitting must not
+    # start before it exists; refuse with a pointer to the report contract.
+    if not glob(os.path.join(galaxy_dir, "analysis_report_*.md")):
+        return {
+            "status": "failure",
+            "error": (
+                "no analysis_report_<galaxy>.md in the galaxy directory — the "
+                "image-fitting phase is not closed. Write the report FIRST "
+                "(workflow_galfits 步骤 5: lock check + physical-meaning "
+                "review + Occam + the five-header skeleton + trailing JSON "
+                "block), then re-call run_galfits_sed_fitting."),
+        }
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_base = os.path.join(galaxy_dir, "output")
     os.makedirs(output_base, exist_ok=True)

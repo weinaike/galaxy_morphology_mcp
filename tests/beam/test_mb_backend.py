@@ -283,3 +283,40 @@ def test_parconstrain_auto_discovery(tmp_path):
               gal / "output" / "20261104_120000__iter7_sed" / "iter7.constrain")
     assert _discover_parconstrain(str(joint)) == str(
         gal / "output" / "20261104_120000__iter7_sed" / "iter7.constrain")
+
+
+def test_sed_fitting_refuses_without_analysis_report(tmp_path):
+    """Hard gate (real-data 2026-11-04, KILOGAS_25): the orchestrator skipped
+    workflow 步骤 5 (report writing) and jumped straight to SED — the runner
+    now refuses run_galfits_sed_fitting until analysis_report_*.md exists in
+    the galaxy dir."""
+    import asyncio
+
+    from tools.run_galfits import run_galfits_sed_fitting
+
+    gal = tmp_path / "G"
+    (gal / "output" / "20261104_120000__iter7").mkdir(parents=True)
+    cfg = gal / "_iter7.lyric"
+    cfg.write_text("R1) x")
+
+    def _call():
+        return asyncio.run(run_galfits_sed_fitting(
+            config_file=str(cfg), image_fitting_workplace="w"))
+
+    r = _call()
+    assert r["status"] == "failure" and "analysis_report" in r["error"]
+    # gate opens once the report exists (stub PureSEDFitting so the opened
+    # gate is proven without running a real SED fit)
+    import tools.galfits_fitting as _gf
+    orig = _gf.PureSEDFitting
+
+    def _stub(**kw):
+        return {"status": "success"}
+
+    _gf.PureSEDFitting = _stub
+    try:
+        (gal / "analysis_report_G.md").write_text("## Generation time\n")
+        r2 = _call()
+    finally:
+        _gf.PureSEDFitting = orig
+    assert r2["status"] == "success" and r2.get("constrain_carried") == ""

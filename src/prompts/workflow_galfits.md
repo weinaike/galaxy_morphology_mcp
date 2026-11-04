@@ -89,7 +89,9 @@ mb 的 F1 形态是**主 disk 的 `Pa2` 类型切换 `sersic → sersic_f`（m=1
 
 每一轮成功拟合都会无条件触发一次 survey_round（VLM 视觉诊断是核心回路，与 BIC 升降无关——BIC 反升常是初始化次优，残差携带修正方向）。VLM 侧的修复菜单：物理性 FAIL → 至少一个修复候选（Re 链反置 → RECLASSIFY；通量存在性下限 → remove/mag 再分配；bar_identity → reclassify(bar→bulge)，仅当残差证有时追加更大 Re 的 add(bar)；μ0 反置 → mag 再分配或身份重标识）。机制见 `beam_survey_prompt_galfits.md`。
 
-## 阶段三~五：SED 拟合与联合拟合（多波段独有；引擎束搜索结束后执行）
+## 阶段三~五：SED 拟合与联合拟合（多波段独有；**前置条件：步骤 5 的 analysis_report 已写入**）
+
+**硬门（引擎强制）**：`run_galfits_sed_fitting` 在星系目录无 `analysis_report_<星系名>.md` 时直接拒绝——图像拟合阶段未闭环（报告是规范性交付物，下游按其骨架/JSON 解析）。先完成步骤 5 的锁定核查与报告写作，再进入本阶段。
 
 1. **阶段三（SED 拟合）**：`run_galfits_sed_fitting(config_file=<锁定轮的 .lyric>, image_fitting_workplace=<锁定轮 output 目录>, extra_args=["--fit_method","ES"])`——基于最优图像拟合结果做 SED 拟合，产出用于联合拟合的新 lyric；引擎同时把 best state 的同心 `iter{n}.constrain` 原样拷入新工作区（结构未变、组件未改名，直接复用；返回 `constrain_carried` 字段）。
 2. **阶段四（联合拟合）**：`run_galfits_image_sed_fitting(config_file=<阶段三返回的新 lyric>, extra_args=["--fit_method","ES"])`——同心约束由引擎自动附加（工作区内同轮 constrain 优先；显式传 `--parconstrain` 时以显式为准），无需编排模型手动传递。

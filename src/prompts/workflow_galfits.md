@@ -65,11 +65,25 @@ mb 的 F1 形态是**主 disk 的 `Pa2` 类型切换 `sersic → sersic_f`（m=1
 3. `apply_candidate → run_galfits_image_fitting → beam_record_fit(action_id=<f1 id>)` 照常执行。
 4. **BIC 仲裁**：`beam_status` 比较 F1 轮与 pre-F1 最优的 BIC——改善则保留 F1 轮为新最优，否则保留原最优（拟合的 am 是报告事实，不是门限）；保留判据另有 am > 0.02 的物理性参考。保留槽永不重跑。
 
-### 步骤 5. 收尾与锁定
+### 步骤 5. 收尾、物理意义分析、锁定与报告
 
-1. `beam_status(galaxy_dir)` 复核：s* 的 verdict 为 PASS、mech 表无未处置 hard 项、同心 constrain 合规（决策日志中该轮带 `--parconstrain`）。
-2. 六准则（成分识别完整、1D/2D 残差干净、参数关系物理、无过度约束、候选已生成过、指标最优）由编排模型对照图与归档直接核查；不满足 → `beam_grant_repair_budget` + `survey_round(directives=...)` 定向修复轮。
-3. 需要人读的审计记录：`beam_export_note(galaxy_dir)`。
+1. **锁定核查**：`beam_status(galaxy_dir)` 复核——s* 的 verdict 为 PASS、mech 表无未处置 hard 项、同心 constrain 合规（决策日志中该轮带 `--parconstrain`）；六准则（成分识别完整、1D/2D 残差干净、参数关系物理、无过度约束、候选已生成过、指标最优）由编排模型对照图与归档直接核查。任一核查失败 → 以 `survey_round(directives="<修复约束文本>")` 开定向修复轮（预算内；计数持续）。`beam_grant_repair_budget` **仅限用户指示**——编排模型不得自行调用（单波段实证 0/5 次自行授予改善过最优）；预算耗尽仍有核查失败时，报告失败项交用户决定。
+2. **物理意义分析**：按 CLAUDE 系统消息的"Physical-meaning analysis"逐参数复核 s* 每个成分（mb 单位为 arcsec/sky-PA；N 块 AGN 的坍缩核球替换规则同单波段 psf）。任何非物理情形 → 同上以 directives 修复轮处理。
+3. **奥卡姆剃刀（仅 AGN/F1 适用）**：s* 含 AGN 且 ΔBIC（gssummary BIC）< 10 → 以 `remove(AGN)` 为最高优先候选开验证轮（BIC 变差则保留）；F1（sersic_f disk）拟合 am > 0.02 即物理有效，**禁止以 BIC 为由移除**，仅在发散/非物理时验证移除。重启累计计入 N_max。
+4. **审计导出**：`beam_export_note(galaxy_dir)`（人读的多分支审计记录）。
+5. **报告写作**：用 `write_file` 把结论写入当前星系目录 `analysis_report_<星系名>.md`。**骨架（规范性硬要求——五个一级标题按此措辞与顺序逐字出现，下游按标题定位）**：
+   1. `## Generation time`——日期时间。
+   2. `## Preprocessing information`——掩膜说明与背景设定（mb：sky 为 I 块固定值，不参与拟合）。
+   3. `## Iteration log`——按束图多分支结构组织（可用 `beam_export_note` 渲染）：每分支每轮的成分增删证据（多模态视觉判断记录）、参数分歧与回滚、被截断候选、跨分支决策。
+   4. `## Best-result locking analysis and result`——锁定理由、最终采用参数表（arcsec 结构参数 + 每波段星等 + am/theta_m 当有 F1）、物理诠释。
+   5. `## Attachment index`——最优轮的 `output/` 子目录路径、最终 `_iter{n}.lyric`、最终 `all_bands_comparison.png` 路径。
+   文档最后必须以一个围栏 ```json 块结尾（规范性 schema，下游按字段解析）：
+   ```json
+   {"best_turn":"<最优轮 output/ 子目录名，如 20261103_170350__iter1>","components":["<物理成分数组>"],"galaxy_type":"edge-on/face-on/elliptical"}
+   ```
+   - `best_turn`：**字符串**，`output/` 下的子目录名（非完整路径、非 lyric 名）；
+   - `components`：**字符串数组**，每成分一项，取自固定词汇 `[Disk,Bulge,Bar,Agn,Companion,Fourier,SingleSersic,Lens,OuterDisk]`（F1 = sersic_f disk 记作 `Fourier`）；
+   - `galaxy_type`：`edge-on` / `face-on` / `elliptical` 之一。
 
 ### 诊断回路原则（引擎保证，编排模型知悉）
 

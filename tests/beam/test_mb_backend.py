@@ -271,6 +271,15 @@ def test_parconstrain_auto_discovery(tmp_path):
         "_iter7_for_image_sed_fitting.lyric"
     joint.write_text("R1) x")
     assert _discover_parconstrain(str(joint)) == str(gal / "iter7.constrain")
-    # K<=1 round: no constrain exists -> nothing attached
+    # K<=1 round: no constrain exists -> nothing attached (strictly
+    # round-matched — never borrows iter7's binding)
     (gal / "_iter2.lyric").write_text("R1) x")
     assert _discover_parconstrain(str(gal / "_iter2.lyric")) is None
+    # the joint workplace gains a carried sibling after the sed step copies
+    # the source constrain in (run_galfits_sed_fitting does this) — then
+    # discovery hits the sibling FIRST
+    import shutil as _sh2
+    _sh2.copy(gal / "iter7.constrain",
+              gal / "output" / "20261104_120000__iter7_sed" / "iter7.constrain")
+    assert _discover_parconstrain(str(joint)) == str(
+        gal / "output" / "20261104_120000__iter7_sed" / "iter7.constrain")

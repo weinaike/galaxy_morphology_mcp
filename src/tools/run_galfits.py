@@ -806,11 +806,12 @@ def _discover_parconstrain(config_file: str) -> str | None:
     written iter{n}.constrain; the SED-generated joint configs
     (<base>_for_image_sed_fitting.lyric) live in a FRESH output workplace
     with no sibling constrain — the correct file is the source round's
-    iter{n}.constrain in the galaxy dir. Discovery chain: same-dir
-    iter{n}.constrain (iter{n} extracted from the stem) -> galaxy-root
-    iter{n}.constrain -> same-dir <stem>.constrain -> de-suffixed stem ->
-    newest iter*.constrain in the galaxy root. None when the round needs
-    no concentric binding (K<=1: the transcriber never wrote one)."""
+    iter{n}.constrain in the galaxy dir. Discovery is STRICTLY round-matched
+    (same-dir iter{n}.constrain -> galaxy-root iter{n}.constrain -> same-dir
+    <stem>.constrain -> de-suffixed stem): a stem carrying iter{n} never
+    falls through to ANOTHER round's file — a K<=1 round (the transcriber
+    wrote no constrain) attaches nothing rather than borrowing a binding
+    that does not belong to it."""
     import re as _re
 
     cfg = os.path.abspath(config_file)
@@ -829,9 +830,7 @@ def _discover_parconstrain(config_file: str) -> str | None:
     for c in cands:
         if os.path.exists(c):
             return c
-    found = sorted(glob(os.path.join(gal, "iter*.constrain")),
-                   key=os.path.getmtime)
-    return found[-1] if found else None
+    return None
 
 
 async def run_galfits(
@@ -1097,10 +1096,24 @@ async def run_galfits_sed_fitting(
             "status": "failure",
             "message": f"SED fitting in the workplace {workplace_dir} failed: {res.get('message', 'Unknown error')}"
         }
+    # Proactively carry the source round's concentric constrain into the
+    # joint-fit workplace (2026-11-04): the image-SED joint config is
+    # structurally the SAME model (SED fitting does not rename components),
+    # so the best state's .constrain is reused verbatim — copied next to
+    # the generated lyric under its original name, so the joint run
+    # discovers it as a sibling (and explicit --parconstrain still wins).
+    _src_constrain = _discover_parconstrain(config_file)
+    _carried = ""
+    if _src_constrain:
+        _dst = os.path.join(workplace_dir, os.path.basename(_src_constrain))
+        shutil.copy(_src_constrain, _dst)
+        _carried = _dst
     return {
         "status": "success",
-        "message": f"SED fitting completed successfully. New lyric file for image-sed fitting generated: {new_lyric_file}"
-    }    
+        "message": f"SED fitting completed successfully. New lyric file for image-sed fitting generated: {new_lyric_file}",
+        "new_lyric_file": new_lyric_file,
+        "constrain_carried": _carried,
+    }
 
 async def run_galfits_image_sed_fitting(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],

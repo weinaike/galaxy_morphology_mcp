@@ -91,8 +91,8 @@ mb 的 F1 形态是**主 disk 的 `Pa2` 类型切换 `sersic → sersic_f`（m=1
 
 ## 阶段三~五：SED 拟合与联合拟合（多波段独有；引擎束搜索结束后执行）
 
-1. **阶段三（SED 拟合）**：`run_galfits_sed_fitting(config_file=<锁定轮的 .lyric>, image_fitting_workplace=<锁定轮 output 目录>, extra_args=["--fit_method","ES"])`——基于最优图像拟合结果做 SED 拟合，产出用于联合拟合的新 lyric。
-2. **阶段四（联合拟合）**：`run_galfits_image_sed_fitting(config_file=<阶段三返回的新 lyric>, extra_args=["--fit_method","ES"])`。
+1. **阶段三（SED 拟合）**：`run_galfits_sed_fitting(config_file=<锁定轮的 .lyric>, image_fitting_workplace=<锁定轮 output 目录>, extra_args=["--fit_method","ES"])`——基于最优图像拟合结果做 SED 拟合，产出用于联合拟合的新 lyric；引擎同时把 best state 的同心 `iter{n}.constrain` 原样拷入新工作区（结构未变、组件未改名，直接复用；返回 `constrain_carried` 字段）。
+2. **阶段四（联合拟合）**：`run_galfits_image_sed_fitting(config_file=<阶段三返回的新 lyric>, extra_args=["--fit_method","ES"])`——同心约束由引擎自动附加（工作区内同轮 constrain 优先；显式传 `--parconstrain` 时以显式为准），无需编排模型手动传递。
 3. 两阶段不进入束搜索空间（结构已锁定，只做 SED 自由度）；若联合结果暴露结构问题，回到阶段二以 directives 方式开修复轮。
 
 ## 常量与注意（引擎行为，编排模型不必干预）

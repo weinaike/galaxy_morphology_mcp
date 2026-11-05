@@ -636,9 +636,20 @@ def create_multiband_comparison_png(
                                                   ('sky_pa', 'PA(sky)', '.0f', '°')):
                         v = comp.get(key)
                         parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
-                legend_handles.append(Line2D(
-                    [0], [0], color=comp.get('color') or component_color(comp.get('name'), i),
-                    lw=2, ls='--', label=' '.join(parts)))
+                _c = comp.get('color') or component_color(comp.get('name'), i)
+                if (comp.get('type') or '').lower() == 'psf':
+                    # the AGN is drawn as a '+' crosshair on the panel — its
+                    # legend symbol must MATCH (a dash line lied about the
+                    # geometry); the light legend frame needs no white
+                    # underlay (that exists for the dark Greys_r panel only)
+                    legend_handles.append(Line2D(
+                        [0], [0], color=_c, ls='None', marker='+',
+                        markersize=16, markeredgewidth=2.8,
+                        label=' '.join(parts)))
+                else:
+                    legend_handles.append(Line2D(
+                        [0], [0], color=_c,
+                        lw=2, ls='--', label=' '.join(parts)))
             leg = ax2.legend(handles=legend_handles, loc='upper left', fontsize=11,
                              frameon=True, fancybox=True, framealpha=0.8)
             model_legends.append(leg)

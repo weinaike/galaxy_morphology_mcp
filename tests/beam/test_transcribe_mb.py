@@ -17,6 +17,10 @@ import pytest
 from beam_mb.lyric_doc import parse_lyric_doc
 from beam_mb.transcribe_mb import transcribe_mb
 
+def _p(td, name):
+    return str(td / "mb" / name)
+
+
 BM = {"decam_g": {"pixscale": 0.262, "fwhm_px": 4.58, "region": [1, 746, 1, 746]},
       "decam_r": {"pixscale": 0.262, "fwhm_px": 4.62, "region": [1, 746, 1, 746]},
       "decam_z": {"pixscale": 0.262, "fwhm_px": 3.93, "region": [1, 746, 1, 746]}}
@@ -247,3 +251,99 @@ def test_singlesersic_to_multi_conversion_transcription(tmp_path, test_data_dir)
     assert doc.galaxies["a"].value(2) == ["a", "b"]
     text = open(r["constrain"]).read()
     assert "pardictlc['bulge_xcen'] = 1 * pardictlc['disk_xcen']" in text
+
+
+def test_agn_centres_frozen_and_warm_started(tmp_path, test_data_dir):
+    """The N-block mirror of the P-block concentric rule: the AGN's Na4/Na5
+    carry vary=0 (frozen) whenever the .constrain binds them to the anchor —
+    on fresh add(agn), on carried-in historical blocks, and the inits
+    warm-start from the parent's fitted xcen_/ycen_ values. The
+    {singlesersic, agn} regime binds to the singlesersic anchor (previously
+    the constrain emitted pardictlc['None_xcen'] garbage)."""
+    # fresh add on the {disk,bulge,bar} parent
+    r = transcribe_mb(_p(test_data_dir, "mb_iter3.lyric"),
+                      _p(test_data_dir, "mb_iter3.gssummary"),
+                      [{"op": "add", "structure_name": "agn",
+                        "dx_px": 0.0, "dy_px": 0.0, "panel_band": "decam_g"}],
+                      str(tmp_path / "_iterA.lyric"), bands_meta=BM)
+    assert r["status"] == "success"
+    nb = parse_lyric_doc(r["lyric"]).nuclei["a"]
+    assert nb.value(4)[4] == 0 and nb.value(5)[4] == 0   # FROZEN centres
+    text = open(r["constrain"]).read()
+    assert "pardictlc['xcen_AGN'] = 1 * pardictlc['disk_xcen']" in text
+
+    # carried-in AGN with vary=1 (a CLEAN historical parent — mb_iter7_agn
+    # is the band-dropping pathology and is rightly refused as a parent):
+    # mb_root with obj0->disk + an N block whose Na4/Na5 carry vary=1
+    gdir = tmp_path / "HIST"
+    gdir.mkdir()
+    _nb_rows = "\n".join([
+        "Na1) AGN",
+        "Na2) [0.0527, 0.01, 0.1, 0.001, 0]",
+        "Na3) 0.0072",
+        "Na4) [0.0, -1.0, 1.0, 0.01, 1]",
+        "Na5) [0.0, -1.0, 1.0, 0.01, 1]",
+        "Na6) [7, 5, 10, 0.1, 0]",
+        "Na7) [-1, -4, 2, 0.1, 0]",
+        "Na8) [0, 0, 0.99, 0.01, 0]",
+        "Na9) [0, 0, 4, 0.25, 0]",
+        "Na10) [42, 41, 48, 0.1, 0]",
+        "Na11) [1, 0, 4, 0.1, 0]",
+        "Na12) []",
+        "Na13) []",
+        "Na14) 0", "Na15) 0", "Na16) 0", "Na17) 0",
+        "Na18) 4",
+        "Na19) [1, 0.5, 2, 0.05, 0]",
+        "Na20) 0",
+        "Na21) [41, 39, 44, 0.1, 0]",
+        "Na22) [-0.5, -2.5, -0.25, 0.05, 0]",
+        "Na23) [0.5, 0.25, 1.5, 0.05, 0]",
+        "Na24) [7, 5, 10, 0.5, 0]",
+        "Na25) [15, 0, 90, 5, 0]",
+        "Na26) [1.0, 0.2, 5.0, 0.1, 1]"])
+    hist = str(gdir / "p.lyric")
+    open(hist, "w").write(
+        (_p(test_data_dir, "mb_root.lyric") and
+         open(_p(test_data_dir, "mb_root.lyric")).read())
+        .replace("Pa1) obj0", "Pa1) disk")
+        .replace("'img list'", "'img_list'")   # Aa1 enters Ni_<Na1>_<Aa1>
+        .replace("Ga1) a", _nb_rows + "\nGa1) a"))
+    gss = gdir / "p.gssummary"
+    gss.write_text(
+        "# BIC: 1.0\n# reduced chisq: 0.9\n"
+        "# free parameters:\npname    best_value\n"
+        "xcen_AGN    0.1069\nycen_AGN    0.0432\n"
+        "disk_Re    6.2\ndisk_ang    -54.6\ndisk_axrat    0.5\n"
+        "# fixed parameters:\npname    fixed_value\n")
+    r2 = transcribe_mb(hist, str(gss),
+                       [{"op": "tune", "target": "disk",
+                         "params": {"re_px": 40.0, "q": 0.5,
+                                    "pa_sky_deg": 60.0,
+                                    "panel_band": "decam_g"}}],
+                       str(gdir / "_iter8.lyric"), bands_meta=BM)
+    assert r2["status"] == "success", r2.get("error")
+    nb2 = parse_lyric_doc(r2["lyric"]).nuclei["a"]
+    assert nb2.value(4)[4] == 0 and nb2.value(5)[4] == 0   # normalised frozen
+    assert nb2.value(4)[0] == pytest.approx(0.1069, abs=1e-3)  # warm-started
+    assert nb2.value(5)[0] == pytest.approx(0.0432, abs=1e-3)
+    assert "pardictlc['xcen_AGN'] = 1 * pardictlc['disk_xcen']" in \
+        open(r2["constrain"]).read()
+
+    # {singlesersic, agn}: binds to the singlesersic anchor
+    gdir2 = tmp_path / "SSA"
+    gdir2.mkdir()
+    (gdir2 / "p.lyric").write_text(
+        open(_p(test_data_dir, "mb_root.lyric")).read()
+        .replace("Pa1) obj0", "Pa1) singlesersic")
+        .replace("'img list'", "'img_list'"))
+    r3 = transcribe_mb(str(gdir2 / "p.lyric"), None,
+                       [{"op": "add", "structure_name": "agn",
+                         "dx_px": 0.0, "dy_px": 0.0,
+                         "panel_band": "decam_g"}],
+                       str(gdir2 / "_o.lyric"), bands_meta=BM)
+    assert r3["status"] == "success", r3.get("error")
+    nb3 = parse_lyric_doc(r3["lyric"]).nuclei["a"]
+    assert nb3.value(4)[4] == 0
+    t3 = open(r3["constrain"]).read()
+    assert "pardictlc['xcen_AGN'] = 1 * pardictlc['singlesersic_xcen']" in t3
+    assert "None_xcen" not in t3

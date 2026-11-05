@@ -413,8 +413,13 @@ class MbTranscriber:
         rows[1] = nname
         off = self._declared_offsets(p)
         x0, y0 = off if off else (0.0, 0.0)
-        rows[4] = [x0, x0 - 1, x0 + 1, 0.01, 1]
-        rows[5] = [y0, y0 - 1, y0 + 1, 0.01, 1]
+        # vary=0 (FROZEN): the AGN centre is bound to the anchor via the
+        # .constrain file (pardictlc['xcen_<Na1>'] = 1 * pardictlc['<anchor>_xcen'])
+        # — a free centre alongside the binding is the P-block mistake the
+        # galfit flow fixed long ago (subordinate centres vary=0); the N
+        # block must mirror it (user-caught: Na4/Na5 stayed vary=1).
+        rows[4] = [x0, x0 - 1, x0 + 1, 0.01, 0]
+        rows[5] = [y0, y0 - 1, y0 + 1, 0.01, 0]
         lbl = self.main_galaxy or self._next_label()
         if any(l == lbl for l, _ in self.agn_blocks):
             raise LyricError("an AGN block already exists on this galaxy")
@@ -532,6 +537,18 @@ class MbTranscriber:
                     lo, hi, st = 0.05, 1.0, 0.02
                 comp.rows[idx] = [_r4(init), _r4(lo), _r4(hi), st, vary]
 
+        # N-block centres: frozen whenever the concentric binding will be
+        # emitted (an anchor exists — disk, another central component, or
+        # the singlesersic fallback). Carried-in vary=1 flags (historical
+        # lyrics) are normalised here so the child never ships a free AGN
+        # centre alongside the .constrain binding.
+        if anchor is not None:
+            for _lbl, _rows in self.agn_blocks:
+                for _i in (4, 5):
+                    _f = _rows.get(_i)
+                    if isinstance(_f, (list, tuple)) and len(_f) == 5:
+                        _rows[_i] = [_f[0], _f[1], _f[2], _f[3], 0]
+
     # ------------------------------------------------------- warm start
     def warm_start(self) -> None:
         """Undeclared structural inits <- parent gssummary converged values
@@ -558,6 +575,18 @@ class MbTranscriber:
                         f"(mandate: free from creation)")
                     continue
                 comp.rows[idx] = [_r4(fitted), f[1], f[2], f[3], f[4]]
+
+        # AGN (N-block) centres: backfill Na4/Na5 inits from the parent's
+        # fitted xcen_<Na1>/ycen_<Na1> (the same clean-increment contract;
+        # the flags stay whatever _freeze_agn_centres enforces afterwards)
+        for lbl, rows in self.agn_blocks:
+            nm = rows.get(1, "AGN")
+            for idx, key in ((4, f"xcen_{nm}"), (5, f"ycen_{nm}")):
+                fitted = self.params.get(key)
+                f = rows.get(idx)
+                if fitted is not None and isinstance(f, (list, tuple)) \
+                        and len(f) == 5:
+                    rows[idx] = [_r4(fitted), f[1], f[2], f[3], f[4]]
 
     # ------------------------------------------------------------ render
     def render(self) -> str:
@@ -610,7 +639,9 @@ class MbTranscriber:
         (+ AGN) to the disk anchor; None when K <= 1 and no AGN."""
         central = [c.name for c in self.comps if c.name in CENTRAL_STRUCTURES]
         anchor = next((c.name for c in self.comps if c.name == "disk"), None) \
-            or (central[0] if central else None)
+            or (central[0] if central else None) \
+            or next((c.name for c in self.comps
+                     if c.name == "singlesersic"), None)
         if anchor is None and not self.agn_blocks:
             return None
         lines: list[str] = []

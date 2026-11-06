@@ -874,7 +874,31 @@ async def run_galfits(
     """Execute GalfitS (multi-band) with the given config file.
 
     Runs GalfitS as a subprocess and returns discovered artifacts (summary + PNGs) and logs.
+
+    The blocking body (subprocess + matplotlib rendering) is offloaded to a
+    worker thread via asyncio.to_thread — the MCP event loop stays responsive
+    so protocol-level keepalives fire and the client does not time out on
+    long joint fits (jwst/1398: 7-min subprocess + 2-min PNG render used to
+    starve the loop and the response was never delivered, 2026-11-06).
     """
+    return await asyncio.to_thread(
+        _run_galfits_sync,
+        config_file=config_file,
+        timeout_sec=timeout_sec,
+        extra_args=extra_args,
+        read_summary=read_summary,
+        prior_file=prior_file,
+    )
+
+
+def _run_galfits_sync(
+    config_file: str,
+    timeout_sec: int = 3600,
+    extra_args: list[str] | None = None,
+    read_summary: str | None = None,
+    prior_file: str | None = None,
+) -> dict[str, Any]:
+    """Synchronous GalfitS execution (runs in a worker thread)."""
 
     if not config_file or not os.path.exists(config_file):
         return {"status": "failure", "error": f"Config file not found: {config_file}"}

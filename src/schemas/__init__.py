@@ -27,6 +27,7 @@ SCHEMA_NAMES = (
     "numeric_evidence",
     "vlm_evidence",
     "decision_artifact",
+    "candidate_ref",
     "workflow_round_manifest",
     "workflow_lifecycle",
     "agent_recommendation",
@@ -57,7 +58,8 @@ _SCHEMA_VERSIONS = {
     "artifact_manifest": ("1.0",),
     "numeric_evidence": ("1.0",),
     "vlm_evidence": ("1.0",),
-    "decision_artifact": ("1.0", "1.1"),
+    "decision_artifact": ("1.0", "1.1", "1.2"),
+    "candidate_ref": ("candidate-ref@v1",),
     "workflow_round_manifest": ("1.0",),
     "workflow_lifecycle": ("1.0",),
     "agent_recommendation": ("1.0",),
@@ -90,6 +92,8 @@ def _schema_key(name: str, schema_version: str) -> str:
 def _schema_path(name: str, schema_version: str) -> Path:
     if name == "decision_artifact" and schema_version == "1.1":
         return SCHEMA_DIR / "decision_artifact_v1_1.schema.json"
+    if name == "decision_artifact" and schema_version == "1.2":
+        return SCHEMA_DIR / "decision_artifact_v1_2.schema.json"
     if name == "agent_recommendation" and schema_version == "1.0":
         return SCHEMA_DIR / "agent_recommendation.schema.json"
     return SCHEMA_DIR / f"{name}.schema.json"

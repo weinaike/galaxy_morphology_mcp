@@ -31,6 +31,7 @@ from tools.workflow_lifecycle import (
     workflow_action_preflight,
     workflow_evaluate_refit,
     workflow_complete_candidate,
+    workflow_compare_residuals,
     workflow_verify_best_round,
     workflow_lock_best_round,
 )
@@ -74,6 +75,7 @@ def _register_tools_and_prompts():
         app.add_tool(workflow_action_config)
         app.add_tool(workflow_evaluate_refit)
         app.add_tool(workflow_complete_candidate)
+        app.add_tool(workflow_compare_residuals)
         app.add_tool(workflow_verify_best_round)
         app.add_tool(workflow_lock_best_round)
         app.add_tool(record_workflow_fit_lifecycle)

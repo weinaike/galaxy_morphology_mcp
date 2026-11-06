@@ -228,7 +228,9 @@ def test_shadow_runner_preserves_raw_controlled_vlm_response(tmp_path):
         assert image_path == str((output_dir / "candidate_overlay.png").resolve())
         assert image_path != str(comparison.resolve())
         assert (output_dir / "candidate_overlay.png").is_file()
-        assert '"candidate_1"' in prompt
+        # 2026-10-28 ruling: single-band synthetic candidates are not eligible
+        # VLM targets, so only 'central' may appear in the prompt.
+        assert '"candidate_1"' not in prompt
         assert all(
             field not in prompt for field in ("x_pix", "y_pix", "ra_deg", "dec_deg")
         )
@@ -243,10 +245,11 @@ def test_shadow_runner_preserves_raw_controlled_vlm_response(tmp_path):
         vlm_callback=callback,
         current_components={"disk"},
     )
-    assert result["vlm_error"]
+    # Full coverage of the only eligible target (central) means OK, not PARTIAL.
+    assert result["vlm_error"] is None
     assert result["vlm_evidence"]["model_id"] == "test-vlm"
     assert (output_dir / "vlm_response.raw.json").read_text() == raw
-    assert result["vlm_evidence"]["parse_status"] == "PARTIAL"
+    assert result["vlm_evidence"]["parse_status"] == "OK"
 
 
 def test_shadow_runner_retries_malformed_json_once_and_preserves_attempts(tmp_path):
@@ -263,7 +266,7 @@ def test_shadow_runner_retries_malformed_json_once_and_preserves_attempts(tmp_pa
         "parse_status": "OK",
         "observations": [],
     })
-    responses = iter(["{ malformed", valid, valid])
+    responses = iter(["{ malformed", valid])
     calls = []
 
     def callback(image_path, prompt):
@@ -277,12 +280,13 @@ def test_shadow_runner_retries_malformed_json_once_and_preserves_attempts(tmp_pa
         vlm_callback=callback,
         current_components={"disk"},
     )
-    assert len(calls) == 3
+    # Single eligible target (central): one batch plus one retry.
+    assert len(calls) == 2
     assert result["vlm_evidence"]["parse_status"] == "PARSE_FAILED"
     attempts = json.loads(
         (output_dir / "vlm_response.attempts.json").read_text(encoding="utf-8")
     )["attempts"]
-    assert [item["parse_status"] for item in attempts] == ["PARSE_FAILED", "OK", "OK"]
+    assert [item["parse_status"] for item in attempts] == ["PARSE_FAILED", "OK"]
     assert attempts[0]["raw_response"] == "{ malformed"
     assert (output_dir / "policy_state.json").is_file()
 
@@ -309,14 +313,15 @@ def test_shadow_runner_uses_numeric_fallback_after_two_parse_failures(tmp_path):
         current_components={"disk"},
     )
 
-    assert len(calls) == 3
+    # Single eligible target (central): batch + retry, then fail-closed.
+    assert len(calls) == 2
     assert result["vlm_evidence"]["parse_status"] == "PARSE_FAILED"
     assert result["decision_artifact"]["automation"]["resolution"] == "numeric_only_retry"
     assert result["decision_artifact"]["raw_decision"]["action"]["action_type"] == "REFIT_PARAMETERS"
     attempts = json.loads(
         (output_dir / "vlm_response.attempts.json").read_text(encoding="utf-8")
     )["attempts"]
-    assert [item["attempt"] for item in attempts] == [1, 2, 3]
+    assert [item["attempt"] for item in attempts] == [1, 2]
     assert all(item["raw_response"] == "{ malformed" for item in attempts)
 
 

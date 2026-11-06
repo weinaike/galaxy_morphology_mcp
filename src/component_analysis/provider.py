@@ -13,6 +13,8 @@ from typing import Any, Callable
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from .vlm import PROMPT_VERSION
+
 
 class OpenAICompatibleVLM:
     """Call an OpenAI-compatible vision endpoint with strict JSON mode."""
@@ -81,7 +83,7 @@ class OpenAICompatibleVLM:
         except Exception as exc:
             self.last_response_metadata = {
                 "model_id": self.model_id,
-                "prompt_version": "component-analysis-vlm@v2.0",
+                "prompt_version": PROMPT_VERSION,
                 "attempt": "unavailable",
                 "response_bytes": "unavailable",
                 "finish_reason": "unavailable",
@@ -108,7 +110,7 @@ class OpenAICompatibleVLM:
         if not isinstance(content, str) or not content.strip():
             self.last_response_metadata = {
                 "model_id": self.model_id,
-                "prompt_version": "component-analysis-vlm@v2.0",
+                "prompt_version": PROMPT_VERSION,
                 "attempt": "unavailable",
                 "response_bytes": 0,
                 "finish_reason": "unavailable",
@@ -132,7 +134,7 @@ class OpenAICompatibleVLM:
         choice = response.choices[0]
         self.last_response_metadata = {
             "model_id": self.model_id,
-            "prompt_version": "component-analysis-vlm@v2.0",
+            "prompt_version": PROMPT_VERSION,
             "attempt": "unavailable",
             "response_bytes": len(content.encode("utf-8")),
             "finish_reason": getattr(choice, "finish_reason", "unavailable"),

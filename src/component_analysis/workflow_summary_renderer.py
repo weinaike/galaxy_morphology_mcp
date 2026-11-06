@@ -14,7 +14,7 @@ from schemas import validate
 RENDERER_VERSION = "workflow-summary-renderer@v2"
 
 
-def _read_validated(path: Path, schema: str) -> tuple[dict[str, Any] | None, str]:
+def _read_validated(path: Path, schema: str | None) -> tuple[dict[str, Any] | None, str]:
     """Read one JSON artifact only when it satisfies its frozen schema."""
     if not path.is_file():
         return None, "unavailable"
@@ -22,10 +22,75 @@ def _read_validated(path: Path, schema: str) -> tuple[dict[str, Any] | None, str
         value = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(value, dict):
             return None, "schema validation failed"
-        validate(value, schema)
+        if schema is not None:
+            validate(value, schema)
     except (OSError, ValueError, ValidationError):
         return None, "schema validation failed"
     return value, "available"
+
+
+def _refit_arbitration_lines(refit_result: Mapping[str, Any] | None) -> list[str]:
+    """Render the non-executable refit verdict and its supporting evidence."""
+    if not isinstance(refit_result, Mapping):
+        return ["- 本轮未执行 refit 仲裁。"]
+    refit_decision = refit_result.get("refit_decision")
+    if not isinstance(refit_decision, Mapping):
+        return ["- refit 仲裁结果：未采集"]
+    verdict = refit_decision.get("verdict")
+    summary = refit_result.get("action_summary") or {}
+    lines = [
+        f"- refit verdict：{_value(verdict, fallback='未采集')}（不可执行的仲裁结论，不是下一轮动作）",
+        f"- refit verdict 汇总：{_value(summary.get('refit_verdict'), fallback='未采集')}",
+        f"- duplicate_submission：{_value(refit_result.get('duplicate_submission'), fallback='unavailable')}",
+    ]
+    evaluation = (refit_decision.get("decision") or {}).get("refit_evaluation") if isinstance(refit_decision.get("decision"), Mapping) else None
+    if isinstance(evaluation, Mapping):
+        lines.append(
+            f"- fit_quality_ok：{_value(evaluation.get('fit_quality_ok'), fallback='未采集')}"
+        )
+        lines.append(
+            f"- residual_outcome（2D）：{_value(evaluation.get('residual_outcome'), fallback='未采集')}"
+        )
+        reduced = evaluation.get("reduced_chisq")
+        if isinstance(reduced, Mapping):
+            lines.append(
+                f"- reduced chisq：baseline={_value(reduced.get('baseline'))}、"
+                f"candidate={_value(reduced.get('candidate'))}、"
+                f"delta={_value(reduced.get('delta'))}、"
+                f"comparable={_value(reduced.get('comparable'))}"
+            )
+        boundary_new = evaluation.get("boundary_hits_new_or_unresolved")
+        if boundary_new is not None:
+            lines.append(
+                f"- 新引入或未解决边界：{_value(boundary_new, fallback='无')}"
+            )
+    return lines
+
+
+def _queue_next_lines(
+    next_decision: Mapping[str, Any] | None,
+    queue_decision: Mapping[str, Any] | None,
+) -> list[str]:
+    """Render the queue-supplied next executable action, distinct from the verdict."""
+    transition = (next_decision or {}).get("next_transition") if isinstance(next_decision, Mapping) else None
+    reason = (next_decision or {}).get("reason") if isinstance(next_decision, Mapping) else None
+    if transition is None and queue_decision is None:
+        return ["- 无队列推进：本轮后回到 baseline 重新分析或终止。"]
+    lines = [f"- next_transition：{_value(transition, fallback='未采集')}"]
+    if reason:
+        lines.append(f"- 原因：{_value(reason)}")
+    if isinstance(queue_decision, Mapping):
+        action = queue_decision.get("action") or {}
+        lines.append(
+            f"- 下一候选动作：{_value(action.get('action_type'), fallback='未采集')}"
+            f"（component={_value(action.get('component'), fallback='无')}、"
+            f"target={_value(action.get('target_model_label'), fallback='无')}）"
+        )
+        automation = queue_decision.get("automation") or {}
+        lines.append(
+            f"- 推进来源：{_value(automation.get('resolution'), fallback='未采集')}"
+        )
+    return lines
 
 
 def _profile_lines(value: Any) -> list[str]:
@@ -316,7 +381,9 @@ def _evidence_view_lines(
     }
     lines: list[str] = []
     for label, view in (
-        ("raw VLM", views.get("vlm")),
+        # N25: new artifacts write numeric_plus_vlm; the "vlm" key is the
+        # read-compatible name for historical schema-valid rounds.
+        ("raw VLM", views.get("numeric_plus_vlm") or views.get("vlm")),
         ("numeric-only", views.get("numeric_only")),
     ):
         compact = _compact_evidence_view(view)
@@ -515,6 +582,8 @@ def render_image_round(
         round_path / "candidate_lifecycle.json", "workflow_lifecycle"
     )
     verifier, _ = _read_validated(round_path / "workflow_verifier.json", "workflow_verifier")
+    refit_result, _ = _read_validated(round_path / "refit_decision.json", None)
+    queue_next, _ = _read_validated(round_path / "queue_next_decision.json", "decision_artifact")
     decision = lifecycle.get("resolved_decision") if lifecycle else None
     candidate_decision = candidate_lifecycle.get("resolved_decision") if candidate_lifecycle else None
     if isinstance(decision, Mapping) and not isinstance(decision.get("action"), Mapping):
@@ -586,6 +655,15 @@ def render_image_round(
         "",
         "### Resolved Action",
         *_action_lines(decision if isinstance(decision, Mapping) else None),
+        "",
+        "### Refit 仲裁结果（不可执行）",
+        *_refit_arbitration_lines(refit_result if isinstance(refit_result, Mapping) else None),
+        "",
+        "### 队列中的下一动作（唯一可执行来源）",
+        *_queue_next_lines(
+            (refit_result or {}).get("next_decision") if isinstance(refit_result, Mapping) else None,
+            queue_next if isinstance(queue_next, Mapping) else None,
+        ),
         "",
         "## 新 lyric 与参数／约束差异",
         f"- baseline lyric：{_value((manifest or {}).get('config_file'))}",
@@ -660,6 +738,8 @@ def render_final_report(
         f"- historical_pre_fix：{_value(state.get('historical_pre_fix'), fallback='unavailable')}",
         f"- renderer：{RENDERER_VERSION}",
         f"- workflow status：{_value(state.get('status'))}",
+        f"- 最终接受轮次：{_value(state.get('final_accepted_round_id'), fallback='unavailable')}",
+        f"- 最终模型配置：{_value(state.get('final_accepted_config_file'), fallback='unavailable')}",
         f"- Image：{_value(downstream.get('image'), fallback='FIT_AVAILABLE')}",
         f"- SED：{_value(downstream.get('sed'), fallback='NOT_RUN')}",
         f"- Image-SED：{_value(downstream.get('image_sed'), fallback='NOT_RUN')}",

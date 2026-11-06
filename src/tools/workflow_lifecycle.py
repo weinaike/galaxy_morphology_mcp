@@ -22,6 +22,7 @@ from component_analysis import (
     lock_best_round,
     verify_best_round,
 )
+from component_analysis.workflow_bridge import compare_residual_images
 
 
 WORKFLOW_TRANSITIONS = (
@@ -40,9 +41,13 @@ WORKFLOW_ACTIONS = (
     "PROPOSE_REMOVE",
     "PROMOTE_SINGLE_SERSIC_TO_DISK",
     "REFIT_PARAMETERS",
-    "KEEP_AND_CONTINUE",
+    "COLLECT_EVIDENCE",
     "CONVERGED",
 )
+
+# Legacy action value that the new workflow never generates; kept readable for
+# historical artifacts only (renderer/replay compatibility).
+WORKFLOW_LEGACY_READ_ONLY_ACTIONS = ("KEEP_AND_CONTINUE",)
 
 
 def _order_multiband_results(
@@ -86,6 +91,7 @@ def workflow_capabilities() -> dict[str, Any]:
         },
         "workflow_modes": ["single-band", "multi-band"],
         "actions": list(WORKFLOW_ACTIONS),
+        "legacy_read_only_actions": list(WORKFLOW_LEGACY_READ_ONLY_ACTIONS),
         "transitions": list(WORKFLOW_TRANSITIONS),
         "client_independent": True,
         "timing_log_enabled": os.getenv("VLM_TIMING_LOG", "0") == "1",
@@ -354,16 +360,36 @@ def workflow_evaluate_refit(
     component: str,
     refit_evaluation: dict[str, Any],
     state_file: str,
+    candidate_ref: dict[str, Any] | None = None,
     candidate_action_type: str | None = None,
     candidate_reason_code: str | None = None,
     evidence_refs: dict[str, Any] | None = None,
     decision_ref: str | None = None,
     object_id: str | None = None,
     config_ref: str | None = None,
-    evidence_fingerprint: str = "",
-    baseline_config_checksum: str | None = None,
+    candidate_manifest: dict[str, Any] | None = None,
+    candidate_fit_result: dict[str, Any] | None = None,
+    baseline_config_ref: str | None = None,
+    baseline_fit_result: dict[str, Any] | None = None,
+    lifecycle_file: str | None = None,
 ) -> dict[str, Any]:
-    """Evaluate a completed refit and persist the updated object state."""
+    """Evaluate a completed refit and persist the updated object state.
+
+    Candidate identity must arrive as one schema-valid ``candidate_ref``
+    (original action, candidate ID, rule ID, decision ref, baseline artifact
+    fingerprint, evidence fingerprint); the candidate key is computed
+    server-side from it. This is the single arbitration entrypoint: verdict,
+    Policy transition, next_decision and the candidate lifecycle all happen
+    here, exactly once per candidate_ref (duplicate submissions are idempotent).
+    """
+    from schemas import validate as schema_validate
+
+    if candidate_ref is None:
+        raise ValueError(
+            "candidate_ref is required: refit identity must be schema-validated "
+            "and the candidate key is computed server-side"
+        )
+    schema_validate(candidate_ref, "candidate_ref")
     state = load_policy_state(state_file, object_id=object_id)
     return evaluate_workflow_refit(
         state=state,
@@ -376,8 +402,12 @@ def workflow_evaluate_refit(
         state_file=state_file,
         decision_ref=decision_ref,
         config_ref=config_ref,
-        evidence_fingerprint=evidence_fingerprint,
-        baseline_config_checksum=baseline_config_checksum,
+        candidate_ref=candidate_ref,
+        candidate_manifest=candidate_manifest,
+        candidate_fit_result=candidate_fit_result,
+        baseline_config_ref=baseline_config_ref,
+        baseline_fit_result=baseline_fit_result,
+        lifecycle_file=lifecycle_file,
     )
 
 
@@ -388,22 +418,22 @@ def workflow_complete_candidate(
     candidate_fit_result: dict[str, Any] | None,
     component: str,
     candidate_action_type: str,
-    state_file: str,
+    state_file: str | None = None,
+    candidate_ref: dict[str, Any] | None = None,
     candidate_reason_code: str | None = None,
     lifecycle_file: str | None = None,
     evidence_file: str | None = None,
     evidence_refs: dict[str, Any] | None = None,
     decision_ref: str | None = None,
 ) -> dict[str, Any]:
-    """Compare two existing MCP fit results and persist one candidate event."""
+    """Comparator adapter: turn two existing MCP fit results into refit evidence.
+
+    N26 downgrade: no PolicyState access, no Rules/Policy arbitration, no
+    verdict, no lifecycle. ``workflow_evaluate_refit`` owns arbitration.
+    """
     if baseline_manifest.get("object_id") != candidate_manifest.get("object_id"):
         raise ValueError("baseline and candidate manifests must refer to the same object")
-    state = load_policy_state(
-        state_file,
-        object_id=candidate_manifest.get("object_id"),
-    )
     return complete_workflow_candidate(
-        state=state,
         baseline_manifest=baseline_manifest,
         candidate_manifest=candidate_manifest,
         baseline_fit_result=baseline_fit_result,
@@ -416,6 +446,7 @@ def workflow_complete_candidate(
         lifecycle_file=lifecycle_file,
         evidence_file=evidence_file,
         decision_ref=decision_ref,
+        candidate_ref=candidate_ref,
     )
 
 
@@ -458,4 +489,30 @@ def workflow_lock_best_round(
         verifier_artifact_ref=verifier_artifact_ref,
         state_file=state_file,
         lifecycle_file=lifecycle_file,
+    )
+
+
+def workflow_compare_residuals(
+    round_id: str,
+    baseline_comparison_png: str,
+    candidate_comparison_png: str,
+    use_vlm: bool = False,
+) -> dict[str, Any]:
+    """Ruling 12: one controlled VLM residual comparison for refit arbitration.
+
+    Returns a verdict block (cleaner/unchanged/dirtier or unavailable); never
+    decides actions. With use_vlm the shared OpenAI-compatible provider is
+    used; without it the verdict is explicitly recorded as unavailable and the
+    numeric gates decide (fail-open).
+    """
+    callback = None
+    if use_vlm:
+        from component_analysis.provider import OpenAICompatibleVLM
+
+        callback = OpenAICompatibleVLM()
+    return compare_residual_images(
+        round_id=round_id,
+        baseline_comparison_png=baseline_comparison_png,
+        candidate_comparison_png=candidate_comparison_png,
+        vlm_callback=callback,
     )

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "galaxy-morphology-mcp/candidate_ref/1",
+  "title": "Candidate Reference",
+  "description": "Server-side identity contract for one executable refit candidate. The candidate key is computed from these fields only; verdict actions (ACCEPT_REFIT/REJECT_REFIT) are never valid candidate actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "rule_id",
+    "action",
+    "baseline_artifact_fingerprint",
+    "evidence_fingerprint"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "candidate-ref@v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rule_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "type": ["string", "null"]
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["action_type"],
+      "properties": {
+        "action_type": {
+          "enum": [
+            "PROPOSE_ADD",
+            "PROPOSE_REPLACE",
+            "PROPOSE_REMOVE",
+            "PROMOTE_SINGLE_SERSIC_TO_DISK",
+            "REFIT_PARAMETERS"
+          ]
+        },
+        "component": {
+          "type": ["string", "null"]
+        },
+        "target_model_label": {
+          "type": ["string", "null"]
+        },
+        "replace_from": {
+          "type": ["string", "null"]
+        },
+        "replace_to": {
+          "type": ["string", "null"]
+        },
+        "parameter_changes": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action_type": {
+                "enum": ["PROPOSE_ADD", "PROPOSE_REMOVE", "PROMOTE_SINGLE_SERSIC_TO_DISK"]
+              }
+            }
+          },
+          "then": {
+            "required": ["component"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action_type": {
+                "const": "PROPOSE_REPLACE"
+              }
+            }
+          },
+          "then": {
+            "required": ["replace_from", "replace_to", "target_model_label"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action_type": {
+                "const": "REFIT_PARAMETERS"
+              }
+            }
+          },
+          "then": {
+            "required": ["parameter_changes"],
+            "properties": {
+              "parameter_changes": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "decision_ref": {
+      "type": ["string", "null"]
+    },
+    "baseline_artifact_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

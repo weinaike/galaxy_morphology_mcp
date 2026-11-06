@@ -14,7 +14,7 @@ import jsonschema
 
 from schemas import load_schema, validate
 
-PROMPT_VERSION = "component-analysis-vlm@v2.0"
+PROMPT_VERSION = "component-analysis-vlm@v2.1"
 MAX_OBSERVATIONS_PER_REQUEST = 4
 MAX_NOTES_LENGTH = 240
 
@@ -47,21 +47,43 @@ def allowed_target_ids(numeric_evidence: dict[str, Any]) -> tuple[str, ...]:
     """Return the only target IDs the VLM may describe.
 
     'central' is always available. Every other ID must have been issued by
-    the numeric layer in a 'candidate_regions' entry. Coordinates are
-    deliberately not returned to the prompt builder.
+    the numeric layer in a 'candidate_regions' entry AND satisfy the
+    multi-band consistency gate (2026-10-28 ruling): the same WCS candidate
+    must be detected in >= 2 bands. Single-band residual peaks are noise-level
+    overproduction and never enter the VLM coverage obligation. Coordinates
+    are deliberately not returned to the prompt builder.
     """
     validate(numeric_evidence, "numeric_evidence")
     targets = ["central"]
     seen = {"central"}
+    for target_id in multi_band_target_ids(numeric_evidence):
+        if target_id not in seen:
+            targets.append(target_id)
+            seen.add(target_id)
+    return tuple(targets)
+
+
+# v1 default, subject to dev-set calibration (2026-10-28 ruling; raised from
+# 2 to 3 the same day — 7-band data, companion is a minor component and the
+# run3 2-band target candidate_15 was exactly the one rejected at BIC_gain=-163).
+MIN_BANDS_FOR_CANDIDATE_TARGET = 3
+
+
+def multi_band_target_ids(numeric_evidence: dict[str, Any]) -> tuple[str, ...]:
+    """Candidate-region targets detected in >= MIN_BANDS_FOR_CANDIDATE_TARGET bands."""
+    validate(numeric_evidence, "numeric_evidence")
+    bands_by_target: dict[str, set[str]] = {}
     for feature in numeric_evidence["features"]:
         for region in feature.get("candidate_regions", []):
             target_id = region["region_id"]
             if target_id == "central":
                 raise ValueError("numeric candidate region_id 'central' is reserved")
-            if target_id not in seen:
-                targets.append(target_id)
-                seen.add(target_id)
-    return tuple(targets)
+            bands_by_target.setdefault(target_id, set()).add(str(region.get("band")))
+    return tuple(
+        target_id
+        for target_id, bands in bands_by_target.items()
+        if len(bands) >= MIN_BANDS_FOR_CANDIDATE_TARGET
+    )
 
 
 def build_vlm_prompt(
@@ -92,11 +114,23 @@ def build_vlm_prompt(
         raise ValueError(
             f"target_ids exceeds per-request limit {MAX_OBSERVATIONS_PER_REQUEST}"
         )
+    # v2.1: the contract example must SHOW one valid observation object —
+    # without it the model invents field names (e.g. "labels") or omits
+    # required fields (confidence). The example targets the first requested
+    # target so it cannot introduce a new target_id.
     contract = {
         "schema_version": "1.0",
         "round_id": round_id,
         "parse_status": "OK",
-        "observations": [],
+        "observations": [
+            {
+                "target_id": requested_targets[0],
+                "label": "uncertain",
+                "confidence": 0.5,
+                "quality_flags": [],
+                "evidence_regions": [],
+            }
+        ],
     }
     return "\n".join(
         (
@@ -132,7 +166,9 @@ def build_vlm_prompt(
             ),
             "只输出一个 JSON 对象，不要使用 Markdown 代码块，"
             "不要在 JSON 前后添加文字。",
-            f"输出结构如下；observations 可以为空，notes 最多 {MAX_NOTES_LENGTH} 个字符，只能记录简短视觉歧义，"
+            f"输出结构如下（示例中的 observation 仅为字段格式说明，"
+            "label 必须按你的实际观察选择；没有把握的 target 直接省略，"
+            "observations 可以为空数组）；notes 最多 {MAX_NOTES_LENGTH} 个字符，只能记录简短视觉歧义，"
             "不能包含动作、坐标或参数：",
             json.dumps(contract, ensure_ascii=False, indent=2),
         )
@@ -263,3 +299,85 @@ def parse_vlm_response(
     if semantic_error is not None:
         return failed(semantic_error)
     return evidence, None
+
+
+# ---------------------------------------------------------------------------
+# Ruling 12 (2026-11-02): controlled residual-comparison labels for the refit
+# arbitration gate. Distinct task from the morphology labels above.
+# ---------------------------------------------------------------------------
+
+RESIDUAL_VERDICT_LABELS = ("cleaner", "unchanged", "dirtier")
+RESIDUAL_COMPARISON_PROMPT_VERSION = "residual-comparison-vlm@v1"
+
+
+def build_residual_comparison_prompt(*, round_id: str) -> str:
+    """Versioned prompt for the two-image residual comparison (ruling 12)."""
+    return "\n".join(
+        (
+            "你负责对比两次拟合的残差面板，不负责成分增删决策。",
+            f"prompt_version: {RESIDUAL_COMPARISON_PROMPT_VERSION}",
+            f"round_id: {round_id}",
+            "第一张图是 baseline（原模型）的 comparison 图，第二张是 candidate（新模型）的 comparison 图。",
+            "只比较两者的残差（residual）面板：候选的残差整体是否更干净。",
+            "verdict 只能取以下枚举值：" + json.dumps(RESIDUAL_VERDICT_LABELS, ensure_ascii=False),
+            "cleaner＝候选残差明显更干净（剩余结构信号减少）；",
+            "unchanged＝无肉眼可见的实质差异；",
+            "dirtier＝候选残差更脏，或出现新的结构化残留（环状／衍射状／中心尖峰等）。",
+            "坐标、参数值、成分增删动作和新的 verdict 值均禁止输出。",
+            "只输出一个 JSON 对象，不要使用 Markdown 代码块，不要在 JSON 前后添加文字。",
+            "输出结构如下；notes 最多 120 个字符，只能记录简短视觉描述：",
+            json.dumps(
+                {"verdict": "unchanged", "notes": ""},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+    )
+
+
+def parse_residual_comparison_response(
+    raw_response: str,
+    *,
+    round_id: str,
+    model_id: str | None = None,
+) -> tuple[dict[str, Any], str | None]:
+    """Parse strict JSON for the residual comparison; fail-closed to
+    PARSE_FAILED with an empty verdict on any violation."""
+    try:
+        payload = json.loads(raw_response)
+    except (json.JSONDecodeError, TypeError) as exc:
+        error = f"residual comparison response is not strict JSON: {exc}"
+    else:
+        verdict = payload.get("verdict") if isinstance(payload, dict) else None
+        notes = payload.get("notes", "")
+        if verdict not in RESIDUAL_VERDICT_LABELS:
+            error = (
+                f"residual comparison verdict must be one of {RESIDUAL_VERDICT_LABELS}, "
+                f"got {verdict!r}"
+            )
+        elif not isinstance(notes, str) or len(notes) > 120:
+            error = "residual comparison notes must be a string of at most 120 characters"
+        else:
+            error = None
+    if error is None:
+        evidence = {
+            "schema_version": "1.0",
+            "round_id": round_id,
+            "prompt_version": RESIDUAL_COMPARISON_PROMPT_VERSION,
+            "parse_status": "OK",
+            "model_id": model_id,
+            "verdict": payload["verdict"],
+            "notes": payload.get("notes", ""),
+        }
+        return evidence, None
+    evidence = {
+        "schema_version": "1.0",
+        "round_id": round_id,
+        "prompt_version": RESIDUAL_COMPARISON_PROMPT_VERSION,
+        "parse_status": "PARSE_FAILED",
+        "model_id": model_id,
+        "verdict": "unavailable",
+        "notes": "",
+        "error": error,
+    }
+    return evidence, error

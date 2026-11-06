@@ -90,16 +90,27 @@ def test_duplicate_base_lyrics_are_rejected(tmp_path):
     assert "found 2" in objects[0]["issues"][0]
 
 
-def test_jwst0831_manifest_is_limited_to_authorized_three_objects(tmp_path):
+def test_jwst0831_allowlist_can_be_re_enabled(tmp_path, monkeypatch):
+    """2026-10-30: all objects authorized by default; the locking mechanism
+    itself must stay available for future re-enablement."""
+    import tools.workflow_batch_runner as runner_mod
+
     root = tmp_path / "jwst0831"
-    for object_id in ("104", "1071", "1118", "1182"):
+    for object_id in ("104", "1182"):
         _write_fixture_object(root, object_id)
 
+    # Default: every object is discovered.
     objects = discover_objects(root, mode="multi-band")
+    assert [item["object_id"] for item in objects] == ["104", "1182"]
 
-    assert [item["object_id"] for item in objects] == ["104", "1071", "1118"]
+    # Re-enabled allowlist locks out non-members.
+    monkeypatch.setattr(
+        runner_mod, "JWST0831_ALLOWED_OBJECT_IDS", frozenset({"104"})
+    )
+    objects = runner_mod.discover_objects(root, mode="multi-band")
+    assert [item["object_id"] for item in objects] == ["104"]
     with pytest.raises(BatchManifestError, match="outside the authorized allowlist"):
-        discover_objects(root, mode="multi-band", object_id="1182")
+        runner_mod.discover_objects(root, mode="multi-band", object_id="1182")
 
 
 def test_state_roundtrip_and_structured_summary(tmp_path):
@@ -234,6 +245,8 @@ class _FakeMCPClient:
         self.fit_count = 0
         self.refit_verdict = "ACCEPTED"
         self.verifier_pass = False
+        # N26: per-call next_decision payloads popped on each evaluate call.
+        self.next_decisions = []
 
     async def call_tool(self, name, arguments=None, **kwargs):
         arguments = arguments or {}
@@ -327,7 +340,7 @@ class _FakeMCPClient:
             }
         if name == "workflow_action_preflight":
             action_type = arguments["decision_artifact"]["action"]["action_type"]
-            if action_type == "REFIT_PARAMETERS":
+            if action_type in {"REFIT_PARAMETERS", "PROPOSE_ADD", "PROMOTE_SINGLE_SERSIC_TO_DISK"}:
                 return {
                     "ok": True,
                     "action": arguments["decision_artifact"]["action"],
@@ -357,8 +370,8 @@ class _FakeMCPClient:
                 },
             }
         if name == "workflow_complete_candidate":
+            # N26: comparator adapter only — evaluation evidence, no verdict.
             return {
-                "action_summary": {"refit_verdict": self.refit_verdict},
                 "evaluation": {
                     "candidate_action_type": "REFIT_PARAMETERS",
                     "fit_converged": "yes",
@@ -369,9 +382,28 @@ class _FakeMCPClient:
                     "bic": None,
                     "reduced_chisq": None,
                 },
+                "evidence": {"schema_version": "workflow-refit-evidence@v1"},
             }
         if name == "workflow_evaluate_refit":
-            return {"decision": {}, "action_summary": {"refit_verdict": self.refit_verdict}}
+            # N26: control flow follows next_decision only.
+            if self.next_decisions:
+                next_decision = self.next_decisions.pop(0)
+            else:
+                next_transition = (
+                    "ANALYZE_NEW_BASELINE"
+                    if self.refit_verdict == "ACCEPTED"
+                    else "STOPPED_NEEDS_REVIEW"
+                )
+                next_decision = {
+                    "next_transition": next_transition,
+                    "decision": None,
+                    "reason": None,
+                }
+            return {
+                "decision": {},
+                "next_decision": next_decision,
+                "action_summary": {"refit_verdict": self.refit_verdict},
+            }
         if name == "check_lyric_file":
             return {"status": "success"}
         if name == "workflow_verify_best_round":
@@ -516,6 +548,75 @@ def test_remove_is_preflighted_but_never_auto_executed(tmp_path):
     assert "workflow_action_config" not in names
     assert "workflow_complete_candidate" not in names
     assert result["summary"]["counts"] == {"COMPLETED_WITH_REVIEW": 1}
+
+
+def test_rejected_candidate_advances_to_queued_next_candidate(tmp_path):
+    """N26: after a REJECT verdict the runner executes the queue-supplied next
+    candidate directly on the unchanged baseline — no re-proposal round."""
+    from tools.workflow_batch_runner import WorkflowBatchCoordinator
+
+    root = tmp_path / "batch"
+    _write_fixture_object(root)
+    run_dir = tmp_path / "run"
+    manifest = build_batch_manifest(root, run_dir, resume=True)
+    write_batch_manifest(manifest)
+    companion = _fake_decision(
+        "obj1", "PROPOSE_ADD", component="companion", target_model_label="candidate_1"
+    )
+    fake = _FakeMCPClient(
+        [
+            _fake_decision(
+                "obj1",
+                "REFIT_PARAMETERS",
+                component="disk",
+                parameter_changes={"n": 1.0},
+            ),
+            companion,
+        ]
+    )
+    fake.refit_verdict = "REJECTED"
+    fake.next_decisions = [
+        {"next_transition": "RUN_FIT", "decision": companion, "reason": None},
+        {
+            "next_transition": "STOPPED_NEEDS_REVIEW",
+            "decision": None,
+            "reason": "candidate queue exhausted",
+        },
+    ]
+
+    result = asyncio.run(
+        WorkflowBatchCoordinator(manifest, fake, max_rounds=4).run()
+    )
+
+    names = [name for name, _ in fake.calls]
+    # baseline + two distinct candidate fits, all on the same baseline.
+    assert names.count("run_galfits_image_fitting") == 3
+    assert names.count("workflow_action_config") == 2
+    assert names.count("workflow_complete_candidate") == 2
+    assert names.count("workflow_evaluate_refit") == 2
+    # The queue decision is persisted for audit and executed without a
+    # re-proposal round.
+    state = load_object_state(run_dir, "obj1")
+    object_dir = Path(state["object_dir"]) if state.get("object_dir") else None
+    run_root = run_dir / "objects" / "obj1"
+    assert (run_root / "round_001" / "queue_next_decision.json").is_file()
+    # Terminal: the re-proposed companion duplicates the rejected fingerprint.
+    assert result["summary"]["counts"] == {"COMPLETED_WITH_REVIEW": 1}
+    restored = load_object_state(run_dir, "obj1")
+    assert restored["termination_reason"] == (
+        "duplicate rejected action on unchanged baseline"
+    )
+
+
+def test_runner_source_has_no_verdict_control_channel():
+    """N26 contract: the runner must not drive control flow from the
+    action_summary.refit_verdict string; only next_decision is executable.
+    Persisted-file reads for resume backfill are audit inputs, not control."""
+    source = Path("src/tools/workflow_batch_runner.py").read_text(encoding="utf-8")
+    assert "refit_verdict = (evaluated" not in source
+    assert 'complete.get("action_summary", {}).get("refit_verdict")' not in source
+    assert "refit_verdict == \"ACCEPTED\"" not in source
+    assert "refit_verdict == \"REJECTED\"" not in source
 
 
 def test_rejected_action_is_not_repeated_on_unchanged_baseline(tmp_path):
@@ -838,3 +939,112 @@ def test_cli_resume_object_id_limits_existing_manifest(tmp_path, monkeypatch):
         ]
     ) == 0
     assert captured["object_ids"] == {"obj2"}
+
+
+def test_consecutive_collect_rounds_stop_with_review(tmp_path):
+    """N27 backstop: three consecutive COLLECT_EVIDENCE rounds without progress
+    must stop for review instead of burning the whole round budget."""
+    from tools.workflow_batch_runner import WorkflowBatchCoordinator
+
+    root = tmp_path / "batch"
+    _write_fixture_object(root)
+    run_dir = tmp_path / "run"
+    manifest = build_batch_manifest(root, run_dir, resume=True)
+    write_batch_manifest(manifest)
+    collect = _fake_decision("obj1", "COLLECT_EVIDENCE")
+    fake = _FakeMCPClient([collect, collect, collect])
+
+    result = asyncio.run(
+        WorkflowBatchCoordinator(manifest, fake, max_rounds=10).run()
+    )
+
+    names = [name for name, _ in fake.calls]
+    assert names.count("workflow_propose_round") <= 7  # 3 rounds + collector calls
+    assert names.count("run_galfits_image_fitting") == 1  # baseline only
+    assert result["summary"]["counts"] == {"COMPLETED_WITH_REVIEW": 1}
+    restored = load_object_state(run_dir, "obj1")
+    assert "COLLECT_EVIDENCE" in restored["termination_reason"]
+
+
+def test_action_component_infers_from_parameter_target():
+    """CENTER_CONSTRAINT_MISSING-style REFIT_PARAMETERS actions carry no
+    component field; the target must be inferred from parameter_changes."""
+    action = {
+        "action_type": "REFIT_PARAMETERS",
+        "reason_code": "CENTER_CONSTRAINT_MISSING",
+        "parameter_changes": [
+            {"target_model_label": "bar1", "parameter": "x,y", "operation": "LINK_CENTER"}
+        ],
+    }
+    assert _action_component(action, {"workflow_mode": "multi-band"}) == "bar"
+    assert _action_component(
+        {"action_type": "REFIT_PARAMETERS", "reason_code": "CENTER_CONSTRAINT_MISSING"},
+        {"workflow_mode": "multi-band"},
+    ) is None
+
+
+def test_grid_mismatch_detected_in_preflight(tmp_path):
+    """T4/216: sigma on a different pixel grid than science must fail
+    preflight with an explicit reason instead of crashing GalfitS later."""
+    from astropy.io import fits
+    import numpy as np
+
+    root = tmp_path / "jwst0831"
+    galaxy = root.mkdir() or root / "objX"
+    galaxy.mkdir(parents=True)
+    sci = galaxy / "sci.fits"
+    sig = galaxy / "sig.fits"
+    mask = galaxy / "mask.fits"
+    fits.PrimaryHDU(np.zeros((185, 181))).writeto(sci)
+    fits.PrimaryHDU(np.zeros((185, 181))).writeto(mask)
+    fits.PrimaryHDU(np.zeros((93, 91))).writeto(sig)  # wrong grid
+    (galaxy / "objX.lyric").write_text(
+        "\n".join(
+            [
+                "R1) objX",
+                "Ia1) [sci.fits,0]",
+                "Ia2) nircam_f200w",
+                "Ia3) [sig.fits,0]",
+                "Ia4) [none,0]",
+                "Ia6) [mask.fits,0]",
+                "Ia8) 25.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    objects = discover_objects(root)
+    assert objects[0]["preflight_status"] == "PREFLIGHT_FAILED"
+    assert any("pixel grid" in issue and "sigma" in issue for issue in objects[0]["issues"])
+    # Matching grids produce no grid issue.
+    fits.PrimaryHDU(np.zeros((185, 181))).writeto(sig, overwrite=True)
+    objects = discover_objects(root)
+    assert objects[0]["preflight_status"] == "READY"
+    assert not any("pixel grid" in issue for issue in objects[0]["issues"])
+
+
+def test_final_accepted_round_marked_in_run_index(tmp_path):
+    """The run index and final report must name the final accepted round
+    explicitly (205 finding: users had to infer it from verdict chains)."""
+    from tools.workflow_batch_runner import WorkflowBatchCoordinator
+
+    root = tmp_path / "batch"
+    _write_fixture_object(root)
+    run_dir = tmp_path / "run"
+    manifest = build_batch_manifest(root, run_dir, resume=True)
+    write_batch_manifest(manifest)
+    fake = _FakeMCPClient(
+        [
+            _fake_decision("obj1", "REFIT_PARAMETERS", component="disk", parameter_changes={"re": 1.0}),
+            _fake_decision("obj1", "CONVERGED"),
+        ]
+    )
+    fake.verifier_pass = True
+    asyncio.run(WorkflowBatchCoordinator(manifest, fake, max_rounds=3).run())
+    state = load_object_state(run_dir, "obj1")
+    idx = json.loads(Path(state["run_index_file"]).read_text(encoding="utf-8"))
+    assert idx["final_accepted_round_id"] == "obj1_workflow_round0_candidate"
+    assert idx["final_config_file"].endswith(".lyric")
+    report = Path(state["analysis_report_file"]).read_text(encoding="utf-8")
+    assert "最终接受轮次" in report and "obj1_workflow_round0_candidate" in report

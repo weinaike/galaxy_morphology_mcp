@@ -29,11 +29,14 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from component_analysis.artifact_adapter import _parse_lyric
+from component_analysis.policy import build_candidate_ref
 from component_analysis.workflow_summary_renderer import (
     render_final_report,
     render_image_round,
     render_working_note,
 )
+from jsonschema import ValidationError
+
 from schemas import validate
 
 
@@ -58,7 +61,12 @@ ALLOWED_COMPONENTS = {
     "compact_central_source_candidate",
     "lens",
 }
-JWST0831_ALLOWED_OBJECT_IDS = frozenset({"104", "1071", "1118"})
+# 2026-10-30: 小鱼儿 authorized running ALL JWST0831 objects; the six-object
+# canary allowlist is retired. Set to a frozenset of ids to re-enable locking.
+JWST0831_ALLOWED_OBJECT_IDS = None
+# N27: hard stop for unproductive evidence-collection loops (the policy-side
+# occurrence cap is the first line of defense; this is the runner backstop).
+MAX_CONSECUTIVE_COLLECT_ROUNDS = 3
 
 
 class BatchManifestError(ValueError):
@@ -123,6 +131,38 @@ def _base_lyrics(galaxy_dir: Path) -> list[Path]:
     )
 
 
+def _grid_mismatch(sci_path: Path | None, other_path: Path | None) -> str | None:
+    """Return a mismatch description when two FITS images disagree on shape.
+
+    T4/216 finding: sigma images sampled onto a different pixel grid than
+    their science image crash GalfitS with an opaque broadcast TypeError;
+    this check surfaces the mismatch at preflight with exact shapes.
+    """
+    if sci_path is None or other_path is None:
+        return None
+    if not (sci_path.is_file() and other_path.is_file()):
+        return None
+    try:
+        from astropy.io import fits
+
+        def _shape(path: Path) -> tuple[int, int] | None:
+            with fits.open(path, memmap=False) as hdul:
+                for hdu in hdul:
+                    if hdu.data is not None and getattr(hdu.data, "ndim", 0) == 2:
+                        return tuple(int(v) for v in hdu.data.shape)
+            return None
+
+        sci_shape = _shape(sci_path)
+        other_shape = _shape(other_path)
+    except (OSError, ValueError, ImportError):
+        return None
+    if sci_shape is None or other_shape is None:
+        return None
+    if sci_shape != other_shape:
+        return f"{other_shape!r} vs science {sci_shape!r}"
+    return None
+
+
 def _discover_object(galaxy_dir: Path, mode: str) -> dict[str, Any]:
     object_id = galaxy_dir.name
     issues: list[str] = []
@@ -155,6 +195,7 @@ def _discover_object(galaxy_dir: Path, mode: str) -> dict[str, Any]:
             for info in image_infos:
                 band = str(info["band"])
                 bands.append(band)
+                sci_path = None
                 for field, required in (
                     ("science", True),
                     ("sigma", galaxy_dir.parent.name.casefold() == "jwst0831"),
@@ -162,6 +203,8 @@ def _discover_object(galaxy_dir: Path, mode: str) -> dict[str, Any]:
                     ("mask", True),
                 ):
                     path, pair_issue = _resolve_pair(info.get(field), config_path.parent)
+                    if field == "science":
+                        sci_path = path
                     _append_input(
                         inputs,
                         seen,
@@ -182,6 +225,14 @@ def _discover_object(galaxy_dir: Path, mode: str) -> dict[str, Any]:
                             issues.append(
                                 f"{band}:sigma: expected explicit JWST0831 sigma path {expected}"
                             )
+                    if field in ("sigma", "mask") and path is not None:
+                        mismatch = _grid_mismatch(sci_path, path)
+                        if mismatch:
+                            issues.append(
+                                f"{band}:{field}: pixel grid {mismatch} does not match "
+                                f"science image grid; GalfitS cannot broadcast them "
+                                f"(T4/216 finding)"
+                            )
         except (OSError, ValueError) as exc:
             issues.append(f"lyric parse failed: {type(exc).__name__}: {exc}")
 
@@ -190,6 +241,7 @@ def _discover_object(galaxy_dir: Path, mode: str) -> dict[str, Any]:
         or "file not found" in issue
         or "lyric parse failed" in issue
         or "exactly one base" in issue
+        or "pixel grid" in issue
         for issue in issues
     )
     return {
@@ -220,7 +272,7 @@ def discover_objects(
         path for path in sorted(root.iterdir())
         if path.is_dir() and not path.name.startswith(".") and path.name != "sigma"
     ]
-    if root.name.casefold() == "jwst0831":
+    if JWST0831_ALLOWED_OBJECT_IDS is not None and root.name.casefold() == "jwst0831":
         if object_id is not None and object_id not in JWST0831_ALLOWED_OBJECT_IDS:
             raise BatchManifestError(
                 f"JWST0831 object {object_id!r} is outside the authorized allowlist"
@@ -634,6 +686,36 @@ def _action_baseline_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _baseline_artifact_fingerprint(workflow_manifest: dict[str, Any]) -> str:
+    """Fingerprint the baseline fit artifacts only (no candidate action inside).
+
+    Delegates to the canonical policy implementation so the runner-side
+    candidate_ref keys and the server-side queue/rejection keys are computed
+    from the identical payload (2026-10-28 ruling 3). The older
+    ``_action_baseline_fingerprint`` mixes the action into the payload and is
+    kept only as the runner-side fail-closed duplicate guard.
+    """
+    from component_analysis.policy import compute_baseline_artifact_fingerprint
+
+    return compute_baseline_artifact_fingerprint(
+        workflow_manifest.get("config_file"),
+        workflow_manifest.get("result_files", []),
+        workflow_manifest.get("summary_file"),
+    )
+
+
+def _resolved_rule_id(decision: dict[str, Any]) -> str:
+    """Extract the rule that produced the executed action, for candidate identity."""
+    automation = decision.get("automation") or {}
+    rule_id = automation.get("resolved_rule_id")
+    if rule_id:
+        return str(rule_id)
+    for trace in reversed(decision.get("rule_trace") or []):
+        if trace.get("rule_id"):
+            return str(trace["rule_id"])
+    return "unknown_rule"
+
+
 def _terminal_review_decision(
     decision: dict[str, Any],
     *,
@@ -708,19 +790,57 @@ def _write_lifecycle_artifact(
     return artifact
 
 
+def _persisted_rejected_rounds(object_dir: Path) -> list[Path]:
+    """Round dirs whose candidate was REJECTED, from new- then legacy-format artifacts."""
+    rejected: list[Path] = []
+    seen: set[Path] = set()
+    for refit_file in sorted(object_dir.glob("round_*/refit_decision.json")):
+        try:
+            refit = _read_json(refit_file)
+        except (OSError, ValueError):
+            continue
+        if (refit.get("refit_decision") or {}).get("verdict") == "REJECT_REFIT":
+            round_dir = refit_file.parent
+            rejected.append(round_dir)
+            seen.add(round_dir)
+    # Legacy rounds predate the split verdict response.
+    for completion_file in sorted(object_dir.glob("round_*/candidate_completion.json")):
+        round_dir = completion_file.parent
+        if round_dir in seen:
+            continue
+        try:
+            completion = _read_json(completion_file)
+        except (OSError, ValueError):
+            continue
+        if completion.get("action_summary", {}).get("refit_verdict") == "REJECTED":
+            rejected.append(round_dir)
+    return rejected
+
+
+def _rejected_round_action(round_dir: Path) -> dict[str, Any]:
+    """Original candidate action of a rejected round (candidate_ref first)."""
+    candidate_ref_file = round_dir / "candidate_ref.json"
+    if candidate_ref_file.is_file():
+        try:
+            return (_read_json(candidate_ref_file).get("action")) or {}
+        except (OSError, ValueError):
+            pass
+    resolution_file = round_dir / "resolution" / "resolution.json"
+    if resolution_file.is_file():
+        try:
+            return (_read_json(resolution_file).get("decision") or {}).get("action") or {}
+        except (OSError, ValueError):
+            pass
+    return {}
+
+
 def _persisted_rejected_action_fingerprints(object_dir: Path) -> set[str]:
     fingerprints: set[str] = set()
-    for completion_file in sorted(object_dir.glob("round_*/candidate_completion.json")):
-        completion = _read_json(completion_file)
-        if completion.get("action_summary", {}).get("refit_verdict") != "REJECTED":
-            continue
-        round_dir = completion_file.parent
-        resolution_file = round_dir / "resolution" / "resolution.json"
+    for round_dir in _persisted_rejected_rounds(object_dir):
         manifest_file = round_dir / "workflow_manifest.json"
-        if not resolution_file.is_file() or not manifest_file.is_file():
+        if not manifest_file.is_file():
             continue
-        resolution = _read_json(resolution_file)
-        action = (resolution.get("decision") or {}).get("action") or {}
+        action = _rejected_round_action(round_dir)
         if not action:
             continue
         fingerprints.add(
@@ -731,17 +851,11 @@ def _persisted_rejected_action_fingerprints(object_dir: Path) -> set[str]:
 
 def _persisted_rejected_action_baseline_fingerprints(object_dir: Path) -> set[str]:
     fingerprints: set[str] = set()
-    for completion_file in sorted(object_dir.glob("round_*/candidate_completion.json")):
-        completion = _read_json(completion_file)
-        if completion.get("action_summary", {}).get("refit_verdict") != "REJECTED":
-            continue
-        round_dir = completion_file.parent
-        resolution_file = round_dir / "resolution" / "resolution.json"
+    for round_dir in _persisted_rejected_rounds(object_dir):
         manifest_file = round_dir / "workflow_manifest.json"
-        if not resolution_file.is_file() or not manifest_file.is_file():
+        if not manifest_file.is_file():
             continue
-        resolution = _read_json(resolution_file)
-        action = (resolution.get("decision") or {}).get("action") or {}
+        action = _rejected_round_action(round_dir)
         if not action:
             continue
         fingerprints.add(
@@ -770,6 +884,16 @@ def _action_component(
     ):
         if reason.startswith(prefix):
             return component
+    # REFIT_PARAMETERS actions carry no component field; the target lives in
+    # parameter_changes[].target_model_label (e.g. CENTER_CONSTRAINT_MISSING).
+    for change in action.get("parameter_changes") or []:
+        target = str(change.get("target_model_label") or "").lower()
+        for prefix, component in (
+            ("disk", "disk"), ("bulge", "bulge"), ("bar", "bar"), ("lens", "lens"),
+            ("agn", "agn"), ("nucleus", "agn"), ("companion", "companion"),
+        ):
+            if target.startswith(prefix):
+                return component
     try:
         from component_analysis.artifact_adapter import workflow_fit_components
 
@@ -778,7 +902,7 @@ def _action_component(
             for item in workflow_fit_components(workflow_manifest)
             if item.get("component") in ALLOWED_COMPONENTS
         ]
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, ValidationError):
         components = []
     return components[0] if len(set(components)) == 1 else None
 
@@ -940,7 +1064,10 @@ class WorkflowBatchCoordinator:
         self.remove_pilot_passed = remove_pilot_passed
         self.verifier_assessment = verifier_assessment
         root_dir = Path(self.manifest["root_dir"]).expanduser().resolve()
-        if root_dir.name.casefold() == "jwst0831":
+        if (
+            JWST0831_ALLOWED_OBJECT_IDS is not None
+            and root_dir.name.casefold() == "jwst0831"
+        ):
             unauthorized = {
                 item["object_id"]
                 for item in self.manifest["objects"]
@@ -1031,7 +1158,12 @@ class WorkflowBatchCoordinator:
             records = state.setdefault("run_index_rounds", {})
             records[round_id] = {
                 "round_id": round_id,
-                "round_dir": str(round_dir.resolve()),
+                # N26/M5: the audited round directory is the persistent copy
+                # under artifacts/, never the /tmp run root.
+                "round_dir": str(
+                    (self._artifact_dir(object_id) / round_dir.name).resolve()
+                ),
+                "round_dir_source": str(round_dir.resolve()),
                 "action": (
                     (terminal_lifecycle or {}).get("resolved_decision", {}).get("action")
                     if terminal_lifecycle
@@ -1062,6 +1194,8 @@ class WorkflowBatchCoordinator:
             "run_id": self.manifest["batch_id"],
             "object_id": object_id,
             "baseline_config_file": state.get("baseline_config_file"),
+            "final_accepted_round_id": state.get("final_accepted_round_id"),
+            "final_config_file": state.get("final_accepted_config_file"),
             "rounds": [
                 state["run_index_rounds"][key]
                 for key in sorted(state.get("run_index_rounds", {}))
@@ -1177,6 +1311,7 @@ class WorkflowBatchCoordinator:
             "workflow_manifest.json", "workflow_analysis_artifact.json", "lifecycle.json",
             "terminal_lifecycle.json", "candidate_manifest.json", "candidate_fit_result.json",
             "candidate_completion.json", "candidate_lifecycle.json", "refit_evidence.json", "refit_decision.json",
+            "candidate_ref.json", "queue_next_decision.json",
             "action_preflight.json", "action_config.json", "lyric_check.json",
             "workflow_verifier.json", "lock_result.json", "proposal/workflow_proposal.json",
             "proposal/numeric_evidence.json", "proposal/vlm_evidence.json",
@@ -1829,6 +1964,10 @@ class WorkflowBatchCoordinator:
             self._save_runner_state(object_id, state)
             return state
         state["baseline_fit_file"] = str(fit_file)
+        # Explicit final-round marking: the baseline is the initial "final"
+        # model; every later ACCEPT_REFIT overwrites these fields.
+        state["final_accepted_round_id"] = f"{object_id}_workflow_round0"
+        state["final_accepted_config_file"] = str(config_file)
         state["current_fit_file"] = str(fit_file)
         rejected_fingerprints = set(
             state.get("rejected_action_fingerprints", [])
@@ -1844,7 +1983,8 @@ class WorkflowBatchCoordinator:
         current_fit = fit_result
         current_config = config_file
 
-        for round_index in range(int(state.get("round_index", 0)), self.max_rounds):
+        round_index = int(state.get("round_index", 0))
+        while round_index < self.max_rounds:
             round_id = f"{object_id}_workflow_round{round_index}"
             round_dir = object_dir / f"round_{round_index:03d}"
             round_dir.mkdir(parents=True, exist_ok=True)
@@ -1953,42 +2093,46 @@ class WorkflowBatchCoordinator:
             state["pending_action"] = action
             self._save_runner_state(object_id, state)
 
-            action_fingerprint = _action_attempt_fingerprint(
-                action, workflow_manifest, proposal
-            )
-            action_baseline_fingerprint = _action_baseline_fingerprint(
-                action, workflow_manifest
-            )
-            if (
-                action_type
-                in {
+            # N26: queue-driven candidate execution. The first pass executes
+            # the resolved decision; after each verdict the ONLY control-flow
+            # source is next_decision — a rejection consumes the next queued
+            # candidate directly, an acceptance re-analyzes the new baseline.
+            # The legacy action_summary.refit_verdict channel is gone.
+            advance_outer = False
+            while True:
+                action = decision.get("action") or {}
+                action_type = action.get("action_type")
+                action_fingerprint = _action_attempt_fingerprint(
+                    action, workflow_manifest, proposal
+                )
+                action_baseline_fingerprint = _action_baseline_fingerprint(
+                    action, workflow_manifest
+                )
+                if action_type not in {
                     "PROPOSE_ADD", "PROPOSE_REPLACE", "PROPOSE_REMOVE",
                     "REFIT_PARAMETERS", "PROMOTE_SINGLE_SERSIC_TO_DISK",
-                }
-                and (
+                }:
+                    break
+                # Model actions reset the consecutive-collect counter.
+                state["consecutive_collect_rounds"] = 0
+                if (
                     action_fingerprint in rejected_fingerprints
                     or action_baseline_fingerprint in rejected_baseline_fingerprints
-                )
-            ):
-                state["pending_action"] = None
-                state["round_index"] = round_index + 1
-                return await self._finish_with_review(
-                    object_id=object_id,
-                    state=state,
-                    config_file=current_config,
-                    fit_result=current_fit,
-                    reason="duplicate rejected action on unchanged baseline",
-                    workflow_manifest=workflow_manifest,
-                    resolution=resolution,
-                    round_dir=round_dir,
-                    state_file=state_file,
-                )
-
-            preflight = {"ok": True, "skipped": True, "reason_code": "non-fit action"}
-            if action_type in {
-                "PROPOSE_ADD", "PROPOSE_REPLACE", "PROPOSE_REMOVE",
-                "REFIT_PARAMETERS", "PROMOTE_SINGLE_SERSIC_TO_DISK",
-            }:
+                ):
+                    state["pending_action"] = None
+                    state["round_index"] = round_index + 1
+                    return await self._finish_with_review(
+                        object_id=object_id,
+                        state=state,
+                        config_file=current_config,
+                        fit_result=current_fit,
+                        reason="duplicate rejected action on unchanged baseline",
+                        workflow_manifest=workflow_manifest,
+                        resolution=resolution,
+                        round_dir=round_dir,
+                        state_file=state_file,
+                    )
+                state["pending_action"] = action
                 preflight = await self.client.call_tool(
                     "workflow_action_preflight",
                     {
@@ -1998,11 +2142,7 @@ class WorkflowBatchCoordinator:
                         "remove_pilot_passed": self.remove_pilot_passed,
                     },
                 )
-            _write_json(round_dir / "action_preflight.json", preflight)
-            if action_type in {
-                "PROPOSE_ADD", "PROPOSE_REPLACE", "PROPOSE_REMOVE",
-                "REFIT_PARAMETERS", "PROMOTE_SINGLE_SERSIC_TO_DISK",
-            }:
+                _write_json(round_dir / "action_preflight.json", preflight)
                 if not preflight.get("ok"):
                     self._record_action_summary(state, preflight.get("action_summary"))
                     return await self._finish_with_review(
@@ -2088,10 +2228,40 @@ class WorkflowBatchCoordinator:
                     round_id=f"{round_id}_candidate",
                 )
                 _write_json(round_dir / "candidate_manifest.json", candidate_manifest)
+                # 2026-11-02 ruling 12: one controlled VLM residual comparison
+                # before arbitration; failure is fail-open (numeric gates).
+                try:
+                    residual_comparison = await self.client.call_tool(
+                        "workflow_compare_residuals",
+                        {
+                            "round_id": str(candidate_manifest["round_id"]),
+                            "baseline_comparison_png": str(workflow_manifest.get("comparison_png") or ""),
+                            "candidate_comparison_png": str(candidate_manifest.get("comparison_png") or candidate_fit.get("comparison_png") or ""),
+                            "use_vlm": bool(self.manifest["options"].get("use_vlm")),
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001 - fail-open per ruling 12
+                    residual_comparison = {
+                        "parse_status": "REFUSED",
+                        "verdict": "unavailable",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                _write_json(round_dir / "residual_comparison.json", residual_comparison)
                 try:
                     validate(candidate_manifest, "workflow_round_manifest")
                 except Exception as exc:
                     raise BatchManifestError("candidate manifest schema failed") from exc
+                candidate_ref = build_candidate_ref(
+                    action=action,
+                    rule_id=_resolved_rule_id(decision),
+                    decision_ref=resolution.get("decision_ref"),
+                    baseline_artifact_fingerprint=_baseline_artifact_fingerprint(
+                        workflow_manifest
+                    ),
+                    evidence_fingerprint=str(proposal.get("evidence_fingerprint", "")),
+                    target=action.get("target_model_label"),
+                )
+                _write_json(round_dir / "candidate_ref.json", candidate_ref)
                 complete = await self.client.call_tool(
                     "workflow_complete_candidate",
                     {
@@ -2099,13 +2269,11 @@ class WorkflowBatchCoordinator:
                         "candidate_manifest": candidate_manifest,
                         "baseline_fit_result": current_fit,
                         "candidate_fit_result": candidate_fit,
-                        "component": _action_component(action, workflow_manifest),
+                        "component": _action_component(action, workflow_manifest) or "unknown",
                         "candidate_action_type": action_type,
+                        "candidate_ref": candidate_ref,
                         "candidate_reason_code": action.get("reason_code"),
-                        "state_file": str(state_file),
-                        "lifecycle_file": str(round_dir / "candidate_lifecycle.json"),
                         "evidence_file": str(round_dir / "refit_evidence.json"),
-                        "decision_ref": resolution.get("decision_ref"),
                     },
                 )
                 _write_json(round_dir / "candidate_completion.json", complete)
@@ -2114,6 +2282,8 @@ class WorkflowBatchCoordinator:
                     raise BatchManifestError(
                         "candidate completion did not return structured refit evaluation"
                     )
+                evaluation = dict(evaluation)
+                evaluation["vlm_residual_verdict"] = residual_comparison.get("verdict")
                 evaluated = await self.client.call_tool(
                     "workflow_evaluate_refit",
                     {
@@ -2121,16 +2291,20 @@ class WorkflowBatchCoordinator:
                         "component": _action_component(action, workflow_manifest) or "unknown",
                         "refit_evaluation": evaluation,
                         "state_file": str(state_file),
+                        "candidate_ref": candidate_ref,
                         "candidate_action_type": action_type,
                         "candidate_reason_code": action.get("reason_code"),
                         "evidence_refs": {
                             "manifest": str(round_dir / "refit_evidence.json"),
-                            "evidence_fingerprint": proposal.get("evidence_fingerprint", ""),
-                            "baseline_config_checksum": action_baseline_fingerprint,
                         },
                         "decision_ref": resolution.get("decision_ref"),
                         "object_id": object_id,
                         "config_ref": str(candidate_config),
+                        "candidate_manifest": candidate_manifest,
+                        "candidate_fit_result": candidate_fit,
+                        "baseline_config_ref": str(workflow_manifest["config_file"]),
+                        "baseline_fit_result": current_fit,
+                        "lifecycle_file": str(round_dir / "candidate_lifecycle.json"),
                     },
                 )
                 _write_json(round_dir / "refit_decision.json", evaluated)
@@ -2143,29 +2317,58 @@ class WorkflowBatchCoordinator:
                     workflow_manifest=workflow_manifest,
                     state=state,
                 )
-                self._record_action_summary(state, complete.get("action_summary"))
                 self._record_action_summary(state, evaluated.get("action_summary"))
                 state["pending_candidate"] = None
-                refit_verdict = (evaluated.get("action_summary") or {}).get("refit_verdict") or complete.get("action_summary", {}).get("refit_verdict")
-                if refit_verdict == "ACCEPTED":
-                    current_fit = candidate_fit
-                    current_config = candidate_config
-                    state["current_config_file"] = str(candidate_config)
-                    state["current_fit_file"] = str(candidate_fit_file)
-                    state["round_index"] = round_index + 1
+                # N26: the ONLY control-flow source is next_decision.
+                next_decision = evaluated.get("next_decision") or {}
+                next_transition = next_decision.get("next_transition")
+                if next_transition == "RUN_FIT" and isinstance(
+                    next_decision.get("decision"), dict
+                ):
+                    # Consume the next queued candidate directly on the
+                    # unchanged baseline; no re-proposal happens here.
+                    decision = next_decision["decision"]
+                    try:
+                        validate(decision, "decision_artifact")
+                    except Exception as exc:
+                        raise BatchManifestError(
+                            "queued next decision artifact schema failed"
+                        ) from exc
+                    round_index += 1
+                    state["round_index"] = round_index
+                    round_id = f"{object_id}_workflow_round{round_index}"
+                    round_dir = object_dir / f"round_{round_index:03d}"
+                    round_dir.mkdir(parents=True, exist_ok=True)
+                    _write_json(round_dir / "queue_next_decision.json", decision)
                     self._save_runner_state(object_id, state)
                     continue
-                if refit_verdict == "REJECTED":
-                    rejected_fingerprints.add(action_fingerprint)
-                    rejected_baseline_fingerprints.add(action_baseline_fingerprint)
-                    state["rejected_action_fingerprints"] = sorted(
-                        rejected_fingerprints
-                    )
-                    state["rejected_action_baseline_fingerprints"] = sorted(
-                        rejected_baseline_fingerprints
-                    )
-                state["round_index"] = round_index + 1
+                rejected_fingerprints.add(action_fingerprint)
+                rejected_baseline_fingerprints.add(action_baseline_fingerprint)
+                state["rejected_action_fingerprints"] = sorted(rejected_fingerprints)
+                state["rejected_action_baseline_fingerprints"] = sorted(
+                    rejected_baseline_fingerprints
+                )
+                if next_transition == "ANALYZE_NEW_BASELINE":
+                    current_fit = candidate_fit
+                    current_config = candidate_config
+                    state["final_accepted_round_id"] = str(candidate_manifest["round_id"])
+                    state["final_accepted_config_file"] = str(candidate_config)
+                    state["current_config_file"] = str(candidate_config)
+                    state["current_fit_file"] = str(candidate_fit_file)
+                    round_index += 1
+                    state["round_index"] = round_index
+                    self._save_runner_state(object_id, state)
+                    advance_outer = True
+                    break
+                # Queue exhausted (or stop): re-analyze the unchanged baseline
+                # so the outer loop can choose COLLECT_EVIDENCE or terminate.
+                round_index += 1
+                state["round_index"] = round_index
                 self._save_runner_state(object_id, state)
+                advance_outer = True
+                break
+
+            if advance_outer:
                 continue
 
             if action_type == "COLLECT_EVIDENCE":
@@ -2176,7 +2379,8 @@ class WorkflowBatchCoordinator:
                 if "next_transition" not in action:
                     # Compatibility for pre-transition fixtures only. New
                     # decisions must carry an explicit collector contract.
-                    state["round_index"] = round_index + 1
+                    round_index += 1
+                    state["round_index"] = round_index
                     self._save_runner_state(object_id, state)
                     continue
                 if not has_collector:
@@ -2224,13 +2428,33 @@ class WorkflowBatchCoordinator:
                         round_dir=round_dir,
                         state_file=state_file,
                     )
+                consecutive_collect = int(state.get("consecutive_collect_rounds", 0)) + 1
+                state["consecutive_collect_rounds"] = consecutive_collect
+                if consecutive_collect >= MAX_CONSECUTIVE_COLLECT_ROUNDS:
+                    state["pending_evidence_proposal"] = None
+                    return await self._finish_with_review(
+                        object_id=object_id,
+                        state=state,
+                        config_file=current_config,
+                        fit_result=current_fit,
+                        reason=(
+                            "consecutive COLLECT_EVIDENCE rounds exceeded "
+                            f"{MAX_CONSECUTIVE_COLLECT_ROUNDS} without resolving the "
+                            "blocking evidence gap"
+                        ),
+                        workflow_manifest=workflow_manifest,
+                        resolution=resolution,
+                        round_dir=round_dir,
+                        state_file=state_file,
+                    )
                 state["pending_evidence_proposal"] = {
                     "manifest_file": str(collector_manifest_file),
                     "proposal_file": str(collector_proposal_file),
                     "collector_id": action.get("collector_id"),
                     "source_round_id": round_id,
                 }
-                state["round_index"] = round_index + 1
+                round_index += 1
+                state["round_index"] = round_index
                 self._save_runner_state(object_id, state)
                 continue
 

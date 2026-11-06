@@ -31,34 +31,46 @@ def _band_result_files(
     manifest_bands: list[Mapping[str, Any]],
     result_files: list[str],
 ) -> list[str | None]:
-    """Align result FITS using the band token in each filename."""
+    """Align result FITS strictly: manifest explicit path first, band token second.
+
+    A band with no unambiguous match raises instead of falling back to a
+    positional result (fail-closed); cross-band residual comparison must never
+    silently pair the wrong files.
+    """
     unused = list(result_files)
     aligned: list[str | None] = []
     for band in manifest_bands:
         band_name = str(band.get("band", "")).lower()
-        token = re.search(r"f\d{3,4}[a-z]", band_name)
-        token_text = token.group(0) if token else band_name
+        manifest_path = _path(band.get("result_fits"))
         match_index = next(
             (
                 index
                 for index, path in enumerate(unused)
-                if token_text and token_text in Path(path).name.lower()
+                if manifest_path and path == manifest_path
             ),
             None,
         )
         if match_index is None:
-            manifest_path = _path(band.get("result_fits"))
-            match_index = next(
-                (
-                    index
-                    for index, path in enumerate(unused)
-                    if manifest_path and path == manifest_path
-                ),
-                None,
+            token = re.search(r"f\d{3,4}[a-z]", band_name)
+            token_text = token.group(0) if token else band_name
+            token_matches = [
+                index
+                for index, path in enumerate(unused)
+                if token_text and token_text in Path(path).name.lower()
+            ]
+            if len(token_matches) == 1:
+                match_index = token_matches[0]
+        if match_index is None:
+            if not unused:
+                # No result files left to pair: an incompleteness case that
+                # normalize_fit_result reports through missing_fields.
+                aligned.append(None)
+                continue
+            raise ValueError(
+                f"could not unambiguously match a result FITS for band "
+                f"{band.get('band')!r} from {unused}; refusing positional fallback"
             )
-        if match_index is None and unused:
-            match_index = 0
-        aligned.append(unused.pop(match_index) if match_index is not None else None)
+        aligned.append(unused.pop(match_index))
     return aligned
 
 
@@ -182,30 +194,6 @@ def _comparison_conditions(
     return {"comparable": not reasons, "reasons": reasons}
 
 
-def _residual_score(manifest: Mapping[str, Any]) -> float | None:
-    try:
-        arrays = load_workflow_band_arrays(dict(manifest))
-    except (OSError, ValueError, RuntimeError, IndexError):
-        return None
-    scores: list[float] = []
-    for band in arrays:
-        residual = np.asarray(band.residual, dtype=float)
-        valid = np.isfinite(residual)
-        if band.mask is not None:
-            valid &= ~np.asarray(band.mask, dtype=bool)
-        if band.sigma is not None:
-            sigma = np.asarray(band.sigma, dtype=float)
-            valid &= np.isfinite(sigma) & (sigma > 0)
-            values = np.abs(residual[valid] / sigma[valid])
-        else:
-            values = np.abs(residual[valid])
-        if values.size:
-            score = float(np.mean(values))
-            if np.isfinite(score):
-                scores.append(score)
-    return float(np.mean(scores)) if scores else None
-
-
 def _parameter_health(manifest: Mapping[str, Any]) -> tuple[str, list[str], list[str]]:
     try:
         components = workflow_fit_components(manifest)
@@ -247,6 +235,76 @@ def _summary_metric(manifest: Mapping[str, Any], key: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) and np.isfinite(value) else None
 
 
+def _fit_quality_ok(manifest: Mapping[str, Any]) -> str:
+    """ES convergence proxy (Q1, 2026-10-27 ruling).
+
+    ``yes``: every parsed band has a finite, positive reduced chisq with dof>0
+    (or a finite top-level reduced chisq when no per-band lines exist) AND the
+    optimizer generation count is recorded. ``no``: any parsed reduced chisq is
+    non-finite or non-positive, or dof<=0. ``inconclusive``: summaries cannot
+    be parsed. GalfitS ES emits no optimizer-converged flag, so a true
+    ``optimizer_converged`` is reported as NOT_APPLICABLE for this version.
+    """
+    try:
+        summary = _parse_workflow_summary(str(manifest["summary_file"]))
+    except (OSError, ValueError):
+        return "inconclusive"
+    bands = summary.get("bands") or []
+    checks: list[tuple[float, float]] = []
+    if bands:
+        for band in bands:
+            reduced = band.get("reduced_chisq")
+            dof = band.get("dof")
+            if reduced is None or dof is None:
+                return "inconclusive"
+            if not np.isfinite(float(reduced)) or float(reduced) <= 0 or float(dof) <= 0:
+                return "no"
+            checks.append((float(reduced), float(dof)))
+    else:
+        reduced = summary.get("reduced_chisq")
+        if reduced is None:
+            return "inconclusive"
+        if not np.isfinite(float(reduced)) or float(reduced) <= 0:
+            return "no"
+    generations = _summary_generations(manifest)
+    if generations is None:
+        # The ES generation count only exists in GalfitS multi-band
+        # summaries; single-band GALFIT output has no equivalent field.
+        if str(manifest.get("workflow_mode", "single-band")) != "multi-band":
+            return "yes"
+        return "inconclusive"
+    return "yes"
+
+
+def _summary_generations(manifest: Mapping[str, Any]) -> int | None:
+    """Parse the optimizer generation count recorded by GalfitS ES."""
+    try:
+        content = Path(str(manifest["summary_file"])).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = re.search(r"num_generations:\s*(\d+)", content)
+    if not match:
+        return None
+    generations = int(match.group(1))
+    return generations if generations >= 1 else None
+
+
+def _band_reduced_chisq(manifest: Mapping[str, Any]) -> dict[str, float] | None:
+    """Per-band reduced chisq from the official GalfitS summary (2026-11-02
+    ruling 10); returns None when any band lacks the value."""
+    try:
+        summary = _parse_workflow_summary(str(manifest["summary_file"]))
+    except (OSError, ValueError):
+        return None
+    bands = summary.get("bands") or []
+    values = {
+        str(item.get("band")): float(item.get("reduced_chisq"))
+        for item in bands
+        if item.get("reduced_chisq") is not None
+    }
+    return values if bands and len(values) == len(bands) else None
+
+
 def compare_refit_artifacts(
     *,
     baseline_manifest: Mapping[str, Any],
@@ -259,25 +317,44 @@ def compare_refit_artifacts(
     baseline_artifact = normalize_fit_result(baseline_manifest, baseline_fit)
     candidate_artifact = normalize_fit_result(candidate_manifest, candidate_fit)
     conditions = _comparison_conditions(baseline_manifest, candidate_manifest)
-    baseline_score = _residual_score(baseline_manifest) if baseline_artifact["valid"] else None
-    candidate_score = _residual_score(candidate_manifest) if candidate_artifact["valid"] else None
+    # 2026-11-02 ruling 10: residual_outcome comes from the official GalfitS
+    # per-band reduced chisq (mean across bands); the self-computed L1 score
+    # is retired. Any missing band -> fail-closed inconclusive.
+    baseline_band_rc = (
+        _band_reduced_chisq(baseline_manifest) if baseline_artifact["valid"] else None
+    )
+    candidate_band_rc = (
+        _band_reduced_chisq(candidate_manifest) if candidate_artifact["valid"] else None
+    )
     if not baseline_artifact["valid"] or not candidate_artifact["valid"]:
         residual_outcome = "inconclusive"
-    elif baseline_score is None or candidate_score is None:
+    elif not baseline_band_rc or not candidate_band_rc:
         residual_outcome = "inconclusive"
-    elif candidate_score < baseline_score:
-        residual_outcome = "improved"
-    elif candidate_score > baseline_score:
-        residual_outcome = "worse"
     else:
-        residual_outcome = "equivalent"
+        common = sorted(set(baseline_band_rc) & set(candidate_band_rc))
+        if not common or len(common) != len(baseline_band_rc):
+            residual_outcome = "inconclusive"
+        else:
+            baseline_mean = sum(baseline_band_rc[b] for b in common) / len(common)
+            candidate_mean = sum(candidate_band_rc[b] for b in common) / len(common)
+            if candidate_mean < baseline_mean:
+                residual_outcome = "improved"
+            elif candidate_mean > baseline_mean:
+                residual_outcome = "worse"
+            else:
+                residual_outcome = "equivalent"
     candidate_physical, boundary_hits, degeneracy_warnings = _parameter_health(candidate_manifest)
+    _, baseline_boundary_hits, _ = _parameter_health(baseline_manifest)
+    # Q3 comparison semantics: only boundaries the candidate newly introduces
+    # (candidate set minus baseline set) participate in rejection.
+    boundary_new_or_unresolved = sorted(set(boundary_hits) - set(baseline_boundary_hits))
     if candidate_artifact["valid"]:
         fit_converged = "yes"
     elif str((candidate_fit or {}).get("status", "")).lower() in {"failure", "failed"}:
         fit_converged = "no"
     else:
         fit_converged = "inconclusive"
+    fit_quality_ok = _fit_quality_ok(candidate_manifest) if candidate_artifact["valid"] else "inconclusive"
     bic_simple = _summary_metric(baseline_manifest, "bic")
     bic_complex = _summary_metric(candidate_manifest, "bic")
     bic = None
@@ -305,9 +382,14 @@ def compare_refit_artifacts(
     evaluation = {
         "candidate_action_type": candidate_action_type,
         "fit_converged": fit_converged,
+        "fit_quality_ok": fit_quality_ok,
+        "optimizer_converged": "NOT_APPLICABLE",
         "residual_outcome": residual_outcome,
+        "one_d_residual_outcome": "NOT_APPLICABLE",
         "parameters_physical": candidate_physical,
         "boundary_hits": boundary_hits,
+        "boundary_hits_baseline": baseline_boundary_hits,
+        "boundary_hits_new_or_unresolved": boundary_new_or_unresolved,
         "degeneracy_warnings": degeneracy_warnings,
         "bic": bic,
         "reduced_chisq": reduced_chisq,
@@ -320,18 +402,23 @@ def compare_refit_artifacts(
             "candidate_artifact": candidate_artifact,
             "comparison_conditions": conditions,
             "residual_score": {
-                "baseline": baseline_score,
-                "candidate": candidate_score,
-                "metric": "mean absolute residual normalized by sigma when sigma is available",
+                "baseline": (baseline_band_rc and round(sum(baseline_band_rc.values()) / len(baseline_band_rc), 6)) or None,
+                "candidate": (candidate_band_rc and round(sum(candidate_band_rc.values()) / len(candidate_band_rc), 6)) or None,
+                "metric": "mean of GalfitS per-band reduced chisq (2026-11-02 ruling 10)",
+                "per_band_baseline": baseline_band_rc,
+                "per_band_candidate": candidate_band_rc,
             },
             "parameter_health": {
                 "candidate": candidate_physical,
                 "boundary_hits": boundary_hits,
+                "baseline_boundary_hits": baseline_boundary_hits,
+                "boundary_hits_new_or_unresolved": boundary_new_or_unresolved,
                 "degeneracy_warnings": degeneracy_warnings,
             },
             "fit_statistics": {
                 "bic": bic,
                 "reduced_chisq": reduced_chisq,
+                "fit_quality_ok": fit_quality_ok,
             },
         },
     }

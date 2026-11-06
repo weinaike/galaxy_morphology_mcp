@@ -14,9 +14,9 @@ from schemas import validate
 from .artifact_adapter import load_workflow_band_arrays
 from .policy import load_policy_state, save_policy_state
 from .refit_comparator import (
+    _band_reduced_chisq,
     _comparison_conditions,
     _parameter_health,
-    _residual_score,
     normalize_fit_result,
 )
 
@@ -182,13 +182,15 @@ def _metrics_gate(
         conditions = _comparison_conditions(baseline_manifest, workflow_manifest)
         if not conditions["comparable"]:
             return _gate("FAIL", f"baseline and candidate are not comparable: {conditions['reasons']}", *(refs + [baseline_artifact_file or ""]))
-        baseline_score = _residual_score(baseline_manifest)
-        candidate_score = _residual_score(workflow_manifest)
-        if baseline_score is None or candidate_score is None:
+        baseline_bands = _band_reduced_chisq(baseline_manifest)
+        candidate_bands = _band_reduced_chisq(workflow_manifest)
+        if not baseline_bands or not candidate_bands:
             return _gate("FAIL", "comparable residual metrics are unavailable", *(refs + [baseline_artifact_file or ""]))
+        baseline_score = sum(baseline_bands.values()) / len(baseline_bands)
+        candidate_score = sum(candidate_bands.values()) / len(candidate_bands)
         return _gate(
             "PASS",
-            f"comparable residual metrics are available: baseline={baseline_score:.8g}, candidate={candidate_score:.8g}",
+            f"comparable residual metrics are available (mean per-band reduced chisq): baseline={baseline_score:.8g}, candidate={candidate_score:.8g}",
             *(refs + [baseline_artifact_file or ""]),
         )
     except (OSError, IndexError, RuntimeError, ValueError) as exc:

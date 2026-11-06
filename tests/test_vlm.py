@@ -31,11 +31,12 @@ def numeric_fixture(round_id="r1"):
                 "candidate_regions": [
                     {
                         "region_id": "candidate_1",
-                        "band": "f200w",
+                        "band": band,
                         "x_pix": 143.2,
                         "y_pix": 88.9,
                         "local_snr": 12.4,
                     }
+                    for band in ("f150w", "f200w", "f444w")
                 ],
             }
         ],
@@ -101,8 +102,9 @@ def test_prompt_is_versioned_label_only_and_does_not_leak_coordinates():
 def test_prompt_limits_each_request_to_sparse_target_batch():
     numeric = copy.deepcopy(numeric_fixture())
     numeric["features"][0]["candidate_regions"] = [
-        {"region_id": f"candidate_{index}", "band": "f200w", "x_pix": 1.0, "y_pix": 2.0, "local_snr": 8.0}
+        {"region_id": f"candidate_{index}", "band": band, "x_pix": 1.0, "y_pix": 2.0, "local_snr": 8.0}
         for index in range(1, 7)
+        for band in ("f150w", "f200w", "f444w")
     ]
     prompt = build_vlm_prompt(
         round_id="r1",

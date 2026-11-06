@@ -59,7 +59,7 @@ def test_openai_compatible_callback_sends_inline_image_and_json_mode(tmp_path):
         "token_usage": {"prompt_tokens": 4, "completion_tokens": 3},
     }
     assert callback.last_response_metadata["model_id"] == "gemini-test"
-    assert callback.last_response_metadata["prompt_version"] == "component-analysis-vlm@v2.0"
+    assert callback.last_response_metadata["prompt_version"] == "component-analysis-vlm@v2.1"
     assert callback.last_response_metadata["started_at"]
     assert callback.last_response_metadata["ended_at"]
     request = client.chat.completions.kwargs

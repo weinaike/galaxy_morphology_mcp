@@ -596,9 +596,16 @@ def resolve_workflow_proposal(
             "agent_recommendation": agent_recommendation,
         }
     )
-    duplicate = state.last_event_id == event_id and state.last_resolved_decision is not None
+    stored_resolution = state.last_resolved_decision
+    duplicate = (
+        state.last_event_id == event_id
+        and isinstance(stored_resolution, Mapping)
+        # Defensive: an EVALUATE_REFIT verdict must never be replayed as a
+        # proposal resolution (evaluate records used to overwrite this cache).
+        and stored_resolution.get("state") == "PROPOSE"
+    )
     if duplicate:
-        decision = copy.deepcopy(state.last_resolved_decision)
+        decision = copy.deepcopy(stored_resolution)
         previous_round = (rule_decision.get("evidence_refs") or {}).get("previous_round")
         if previous_round:
             decision.setdefault("evidence_refs", {})["previous_round"] = previous_round
@@ -643,6 +650,12 @@ def resolve_workflow_proposal(
             config_ref=value["manifest_ref"],
             event_id=event_id,
         )
+        # N25: persist this proposal's executable candidates as the ordered
+        # queue consumed after refit verdicts. A new proposal always rebuilds
+        # the queue; entries from an older evidence context do not survive.
+        from .policy import rebuild_candidate_queue
+
+        rebuild_candidate_queue(decision, state)
     state.last_evidence_fingerprint = value["evidence_fingerprint"]
     state_ref = None
     if output_path:

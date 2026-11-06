@@ -823,7 +823,7 @@ def test_evaluate_workflow_refit_rejects_inconclusive_optional_bic(tmp_path):
     )
     assert result["decision"]["action"]["action_type"] == "REJECT_REFIT"
     assert result["action_summary"]["refit_verdict"] == "REJECTED"
-    assert "lens" in state.rejected_components
+    assert state.rejected_candidate_keys
 
 
 def test_evaluate_workflow_refit_stops_on_inconclusive_evidence(tmp_path):
@@ -866,7 +866,8 @@ def _fit_artifact_fixture(tmp_path, name, residual_value, bic, round_id):
     ]).writeto(result)
     config.write_text(_single_feedme(), encoding="utf-8")
     summary.write_text(
-        f"# reduced chisq: 1.0\n# BIC: {bic}\n",
+        f"# reduced chisq: {residual_value}\n# BIC: {bic}\n"
+        f"# image number: 0  band: single  chisq: [{residual_value}]  dof: [398.]  reduced chisq: [{residual_value}]\n",
         encoding="utf-8",
     )
     comparison.write_bytes(b"comparison")
@@ -903,7 +904,9 @@ def _multi_fit_artifact_fixture(tmp_path, name, residual_value, bic, round_id):
     config.write_text(_multi_lyric(), encoding="utf-8")
     summary = tmp_path / f"{name}.gssummary"
     summary.write_text(
-        f"# reduced chisq: 1.0\n# BIC: {bic}\n"
+        f"# reduced chisq: {residual_value}\n# BIC: {bic}\n"
+        "num_generations: 5000  popsize: 10\n"
+        f"# image number: 0  band: f200w  chisq: [{residual_value}]  dof: [398.]  reduced chisq: [{residual_value}]\n"
         "disk_xcen 10\n"
         "disk_ycen 10\n"
         "disk_Re 2\n"
@@ -1015,19 +1018,44 @@ def test_mock_workflow_full_lifecycle_for_each_mode(tmp_path, mode):
 
     state_file = tmp_path / f"{mode}.state.json"
     lifecycle_file = tmp_path / f"{mode}.lifecycle.json"
+    # N26: comparator adapter first (evidence only, no verdict), then the
+    # single arbitration call owns verdict + lifecycle + next_decision.
     completed = complete_workflow_candidate(
-        state=state,
         baseline_manifest=baseline_manifest,
         candidate_manifest=candidate_manifest,
         baseline_fit_result=baseline_fit,
         candidate_fit_result=candidate_fit,
         component="disk",
         candidate_action_type="REFIT_PARAMETERS",
-        state_file=state_file,
-        lifecycle_file=lifecycle_file,
         evidence_file=tmp_path / f"{mode}.refit.json",
     )
-    assert completed["action_summary"]["refit_verdict"] == "ACCEPTED"
+    assert "decision" not in completed
+    assert "action_summary" not in completed
+    from component_analysis.policy import build_candidate_ref
+
+    candidate_ref = build_candidate_ref(
+        action=resolved["decision"]["action"],
+        rule_id="REQUIRED_FIXED_PARAMETER_V1",
+        baseline_artifact_fingerprint="e2e-baseline-fp",
+        evidence_fingerprint="e2e-evidence-fp",
+    )
+    evaluated = evaluate_workflow_refit(
+        state=state,
+        round_id=str(candidate_manifest["round_id"]),
+        component="disk",
+        refit_evaluation=completed["evaluation"],
+        candidate_action_type="REFIT_PARAMETERS",
+        candidate_ref=candidate_ref,
+        candidate_manifest=candidate_manifest,
+        candidate_fit_result=candidate_fit,
+        baseline_config_ref=str(baseline_manifest["config_file"]),
+        baseline_fit_result=baseline_fit,
+        lifecycle_file=lifecycle_file,
+        state_file=state_file,
+    )
+    assert evaluated["refit_decision"]["verdict"] == "ACCEPT_REFIT"
+    assert evaluated["next_decision"]["next_transition"] == "ANALYZE_NEW_BASELINE"
+    assert lifecycle_file.exists()
 
     converged_action = {
         "action_type": "CONVERGED",
@@ -1118,7 +1146,32 @@ def test_compare_refit_artifacts_uses_fits_residuals_and_summary_bic(tmp_path):
     assert result["evidence"]["residual_score"]["candidate"] < result["evidence"]["residual_score"]["baseline"]
 
 
-def test_complete_workflow_candidate_accepts_improved_real_artifact(tmp_path):
+def _n26_candidate_ref(action):
+    from component_analysis.policy import build_candidate_ref
+
+    return build_candidate_ref(
+        action=action,
+        rule_id="REQUIRED_FIXED_PARAMETER_V1",
+        baseline_artifact_fingerprint="n26-baseline-fp",
+        evidence_fingerprint="n26-evidence-fp",
+    )
+
+
+_N26_REFIT_ACTION = {
+    "action_type": "REFIT_PARAMETERS",
+    "component": "disk",
+    "parameter_changes": [
+        {
+            "target_model_label": "disk1",
+            "parameter": "n",
+            "operation": "FIX_VALUE",
+            "value": 1.0,
+        }
+    ],
+}
+
+
+def test_complete_then_evaluate_accepts_improved_real_artifact(tmp_path):
     baseline_manifest, baseline_fit = _fit_artifact_fixture(
         tmp_path, "baseline", 0.1, 100.0, "round-1"
     )
@@ -1128,25 +1181,42 @@ def test_complete_workflow_candidate_accepts_improved_real_artifact(tmp_path):
     candidate_manifest["bands"][0]["science_fits"] = baseline_manifest["bands"][0]["science_fits"]
     state = PolicyState(object_id="object-1")
     result = complete_workflow_candidate(
-        state=state,
         baseline_manifest=baseline_manifest,
         candidate_manifest=candidate_manifest,
         baseline_fit_result=baseline_fit,
         candidate_fit_result=candidate_fit,
         component="disk",
         candidate_action_type="REFIT_PARAMETERS",
-        state_file=tmp_path / "state.json",
-        lifecycle_file=tmp_path / "lifecycle.json",
         evidence_file=tmp_path / "evidence.json",
     )
-    assert result["decision"]["action"]["action_type"] == "ACCEPT_REFIT"
-    assert result["rollback"]["applied"] is False
+    # Comparator adapter contract: evidence only, no verdict or lifecycle.
+    assert "decision" not in result
+    assert "action_summary" not in result
+    assert "lifecycle" not in result
+    assert result["arbitration"] == "workflow_evaluate_refit"
+    assert not (tmp_path / "lifecycle.json").exists()
+
+    evaluated = evaluate_workflow_refit(
+        state=state,
+        round_id=str(candidate_manifest["round_id"]),
+        component="disk",
+        refit_evaluation=result["evaluation"],
+        candidate_action_type="REFIT_PARAMETERS",
+        candidate_ref=_n26_candidate_ref(_N26_REFIT_ACTION),
+        candidate_manifest=candidate_manifest,
+        candidate_fit_result=candidate_fit,
+        baseline_config_ref=str(baseline_manifest["config_file"]),
+        baseline_fit_result=baseline_fit,
+        lifecycle_file=tmp_path / "lifecycle.json",
+        state_file=tmp_path / "state.json",
+    )
+    assert evaluated["refit_decision"]["verdict"] == "ACCEPT_REFIT"
+    assert evaluated["next_decision"]["next_transition"] == "ANALYZE_NEW_BASELINE"
     assert state.current_config_ref == candidate_manifest["config_file"]
-    assert result["action_summary"]["refit_verdict"] == "ACCEPTED"
-    assert result["lifecycle"]["fit_result"]["valid"] is True
+    assert evaluated["lifecycle"]["fit_result"]["valid"] is True
 
 
-def test_complete_workflow_candidate_rejects_worse_artifact_and_restores_baseline(tmp_path):
+def test_complete_then_evaluate_rejects_worse_artifact_and_restores_baseline(tmp_path):
     baseline_manifest, baseline_fit = _fit_artifact_fixture(
         tmp_path, "baseline", 0.1, 100.0, "round-1"
     )
@@ -1156,30 +1226,80 @@ def test_complete_workflow_candidate_rejects_worse_artifact_and_restores_baselin
     candidate_manifest["bands"][0]["science_fits"] = baseline_manifest["bands"][0]["science_fits"]
     state = PolicyState(object_id="object-1")
     result = complete_workflow_candidate(
-        state=state,
         baseline_manifest=baseline_manifest,
         candidate_manifest=candidate_manifest,
         baseline_fit_result=baseline_fit,
         candidate_fit_result=candidate_fit,
         component="disk",
         candidate_action_type="REFIT_PARAMETERS",
-        state_file=tmp_path / "state.json",
-        lifecycle_file=tmp_path / "lifecycle.json",
         evidence_file=tmp_path / "evidence.json",
     )
-    assert result["decision"]["action"]["action_type"] == "REJECT_REFIT"
-    assert result["rollback"] == {
-        "applied": True,
-        "config_ref": baseline_manifest["config_file"],
-    }
-    assert state.current_config_ref == baseline_manifest["config_file"]
-    assert state.current_result_refs["result_files[0]"] == baseline_manifest["result_files"][0]
-    assert state.pending_action is None
     assert result["evidence"]["candidate_artifact"]["valid"] is True
+    evaluated = evaluate_workflow_refit(
+        state=state,
+        round_id=str(candidate_manifest["round_id"]),
+        component="disk",
+        refit_evaluation=result["evaluation"],
+        candidate_action_type="REFIT_PARAMETERS",
+        candidate_ref=_n26_candidate_ref(_N26_REFIT_ACTION),
+        candidate_manifest=candidate_manifest,
+        candidate_fit_result=candidate_fit,
+        baseline_config_ref=str(baseline_manifest["config_file"]),
+        baseline_fit_result=baseline_fit,
+        lifecycle_file=tmp_path / "lifecycle.json",
+        state_file=tmp_path / "state.json",
+    )
+    assert evaluated["refit_decision"]["verdict"] == "REJECT_REFIT"
+    # Rejected candidate: baseline configuration and result references are
+    # restored in state (flat keys come from the raw baseline fit result).
+    assert state.current_config_ref == baseline_manifest["config_file"]
+    assert state.current_result_refs["optimized_fits_file"] == baseline_manifest["result_files"][0]
     persisted = json.loads((tmp_path / "lifecycle.json").read_text(encoding="utf-8"))
     validate(persisted, "workflow_lifecycle")
     assert "lifecycle_file" not in persisted
     assert "fit_valid" not in persisted
+
+
+def test_evaluate_refit_duplicate_submission_writes_one_lifecycle(tmp_path):
+    baseline_manifest, baseline_fit = _fit_artifact_fixture(
+        tmp_path, "baseline", 0.1, 100.0, "round-1"
+    )
+    candidate_manifest, candidate_fit = _fit_artifact_fixture(
+        tmp_path, "candidate", 0.2, 110.0, "round-2"
+    )
+    candidate_manifest["bands"][0]["science_fits"] = baseline_manifest["bands"][0]["science_fits"]
+    state = PolicyState(object_id="object-1")
+    comparison = complete_workflow_candidate(
+        baseline_manifest=baseline_manifest,
+        candidate_manifest=candidate_manifest,
+        baseline_fit_result=baseline_fit,
+        candidate_fit_result=candidate_fit,
+        component="disk",
+        candidate_action_type="REFIT_PARAMETERS",
+    )
+    kwargs = dict(
+        state=state,
+        round_id=str(candidate_manifest["round_id"]),
+        component="disk",
+        refit_evaluation=comparison["evaluation"],
+        candidate_action_type="REFIT_PARAMETERS",
+        candidate_ref=_n26_candidate_ref(_N26_REFIT_ACTION),
+        candidate_manifest=candidate_manifest,
+        candidate_fit_result=candidate_fit,
+        baseline_config_ref=str(baseline_manifest["config_file"]),
+        baseline_fit_result=baseline_fit,
+        lifecycle_file=tmp_path / "lifecycle.json",
+        state_file=tmp_path / "state.json",
+    )
+    first = evaluate_workflow_refit(**kwargs)
+    assert first["duplicate_submission"] is False
+    trials_after_first = len(state.candidate_trials)
+    # Same candidate_ref again: idempotent, no second lifecycle overwrite of
+    # verdict semantics, no duplicate candidate_trials entries.
+    second = evaluate_workflow_refit(**kwargs)
+    assert second["duplicate_submission"] is True
+    assert second["refit_decision"]["verdict"] == first["refit_decision"]["verdict"]
+    assert len(state.candidate_trials) == trials_after_first
 
 
 def _converged_lifecycle_fixture(tmp_path):
@@ -1350,3 +1470,87 @@ def test_multiband_result_files_are_aligned_by_band_token(tmp_path):
         str(f115w),
     ]
     assert artifact["result_files"] == [str(f444w), str(f115w)]
+
+
+def test_add_profile_accepts_bare_ga2_member_and_normalizes(tmp_path):
+    """Legacy lyrics carry Ga2) a (bare single member, e.g. obj_1071); adding a
+    profile must parse it and rewrite the canonical quoted-list form."""
+    from component_analysis.workflow_bridge import _add_profile_to_galaxy, _galaxy_members
+
+    assert _galaxy_members("['a', 'c']") == ["a", "c"]
+    assert _galaxy_members("a") == ["a"]
+    assert _galaxy_members("a, c") == ["a", "c"]
+    with pytest.raises(ValueError):
+        _galaxy_members("a b")
+
+    source = _multi_lyric().replace("Ga2) ['a', 'c']", "Ga2) a")
+    updated = _add_profile_to_galaxy(source, "a", "d")
+    assert "Ga2) ['a', 'd']" in updated
+
+
+def test_link_center_fixes_target_parameters_in_lyric(tmp_path):
+    """1071 run6 finding: LINK_CENTER must also set the tied x/y parameters
+    to vary=0 in the lyric (constraint three-step recipe step 1); otherwise
+    the ES optimizer keeps them independent and the binding never applies."""
+    source = tmp_path / "object.lyric"
+    source.write_text(_multi_lyric(), encoding="utf-8")
+    decision = _decision({
+        "action_type": "REFIT_PARAMETERS",
+        "reason_code": "CENTER_CONSTRAINT_MISSING",
+        "parameter_changes": [
+            {
+                "target_model_label": "c",
+                "parameter": "x,y",
+                "operation": "LINK_CENTER",
+                "reference_model_label": "a",
+            }
+        ],
+    })
+    result = apply_action_to_config(
+        decision, _manifest("multi-band") | {"config_file": str(source)},
+        target_config=str(tmp_path / "out.lyric"),
+    )
+    assert result["ok"]
+    content = (tmp_path / "out.lyric").read_text(encoding="utf-8")
+    for field in ("Pc3", "Pc4"):
+        line = next(l for l in content.splitlines() if l.strip().startswith(field))
+        # vary=0 AND fixed at the REFERENCE's initial value (Pa3/Pa4 = 0).
+        assert line.rstrip().endswith(", 0]") or ", 0]" in line, line
+    # Give the reference a nonzero initial and confirm the target follows it.
+    source2 = tmp_path / "object2.lyric"
+    source2.write_text(
+        _multi_lyric().replace("Pa3) [0,-5,5,0.1,1]", "Pa3) [0.12,-5,5,0.1,1]"),
+        encoding="utf-8",
+    )
+    result2 = apply_action_to_config(
+        decision, _manifest("multi-band") | {"config_file": str(source2)},
+        target_config=str(tmp_path / "out2.lyric"),
+    )
+    assert result2["ok"]
+    content2 = (tmp_path / "out2.lyric").read_text(encoding="utf-8")
+    pc3 = next(l for l in content2.splitlines() if l.strip().startswith("Pc3"))
+    assert pc3.strip().startswith("Pc3) [0.12") and pc3.rstrip().endswith(", 0]")
+    from pathlib import Path as _P
+    constrain = _P(result["constraint_files"][0]).read_text(encoding="utf-8")
+    assert "bar_xcen'] = 1 * pardictlc['disk_xcen" in constrain
+
+
+def test_bulge_template_re_is_bounded_by_disk_re(tmp_path):
+    """2026-11-03 (1574 finding): the bulge template must start at 0.4x the
+    disk Re with an upper bound at the disk Re — no Re_bulge > Re_disk."""
+    source = tmp_path / "object.lyric"
+    source.write_text(_multi_lyric().replace("Pa5) [2.0,0.5,5,0.1,1]", "Pa5) [0.42,0.012,40.6,0.012,1]"), encoding="utf-8")
+    decision = _decision({"action_type": "PROPOSE_ADD", "component": "bulge"})
+    result = apply_action_to_config(
+        decision, _manifest("multi-band") | {"config_file": str(source)},
+        target_config=str(tmp_path / "out.lyric"),
+    )
+    assert result["ok"]
+    content = (tmp_path / "out.lyric").read_text(encoding="utf-8")
+    pb5 = next(l for l in content.splitlines() if l.strip().startswith("Pb5)"))
+    import ast as _ast
+    parsed = _ast.literal_eval(pb5.split(")", 1)[1].strip().split("#")[0])
+    initial, lower, upper = parsed[0], parsed[1], parsed[2]
+    assert abs(initial - 0.4 * 0.42) < 1e-9  # 0.4x disk Re
+    assert abs(upper - 0.42) < 1e-9          # capped at disk Re
+    assert initial < upper

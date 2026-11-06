@@ -1087,9 +1087,7 @@ def _apply_multi_action(
         galaxy_match = galaxy_pattern.search(content)
         if not galaxy_match:
             raise ValueError(f"galaxy block G{galaxy_label}2) not found for new profile")
-        members = ast.literal_eval(galaxy_match.group(2).strip())
-        if not isinstance(members, list):
-            raise ValueError(f"G{galaxy_label}2) is not a profile list")
+        members = _galaxy_members(galaxy_match.group(2))
         members.append(new_prefix)
         content = content[: galaxy_match.start()] + f"{galaxy_match.group(1)}{repr(members)}{galaxy_match.group(3)}" + content[galaxy_match.end() :]
     else:
@@ -1209,7 +1207,8 @@ def _multi_profile_template(
     re_default, n_default, q_default = defaults[component]
     re_tuple = _planned_tuple(parameters, "re", [re_default, 0.01, 12.0, 0.01, 1])
     n_tuple = _planned_tuple(parameters, "n", [n_default, 0.1, 8.0, 0.1, 1])
-    q_tuple = _planned_tuple(parameters, "q", [q_default, 0.05, 1.0, 0.01, 1])
+    q_upper = 0.7 if component == "bar" else 1.0  # 2026-10-29 ruling 5
+    q_tuple = _planned_tuple(parameters, "q", [q_default, 0.05, q_upper, 0.01, 1])
     if component == "disk":
         n_tuple[0], n_tuple[4] = 1.0, 0
     if component == "bar":
@@ -1289,15 +1288,33 @@ def _galaxy_block_info(content: str, label: str) -> tuple[str, int, int]:
     raise ValueError(f"galaxy block not found: {label}")
 
 
+def _galaxy_members(raw: str) -> list[str]:
+    """Parse a Ga2) member list, tolerating the legacy bare single-member form.
+
+    ``['a', 'b']`` is the canonical quoted-list syntax; historical lyrics
+    also carry a bare ``a`` for single-member galaxies (e.g. obj_1071),
+    which ast.literal_eval rejects as a bare Name node. Bare members are
+    accepted read-only and rewritten in canonical quoted-list form.
+    """
+    text = raw.strip()
+    try:
+        members = ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        members = None
+    if isinstance(members, list) and all(isinstance(item, str) for item in members):
+        return list(members)
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\s*,\s*[A-Za-z][A-Za-z0-9_]*)*", text):
+        return [item.strip() for item in text.split(",")]
+    raise ValueError(f"galaxy member list is neither a quoted list nor bare names: {raw!r}")
+
+
 def _add_profile_to_galaxy(content: str, galaxy_label: str, prefix: str) -> str:
     actual, start, end = _galaxy_block_info(content, galaxy_label)
     block = content[start:end]
     match = re.search(rf"(?m)^(\s*G{re.escape(actual)}2\)\s*)([^#\n]*)(.*)$", block)
     if not match:
         raise ValueError(f"galaxy block G{actual} has no profile member list")
-    members = ast.literal_eval(match.group(2).strip())
-    if not isinstance(members, list) or not all(isinstance(item, str) for item in members):
-        raise ValueError(f"galaxy block G{actual}2) is not a profile list")
+    members = _galaxy_members(match.group(2))
     if prefix not in members:
         members.append(prefix)
     block = block[: match.start()] + f"{match.group(1)}{repr(members)}{match.group(3)}" + block[match.end() :]
@@ -1453,12 +1470,28 @@ def _apply_multi_action(
                         f"pardictlc['{target_name}_xcen'] = 1 * pardictlc['{reference_name}_xcen']",
                         f"pardictlc['{target_name}_ycen'] = 1 * pardictlc['{reference_name}_ycen']",
                     ])
-                    continue
-                values = change.get("value")
-                if not isinstance(values, (list, tuple)) or len(values) != 2:
-                    raise ValueError("multi-band x,y direct edit requires a two-value list")
-                for field, value in ((3, values[0]), (4, values[1])):
-                    block = _replace_lyric_tuple(block, target_prefix, field, operation, value, change.get("lower"), change.get("upper"))
+                    # Constraint step 1 of the documented three-step recipe:
+                    # tied parameters must be vary=0 in the lyric. With the ES
+                    # optimizer they otherwise stay independent free parameters
+                    # and the parconstrain binding never takes effect
+                    # (1071 run6 finding). The fixed value is the REFERENCE
+                    # component's current initial value — fixing to the
+                    # target's own template default (often 0,0) leaves it
+                    # stranded off-center until the binding overrides it
+                    # (1071 run8 finding: bulge pinned at 0,0 vs disk 0.10).
+                    for field in (3, 4):
+                        reference_current = _profile_initial(
+                            content, reference_prefix, field
+                        )
+                        block = _replace_lyric_tuple(
+                            block, target_prefix, field, "FIX_VALUE", reference_current, None, None
+                        )
+                else:
+                    values = change.get("value")
+                    if not isinstance(values, (list, tuple)) or len(values) != 2:
+                        raise ValueError("multi-band x,y direct edit requires a two-value list")
+                    for field, value in ((3, values[0]), (4, values[1])):
+                        block = _replace_lyric_tuple(block, target_prefix, field, operation, value, change.get("lower"), change.get("upper"))
             elif parameter in _MULTI_PARAMETER_LINES:
                 if operation == "REMOVE_NONREQUIRED_CONSTRAINT":
                     removals.append((_profile_name(content, target_prefix), parameter))
@@ -1498,6 +1531,24 @@ def _apply_multi_action(
                 ])
         elif component in {"disk", "bulge", "bar", "lens", "companion"}:
             new_prefix = str(plan.get("new_prefix") or _next_profile_prefix(content))
+            if component == "bulge":
+                # 2026-11-03 finding (1574): the flat 1.0-arcsec bulge template
+                # can settle with Re_bulge > Re_disk (1574: 1.43x). Enforce the
+                # physical hierarchy in the template itself: initial Re at 0.4x
+                # the current disk Re and an upper bound at the disk Re.
+                try:
+                    disk_prefix = _find_profile_prefix(content, "disk")
+                    disk_re = _profile_initial(content, disk_prefix, 5)
+                except (ValueError, IndexError):
+                    disk_re = None
+                if isinstance(disk_re, (int, float)) and disk_re > 0:
+                    parameters = dict(parameters)
+                    parameters.update({
+                        "re": _planned_tuple(
+                            parameters, "re",
+                            [min(1.0, 0.4 * float(disk_re)), 0.01, float(disk_re), 0.01, 1],
+                        )
+                    })
             if not re.fullmatch(r"[A-Za-z]", new_prefix) or any(item[0].lower() == new_prefix.lower() for item in _profile_blocks(content)):
                 raise ValueError(f"invalid or duplicate new profile prefix: {new_prefix}")
             name = str(plan.get("profile_name") or component)
@@ -1572,10 +1623,10 @@ def _apply_multi_action(
         galaxy_matches = list(re.finditer(r"(?m)^(\s*G([A-Za-z])2\)\s*)([^#\n]+)(.*)$", content))
         for match in reversed(galaxy_matches):
             try:
-                members = ast.literal_eval(match.group(3).strip())
+                members = _galaxy_members(match.group(3))
             except (SyntaxError, ValueError):
                 continue
-            if not isinstance(members, list) or target_prefix not in members:
+            if target_prefix not in members:
                 continue
             members = [item for item in members if item != target_prefix]
             if not members:
@@ -2040,33 +2091,99 @@ def evaluate_workflow_refit(
     config_ref: str | None = None,
     evidence_fingerprint: str = "",
     baseline_config_checksum: str | None = None,
+    candidate_ref: Mapping[str, Any] | None = None,
+    candidate_manifest: Mapping[str, Any] | None = None,
+    candidate_fit_result: Mapping[str, Any] | None = None,
+    baseline_config_ref: str | None = None,
+    baseline_fit_result: Mapping[str, Any] | None = None,
+    lifecycle_file: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Evaluate one completed candidate and persist its object-level state."""
-    decision = evaluate_refit_with_policy(
-        round_id=round_id,
-        component=component,
-        refit_evaluation=dict(refit_evaluation),
-        state=state,
-        candidate_action_type=candidate_action_type,
-        candidate_reason_code=candidate_reason_code,
-        evidence_refs=dict(evidence_refs or {}),
-        evidence_fingerprint=evidence_fingerprint,
-        baseline_config_checksum=baseline_config_checksum,
-    )
-    validate(decision, "decision_artifact")
-    raw_decision = _raw_decision_only(decision)
-    record_decision_state(
-        state,
-        raw_decision=raw_decision,
-        resolved_decision=decision,
-        round_id=round_id,
-        decision_ref=decision_ref,
-        config_ref=config_ref,
-    )
-    if state_file:
-        save_policy_state(state, state_file)
+    """Evaluate one completed candidate and persist its object-level state.
+
+    This is the single Rules/Policy refit arbitration entrypoint (N26): one
+    Rules verdict, one Policy transition, one state write, one candidate
+    lifecycle. Re-submitting the same candidate_ref is idempotent: the stored
+    verdict decision is returned without re-consuming the queue, the trial
+    budget or appending another lifecycle event. The response separates the
+    non-executable ``refit_decision`` from ``next_decision``; the legacy
+    ``decision`` key is retained read-compatibly.
+    """
+    from .policy import build_next_candidate_decision, compute_candidate_key
+
+    duplicate = False
+    lifecycle_response = None
+    if candidate_ref is not None:
+        candidate_key = compute_candidate_key(candidate_ref)
+        stored = state.refit_decisions.get(candidate_key)
+        duplicate = isinstance(stored, dict)
+    if duplicate:
+        decision = copy.deepcopy(stored)
+        validate(decision, "decision_artifact")
+    else:
+        decision = evaluate_refit_with_policy(
+            round_id=round_id,
+            component=component,
+            refit_evaluation=dict(refit_evaluation),
+            state=state,
+            candidate_action_type=candidate_action_type,
+            candidate_reason_code=candidate_reason_code,
+            evidence_refs=dict(evidence_refs or {}),
+            evidence_fingerprint=evidence_fingerprint,
+            baseline_config_checksum=baseline_config_checksum,
+            candidate_ref=candidate_ref,
+        )
+        validate(decision, "decision_artifact")
+        if candidate_ref is not None:
+            state.refit_decisions[compute_candidate_key(candidate_ref)] = copy.deepcopy(decision)
 
     action_type = (decision.get("action") or {}).get("action_type")
+    raw_decision = _raw_decision_only(decision)
+    if not duplicate:
+        record_decision_state(
+            state,
+            raw_decision=raw_decision,
+            resolved_decision=decision,
+            round_id=round_id,
+            decision_ref=decision_ref,
+            config_ref=config_ref,
+            proposal_decision=False,
+        )
+        # The candidate lifecycle belongs to this single arbitration call.
+        if lifecycle_file and candidate_manifest is not None:
+            candidate_type = decision.get("refit_evaluation", {}).get("candidate_action_type")
+            summary = _action_summary(raw_decision, decision, None)
+            summary["executed_action_type"] = candidate_type
+            summary["refit_verdict"] = {
+                "ACCEPT_REFIT": "ACCEPTED",
+                "REJECT_REFIT": "REJECTED",
+                "INCONCLUSIVE": "INCONCLUSIVE",
+            }.get(action_type)
+            effective_config = config_ref
+            if action_type != "ACCEPT_REFIT" and baseline_config_ref:
+                # A rejected candidate restores the baseline configuration.
+                effective_config = baseline_config_ref
+            lifecycle_response = record_fit_lifecycle(
+                state=state,
+                workflow_manifest=candidate_manifest,
+                raw_decision=raw_decision,
+                resolved_decision=decision,
+                fit_result=dict(candidate_fit_result or {}),
+                verifier_status=None,
+                decision_ref=decision_ref,
+                state_file=state_file,
+                lifecycle_file=lifecycle_file,
+                action_summary=summary,
+                config_ref=effective_config,
+            )
+            if action_type != "ACCEPT_REFIT" and baseline_fit_result is not None:
+                # Rejected/inconclusive candidate: restore the baseline
+                # result references alongside the baseline configuration.
+                state.current_result_refs = _fit_result_refs(baseline_fit_result)[1]
+                if state_file:
+                    save_policy_state(state, state_file)
+        elif state_file:
+            save_policy_state(state, state_file)
+
     candidate_type = decision.get("refit_evaluation", {}).get("candidate_action_type")
     summary = _action_summary(raw_decision, decision, None)
     summary["executed_action_type"] = candidate_type
@@ -2075,16 +2192,52 @@ def evaluate_workflow_refit(
         "REJECT_REFIT": "REJECTED",
         "INCONCLUSIVE": "INCONCLUSIVE",
     }.get(action_type)
-    return {
+    # N25: after a rejection/inconclusive verdict the next executable source is
+    # the persisted candidate queue; after acceptance the only continuation is
+    # re-analyzing the new baseline.
+    if action_type == "ACCEPT_REFIT":
+        next_transition = "ANALYZE_NEW_BASELINE"
+        next_artifact = None
+        next_reason = None
+    else:
+        next_artifact = build_next_candidate_decision(
+            state,
+            round_id=f"{round_id}-next",
+            previous_action_type=action_type or "INCONCLUSIVE",
+            advance=not duplicate,
+        )
+        if next_artifact is not None:
+            next_transition = "RUN_FIT"
+            next_reason = None
+        else:
+            next_transition = "STOPPED_NEEDS_REVIEW"
+            next_reason = (
+                "candidate queue exhausted; re-analyze or stop per collector policy"
+            )
+    response = {
         "decision": decision,
+        "refit_decision": {
+            "verdict": action_type,
+            "decision": decision,
+            "executable": False,
+        },
+        "next_decision": {
+            "next_transition": next_transition,
+            "decision": next_artifact,
+            "reason": next_reason,
+        },
+        "candidate_ref": copy.deepcopy(dict(candidate_ref)) if candidate_ref else None,
         "policy_state": state.to_dict(),
         "action_summary": summary,
+        "duplicate_submission": duplicate,
     }
+    if lifecycle_response is not None:
+        response["lifecycle"] = lifecycle_response
+    return response
 
 
 def complete_workflow_candidate(
     *,
-    state: PolicyState,
     baseline_manifest: Mapping[str, Any],
     candidate_manifest: Mapping[str, Any],
     baseline_fit_result: Mapping[str, Any] | None,
@@ -2097,8 +2250,16 @@ def complete_workflow_candidate(
     lifecycle_file: str | Path | None = None,
     evidence_file: str | Path | None = None,
     decision_ref: str | None = None,
+    candidate_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Compare two existing MCP fit results and persist one lifecycle event."""
+    """Comparator adapter only (N26 downgrade).
+
+    Compares two existing MCP fit results into schema-valid refit evidence.
+    It never loads or saves PolicyState, never calls Rules/Policy arbitration,
+    never derives a verdict, and never writes a candidate lifecycle —
+    ``workflow_evaluate_refit`` is the single arbitration entrypoint. The
+    legacy parameters are accepted for MCP-client compatibility and ignored.
+    """
     from .refit_comparator import compare_refit_artifacts
 
     comparison = compare_refit_artifacts(
@@ -2108,77 +2269,18 @@ def complete_workflow_candidate(
         candidate_fit=candidate_fit_result,
         candidate_action_type=candidate_action_type,
     )
-    refs = dict(evidence_refs or {})
-    refs.setdefault("manifest", str(candidate_manifest["config_file"]))
-    decision = evaluate_refit_with_policy(
-        state=state,
-        round_id=str(candidate_manifest["round_id"]),
-        component=component,
-        refit_evaluation=comparison["evaluation"],
-        candidate_action_type=candidate_action_type,
-        candidate_reason_code=candidate_reason_code,
-        evidence_refs=refs,
-        evidence_fingerprint=str(refs.get("evidence_fingerprint", "")),
-        baseline_config_checksum=refs.get("baseline_config_checksum"),
-    )
-    validate(decision, "decision_artifact")
-    raw_decision = _raw_decision_only(decision)
-    accepted = decision.get("action", {}).get("action_type") == "ACCEPT_REFIT"
-    summary = _action_summary(raw_decision, decision, None)
-    summary["executed_action_type"] = candidate_action_type
-    summary["refit_verdict"] = "ACCEPTED" if accepted else (
-        "INCONCLUSIVE"
-        if decision.get("action", {}).get("action_type") == "INCONCLUSIVE"
-        else "REJECTED"
-    )
-    candidate_artifact = comparison["evidence"]["candidate_artifact"]
-    lifecycle = record_fit_lifecycle(
-        state=state,
-        workflow_manifest=candidate_manifest,
-        raw_decision=raw_decision,
-        resolved_decision=decision,
-        fit_result=candidate_artifact,
-        verifier_status=None,
-        decision_ref=decision_ref,
-        state_file=state_file,
-        lifecycle_file=lifecycle_file,
-        action_summary=summary,
-        config_ref=(
-            str(candidate_manifest["config_file"])
-            if accepted
-            else str(baseline_manifest["config_file"])
-        ),
-    )
-    lifecycle = _clean_lifecycle_artifact(lifecycle)
-    if not accepted:
-        baseline_artifact = comparison["evidence"]["baseline_artifact"]
-        state.current_config_ref = baseline_artifact.get("config_file")
-        state.current_result_refs = _fit_result_refs(baseline_artifact)[1]
-        state.pending_action = None
-        if state_file:
-            save_policy_state(state, state_file)
-        lifecycle["policy_state"] = state.to_dict()
-        lifecycle = _clean_lifecycle_artifact(lifecycle)
-        if lifecycle_file:
-            target = Path(lifecycle_file).expanduser().resolve()
-            _persist_lifecycle_artifact(target, lifecycle)
     if evidence_file:
         target = Path(evidence_file).expanduser().resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(comparison["evidence"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         comparison["evidence_ref"] = str(target)
     return {
-        "decision": decision,
         "evaluation": comparison["evaluation"],
         "evidence": comparison["evidence"],
         "baseline_artifact": comparison["evidence"]["baseline_artifact"],
         "candidate_artifact": comparison["evidence"]["candidate_artifact"],
-        "rollback": {
-            "applied": not accepted,
-            "config_ref": str(baseline_manifest["config_file"]) if not accepted else None,
-        },
-        "lifecycle": lifecycle,
-        "action_summary": summary,
+        "evidence_ref": comparison.get("evidence_ref"),
+        "arbitration": "workflow_evaluate_refit",
     }
 
 
@@ -2195,3 +2297,87 @@ def copy_config_for_action(source_config: str | Path, target_config: str | Path)
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     return str(target)
+
+def compare_residual_images(
+    *,
+    round_id: str,
+    baseline_comparison_png: str,
+    candidate_comparison_png: str,
+    vlm_callback: Any = None,
+) -> dict[str, Any]:
+    """Ruling 12 (2026-11-02): one controlled VLM comparison of the baseline
+    and candidate residual panels. Returns a verdict block for the refit
+    evaluation; never decides actions itself. VLM unavailable -> fail-open
+    verdict 'unavailable' recorded explicitly."""
+    from .vlm import (
+        build_residual_comparison_prompt,
+        parse_residual_comparison_response,
+    )
+
+    for label, path in (
+        ("baseline", baseline_comparison_png),
+        ("candidate", candidate_comparison_png),
+    ):
+        if not path or not Path(path).expanduser().resolve().is_file():
+            return {
+                "schema_version": "1.0",
+                "round_id": round_id,
+                "parse_status": "UNAVAILABLE",
+                "verdict": "unavailable",
+                "notes": "",
+                "error": f"{label} comparison image unavailable: {path}",
+            }
+    if vlm_callback is None:
+        return {
+            "schema_version": "1.0",
+            "round_id": round_id,
+            "parse_status": "DISABLED",
+            "verdict": "unavailable",
+            "notes": "",
+            "error": "VLM callback not configured; numeric gates decide (fail-open).",
+        }
+    prompt = build_residual_comparison_prompt(round_id=round_id)
+    model_id = getattr(vlm_callback, "model_id", None)
+    started_at = datetime.now(timezone.utc)
+    try:
+        raw = vlm_callback(baseline_comparison_png, prompt, image_b=candidate_comparison_png) \
+            if "image_b" in vlm_callback.__code__.co_varnames \
+            else _two_image_vlm_call(vlm_callback, baseline_comparison_png, candidate_comparison_png, prompt)
+    except Exception as exc:  # noqa: BLE001 - fail-open per ruling 12
+        return {
+            "schema_version": "1.0",
+            "round_id": round_id,
+            "parse_status": "TIMEOUT" if isinstance(exc, TimeoutError) else "REFUSED",
+            "verdict": "unavailable",
+            "notes": "",
+            "error": f"VLM comparison call failed: {type(exc).__name__}: {exc}",
+            "started_at": started_at.isoformat(),
+        }
+    evidence, _ = parse_residual_comparison_response(
+        raw, round_id=round_id, model_id=model_id
+    )
+    evidence["started_at"] = started_at.isoformat()
+    evidence["ended_at"] = datetime.now(timezone.utc).isoformat()
+    return evidence
+
+
+def _two_image_vlm_call(callback: Any, image_a: str, image_b: str, prompt: str) -> str:
+    """Fallback two-image call: most OpenAI-compatible callbacks take one
+    image; concatenate the panels side by side into a temp PNG."""
+    try:
+        from PIL import Image
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("two-image comparison requires Pillow") from exc
+    left = Image.open(image_a).convert("RGB")
+    right = Image.open(image_b).convert("RGB")
+    height = max(left.height, right.height)
+    canvas = Image.new("RGB", (left.width + right.width, height), "white")
+    canvas.paste(left, (0, 0))
+    canvas.paste(right, (left.width, 0))
+    import tempfile as _tempfile
+
+    with _tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
+        canvas.save(handle, format="PNG")
+        combined = handle.name
+    return callback(combined, prompt)
+

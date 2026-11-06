@@ -72,7 +72,8 @@ PEAKS = feat(
     "residual_local_peaks",
     1,
     candidate_regions=[
-        {"region_id": "candidate_1", "band": "f200w", "x_pix": 40.0, "y_pix": 41.0, "local_snr": 8.0}
+        {"region_id": "candidate_1", "band": band, "x_pix": 40.0, "y_pix": 41.0, "local_snr": 8.0}
+        for band in ("f150w", "f200w", "f444w")
     ],
 )
 ORIGINAL_MATCH = feat("match", "original_source_matches", {"candidate_1": True})
@@ -126,20 +127,21 @@ def test_disk_ambiguous_resolved_by_trial_fit():
     assert state.trials_used == 1
 
 
-def test_edge_on_low_q_trial_replaces_disk():
+def test_edge_on_low_q_without_vlm_goes_to_collector():
+    # N24: VLM-dependent inconclusives must not become trial fits; the only
+    # non-fit continuation is an explicit evidence collector.
     low_q = feat("q", "outer_axis_ratio", 0.12)
     state = PolicyState()
-    decision = decide([EXTENT, low_q], components={"disk"}, state=state)
-    assert decision["action"] == {
-        "action_type": "PROPOSE_REPLACE",
-        "replace_from": "disk",
-        "replace_to": "edge_on_disk",
-        "target_model_label": "disk",
-    }
-    assert decision["automation"]["resolution"] == "trial_fit"
+    decision = decide([EXTENT, low_q], components={"disk", "bulge"}, state=state)
+    assert decision["action"]["action_type"] == "COLLECT_EVIDENCE"
+    assert decision["automation"]["resolution"] == "collect_evidence"
+    assert state.trials_used == 0
 
 
-def test_central_resolution_conflict_trials_bulge_path():
+def test_central_resolution_conflict_audited_while_split_fires_first():
+    """2026-10-29 ruling 6: with no bulge yet, the mandatory disk+bulge split
+    outranks every structural proposal; the central-resolution conflict is
+    recorded as an audit trace rather than its own trial path."""
     features = [
         CENTRAL_EXCESS,
         resolution_feat("res1", "f200w", 4.0, 2.5, 30.0),
@@ -149,21 +151,30 @@ def test_central_resolution_conflict_trials_bulge_path():
     decision = decide(features, components={"disk"}, state=state)
     assert decision["action"]["action_type"] == "PROPOSE_ADD"
     assert decision["action"]["component"] == "bulge"
-    assert decision["action"]["resolved_state"] == "inconclusive"
-    assert decision["automation"]["resolved_rule_id"] == "CENTRAL_RESOLUTION_CONFLICT_V1"
+    conflict = [
+        t for t in decision["rule_trace"]
+        if t["rule_id"] == "CENTRAL_RESOLUTION_CONFLICT_V1"
+    ]
+    assert conflict and conflict[0]["outcome"] == "INCONCLUSIVE"
 
 
-def test_companion_uncertain_trial_with_target_label():
+def test_companion_uncertain_does_not_drive_collector():
+    # 2026-10-28 ruling: companion gaps are non-blocking optional-component
+    # gaps — no collector, no trial fit; the decision falls through to the
+    # termination checks.
     state = PolicyState()
     decision = decide(
         [PEAKS, ORIGINAL_MATCH],
         [obs("uncertain", target_id="candidate_1")],
-        components={"disk"},
+        components={"disk", "bulge"},
         state=state,
     )
-    assert decision["action"]["component"] == "companion"
-    assert decision["action"]["target_model_label"] == "candidate_1"
-    assert decision["automation"]["resolution"] == "trial_fit"
+    action = decision.get("action") or {}
+    assert action.get("action_type") not in {"COLLECT_EVIDENCE", "PROPOSE_ADD"}
+    assert "automation" not in decision or (
+        decision["automation"].get("resolution") != "collect_evidence"
+    )
+    assert state.trials_used == 0
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +185,7 @@ def test_companion_uncertain_trial_with_target_label():
 def test_bar_diffraction_conflict_conservative_keep():
     state = PolicyState()
     decision = decide(
-        [STRONG_BAR], [obs("diffraction_psf", confidence=0.9)], components={"disk"}, state=state
+        [STRONG_BAR], [obs("diffraction_psf", confidence=0.9)], components={"disk", "bulge"}, state=state
     )
     assert decision["action"] is None
     assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
@@ -191,14 +202,48 @@ def test_trial_budget_exhausted_falls_back_conservative():
     assert state.trials_used == 0
 
 
-def test_rejected_component_not_retried():
+def test_queue_status_transitions_on_refit_verdicts():
+    """N25 rewrite of the legacy rejected_components test: rejection memory is
+    per-candidate (queue status + candidate keys), not a global component set,
+    so a rejected disk candidate in one context never blocks other evidence."""
+    from component_analysis.policy import (
+        build_candidate_ref,
+        compute_candidate_key,
+        rebuild_candidate_queue,
+    )
+
     state = PolicyState()
-    state.rejected_components.add("disk")
-    decision = decide([EXTENT, GEOMETRY], state=state)
-    assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "disk"}
-    assert decision["workflow_status"] == "CONTINUE"
-    assert decision["automation"]["resolution"] == "trial_fit"
-    assert state.trials_used == 1
+    fixed = feat(
+        "fixed",
+        "required_fixed_parameter_health",
+        [{
+            "component": "disk", "model_label": "obj0", "parameter": "n",
+            "satisfied": False, "expected_value": 1.0,
+        }],
+        source={"band": None},
+    )
+    decision = decide([fixed], components={"disk", "bulge"}, state=state)
+    assert decision["action"]["action_type"] == "REFIT_PARAMETERS"
+
+    queued = rebuild_candidate_queue(decision, state)
+    assert queued >= 1
+    item = state.pending_candidate_queue[0]
+    candidate_ref = build_candidate_ref(
+        action=item["action"],
+        rule_id=item["rule_id"],
+        baseline_artifact_fingerprint="baseline-fp",
+        evidence_fingerprint="evidence-fp",
+    )
+    verdict = evaluate_refit_with_policy(
+        round_id="r9",
+        component="disk",
+        refit_evaluation=gates(residual="no"),
+        state=state,
+        candidate_ref=candidate_ref,
+    )
+    assert verdict["action"]["action_type"] == "REJECT_REFIT"
+    assert item["status"] == "REJECTED"
+    assert compute_candidate_key(candidate_ref) in state.rejected_candidate_keys
 
 
 def test_repeated_inconclusive_terminates_question():
@@ -207,7 +252,11 @@ def test_repeated_inconclusive_terminates_question():
     assert first["automation"]["resolution"] == "trial_fit"
     second = decide([EXTENT, GEOMETRY], state=state, fingerprint="fp1")
     assert second["automation"]["resolution"] == "rule_terminated"
-    assert "DISK_AMBIGUOUS_EVIDENCE_V1" in state.terminated_rules
+    # N25: termination memory is scoped by rule AND target.
+    assert any(
+        key.startswith("DISK_AMBIGUOUS_EVIDENCE_V1|")
+        for key in state.terminated_rules
+    )
     third = decide([EXTENT, GEOMETRY], state=state, fingerprint="fp2")
     assert third["automation"]["resolution"] == "rule_terminated"
 
@@ -249,7 +298,8 @@ def test_refit_inconclusive_falls_back_to_reject():
     )
     assert decision["action"] == {"action_type": "REJECT_REFIT", "component": "bar"}
     assert decision["automation"]["resolution"] == "reject_fallback"
-    assert "bar" in state.rejected_components
+    # N25: rejection memory lives in candidate keys, not rejected_components.
+    assert state.rejected_candidate_keys
 
 
 def test_refit_incomparable_bic_falls_back_to_reject():
@@ -263,7 +313,7 @@ def test_refit_incomparable_bic_falls_back_to_reject():
         state=state,
     )
     assert decision["action"]["action_type"] == "REJECT_REFIT"
-    assert "lens" in state.rejected_components
+    assert state.rejected_candidate_keys
 
 
 def test_refit_reject_recorded_without_automation():
@@ -276,13 +326,19 @@ def test_refit_reject_recorded_without_automation():
     )
     assert decision["action"]["action_type"] == "REJECT_REFIT"
     assert "automation" not in decision
-    assert "companion" in state.rejected_components
+    assert state.rejected_candidate_keys
 
 
 def test_accept_passes_through_unchanged():
     state = PolicyState()
     decision = evaluate_refit_with_policy(
-        round_id="r2", component="bulge", refit_evaluation=gates(), state=state
+        round_id="r2",
+        component="bulge",
+        refit_evaluation=gates(
+            bic={"bic_simple": 100.0, "bic_complex": 85.0, "bic_gain": 15.0, "comparable": True},
+            reduced_chisq={"baseline": 0.5, "candidate": 0.45, "delta": -0.05, "comparable": True},
+        ),
+        state=state,
     )
     assert decision["action"]["action_type"] == "ACCEPT_REFIT"
     assert "automation" not in decision
@@ -316,7 +372,7 @@ def test_parameter_boundary_emits_refit_parameters():
                 "upper": 10.0,
             }],
         }], source={"band": None}),
-    ], components={"disk"}, state=state)
+    ], components={"disk", "bulge"}, state=state)
     assert decision["action"]["action_type"] == "REFIT_PARAMETERS"
     assert decision["action"]["parameter_changes"][0]["operation"] == "SET_BOUNDS"
     assert decision["candidate_actions"][0]["status"] == "SELECTED"
@@ -331,7 +387,7 @@ def test_unsupported_bar_emits_propose_remove():
             "data_quality_ok": True,
             "role_conflict": True,
         }], source={"band": None}),
-    ], components={"disk", "bar"})
+    ], components={"disk", "bar", "bulge"})
     assert decision["action"] == {
         "action_type": "PROPOSE_REMOVE",
         "component": "bar",
@@ -366,7 +422,7 @@ def test_all_termination_gates_emit_converged():
             "satisfied": True,
         }], source={"band": None}),
     ]
-    decision = decide(features, components={"disk"})
+    decision = decide(features, components={"disk", "bulge"})
     assert decision["action"]["action_type"] == "CONVERGED"
     assert len(decision["termination_checks"]) >= 7
 
@@ -386,8 +442,8 @@ def test_refit_acceptance_is_operation_aware():
 
 def test_vlm_success_also_persists_raw_evidence_view():
     decision = decide([PEAKS], observations=[obs("independent_source", "candidate_1")])
-    assert decision["evidence_views"]["vlm"]["parse_status"] == "OK"
-    assert decision["evidence_views"]["vlm"]["observations"][0]["target_id"] == "candidate_1"
+    assert decision["evidence_views"]["numeric_plus_vlm"]["parse_status"] == "OK"
+    assert decision["evidence_views"]["numeric_plus_vlm"]["observations"][0]["target_id"] == "candidate_1"
     assert decision["evidence_views"]["numeric_only"]["parse_status"] == "NOT_RUN"
 
 
@@ -395,6 +451,19 @@ def test_vlm_retry_preserves_both_evidence_views():
     decision = decide([EXTENT, GEOMETRY, RESIDUAL_OUTER], state=PolicyState(), parse_status="PARSE_FAILED")
     assert decision["action"]["action_type"] == "PROPOSE_ADD"
     assert decision["automation"]["resolution"] == "numeric_only_retry"
-    assert decision["evidence_views"]["vlm"]["parse_status"] == "PARSE_FAILED"
+    assert decision["evidence_views"]["numeric_plus_vlm"]["parse_status"] == "PARSE_FAILED"
     assert decision["evidence_views"]["numeric_only"]["parse_status"] == "OK"
     assert decision["evidence_views"]["numeric_only"]["action"]["action_type"] == "PROPOSE_ADD"
+
+
+def test_inconclusive_occurrence_cap_terminates_despite_changing_fingerprint():
+    """N27: VLM responses vary between rounds, so an unchanged-fingerprint
+    test never stops a collector loop; the 3rd occurrence terminates."""
+    state = PolicyState()
+    for index, fingerprint in enumerate(("fp1", "fp2-different", "fp3-also-different")):
+        decision = decide([EXTENT, GEOMETRY], state=state, fingerprint=fingerprint)
+        resolution = decision["automation"]["resolution"]
+        if index == 2:
+            assert resolution == "rule_terminated"
+        else:
+            assert resolution == "trial_fit"

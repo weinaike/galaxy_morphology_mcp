@@ -355,14 +355,14 @@ def test_spheroid_kept_as_single_sersic():
 
 def test_edge_on_replace_requires_vlm_confirmation():
     low_q = feat("q", "outer_axis_ratio", 0.12)
-    decision = decide([EXTENT, low_q], [obs("edge_on_disk")], components={"disk"})
+    decision = decide([EXTENT, low_q], [obs("edge_on_disk")], components={"disk", "bulge"})
     assert decision["action"] == {
         "action_type": "PROPOSE_REPLACE",
         "replace_from": "disk",
         "replace_to": "edge_on_disk",
         "target_model_label": "disk",
     }
-    decision = decide([EXTENT, low_q], [], components={"disk"})
+    decision = decide([EXTENT, low_q], [], components={"disk", "bulge"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
 
 
@@ -384,13 +384,13 @@ STRONG_BAR = feat(
 
 
 def test_bar_single_quality_band_strong_isophote_triggers():
-    decision = decide([STRONG_BAR], [], components={"disk"})
+    decision = decide([STRONG_BAR], [], components={"disk", "bulge"})
     assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "bar"}
     assert any(item["rule_id"] == "BAR_STRONG_ISOPHOTE_V1" for item in decision["rule_trace"])
 
 def test_bar_diffraction_conflict_inconclusive():
     decision = decide(
-        [STRONG_BAR], [obs("diffraction_psf", confidence=0.9)], components={"disk"}
+        [STRONG_BAR], [obs("diffraction_psf", confidence=0.9)], components={"disk", "bulge"}
     )
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
 
@@ -399,7 +399,7 @@ def test_bar_band_failing_quality_gate_cannot_trigger():
     decision = decide(
         [STRONG_BAR],
         [],
-        components={"disk"},
+        components={"disk", "bulge"},
         band_quality=[{"band": "f200w", "passed": False}],
     )
     assert decision["action"] is None
@@ -412,7 +412,7 @@ def test_bar_unknown_psf_veto_cannot_trigger_strong_evidence():
         "bar_isophote_profile",
         {**STRONG_BAR["value"], "psf_veto": None},
     )
-    decision = decide([unknown_psf], [], components={"disk"})
+    decision = decide([unknown_psf], [], components={"disk", "bulge"})
     assert decision["action"] is None
     assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
@@ -422,9 +422,9 @@ def test_bar_weak_candidate_needs_numeric_and_vlm():
         feat("m2", "residual_m2_amplitude", 0.2),
         feat("elong", "residual_central_elongation", True),
     ]
-    decision = decide(weak, [obs("bar_like")], components={"disk"})
+    decision = decide(weak, [obs("bar_like")], components={"disk", "bulge"})
     assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "bar"}
-    decision = decide(weak, [], components={"disk"})
+    decision = decide(weak, [], components={"disk", "bulge"})
     assert decision["action"] is None
     assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
@@ -445,17 +445,24 @@ def resolution(feature_id, band, fwhm_obs, fwhm_psf, snr):
     )
 
 
-def test_central_resolved_proposes_bulge():
+def test_central_resolved_evidence_recorded_split_owns_bulge():
+    # 2026-10-29 ruling 6: the disk+bulge split owns the bulge ADD; the
+    # central rule records the resolved measurement only.
     features = [CENTRAL_EXCESS, resolution("res", "f200w", 4.0, 2.5, 30.0)]
     decision = decide(features, [obs("central_compact_excess")], components={"disk"})
     assert decision["action"]["action_type"] == "PROPOSE_ADD"
     assert decision["action"]["component"] == "bulge"
-    assert decision["action"]["resolved_state"] == "resolved"
+    assert any(
+        item["rule_id"] == "DISK_BULGE_SPLIT_V1"
+        for item in decision["rule_trace"]
+    )
+    resolved = [t for t in decision["rule_trace"] if t["rule_id"] == "CENTRAL_RESOLVED_V1"]
+    assert resolved and resolved[0]["outcome"] == "SATISFIED"
 
 
 def test_central_unresolved_proposes_candidate_not_agn():
     features = [CENTRAL_EXCESS, resolution("res", "f200w", 2.6, 2.5, 30.0)]
-    decision = decide(features, [obs("central_compact_excess")], components={"disk"})
+    decision = decide(features, [obs("central_compact_excess")], components={"disk", "bulge"})
     assert decision["action"]["component"] == "compact_central_source_candidate"
     assert decision["action"]["physical_identity"] == "unconfirmed"
 
@@ -466,7 +473,7 @@ def test_central_unresolved_with_independent_evidence_proposes_agn():
         resolution("res", "f200w", 2.6, 2.5, 30.0),
         feat("agn", "independent_agn_evidence", True),
     ]
-    decision = decide(features, [obs("central_compact_excess")], components={"disk"})
+    decision = decide(features, [obs("central_compact_excess")], components={"disk", "bulge"})
     assert decision["action"]["component"] == "agn"
     assert decision["action"]["physical_identity"] == "agn"
 
@@ -477,19 +484,19 @@ def test_central_similar_resolution_conflict_inconclusive():
         resolution("res1", "f200w", 4.0, 2.5, 30.0),
         resolution("res2", "f150w", 2.7, 2.6, 30.0),
     ]
-    decision = decide(features, [], components={"disk"})
+    decision = decide(features, [], components={"disk", "bulge"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
     assert any(item["rule_id"] == "CENTRAL_RESOLUTION_CONFLICT_V1" for item in decision["rule_trace"])
 
 def test_central_weak_snr_only_inconclusive():
     features = [CENTRAL_EXCESS, resolution("res", "f200w", 4.0, 2.5, 15.0)]
-    decision = decide(features, [], components={"disk"})
+    decision = decide(features, [], components={"disk", "bulge"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
     assert any(item["rule_id"] == "CENTRAL_RESOLUTION_QUALITY_V1" for item in decision["rule_trace"])
 
 def test_central_dust_or_diffraction_pollution_inconclusive():
     features = [CENTRAL_EXCESS, resolution("res", "f200w", 4.0, 2.5, 30.0)]
-    decision = decide(features, [obs("dust_lane")], components={"disk"})
+    decision = decide(features, [obs("dust_lane")], components={"disk", "bulge"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
 
 
@@ -498,20 +505,39 @@ def test_central_dust_or_diffraction_pollution_inconclusive():
 # ---------------------------------------------------------------------------
 
 
-def test_m1_from_original_detection():
-    decision = decide(
-        [feat("m1", "original_m1_amplitude", 0.15)], [], components={"disk"}
-    )
-    assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "fourier_m1"}
-
-
-def test_m1_with_confusion_inconclusive():
+def test_m1_closing_action_fires_only_without_structural_candidates():
+    """2026-11-02 ruling 9: lop is a CLOSING action — proposed only when no
+    structural candidate remains, amplitude > 0.02 (keep threshold), and
+    confounding no longer gates it (data arbitrates)."""
+    # With a structural candidate available (bar evidence), the closing lop
+    # must NOT be the selected action even at high amplitude.
     features = [
         feat("m1", "original_m1_amplitude", 0.15),
-        feat("conf", "m1_confusion_present", True),
+        STRONG_BAR,
     ]
-    decision = decide(features, [], components={"disk"})
-    assert decision["action"]["action_type"] == "INCONCLUSIVE"
+    decision = decide(features, [], components={"disk", "bulge"})
+    assert decision["action"]["component"] == "bar"
+
+    # No structural candidate: amplitude above the keep threshold fires the
+    # closing attempt, confusion flag irrelevant.
+    closing = decide(
+        [
+            feat("m1", "original_m1_amplitude", 0.03),
+            feat("conf", "m1_confusion_present", True),
+        ],
+        [],
+        components={"disk", "bulge"},
+    )
+    assert closing["action"] == {"action_type": "PROPOSE_ADD", "component": "fourier_m1"}
+    trace = next(t for t in closing["rule_trace"] if t["rule_id"] == "FOURIER_M1_CLOSING_V1")
+    assert trace["outcome"] == "SATISFIED"
+
+    # Amplitude at/below the keep threshold: no closing attempt.
+    quiet = decide(
+        [feat("m1", "original_m1_amplitude", 0.02)], [], components={"disk", "bulge"}
+    )
+    trace = next(t for t in quiet["rule_trace"] if t["rule_id"] == "FOURIER_M1_CLOSING_V1")
+    assert trace["outcome"] == "NOT_SATISFIED"
 
 
 PEAKS = feat(
@@ -519,7 +545,8 @@ PEAKS = feat(
     "residual_local_peaks",
     1,
     candidate_regions=[
-        {"region_id": "candidate_1", "band": "f200w", "x_pix": 40.0, "y_pix": 41.0, "local_snr": 8.0}
+        {"region_id": "candidate_1", "band": band, "x_pix": 40.0, "y_pix": 41.0, "local_snr": 8.0}
+        for band in ("f150w", "f200w", "f444w")
     ],
 )
 ORIGINAL_MATCH = feat("match", "original_source_matches", {"candidate_1": True})
@@ -529,27 +556,35 @@ def test_companion_requires_numeric_candidate_original_match_and_vlm():
     decision = decide(
         [PEAKS, ORIGINAL_MATCH],
         [obs("independent_source", target_id="candidate_1")],
-        components={"disk"},
+        components={"disk", "bulge"},
     )
     assert decision["action"]["action_type"] == "PROPOSE_ADD"
     assert decision["action"]["component"] == "companion"
     assert decision["action"]["target_model_label"] == "candidate_1"
 
 
-def test_companion_vlm_uncertain_inconclusive():
+def test_companion_vlm_uncertain_is_non_blocking_gap():
+    # 2026-10-28 ruling: companion evidence gaps never block convergence and
+    # drive no collector; with no other candidate the decision falls through
+    # to the termination checks instead of an INCONCLUSIVE action.
     decision = decide(
         [PEAKS, ORIGINAL_MATCH],
         [obs("uncertain", target_id="candidate_1")],
-        components={"disk"},
+        components={"disk", "bulge"},
     )
-    assert decision["action"]["action_type"] == "INCONCLUSIVE"
+    assert decision["action"] is None or decision["action"]["action_type"] != "COLLECT_EVIDENCE"
+    trace = next(
+        t for t in decision["rule_trace"]
+        if t["rule_id"] == "COMPANION_NUMERIC_VLM_V1"
+    )
+    assert trace["blocking"] is False
 
 
 def test_companion_without_original_match_not_proposed():
     decision = decide(
         [PEAKS],
         [obs("independent_source", target_id="candidate_1")],
-        components={"disk"},
+        components={"disk", "bulge"},
     )
     assert decision["action"] is None
     assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
@@ -564,12 +599,12 @@ EXTENDED_RESIDUAL = feat("ext", "extended_positive_residual", True)
 
 
 def test_lens_proposed_on_bar_anomaly_with_extended_residual():
-    decision = decide([BAR_ANOMALY, EXTENDED_RESIDUAL], [], components={"disk", "bar"})
+    decision = decide([BAR_ANOMALY, EXTENDED_RESIDUAL], [], components={"disk", "bar", "bulge"})
     assert decision["action"] == {"action_type": "PROPOSE_ADD", "component": "lens"}
     assert any(item["rule_id"] == "LENS_BAR_SPLIT_V1" for item in decision["rule_trace"])
 
 def test_lens_anomaly_without_extended_residual_inconclusive():
-    decision = decide([BAR_ANOMALY], [], components={"disk", "bar"})
+    decision = decide([BAR_ANOMALY], [], components={"disk", "bar", "bulge"})
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
     assert any(item["rule_id"] == "LENS_BAR_ANOMALY_V1" for item in decision["rule_trace"])
 
@@ -577,20 +612,20 @@ def test_lens_companion_conflict_inconclusive():
     decision = decide(
         [BAR_ANOMALY, EXTENDED_RESIDUAL],
         [obs("independent_source", target_id="candidate_1")],
-        components={"disk", "bar"},
+        components={"disk", "bar", "bulge"},
     )
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
     assert any(item["rule_id"] == "LENS_COMPANION_CONFLICT_V1" for item in decision["rule_trace"])
 
 def test_lens_not_proposed_without_bar():
-    decision = decide([BAR_ANOMALY, EXTENDED_RESIDUAL], [], components={"disk"})
+    decision = decide([BAR_ANOMALY, EXTENDED_RESIDUAL], [], components={"disk", "bulge"})
     assert decision["action"] is None
     assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
 
 def test_lens_normal_bar_parameters_not_triggered():
     normal = feat("barpar", "bar_fit_parameters", {"re_bar_over_re_disk": 0.5, "q_bar": 0.3})
-    decision = decide([normal, EXTENDED_RESIDUAL], [], components={"disk", "bar"})
+    decision = decide([normal, EXTENDED_RESIDUAL], [], components={"disk", "bar", "bulge"})
     assert decision["action"] is None
     assert decision["workflow_status"] == "STOPPED_NEEDS_REVIEW"
 
@@ -658,20 +693,41 @@ def bic(gain, comparable=True):
     }
 
 
+def reduced(delta=-0.01, baseline=0.56, comparable=True):
+    """Comparable reduced chisq block (N24: participates in candidate judgment)."""
+    return {
+        "baseline": baseline,
+        "candidate": baseline + delta,
+        "delta": delta,
+        "comparable": comparable,
+    }
+
+
 def test_optional_component_accepted_above_bic_gate():
     decision = evaluate_refit(
         round_id="r2",
         component="compact_central_source_candidate",
-        refit_evaluation=gates(bic=bic(32.0)),
+        refit_evaluation=gates(bic=bic(32.0), reduced_chisq=reduced()),
     )
     assert decision["action"]["action_type"] == "ACCEPT_REFIT"
 
 
 def test_optional_component_rejected_below_bic_gate():
     decision = evaluate_refit(
-        round_id="r2", component="companion", refit_evaluation=gates(bic=bic(5.0))
+        round_id="r2",
+        component="companion",
+        refit_evaluation=gates(bic=bic(5.0), reduced_chisq=reduced()),
     )
     assert decision["action"]["action_type"] == "REJECT_REFIT"
+
+
+def test_optional_add_without_reduced_chisq_is_inconclusive():
+    decision = evaluate_refit(
+        round_id="r2",
+        component="companion",
+        refit_evaluation=gates(bic=bic(32.0)),
+    )
+    assert decision["action"]["action_type"] == "INCONCLUSIVE"
 
 
 def test_optional_component_incomparable_bic_inconclusive():
@@ -683,11 +739,15 @@ def test_optional_component_incomparable_bic_inconclusive():
     assert decision["action"]["action_type"] == "INCONCLUSIVE"
 
 
-def test_primary_component_accepted_despite_bic_loss():
+def test_unified_gate_rejects_bic_loss_for_any_component():
+    """2026-11-02 ruling 11: one standard — a structural component (bar) with
+    BIC_gain < 10 is now rejected exactly like an optional one."""
     decision = evaluate_refit(
-        round_id="r2", component="bar", refit_evaluation=gates(bic=bic(-8.0))
+        round_id="r2",
+        component="bar",
+        refit_evaluation=gates(bic=bic(-8.0), reduced_chisq=reduced()),
     )
-    assert decision["action"]["action_type"] == "ACCEPT_REFIT"
+    assert decision["action"]["action_type"] == "REJECT_REFIT"
 
 
 def test_failed_primary_gate_rejects():
@@ -715,7 +775,9 @@ def test_boundary_hits_reject():
 
 def test_lens_rejected_below_bic_gate():
     decision = evaluate_refit(
-        round_id="r2", component="lens", refit_evaluation=gates(bic=bic(5.0))
+        round_id="r2",
+        component="lens",
+        refit_evaluation=gates(bic=bic(5.0), reduced_chisq=reduced()),
     )
     assert decision["action"]["action_type"] == "REJECT_REFIT"
 

@@ -555,6 +555,45 @@
               "null"
             ],
             "maxLength": 1000
+          },
+          "ranking": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "executable",
+              "priority",
+              "safety_rank",
+              "tie_breaker"
+            ],
+            "properties": {
+              "executable": {
+                "type": "boolean"
+              },
+              "priority": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "safety_rank": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "evidence_complete": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "tie_breaker": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "selected": {
+                "type": "boolean"
+              }
+            }
           }
         }
       }
@@ -639,7 +678,9 @@
             "numeric_only_retry",
             "collect_evidence",
             "candidate_queue",
-            "rule_terminated"
+            "rule_terminated",
+            "candidate_queue_advance",
+            "candidate_rejected_stable"
           ]
         },
         "original_action_type": {
@@ -812,6 +853,50 @@
               ]
             }
           }
+        },
+        "fit_quality_ok": {
+          "enum": [
+            "yes",
+            "no",
+            "inconclusive"
+          ],
+          "description": "ES convergence proxy (Q1): all-band chisq/dof finite and optimizer generations recorded for multi-band fits."
+        },
+        "optimizer_converged": {
+          "enum": [
+            "NOT_APPLICABLE"
+          ],
+          "description": "GalfitS ES reports no optimizer convergence state; permanently NOT_APPLICABLE (Q1)."
+        },
+        "one_d_residual_outcome": {
+          "enum": [
+            "NOT_APPLICABLE"
+          ],
+          "description": "1D profile measurement not yet implemented; NOT_APPLICABLE this phase (Q2)."
+        },
+        "boundary_hits_baseline": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Boundary hits already present in the baseline fit (Q3)."
+        },
+        "boundary_hits_new_or_unresolved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Candidate boundary hits not present in the baseline (Q3): candidate_set - baseline_set."
+        },
+        "vlm_residual_verdict": {
+          "enum": [
+            "cleaner",
+            "unchanged",
+            "dirtier",
+            "unavailable",
+            null
+          ],
+          "description": "Ruling 12 controlled VLM residual-comparison verdict; 'dirtier' carries a one-vote veto in ordinary-candidate arbitration (mandatory-spec branches exempt)."
         }
       }
     },
@@ -823,6 +908,9 @@
           "type": "object"
         },
         "numeric_only": {
+          "type": "object"
+        },
+        "numeric_plus_vlm": {
           "type": "object"
         }
       }

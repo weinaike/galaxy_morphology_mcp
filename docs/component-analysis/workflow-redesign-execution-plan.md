@@ -1,8 +1,34 @@
 # 多波段成分分析 Workflow：当前执行计划
 
-状态：N17～N22 已实施并完成一次对象 `104` 的真实 canary，但静态审计确认 refit 被重复评价、候选身份和队列状态未完整贯穿 Rules／Policy／runner。当前唯一待实施口径为本文件第 10 节 N23～N27；完成修复和测试前不得重新执行真实拟合。
+状态：N17～N22 已实施并完成一次对象 `104` 的真实 canary，但静态审计确认 refit 被重复评价、候选身份和队列状态未完整贯穿 Rules／Policy／runner。当前唯一待实施口径为本文件第 10 节 N23～N27 与 N28；完成修复和测试前不得重新执行真实拟合。
 
-更新日期：2026-09-11
+更新日期：2026-10-27
+
+2026-10-27 裁定记录（小鱼儿已确认）：
+
+- **Q1**：GalfitS ES 优化器为固定代数进化策略，`.gssummary` 不输出收敛状态。定义 ES 收敛代理量 `fit_quality_ok`（全波段 chisq/dof 有限、代数跑满、best value 不贴采样边界），refit 判定使用该名称；`optimizer_converged` 对当前 GalfitS 版本永久标 `NOT_APPLICABLE`。
+- **Q2**：本阶段 refit 判定使用 2D 残差＋reduced chi-square；`one_d_residual_outcome` 为 `NOT_APPLICABLE`（可满足终止门），1D profile 残差测量留后续阶段实现后再转为硬门。
+- **Q3**：`boundary_hits` 判定采用 baseline／candidate 对比语义：comparator 同时输出两侧边界集合，仅当候选**新引入**边界、或使 baseline 既有边界**恶化且未解决**时拒绝。
+- **Q4**：无已确认成分时 `REQUIRED_FIXED_PARAMETERS` 为 `NOT_APPLICABLE`（可满足终止门），有效 generic single Sersic 可以合法终态。
+- **N28**：新增 bounded agent 消解层（见第 10 节 N28），在 N23～N27 完成并经 104 canary 验证后实施。
+
+2026-10-28 补充裁定（小鱼儿确认，基于 104 canary run2 的事实）：
+
+- **事实**：104 的 27 条 companion 候选区域去重后 17 个 target，仅 3 个（candidate_12／13／15）在 ≥2 波段重复检出，其余 14 个为单波段 SNR 5～8 的检出；科学家终态（基础 lyric 单 Sersic）中 companion 至多一个或不存在。
+- **裁定 1（多波段一致性门）**：companion 候选 target 必须「同一 WCS 候选在 ≥2 波段重复检出」才具备资格——才有资格进入 VLM required targets 与 `PROPOSE_ADD companion` 提案。单波段检出的峰保留为 non-blocking 审计 trace，不进入 VLM 覆盖义务、不产生候选、不阻塞 `CONVERGED`。阈值（≥2 波段）为 v1 默认值，待评测集 companion 样本校准。
+  - 2026-10-28 二次裁定（小鱼儿，基于 run3 数据）：阈值提高到 **≥3 波段**（7 波段数据下 companion 属次要成分，宁缺勿滥）。run3 数据支撑：candidate_12（6 波段）／candidate_13（5 波段）为高质量候选；candidate_15 仅 2 波段（f115w／f150w 短波段），正是被 VLM 确认后拟合并以 `BIC_gain=-163` 拒绝的那个——≥3 门可在拟合前排除。
+- **裁定 2（companion 非阻塞）**：companion 属于离轴可选成分，不改变中心结构解释。按第 5.3 节 blocking 定义，`COMPANION_NUMERIC_VLM_V1` 的 INCONCLUSIVE 一律 `blocking=false`：VLM 覆盖不足或确认缺失时不阻塞终止门、不驱动证据采集循环——没有正向证据就不提案（可选成分语义），其余终止门照常判定。
+- **裁定 3（拒绝记忆稳定键，2026-10-28 小鱼儿确认）**：VLM 响应天然波动使 evidence fingerprint 逐轮必变，含 fingerprint 的拒绝键无法跨轮去重（run3 round_002 重提了已拒绝候选，幸被 runner baseline 防线拦截）。拒绝去重改用「canonical action＋rule／target＋baseline artifact fingerprint」的稳定键（不含 evidence fingerprint）；evidence fingerprint 仅保留审计。同一动作在同一 baseline 上被拒后不再自动重提——证据的实质改善在 VLM 波动下无法机器判定，交人工复核（`needs_review`），不以重试换空转。
+- **裁定 4（主星系成分强制同心，2026-10-29 小鱼儿转达科学家统一口径）**：主星系（host）成分必须同心，**不因拟合效果（残差、BIC、reduced chi-square）变差而撤销或否决**；companion 作为离轴成分维持豁免。据此 `CENTER_CONSTRAINT_MISSING` 的 `REFIT_PARAMETERS`（LINK_CENTER）与 Disk `n=1` 同属**规范合规动作**：接受门＝拟合收敛（`fit_quality_ok`）＋参数物理有效＋无未解决的新增边界／退化；残差、BIC 与 reduced chi-square 仅审计记录。已存在的中心偏置若为物理真实，由科学家事后审阅判断，不在自动拟合循环内消解。
+- **裁定 5（bar 轴比上限，2026-10-29 小鱼儿转达科学家统一口径）**：bar 的轴比 `q ≤ 0.7`。bar 模板的 q 边界上界由 1.0 收紧到 0.7（`[0.3, 0.05, 0.7, 0.01, 1]`）；拟合把「bar」推到 q→1（圆形化）即非物理棒解，收紧后此类候选在边界处直接暴露。
+- **裁定 6（disk 确认后先拆 disk+bulge，2026-10-29 小鱼儿确认；旧版规范 component_specification_galfits.md 第 113 行已有、新版规则层此前未落实）**：单 disk 模型确认 Disk 后，**必须先尝试拆分为 disk+bulge 拟合**（bulge 的 n 不预设固定，按拟合仲裁决定去留），加不上 bulge 时才继续考虑其它结构成分。新规则 `DISK_BULGE_SPLIT_V1`：Disk 已确认且 bulge 不在模型时产出 `PROPOSE_ADD bulge` 候选，优先级高于 bar／companion／fourier 等结构提议；接受与否由既有 refit 矩阵仲裁（接受＝保留；拒绝＝稳定键记录、同 baseline 不再重提，流程继续考虑其它成分）。
+- **裁定 7（m1 混淆给予试拟合仲裁资格，2026-10-30 小鱼儿确认）**：`FOURIER_M1_CONFOUNDING_V1`（m=1 振幅超阈值但存在混淆源——不对称信号可能来自伴星系／中心偏置等而非盘固有）加入试拟合仲裁表：混淆不再无限期 blocking，而是降级为弱候选真实拟合一次，由 refit 矩阵裁决（BIC／残差说话）；`fourier_m1` 同时按可选成分对待（`BIC_gain >= 10` 门生效，与「BIC 不降即删 m=1」的既有经验一致）。仲裁拒绝后稳定键记忆，同 baseline 不再重提。
+- **裁定 8（N1 不可测时的确认替代组合，2026-10-30 小鱼儿确认）**：N1（`source_extent_psf_ratio`，源延展度）因等照度线拟合失败而 UNAVAILABLE 时，**不是否定证据**（H7 语义）；此时允许替代组合确认盘：**N2（几何稳定或单 Sersic n≤disk_n_max 未撞界）∧ VLM 明确盘标签**（`disk_like`／`spiral_arm`／`edge_on_disk`——N1 缺席时 VLM 必须明确，neutral 标签不确认）。trace 记录 `N1_UNAVAILABLE_ALTERNATIVE` 以便审计区分主组合与替代组合确认。
+- **裁定 9（m1 改为收尾阶段动作，2026-11-02 小鱼儿确认）**：fourier_m1 **不参与流程中的结构提议竞争**——所有结构成分（bar／bulge／companion／agn 等）拟合完成后，在进入终止判定之前，才尝试给 disk 加 lop（收尾动作 `FOURIER_M1_CLOSING_V1`）。保留条件：**m=1 振幅 > `m1_keep_amplitude`（0.02）∧ `BIC_gain ≥ 10`**（阈值沿用可选成分统一标准，小鱼儿授权工程定值）**∧ 拟合合理不撞新边界**（沿用 Q3 边界语义与参数物理性门）。裁定 7 的流程中混淆试拟合路径（`_TRIAL_FIT_ACTIONS` 的 `FOURIER_M1_CONFOUNDING_V1`）随之退役——混淆与否不再影响收尾动作（数据说话）。收尾动作被拒后稳定键记忆，同 baseline 不再重提。
+- **裁定 10（residual_outcome 改用 GalfitS 官方统计，2026-11-02 小鱼儿确认）**：comparator 不再自算 L1 残差分数（mean |r/σ|）——34 对象批跑 142／142 份 `.gssummary` 均含 per-band `chisq／dof／reduced chisq`，直接采用官方量。`residual_outcome` 判定改为：逐波段两侧 reduced chisq 齐全即可比，**跨波段平均 reduced chisq 下降 → improved、上升 → worse、持平 → equivalent**；任一波段缺失 → `inconclusive`（fail-closed）。自算残差分数与 evidence 中的 `residual_score` 块退役；`reduced_chisq` 门的既有语义（comparable 且不得实质变差，相对容差 1e-4）不变——residual 门与 reduced chisq 门同源后仍独立成门（前者看平均方向、后者看实质变差容差）。
+- **裁定 11（成分接受标准统一，2026-11-02 小鱼儿确认）**：废除「可选成分／其余成分」两分 BIC 门——v1 设计将 agn／companion／lens 等列为「可选成分」要求 `BIC_gain>=10`，而 disk／bulge／bar 无 BIC 门；本批 34 对象实证该分类无统计学必然性且方向恰好相反（过加的是无门的 bulge，被严防的成分零误加）。统一后**所有 `PROPOSE_ADD` 一律要求：残差改善（裁定 10 口径）＋ `BIC_gain >= 10` ＋ 无未解决新边界／参数物理**。`optional_components` 集合与两分逻辑删除。
+- **裁定 12（VLM 残差对比门，2026-11-02 小鱼儿确认，`dirtier` 具一票否决权）**：refit 判定不再纯数值——候选拟合后将 baseline 与 candidate 的 comparison PNG（含残差面板）交 VLM 做**残差对比**，受控三标签 `cleaner`／`unchanged`／`dirtier`。判定权重：`dirtier` → **拒绝候选（一票否决，即使数值门全过**——聚合标量对「中心好外围差／残差结构化变脏」无感，视觉是最后一道防线）；`cleaner`／`unchanged` → 放行交数值门；VLM 不可用／解析失败 → 纯数值门决定并如实记录降级（fail-open 不阻塞）。**规范合规动作豁免**（与裁定 4 一致）：`MANDATORY_DISK_N_SPEC` 与 `MANDATORY_CENTER_CONSTRAINT_SPEC` 分支不受此门影响——合规要求不因拟合效果（含视觉）否决。新 MCP 工具 `workflow_compare_residuals`（pilot gated）负责 VLM 调用，verdict 并入 `refit_evaluation.vlm_residual_verdict` 后进入矩阵；trace 规则 `VLM_RESIDUAL_GATE_V1`。
+- **裁定 13（先拆分入口，2026-11-03 小鱼儿确认，基于 T3 诊断表全部 PNG 的人工审阅）**：当证据形态为「中心亮团＋延展外围」（VLM 中心标签 `central_compact_excess`）且盘未确认时，**第一动作是拆「中心成分＋外围」**——不等待盘确认。`DISK_BULGE_SPLIT_V1` 的适用条件由「disk 已确认∧bulge 不在」扩展为「bulge 不在∧（disk 已确认 ∨ （disk 未确认∧VLM 中心亮团标签））」；先拆分入口产出的仍是 `PROPOSE_ADD bulge`（n 自由），接受与否由既有统一矩阵仲裁（裁定 10／11／12 全部适用）。**盘身份确认后置**：拆分接受后模型为「bulge＋unclassified 外围 Sersic」，后续轮次的 `PROMOTE_SINGLE_SERSIC_TO_DISK` 照常评估外围成分的盘身份（现有 promotion_target 逻辑天然支持，无需额外改动）。`dust_lane` 冲突在先拆分入口同样仅审计。T3 的 9 个对象（1398／1429／1639／170／1803／287／331／365 等）即此路径的目标场景。
 
 ## 1. 执行权威、目标和边界
 
@@ -170,7 +196,7 @@ Rules 必须：
 - 候选排序先比较：动作安全性与可编译性、与当前模型的相关性、证据完整度、规则科学优先级、数值支持强度；不得按规则插入顺序或“最后一个 `INCONCLUSIVE`”决定。
 - 把 `INCONCLUSIVE` 分为 `blocking` 和 `non_blocking`。只有与当前模型或未决高优先级结构直接相关、且存在合理证据采集路径的 `blocking` 不确定才阻止 `CONVERGED`。
 - 明确区分字段缺失和真实负证据：缺失／解析失败为 `INCONCLUSIVE` 或 `UNAVAILABLE`，观测明确不支持才是 `NOT_SATISFIED`，不适用于当前 profile 的门为 `NOT_APPLICABLE`。
-- terminal gate 以 `PASS` 或 `NOT_APPLICABLE` 为满足，`UNAVAILABLE` 和 blocking `INCONCLUSIVE` 均阻止收敛。例如有效 generic single Sersic 可以是终态，但不能为了通过终止门把它补写成 Disk；没有已确认 Disk 时，`DISK_N_NOT_FIXED` 应为 `NOT_APPLICABLE`。
+- terminal gate 以 `PASS` 或 `NOT_APPLICABLE` 为满足，`UNAVAILABLE` 和 blocking `INCONCLUSIVE` 均阻止收敛。例如有效 generic single Sersic 可以是终态，但不能为了通过终止门把它补写成 Disk；没有已确认 Disk 时，`DISK_N_NOT_FIXED` 应为 `NOT_APPLICABLE`；没有已确认成分时，`REQUIRED_FIXED_PARAMETERS` 为 `NOT_APPLICABLE`（2026-10-27 裁定 Q4），不得因该项缺失阻止有效单 Sersic 终态。
 - 没有可执行动作时，若所有必要门为 `PASS／NOT_APPLICABLE`，返回 `CONVERGED`；若有明确 collector，返回 `COLLECT_EVIDENCE`；两者都没有时返回 `STOPPED_NEEDS_REVIEW`。
 
 ### 5.4 Policy 选择、拒绝和停止逻辑
@@ -217,20 +243,21 @@ baseline manifest + candidate manifest + baseline／candidate 的真实 MCP fit 
 
 ```text
 artifact_valid
-optimizer_converged
+fit_quality_ok（ES 收敛代理量：全波段 chisq/dof 有限、ES 代数跑满、best value 不贴采样边界）
+optimizer_converged（对当前 GalfitS 版本恒为 NOT_APPLICABLE，仅保留字段位置）
 parameters_physical
-one_d_residual_outcome
-2d_residual_outcome
+two_d_residual_outcome（2D 残差，band 严格映射）
+one_d_residual_outcome（本阶段恒为 NOT_APPLICABLE，1D profile 测量留后续阶段）
 reduced_chisq.baseline／candidate／delta／comparable
 bic.baseline／candidate／gain／comparable
-boundary_hits
+boundary_hits.baseline／candidate／new_or_unresolved（Q3 对比语义）
 degeneracy_warnings
 ```
 
 确定性判定顺序如下：
 
-1. artifact 无效属于工具／schema 失败；`optimizer_converged=false`、参数不物理、存在未解决的参数边界或退化时，普通 candidate 为 `REJECT_REFIT`。`optimizer_converged` 未采集时为 `INCONCLUSIVE`，不得用文件存在代替。
-2. `PROPOSE_ADD` 至少要有 1D 或 2D 残差明确改善，且另一项不能出现无法解释的系统性变差；可选成分继续要求 `BIC_gain >= 10`，comparable reduced chi-square 不得实质变差。必要指标不可比较时为 `INCONCLUSIVE`，不能只凭 BIC 接受。
+1. artifact 无效属于工具／schema 失败；`fit_quality_ok=false`、参数不物理、存在候选新引入或未解决的参数边界（Q3：`boundary_hits.new_or_unresolved` 非空）或退化时，普通 candidate 为 `REJECT_REFIT`。`fit_quality_ok` 未采集时为 `INCONCLUSIVE`，不得用文件存在代替；baseline 既有且候选未恶化的边界不参与拒绝。
+2. `PROPOSE_ADD` 至少要有 2D 残差明确改善（Q2：本阶段 1D 门为 `NOT_APPLICABLE`，1D profile 测量实现后再转为硬门）；可选成分继续要求 `BIC_gain >= 10`，comparable reduced chi-square 不得实质变差。必要指标不可比较时为 `INCONCLUSIVE`，不能只凭 BIC 接受。
 3. `PROPOSE_REPLACE`、`PROPOSE_REMOVE` 和普通 `REFIT_PARAMETERS` 允许残差等价，但 BIC 与 reduced chi-square 不得同时变差；二者方向冲突且没有其它决定性证据时为 `INCONCLUSIVE`。
 4. `PROMOTE_SINGLE_SERSIC_TO_DISK` 和确认 Disk 后的 `DISK_N_NOT_FIXED` 属于模型语义约束：确认后 `n=1` 必须执行。只要 refit 收敛、参数物理有效且没有未解决的边界／退化，即可接受；残差、BIC 和 reduced chi-square 保留审计但不用于撤销 Disk 身份。
 5. 所有比较使用 comparator 签发的可比性和版本化数值容差。不得在 renderer、runner 或模型文字中建立第二套判定。
@@ -319,7 +346,7 @@ runner 在真实 Image 阶段必须严格执行：
 4. 建立 manifest，采集 numeric evidence 和可选 VLM evidence，运行 Rules 和 Policy。
 5. 对模型动作：preflight → 新 lyric → `check_lyric_file` → `run_galfits_image_fitting` → candidate manifest → comparator 只生成 refit evidence → `workflow_evaluate_refit` 恰好一次 → runner 只执行返回的 `next_decision.resolved_decision`。
 6. 对 `COLLECT_EVIDENCE`：仅调用定义的 collector；其后以新 evidence fingerprint 重跑 Rules。不得新建 lyric 或重复 Image fitting。
-7. 每个 Image fitting round 结束后生成 summary、更新 Working Note；终态时生成 final report、`run_index.json`、`artifact_index.json` 和 `capacity_report.json`。
+7. 每个 Image fitting round 结束后生成 summary、更新 Working Note；终态时生成 final report、`run_index.json`、`artifact_index.json` 和 `capacity_report.json`。`run_index.json` 的 `round_dir` 必须指向持久 `artifacts/` 下的 round 目录，不得指向 `/tmp` 临时 run 根，避免临时目录清理后审计链断裂。
 
 只有同时满足以下条件才允许调用 SED：
 
@@ -353,6 +380,11 @@ workflow_lock_best_round.status = LOCKED
 
 相关测试、offline replay 和全量回归必须全部通过，才能执行 provider smoke test；smoke test 通过后才能启动真实 canary。
 
+补充要求（2026-10-27，来自只读 review）：
+
+- 实施 N25 时必须**改写**两个把当前缺陷固化为期望行为的既有测试：`tests/test_workflow_batch_runner.py` 的 `test_rejected_action_is_not_repeated_on_unchanged_baseline`（拒绝后停止 → 拒绝后消费同队列下一候选）和 `tests/test_policy.py` 的 `test_rejected_component_not_retried`（消费只写不读的 `rejected_components` → 改为验证 candidate queue 状态迁移）。
+- N26 必须新增 contract test：禁止 runner 从 `action_summary.refit_verdict` 字符串驱动控制流；runner 的循环走向只能来自 `next_decision.resolved_decision`。
+
 ## 10. 当前最高优先级：N23～N27 实施顺序
 
 N17～N22 是已执行历史，不再作为待执行指令。下一位实施 agent 必须先完成本方案 review；小鱼儿确认 review 结论后，才按 N23～N27 修改代码。
@@ -375,7 +407,8 @@ N17～N22 是已执行历史，不再作为待执行指令。下一位实施 age
 - 全面审计 `_first_value` 和所有终止检查：缺失证据不得写成 `NOT_SATISFIED`；`NOT_APPLICABLE` 可满足终止门，`UNAVAILABLE`／blocking `INCONCLUSIVE` 必须阻止收敛；generic single Sersic 不得为通过门而改标 Disk。
 - 候选使用可审计复合排序键：动作可执行性、与当前模型相关性、证据完整度、科学优先级、numeric 支持强度和稳定 tie-breaker；artifact 保存每个排序字段。
 - 删除 Rules／Policy 中“VLM 依赖不确定即可 trial fit”的路径；VLM 不可用时只允许独立 numeric 候选继续。
-- comparator 删除 band 匹配失败后的顺序回退，严格使用 manifest；分别生成 1D／2D residual outcome；从 GalfitS 的真实 summary／result 状态提取 `optimizer_converged`，并与 artifact 完整性、MCP 成功分开。无法提取时写 `UNAVAILABLE`。
+- comparator 删除 band 匹配失败后的顺序回退，严格使用 manifest，匹配失败必须 fail-closed 报错；输出 2D residual outcome（Q2：1D 门本阶段为 `NOT_APPLICABLE`）；从 gssummary 提取 ES 收敛代理量 `fit_quality_ok`（Q1：全波段 chisq/dof 有限、代数跑满、best value 不贴采样边界），并与 artifact 完整性、MCP 成功分开；`optimizer_converged` 对当前 GalfitS 版本恒写 `NOT_APPLICABLE`。`fit_quality_ok` 无法提取时写 `UNAVAILABLE`。
+- comparator 按 Q3 输出 baseline 与 candidate 两侧 `boundary_hits`，并计算 `new_or_unresolved` 集合；Rules 拒绝逻辑只消费该集合。
 - 按第 5.6 节实现 refit 多指标矩阵，reduced chi-square 必须进入普通 candidate 判定，BIC 不得成为唯一标准。
 - 完整填写 rule trace 的实际值、门槛、target、blocking、缺失原因和拒绝原因。
 - 完成逐规则、多 target、排序和 refit matrix unit tests。
@@ -400,6 +433,7 @@ N17～N22 是已执行历史，不再作为待执行指令。下一位实施 age
 - runner 对每个真实 candidate 恰好调用一次 `workflow_evaluate_refit`；该调用负责唯一 `refit_decision`、Policy transition、`next_decision` 和 candidate lifecycle。
 - 对同一 `candidate_ref` 的重复调用返回已落盘结果，不重复追加 `candidate_trials`、event history 或 action summary。
 - runner 只消费 `next_decision.resolved_decision`：拒绝后直接进入同队列下一 candidate；接受后执行 `ANALYZE_NEW_BASELINE`；不得重新分析旧 baseline 后依靠本地 fingerprint 才发现重复。runner 侧 fingerprint 保留为最后一道 fail-closed 防线。
+- 明确禁止 runner 从 `action_summary.refit_verdict` 或任何 summary 字符串驱动控制流（baseline 切换、循环走向、停止判断）；这些字符串只能进入人类可读渲染。删除现有从 `action_summary` 读 verdict 的控制通道。
 - renderer 必须明确区分“本轮执行的模型动作”“refit 结果”“队列中的下一动作”；展示综合拒绝证据，不再生成相互矛盾的 refit verdict。
 - 完成 MCP contract、mock integration、lifecycle、run index、renderer 和故障恢复测试。
 
@@ -421,6 +455,34 @@ use_vlm=true
 7. 104 只可按本文件第 8 节的 MCP 链路执行。完成后立即停止，检查每个 candidate 只有一次 refit evaluation、候选队列历史、逐轮 summary、Working Note、final report、provider timing、run index、artifact index 和 capacity report。
 8. 在小鱼儿明确确认前，不运行 `1071`、`1118` 或其余 31 个对象。
 9. 完成后更新 `ROADMAP.md`，只能陈述已验证的工程事实。
+
+### N28：bounded agent 消解层（N23～N27 完成并经 104 canary 验证后实施）
+
+2026-10-27 小鱼儿裁定加入。目标：在确定性主干健康之后，把「队列耗尽＋证据不足」类合理停止进一步压缩，使流程在受约束前提下自动完成；agent 是消解层，不是第二决策系统。
+
+前提与顺序：必须先完成 N23～N27 并通过 104 canary，确认确定性层不再因工程缺陷停止。禁止先上 agent 再修缺陷——那会让 agent 兜底工程 bug，掩盖问题并产生低质量决策。
+
+agent 可获得的四类权限（均只允许在确定性层已产出的有限选项集合内选择，输出经 schema 校验的 `agent_recommendation`，由 Policy 合法性校验后才成为 `resolved_decision`）：
+
+1. **候选排序与选择**：队列存在多个安全候选时排序并选下一个试谁；不得发明候选集合外的动作或成分。
+2. **`INCONCLUSIVE` 消解**：在限定选项（试拟合仲裁／保守兜底／放弃该 target）中裁定；不得把「不确定」改写为「满足」。
+3. **collector 选择**：决定 `COLLECT_EVIDENCE` 补哪个证据（VLM retry／补残差测量／PSF 诊断）及顺序；不得重复同 fingerprint 采集。
+4. **parameter_plan 细化**：`REFIT_PARAMETERS` 时在数值层测得的合法范围内给初值／边界调整计划；不得写 lyric 文本，配置仍只能经 `workflow_action_config` 编译。
+
+不可开放的红线：
+
+- 统计硬门（BIC 门、refit 多指标矩阵、verifier、lock 标准）agent 不得调整；agent 只能决定「试什么」，不能决定「什么算好」。
+- `PROPOSE_REMOVE` 维持 review-only，直至真实局部残差事实与 A/B remove pilot 通过。
+- 工具／schema 失败类停止不交给 agent，按工程错误处理。
+- agent 不得做自由证据解释；理由只能引用 numeric／VLM artifact 的既有字段。
+
+安全机制：
+
+- 事后审计而非事前阻塞：每个 agent 消解决策照常 `needs_review=true` 落盘，人工为批量事后审查。
+- 预算与幂等：每对象 agent 消解次数设上限（默认值实施时定）；同一停止 fingerprint 只询问一次。
+- 决策可追溯：每次消解独立 artifact（输入选项集合、选择、理由、引用的证据字段），可被评测集复算。
+
+验收要求：104 新 canary 分层报告必须区分「确定性层完成」与「agent 消解完成」的轮次；agent 消解轮次的动作、选项集合和理由完整落盘可审计。
 
 ## 11. 104 canary 分级验收门
 

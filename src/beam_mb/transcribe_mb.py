@@ -312,14 +312,25 @@ class MbTranscriber:
         r_in ~ 0.2*Re, r_out ~ 0.6*Re (when the declared Re is known —
         the reserved F1 rebuild), am/theta_m from the f1 warm start
         (fourier_mode_analysis's am / theta_m), theta_m defaulting to the
-        sky-PA when no warm start exists."""
+        sky-PA when no warm start exists.
+
+        Band floors are Re-RELATIVE, not absolute: the historical corpus
+        values (0.3/3.0 arcsec) were calibrated on DECam (pixscale 0.262")
+        — on JWST (pixscale 0.02-0.06") a legitimate disk Re of 0.33" gives
+        r_in=0.067/r_out=0.200 which fell BELOW those floors and the output
+        was rejected by check_lyric_file (jwst/1398 real-data: the F1
+        reserved round died at E_TRANSCRIBE with init-outside-band). Every
+        band is now centred on its seed with a width proportional to the
+        seed itself (x0.5 to x2.5), so any spatial scale works."""
         f1 = p.get("f1") or {}
         am = min(max(float(f1.get("amplitude", 0.05)), 0.001), 0.5)
         theta_m = float(f1.get("phase_deg", p.get("pa_sky_deg") or 0.0)) % 180.0
         r_in = round(0.2 * re_arcsec, 4) if re_arcsec else 3.0
         r_out = round(0.6 * re_arcsec, 4) if re_arcsec else 8.0
-        return {17: [r_in, 0.3, max(4.0, r_in * 2), 0.1, 1],
-                18: [r_out, max(3.0, r_out * 0.4), max(20.0, r_out * 2), 0.1, 1],
+        _r_in_lo, _r_in_hi = r_in * 0.5, r_in * 2.5
+        _r_out_lo, _r_out_hi = r_out * 0.5, r_out * 2.5
+        return {17: [r_in, round(_r_in_lo, 4), round(_r_in_hi, 4), 0.1, 1],
+                18: [r_out, round(_r_out_lo, 4), round(_r_out_hi, 4), 0.1, 1],
                 19: [0.7, 0.5, 3.0, 0.1, 1],
                 20: [90.0, 30, 130, 1, 1],
                 21: 1,

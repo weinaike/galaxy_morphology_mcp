@@ -1121,7 +1121,26 @@ async def run_galfits_sed_fitting(
     Execute GalfitS (multi-band) with the given config file for sed fitting.
     It runs GalfitS as a subprocess and returns a new lyric file that will be used for combined image and sed fitting.
     The image_fitting_workplace is used to provide the necessary image fitting results for the sed fitting step.
+
+    The blocking body (PureSEDFitting spawns per-component GalfitS
+    subprocesses, minutes-long) is offloaded via asyncio.to_thread — same
+    fix as run_galfits (2026-11-06 jwst/1398): the MCP event loop stays
+    responsive and the client does not time out.
     """
+    return await asyncio.to_thread(
+        _run_galfits_sed_fitting_sync,
+        config_file=config_file,
+        image_fitting_workplace=image_fitting_workplace,
+        extra_args=extra_args,
+    )
+
+
+def _run_galfits_sed_fitting_sync(
+    config_file: str,
+    image_fitting_workplace: str,
+    extra_args: list[str] | None = None,
+) -> dict[str, Any]:
+    """Synchronous SED fitting (runs in a worker thread)."""
     from .galfits_fitting import PureSEDFitting
     #from src.tools.galfits_fitting import PureSEDFitting
 

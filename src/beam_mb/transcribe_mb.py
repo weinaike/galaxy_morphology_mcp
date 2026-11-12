@@ -74,6 +74,13 @@ SED_TEMPLATE: dict[int, Any] = {
     30: [1.0, 0.47, 7.32, 0.1, 0],
     31: [1.0, 1.0, 3.0, 0.1, 0],
     32: [0.10, 0, 1.0, 0.1, 0],
+    # zezhong-version dust/nebular rows (Pa33-36, all vary=0 fixed —
+    # consumed unconditionally by read_config_file even in image-only
+    # mode, but only affect the SED model, never the image model)
+    33: [[0.004, 0.0001, 0.04, 0.001, 0]],
+    34: [0.3, 0, 4, 1, 0],
+    35: [1, 0, 2, 0.3, 0],
+    36: [-0.7, -1, 0.4, 0.1, 0],
 }
 
 # AGN N-block template — the image-only anti-degeneracy configuration:
@@ -104,7 +111,7 @@ AGN_N_TEMPLATE: dict[int, Any] = {
 }
 
 CENTRAL_STRUCTURES = {"disk", "edgedisk", "bulge", "bar", "lens"}
-_ROW_ORDER = list(range(1, 33))
+_ROW_ORDER = list(range(1, 37))
 _BARE_WORD = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]*$')
 
 # structural row index -> (param name, gssummary suffix)

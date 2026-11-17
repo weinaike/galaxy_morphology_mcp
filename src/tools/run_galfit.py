@@ -430,9 +430,12 @@ def create_comparison_png(
         if im3 is not None:
             ax3.add_patch(Rectangle((zx0, zy0), zx1 - zx0, zy1 - zy0,
                                     fill=False, ec="lime", ls="--", lw=1.8))
-            # Disk (expdisk) 2·Re contour (Re = 1.68·Rs) overlaid for direct
-            # model↔residual comparison; only the disk, per the request.
-            disk_comps = [c for c in (components or []) if c.get("type") == "expdisk"]
+            # Disk 2·Re contour overlaid for direct model↔residual comparison;
+            # only the disk, per the request. Selection by NAME (disk) or
+            # legacy expdisk type (draw_re_ellipses converts Rs→Re internally).
+            disk_comps = [c for c in (components or [])
+                          if c.get("type") == "expdisk"
+                          or (c.get("name") or "").lower() == "disk"]
             draw_re_ellipses(ax3, disk_comps, edgecolor="cyan")
 
         # === Row 1, Col 1: Residual Zoom (±10σ, independent axes) ===

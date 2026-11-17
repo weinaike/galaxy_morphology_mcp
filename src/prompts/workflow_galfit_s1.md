@@ -18,10 +18,10 @@
 **专家提供的成分组合：**
 {expert_components}
 
-### T 到引擎槽位的翻译规则（本分支解空间：Disk(expdisk) / Bulge / Bar / AGN(psf) / F1 / SingleSersic）
+### T 到引擎槽位的翻译规则（本分支解空间：Disk(sersic, n=1 固定) / Bulge / Bar / AGN(psf) / F1 / SingleSersic）
 
 - `bulge(sersic,psf)` → bulge 槽位；候选模型中的 **psf 即塌缩替换通道**（Bulge Re 塌缩 <0.5 px 时，`remove(bulge)+add(agn,psf)` 是合法的候选模型切换）
-- `disk(...)` → disk 槽位（expdisk；本分支多成分模型的盘一律 expdisk）；若 T 的**唯一**成分是盘且专家候选模型写 sersic → singlesersic 槽位（单成分 regime，n 自由）
+- `disk(...)` → disk 槽位（sersic，n=1 固定（`5) 1 0`）——2026-11-17 专家对齐后的指数盘编码，本分支多成分模型的盘一律如此；与专家的 sersic n=1 模型直接一致）；若 T 的**唯一**成分是盘且专家候选模型写 sersic → singlesersic 槽位（单成分 regime，n 自由）
 - `bar(sersic)` → bar 槽位（n=0.5 固定，q 硬上限 0.8）
 - `agn(psf)` / `nucleus` / `Nucleus` → AGN 点核（psf）
 - 偏心 / `Fourier` / `F1` → 阶段三的保留 F1 仲裁（只作用于 Disk / SingleSersic，amplitude>0.02 且 BIC_eff 不恶化才保留）

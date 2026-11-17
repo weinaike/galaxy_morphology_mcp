@@ -475,8 +475,8 @@ After reading the file above with read_file, carry out the following 4 analysis 
 - The requirements in [Adjustment Decision] must be implemented strictly, adjusting initial parameters on the basis of the previous round's fitting results.
     - During implementation you may not add or remove components on your own (even if the fit misbehaves); the authority to add/remove components belongs solely to component_analysis.
     - When [Adjustment Decision] involves adding or removing several components, follow the one-component-per-step principle to avoid local minima or fit breakdown.
-        - example1: target sersic->(expdisk + F1 + Bulge) must be split into three steps: sersic->expdisk->(expdisk + F1)->(expdisk + F1 + Bulge)
-        - example2: target sersic->(expdisk + companion) must be split into two steps: sersic->expdisk->(expdisk + companion)
+        - example1: target singlesersic->(disk + F1 + Bulge) must be split into three steps: singlesersic->disk(sersic, n=1 fixed)->(disk + F1)->(disk + F1 + Bulge)
+        - example2: target singlesersic->(disk + companion) must be split into two steps: singlesersic->disk(sersic, n=1 fixed)->(disk + companion)
         - One "step" here means one run_galfit execution; a single adjustment strategy may involve multiple run_galfit calls, and the ordering always follows example1/example2 (each later step builds on the output parameters of the previous step).
     - Parameter details may be fine-tuned during implementation (initial values, fix/free status, etc.), but the direction and goal of every change must remain fully consistent with the decision output by component_analysis.
 - After implementing the decisions (possibly over several tuning fits), you must report progress to component_analysis and obtain the next round of analysis and adjustment suggestions regardless of the outcome; deciding on your own is strictly forbidden.

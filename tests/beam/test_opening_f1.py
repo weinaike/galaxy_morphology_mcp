@@ -50,7 +50,7 @@ def test_f1_reserved_refused_without_best(tmp_path, test_data_dir):
     gdir.mkdir()
     import shutil
 
-    shutil.copy(test_data_dir / "NGC1097.feedme", gdir / "_iter1.feedme")
+    shutil.copy(test_data_dir / "NGC1097_sersic.feedme", gdir / "_iter1.feedme")
     graph = BeamGraph.init(str(gdir), str(gdir / "_iter1.feedme"),
                            stage1={"morphology": "x"})
     aid, err = graph.add_f1_reserved(0.02, 0.0)
@@ -64,7 +64,7 @@ def test_opening_alternates_enqueued_after_first_fit(tmp_path, test_data_dir):
     gdir = tmp_path / "OPEN"
     gdir.mkdir()
     feedme = gdir / "_iter1.feedme"
-    shutil.copy(test_data_dir / "NGC1097.feedme", feedme)
+    shutil.copy(test_data_dir / "NGC1097_sersic.feedme", feedme)
     openings = {"candidates": [
         {"inventory": ["disk", "bulge", "bar"], "sigma": 0.5,
          "rationale": "strong bar visual"},                       # rank 1 = root
@@ -116,8 +116,8 @@ def _skel(components, tag, sigma):
 
 
 _D3 = [
-    {"structure_name": "disk", "component_type": "expdisk", "mag": 15.2,
-     "re_px": 55.0, "q": 0.4, "pa_deg": 66.0},
+    {"structure_name": "disk", "component_type": "sersic", "mag": 15.2,
+     "re_px": 55.0, "n": 1, "q": 0.4, "pa_deg": 66.0, "toggles": {"n": 0}},
     {"structure_name": "bulge", "component_type": "sersic", "mag": 16.6,
      "re_px": 3.0, "n": 1.0, "q": 0.6, "pa_deg": 66.0},
     {"structure_name": "bar", "component_type": "sersic", "mag": 15.9,
@@ -146,7 +146,7 @@ def test_opening_round_vlm_authored_end_to_end(tmp_path, test_data_dir, monkeypa
 
     gdir = tmp_path / "OPEN2"
     gdir.mkdir()
-    shutil.copy(test_data_dir / "NGC1097.feedme", gdir / "root.feedme")
+    shutil.copy(test_data_dir / "NGC1097_sersic.feedme", gdir / "root.feedme")
     (gdir / "orig.png").write_bytes(b"\x89PNG\r\n\x1a\n stub")
 
     r = beam_init(str(gdir), str(gdir / "root.feedme"))

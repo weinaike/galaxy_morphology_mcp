@@ -25,7 +25,9 @@ def comp(name, ctype="sersic", **kw):
     return d
 
 
-PARENT = [comp("disk", "expdisk", re=13.7, mag=16.2),   # Re_eff = 23.0
+PARENT = [comp("disk", "sersic", re=23.0, mag=16.2, n=1.0,
+               toggles={"x": 1, "y": 1, "mag": 1, "re": 1, "n": 0, "ba": 1, "pa": 1}),
+          # sersic disk, n=1 FIXED (2026-11-17 expert alignment); Re_eff = 23.0
           comp("bulge", re=1.2, n=4.0, ba=0.9, mag=18.7, toggles={"n": 0})]
 
 
@@ -102,10 +104,16 @@ def test_alphabet_violations():
 
 
 def test_param_type_violations():
-    # tune releasing the (nonexistent) disk n
+    # tune releasing the disk n — forbidden by the n=1-fixed disk mandate
     c = make_cand([{"op": "tune", "tune": {"structure_name": "disk", "param": "n",
                                            "toggle": 1, "value": 1.5}}])
-    assert "E_PARAM_TYPE" in codes(_validate(c))
+    assert "E_DISK_N_FIXED" in codes(_validate(c))
+
+    # add(disk) without the n=1-fixed mandate declaration
+    c = make_cand([{"op": "add", "add": {"structure_name": "disk",
+                                         "component_type": "sersic",
+                                         "re_px": 20.0, "n": 2.0}}])
+    assert "E_DISK_N_FIXED" in codes(_validate(c))
 
     # psf with invented shape params
     c = make_cand([{"op": "add", "add": {"structure_name": "agn", "component_type": "psf",

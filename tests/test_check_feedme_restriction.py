@@ -49,14 +49,25 @@ def _component_block(number: int, name: str, ctype: str) -> str:
     if ctype in ("sersic", "expdisk", "edgedisk"):
         lines.append(" 4) 20.0     1")
     if ctype == "sersic":
-        lines += [
-            " 5) 2.0      1",
-            " 6) 0.0      0",
-            " 7) 0.0      0",
-            " 8) 0.0      0",
-            " 9) 0.7      1",
-            "10) 30.0     1",
-        ]
+        if name == "disk":
+            # the disk mandate: sersic with n=1 FIXED
+            lines += [
+                " 5) 1.0      0",
+                " 6) 0.0      0",
+                " 7) 0.0      0",
+                " 8) 0.0      0",
+                " 9) 0.7      1",
+                "10) 30.0     1",
+            ]
+        else:
+            lines += [
+                " 5) 2.0      1",
+                " 6) 0.0      0",
+                " 7) 0.0      0",
+                " 8) 0.0      0",
+                " 9) 0.7      1",
+                "10) 30.0     1",
+            ]
     elif ctype in ("expdisk", "edgedisk"):
         lines += [
             " 5) 0.0      0",
@@ -141,7 +152,7 @@ class TestCheckFeedmeRestriction:
         # positive control: disk + bulge + bar + agn (+ sky) — no restriction errors
         feedme = _make_feedme(
             tmp_path,
-            [("disk", "expdisk"), ("bulge", "sersic"), ("bar", "sersic"), ("agn", "psf")],
+            [("disk", "sersic"), ("bulge", "sersic"), ("bar", "sersic"), ("agn", "psf")],
         )
         result = check_feedme_file(feedme)
         if result["status"] == "failure":

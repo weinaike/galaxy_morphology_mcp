@@ -193,7 +193,7 @@ def test_apply_primitives_add_tune_convert():
     # mandatory bundled conversion when adding the 2nd central component
     prims = [
         {"op": "convert", "convert": {"from_name": "singlesersic", "to_name": "disk",
-                                       "to_type": "expdisk"}},
+                                       "to_type": "sersic"}},
         {"op": "add", "structure_name": "bulge", "component_type": "sersic",
          "re_px": 1.5, "n": 4.0, "q": 0.9, "pa_deg": 30.0, "mag": 16.5,
          "toggles": {"n": 0}},
@@ -201,18 +201,20 @@ def test_apply_primitives_add_tune_convert():
     inv2, err = apply_primitives_to_inventory(parent, prims)
     assert err == "" and inv2 is not None
     by_name = {c["name"]: c for c in inv2}
-    assert by_name["disk"]["type"] == "expdisk"
-    assert abs(by_name["disk"]["re_effective"] - 12.0) < 1e-9
-    assert abs(by_name["disk"]["re"] - 12.0 / 1.68) < 1e-9
-    assert "n" not in by_name["disk"]
+    # the disk mandate: sersic with n=1 FIXED, Re kept verbatim (no /1.68)
+    assert by_name["disk"]["type"] == "sersic"
+    assert by_name["disk"]["re_effective"] == 12.0
+    assert by_name["disk"]["re"] == 12.0
+    assert by_name["disk"]["n"] == 1.0
+    assert by_name["disk"]["toggles"]["n"] == 0
     assert by_name["bulge"]["re_effective"] == 1.5
 
-    # tune: VLM Re on an expdisk is the effective radius
+    # tune: VLM Re is the effective radius — written verbatim for a sersic disk
     inv3, _ = apply_primitives_to_inventory(
         inv2, [{"op": "tune", "structure_name": "disk", "param": "re_px", "value": 20.0}])
     by_name3 = {c["name"]: c for c in inv3}
     assert by_name3["disk"]["re_effective"] == 20.0
-    assert abs(by_name3["disk"]["re"] - 20.0 / 1.68) < 1e-9
+    assert by_name3["disk"]["re"] == 20.0
 
 
 def test_apply_primitives_errors():

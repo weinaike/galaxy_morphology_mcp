@@ -87,16 +87,16 @@ def normalize_inventory(inventory: list[dict]) -> list[dict]:
 
 # ------------------------------------------------------- reclassify helpers
 def resolve_reclassify_type(to: str, src_type: str | None) -> str:
-    """Target-slot canonical type resolution. disk/edgedisk are forced to
-    their disk types (a ->disk target IS an expdisk by definition); the
-    sersic slots take sersic; outerdisk accepts expdisk OR sersic — keep the
-    source type when legal, else default to expdisk."""
+    """Target-slot canonical type resolution. A ->disk target IS a sersic
+    with n=1 fixed by definition (2026-11-17 expert alignment); edgedisk
+    keeps its type; the sersic slots take sersic; outerdisk accepts expdisk
+    OR sersic — keep the source type when legal, else default to sersic."""
     if to == "disk":
-        return "expdisk"
+        return "sersic"
     if to == "edgedisk":
         return "edgedisk"
     if to == "outerdisk":
-        return src_type if src_type in ("expdisk", "sersic") else "expdisk"
+        return src_type if src_type in ("expdisk", "sersic") else "sersic"
     return "sersic"
 
 
@@ -109,7 +109,9 @@ def apply_reclassify_corrections(to: str, new_type: str,
     None = drop the n toggle."""
     if to == "bar":
         n, n_t = 0.5, 0
-    elif to in ("disk", "edgedisk"):
+    elif to == "disk":
+        n, n_t = 1.0, 0        # the disk mandate: sersic with n=1 FIXED
+    elif to == "edgedisk":
         n, n_t = None, None
     elif to == "bulge":
         n_t = 1                       # free from creation
@@ -483,8 +485,16 @@ def apply_primitives_to_inventory(parent_inventory: list[dict],
                 return None, f"convert source not found: {frm}"
             comp["name"] = to or comp["name"]
             comp["type"] = (cv.get("to_type") or comp["type"]).lower()
+            if to == "disk":
+                # the disk mandate (2026-11-17): sersic with n=1 FIXED, the
+                # `4)` row IS the effective radius — kept verbatim
+                comp["type"] = "sersic"
+                comp["n"] = 1.0
+                comp.setdefault("toggles", {})["n"] = 0
+                if comp.get("re_effective") is not None:
+                    comp["re"] = comp["re_effective"]
             if comp["type"] == "expdisk":
-                # Rs = fitted Re / 1.68 (the declared conversion rule)
+                # legacy conversion rule (non-disk slots): Rs = fitted Re / 1.68
                 if comp.get("re_effective") is not None:
                     comp["re"] = comp["re_effective"] / 1.68
                 comp.pop("n", None)

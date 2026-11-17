@@ -205,7 +205,8 @@ def _row_toggle(line: str) -> int | None:
 def _block_params(b: Block) -> tuple[dict, dict[str, int]]:
     """Extract a block's current (post-backfill) parameters + toggles in
     make_block's input shape. ``re_eff`` is ALWAYS the effective radius
-    (expdisk Rs rows are converted via ×1.68)."""
+    (legacy expdisk Rs rows are converted via ×1.68; the sersic Disk's
+    `4)` row is already Re)."""
     prm: dict = {}
     tog: dict[str, int] = {}
     if (r := b.row("1")):
@@ -333,7 +334,8 @@ def build_cons(blocks: list[Block], numbers: dict[str, int], *,
         if num is None:
             continue
         is_exp = b.ctype == "expdisk"
-        # re band (written in Rs for expdisk — the row bounds Rs)
+        # re band (written in Rs for genuine expdisk blocks — legacy/non-disk
+        # encodings only; the sersic Disk's 4) row is Re and takes the plain band)
         if b.row("4"):
             lo, hi = (re_floor / EXPDISK_FACTOR, re_cap / EXPDISK_FACTOR) if is_exp \
                 else (re_floor, re_cap)
@@ -393,6 +395,13 @@ def make_block(name: str, ctype: str, params: dict, toggles: dict[str, int],
         lines.append(f"4) {_fmt_num(re_val if re_val is not None else 5.0)}        "
                      f"{toggles.get('re', 1)}             #  {label}   [pix]")
         if ctype not in ("expdisk", "edgedisk"):
+            # Disk n mandate (2026-11-17 expert alignment): the Disk slot is a
+            # sersic whose n is FIXED at 1 regardless of what a stray payload
+            # declared (the schema validates declarations; this is the write-
+            # side guarantee, also covering the F1 re-add path).
+            if name == "disk":
+                params = dict(params, n=1.0)
+                toggles = dict(toggles, n=0)
             n = params.get("n")
             lines.append(f"5) {_fmt_num(n if n is not None else 4.0)}        "
                          f"{toggles.get('n', 1)}             #  Sersic index n")
@@ -416,7 +425,10 @@ def make_block(name: str, ctype: str, params: dict, toggles: dict[str, int],
 
 
 def convert_block(block: Block, to_name: str, to_type: str) -> None:
-    """singlesersic -> disk (expdisk): retype, rename, Rs = Re/1.68, drop n."""
+    """singlesersic -> disk: retype to sersic, rename, Re kept VERBATIM,
+    n rewritten to 1 FIXED (2026-11-17 expert alignment: the Disk is a sersic
+    with `5) 1 0`; the legacy expdisk path below stays for read-side legacy
+    conversions only)."""
     for i, line in enumerate(block.lines):
         m = ROW_RE.match(line)
         if m and m.group(2) == "0":
@@ -441,6 +453,17 @@ def convert_block(block: Block, to_name: str, to_type: str) -> None:
         found = block.row("5")
         if found:
             del block.lines[found[0]]
+    elif to_name == "disk":
+        # the `4)` row is already the effective radius Re (sersic) — verbatim;
+        # force the disk n mandate `5) 1 0` (the singlesersic n was free)
+        found = block.row("5")
+        fixed_row = "5) 1        0             #  Sersic index n (disk: exp profile, n fixed)"
+        if found:
+            block.lines[found[0]] = fixed_row
+        else:
+            found4 = block.row("4")
+            insert_at = found4[0] + 1 if found4 else len(block.lines)
+            block.lines.insert(insert_at, fixed_row)
 
 
 def _retag_row_comment(line: str, new_comment: str) -> str:
@@ -546,9 +569,11 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
                     to, new_type, prm.get("n"), prm.get("q"))
                 if q is not None:
                     prm["q"] = q
-                if to in ("disk", "edgedisk"):
+                if to == "edgedisk":
                     prm.pop("n", None)
                 elif n is not None:
+                    # disk targets carry n=1.0 (fixed) from the corrections —
+                    # make_block re-enforces the `5) 1 0` mandate on write
                     prm["n"] = n
                 if n_t is None:
                     tog.pop("n", None)
@@ -611,7 +636,16 @@ def transcribe(parent_feedme: str, galfit_nn: str, primitives: list[dict],
                 if param == "n" and not block.row("5"):
                     return TranscribeResult(False, notes=[
                         f"{target} has no n row to tune"])
+                if param == "n" and target == "disk":
+                    # the disk now HAS a 5) row (sersic) — the old "no n row"
+                    # guard no longer catches this; the n=1-fixed mandate has
+                    # no release path (schema rejects; transcription aborts)
+                    return TranscribeResult(False, notes=[
+                        "tune(disk, n) is forbidden — the Disk's n is fixed "
+                        "at 1 by mandate"])
                 if param == "re_px":
+                    # expdisk rows are written in Rs (legacy/non-disk only);
+                    # the sersic disk's 4) row IS Re — verbatim
                     v = value / EXPDISK_FACTOR if block.ctype == "expdisk" else value
                 else:
                     v = value

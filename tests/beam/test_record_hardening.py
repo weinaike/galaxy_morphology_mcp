@@ -16,8 +16,8 @@ from beam.tools import (beam_init, beam_record_fit, beam_repair_artifacts)
 def galaxy(tmp_path, test_data_dir):
     gdir = tmp_path / "HARD"
     gdir.mkdir()
-    shutil.copy(test_data_dir / "NGC1097.feedme", gdir / "_iter1.feedme")
-    shutil.copy(test_data_dir / "NGC1097_clean.07", gdir / "galfit.01")
+    shutil.copy(test_data_dir / "NGC1097_sersic.feedme", gdir / "_iter1.feedme")
+    shutil.copy(test_data_dir / "NGC1097_clean_sersic.07", gdir / "galfit.01")
     shutil.copy(test_data_dir / "NGC1097_comparison.png", gdir / "cmp.png")
     shutil.copy(test_data_dir / "NGC1097_summary.md", gdir / "summary.md")
     r = beam_init(str(gdir), str(gdir / "_iter1.feedme"),

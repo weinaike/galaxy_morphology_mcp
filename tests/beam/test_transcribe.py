@@ -96,6 +96,43 @@ def parent(tmp_path):
     return str(f), str(nn)
 
 
+# The expert-aligned (2026-11-17) sersic-disk variant of the parent: the disk
+# block is a sersic with n=1 FIXED; Re in the 4) row (= 1.68 x the legacy Rs).
+SERSIC_PARENT_FEEDME = PARENT_FEEDME.replace(
+    """ 0) expdisk                 #  Component type
+ 1) 148.000  148.000  1  1      #  Position x, y
+ 3) 16.5000        1             #  Integrated magnitude
+ 4) 12.000        1             #  R_s (disk scale-length) [pix]
+ 9) 0.650        1             #  Axis ratio (b/a)""",
+    """ 0) sersic                 #  Component type
+ 1) 148.000  148.000  1  1      #  Position x, y
+ 3) 16.5000        1             #  Integrated magnitude
+ 4) 20.160        1             #  R_e (effective radius)   [pix]
+ 5) 1           0             #  Sersic index n (disk: exp profile, n fixed)
+ 9) 0.650        1             #  Axis ratio (b/a)""")
+SERSIC_GALFIT_NN = GALFIT_NN.replace(
+    """ 0) expdisk
+ 1) 147.512  148.104  1  1
+ 3) 16.8123        1
+ 4) 13.4400        1
+ 9) 0.7122        1""",
+    """ 0) sersic
+ 1) 147.512  148.104  1  1
+ 3) 16.8123        1
+ 4) 22.5792        1
+ 5) 1           0
+ 9) 0.7122        1""")
+
+
+@pytest.fixture
+def sersic_parent(tmp_path):
+    f = tmp_path / "_iter1.feedme"
+    f.write_text(SERSIC_PARENT_FEEDME, encoding="utf-8")
+    nn = tmp_path / "galfit.01"
+    nn.write_text(SERSIC_GALFIT_NN, encoding="utf-8")
+    return str(f), str(nn)
+
+
 def _read(path):
     with open(path, encoding="utf-8") as f:
         return f.read()
@@ -399,7 +436,7 @@ def test_class_a_violations_abort_whole(parent, tmp_path):
     assert not r2.ok and any("F1" in n for n in r2.notes)
 
 
-def test_check_feedme_file_accepts_output(parent, tmp_path):
+def test_check_feedme_file_accepts_output(sersic_parent, tmp_path):
     from tools.beam_actions_galfit import check_feedme_file
 
     out_f, out_c = str(tmp_path / "_iter6.feedme"), str(tmp_path / "iter6.cons")
@@ -407,10 +444,16 @@ def test_check_feedme_file_accepts_output(parent, tmp_path):
                                     "mag": 17.6, "re_px": 5.5, "n": 0.5, "q": 0.35,
                                     "pa_deg": 45.0, "toggles": {"n": 0},
                                     "cons_bounds": {"re": [4.5, 10.0]}}}]
-    r = transcribe(parent[0], parent[1], prims, out_f, out_c,
+    r = transcribe(sersic_parent[0], sersic_parent[1], prims, out_f, out_c,
                    psf_fwhm_px=4.0, fit_region=(1, 297, 1, 297))
     assert r.ok, r.notes
+    text = _read(out_f)
+    # the disk mandate survives warm-start inheritance: sersic, 5) 1 0
+    assert "0) sersic" in text and " 5) 1  0" in text or "5) 1        0" in text
     check = check_feedme_file(out_f)
     assert check["status"] == "success", check.get("errors") or check.get("error")
     names = sorted(c["name"] for c in check["components"])
     assert names == ["bar", "bulge", "disk"]
+    disk = next(c for c in check["components"] if c["name"] == "disk")
+    assert disk["type"] == "sersic" and disk["params"]["n"] == 1.0 \
+        and disk["free_fixed"].get("n") == 0

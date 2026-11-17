@@ -124,8 +124,8 @@ def test_projection_swaps_types_and_mandates():
 
 def test_projection_disk_target_converts_units():
     parent = [
-        {"name": "disk", "type": "expdisk", "re": 30.0, "re_effective": 50.4,
-         "mag": 15.0, "q": 0.4, "pa": 30.0, "n": None, "toggles": {}},
+        {"name": "disk", "type": "sersic", "re": 50.4, "re_effective": 50.4,
+         "mag": 15.0, "q": 0.4, "pa": 30.0, "n": 1.0, "toggles": {"n": 0}},
         {"name": "bulge", "type": "sersic", "re": 3.0, "re_effective": 3.0,
          "mag": 17.0, "q": 0.6, "pa": 30.0, "n": 2.0, "toggles": {"n": 1}},
     ]
@@ -135,13 +135,13 @@ def test_projection_disk_target_converts_units():
                                 {"from": "bulge", "to": "disk"}]}}])
     assert err == "" and inv is not None
     by = {c["name"]: c for c in inv}
-    # bulge (sersic Re=3) -> disk: expdisk, Rs = 3/1.68
-    assert by["disk"]["type"] == "expdisk"
-    assert abs(by["disk"]["re"] - 3.0 / 1.68) < 1e-9
+    # bulge (sersic Re=3) -> disk: sersic with n=1 FIXED, Re kept verbatim
+    assert by["disk"]["type"] == "sersic"
+    assert by["disk"]["re"] == 3.0
     assert by["disk"]["re_effective"] == 3.0
-    assert "n" not in by["disk"] or by["disk"].get("n") is None
-    # disk (expdisk, exp type legal) -> outerdisk keeps expdisk, Re carried
-    assert by["outerdisk"]["type"] == "expdisk"
+    assert by["disk"]["n"] == 1.0 and by["disk"]["toggles"]["n"] == 0
+    # disk (sersic) -> outerdisk: sersic type kept (src legal), Re carried
+    assert by["outerdisk"]["type"] == "sersic"
     assert by["outerdisk"]["re_effective"] == 50.4
 
 

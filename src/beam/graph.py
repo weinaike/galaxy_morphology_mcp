@@ -373,7 +373,7 @@ class BeamGraph:
         if target is None:
             return None, f"state {best} has no disk/edgedisk/singlesersic to carry F1"
         name = (target.get("name") or "disk").lower()
-        ctype = (target.get("type") or "expdisk").lower()
+        ctype = (target.get("type") or "sersic").lower()
         re_eff = target.get("re_effective", target.get("re"))
         add_params: dict = {
             "structure_name": name, "component_type": ctype,
@@ -385,6 +385,11 @@ class BeamGraph:
         }
         if ctype == "sersic" and target.get("n") is not None:
             add_params["n"] = target.get("n")
+        if name == "disk":
+            # disk mandate (2026-11-17): the rebuild carries n=1 FIXED
+            # verbatim (make_block re-enforces on write)
+            add_params["n"] = 1
+            add_params["toggles"] = {"n": 0}
         add_params = {k: v for k, v in add_params.items() if v is not None}
         primitives = [{"op": "remove", "target": name},
                       {"op": "add", **add_params}]

@@ -2,7 +2,7 @@
 
 ## GALFIT component-type rules (must be strictly followed)
 **Branch restriction (`restrict-disk-bulge-bar-agn`)**: only Disk / Bulge / Bar / AGN (psf) / F1 / SingleSersic are addable on this branch — Lens, OuterDisk (a second Disk/envelope component), edgedisk and Companion additions are forbidden (outside the solution space; see CLAUDE.md).
-- To add a Disk, use component type `expdisk`.
+- To add a Disk, use component type `sersic` with **n = 1 fixed** (2026-11-17 expert alignment — the exponential disk is encoded as a Sérsic whose n is pinned at 1, rows `5) 1 0`; the legacy `expdisk` type is no longer used).
 - To add a Bulge, use component type `sersic`.
 - When the added Bulge has Re < 0.2 pixel, the type must be changed to `psf` (it has collapsed to a point source); when Re is in the 0.2–0.5 pixel border zone, you may create a competing `psf` variant for comparison — adopt the `psf` only if the residuals are clearly better, otherwise keep `sersic`; for Re > 0.5 px keep the `sersic` type.
 - To add a Bar, use a `sersic` model with n = 0.5 [fixed].
@@ -24,8 +24,7 @@ The following acquisition rules are common to all model types:
   - Flux split: partition the measured total flux 3:7 or 4:6 and convert each share into a magnitude for the bulge and the disk.
   - Size split:
     - The bulge's initial R_e is typically 1/5 to 1/3 of the total photometric radius;
-    - The disk's initial R_e must be larger than the single Sérsic's Re (the exact value follows the mid- and outer-range behaviour of the 1D surface-brightness residual profile: the Disk must be able to carry the flux in that region).
-    - The initial R_s of an `expdisk` can be estimated as the measured disk half-light radius divided by 1.678.
+    - The disk's initial R_e must be larger than the single Sérsic's Re (the exact value follows the mid- and outer-range behaviour of the 1D surface-brightness residual profile: the Disk must be able to carry the flux in that region). The Disk's `4)` row IS R_e (px) — written verbatim, no conversion.
 - If Bar signatures are visible in the residual map and the original image, consider adding a Bar component:
   - Initial Bar parameters:
     - n fixed at 0.5,
@@ -54,28 +53,29 @@ Z) 0                      #  Skip this model? (yes=1, no=0)
 ```
 
 ---
-1. expdisk — commonly used for DISK
+1. sersic (n = 1 fixed) — used for DISK (2026-11-17 expert alignment)
 
 ```
-0) expdisk                #  Component type
+0) sersic                 #  Component type
 1) <x>  <y>  1 1          #  Position x, y
 3) <mag>       1          #  Integrated magnitude
-4) <R_s>       1          #  R_s (disk scale-length) [pix]
-5) 0.0000      0          #  -----
+4) <R_e>       1          #  R_e (effective radius) [pix] — written verbatim, no conversion
+5) 1           0          #  Sersic index n FIXED at 1 (the exponential disk profile)
 6) 0.0000      0          #  -----
 7) 0.0000      0          #  -----
 8) 0.0000      0          #  -----
-9) <b/a>       0          #  Axis ratio (b/a)
-10) <PA>       0          #  Position angle (PA) [deg: Up=0, Left=90]
+9) <b/a>       1          #  Axis ratio (b/a)
+10) <PA>       1          #  Position angle (PA) [deg: Up=0, Left=90]
 Z) 0                      #  Skip this model?
 ```
 
-Key parameter: R_s (disk scale length)
-- R_s (scale length): the distance over which the surface brightness falls by a factor of e (about 2.718). Its relation to the effective radius is R_e ≈ 1.678 R_s. Initialisation: if you know the disk's half-light radius (from photometry or a visual estimate of the disk's extent), divide by 1.678 to get the initial R_s. By eye, R_s is roughly 1/3 to 1/4 of the disk's overall visible radius.
+Key parameter: R_e (effective radius)
+- The Disk is a Sérsic profile with n pinned at 1 — mathematically the same exponential disk the legacy `expdisk` type encoded, but parametrised by the effective radius directly: the `4)` row IS R_e (px). The half-light radius R_e relates to the exponential scale length as R_e ≈ 1.678·R_s; the VLM always declares effective radii, which are written verbatim.
+- The n row MUST stay `5) 1 0` (n = 1, toggle fixed): the exponential profile is guaranteed by the FIXED n, never by a released n. Releasing/altering the Disk's n is forbidden at every stage.
 
-Note (this workflow): the template's `9) b/a` and `10) PA` toggles shown as `0` above are **not** used here — in this workflow the Disk's q and PA are **free** (`1`); oblique disk configurations are legal search directions (see the solution-space definition in CLAUDE.md).
+Note (this workflow): the Disk's q and PA are **free** (`1`); oblique disk configurations are legal search directions (see the solution-space definition in CLAUDE.md). The n toggle stays `0`.
 
-Note (SingleSersic start): the single-component start is named `singlesersic` (sersic, free n). The moment a second **central** component is added, the start must be converted to `expdisk` and renamed `disk` (`4)` row = Rs = fitted Re / 1.68; the n row is dropped) — bundled with the first add as its second primitive; a multi-component model with a sersic `disk` is invalid. **Exception**: `add(agn)` (psf point core) needs NO conversion — `{singlesersic, agn}` is the legal elliptical+point-core terminal state (the AGN is not a central component for the conversion rule).
+Note (SingleSersic start): the single-component start is named `singlesersic` (sersic, free n). The moment a second **central** component is added, the start must be converted to a `sersic` with n=1 fixed and renamed `disk` (`4)` row = the fitted Re, kept verbatim; the n row becomes `5) 1 0`) — bundled with the first add as its second primitive. **Exception**: `add(agn)` (psf point core) needs NO conversion — `{singlesersic, agn}` is the legal elliptical+point-core terminal state (the AGN is not a central component for the conversion rule).
 
 ---
 1. psf — (commonly used for an AGN / a foreground star / an unresolved companion; the central point-source role of the main galaxy belongs **exclusively** to the AGN, admitted under the Bulge-Re-collapse rule or, on a SingleSersic-only model, the central-spike branch)

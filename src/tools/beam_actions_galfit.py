@@ -28,13 +28,15 @@ dotenv.load_dotenv()
 
 
 # ── Branch solution-space restriction (restrict-disk-bulge-bar-agn) ─────────
-# Only Disk (expdisk) / Bulge / Bar / AGN (psf) / singlesersic (+ F1 + fixed
-# sky) are legal on this branch. Companion, Lens, OuterDisk (envelope / 2nd
-# expdisk) and edgedisk are outside the solution space. Enforced mechanically
-# here (check_feedme_file rejects them; the returned VLM markdown is scanned
-# for forbidden candidate actions and annotated) in addition to the prompt-level
-# Restricted Action Space note in beam_action_generation_prompt_galfit.md.
-BRANCH_ALLOWED_COMPONENTS = "disk/bulge/bar/agn(psf)/singlesersic (+F1, fixed sky)"
+# Only Disk (sersic with n=1 FIXED — 2026-11-17 expert alignment; the legacy
+# expdisk encoding is no longer valid) / Bulge / Bar / AGN (psf) / singlesersic
+# (+ F1 + fixed sky) are legal on this branch. Companion, Lens, OuterDisk
+# (envelope / 2nd disk) and edgedisk are outside the solution space. Enforced
+# mechanically here (check_feedme_file rejects them; the returned VLM markdown
+# is scanned for forbidden candidate actions and annotated) in addition to the
+# prompt-level Restricted Action Space note in
+# beam_action_generation_prompt_galfit.md.
+BRANCH_ALLOWED_COMPONENTS = "disk(sersic n=1 fixed)/bulge/bar/agn(psf)/singlesersic (+F1, fixed sky)"
 BRANCH_FORBIDDEN_NOTICE = (
     "outside the solution space on branch restrict-disk-bulge-bar-agn "
     f"(allowed: {BRANCH_ALLOWED_COMPONENTS}; forbidden: Companion/Lens/OuterDisk/edgedisk)"
@@ -613,23 +615,31 @@ def check_feedme_file(
         inventory.append(entry)
 
     # Disk-type enforcement (solution space): in a multi-component model the
-    # disk slot must be `expdisk` named `disk` (n==1 by type); the `singlesersic`
-    # identity (sersic with free n) is legal ONLY as the sole luminous component
-    # or paired with a single AGN (psf) point core — {singlesersic, agn} is the
-    # elliptical+point-core terminal state (KILOGAS_221 retrospective).
+    # disk slot must be a `sersic` named `disk` with n==1 FIXED (2026-11-17
+    # expert alignment — `5) 1 0`; the legacy expdisk encoding is rejected);
+    # the `singlesersic` identity (sersic with free n) is legal ONLY as the
+    # sole luminous component or paired with a single AGN (psf) point core —
+    # {singlesersic, agn} is the elliptical+point-core terminal state
+    # (KILOGAS_221 retrospective).
     # This is where a missed SingleSersic->Disk conversion is caught BEFORE the
     # fit wastes budget (the verifier's 5a only audits at lock time).
     names = {c["name"] for c in components}
     if len(components) >= 2:
         for c in inventory:
-            if c["name"] == "disk" and c["type"] != "expdisk":
-                errors.append(
-                    f"Component '{c['name']}' (number {c['number']}) has type "
-                    f"'{c['type']}' — the disk slot in a multi-component model must be "
-                    "`expdisk` (n==1 guaranteed by type). The SingleSersic->Disk "
-                    "conversion was missed: convert to expdisk named `disk` "
-                    "(Rs = fitted Re / 1.68) and refit."
-                )
+            if c["name"] == "disk":
+                n_val = c["params"].get("n")
+                n_fixed = c.get("free_fixed", {}).get("n") == 0
+                if c["type"] != "sersic" or n_val is None or abs(float(n_val) - 1.0) > 1e-6 \
+                        or not n_fixed:
+                    errors.append(
+                        f"Component '{c['name']}' (number {c['number']}) has type "
+                        f"'{c['type']}' with n={n_val} (fixed={n_fixed}) — the disk "
+                        "slot in a multi-component model must be a `sersic` with "
+                        "n=1 FIXED (`0) sersic`, `5) 1 0`); the legacy `expdisk` "
+                        "encoding is no longer valid (2026-11-17 expert alignment). "
+                        "The SingleSersic->Disk conversion was missed: convert to "
+                        "sersic n=1 fixed named `disk` (Re kept verbatim) and refit."
+                    )
         illegal_co_tenants = sorted(n for n in names
                                     if n != "singlesersic" and n != "agn"
                                     and not _COMPANION_NAME_RE.match(n))
@@ -641,8 +651,8 @@ def check_feedme_file(
                     f"{illegal_co_tenants} — the singlesersic slot is legal ONLY as "
                     "the sole luminous component, alongside an AGN (psf) point core "
                     "and/or companions (field contaminants). With any other "
-                    "component, convert it to `expdisk` "
-                    "named `disk` (Rs = fitted Re / 1.68) when the decomposition "
+                    "component, convert it to a `sersic` with n=1 fixed "
+                    "named `disk` (Re kept verbatim) when the decomposition "
                     "begins."
                 )
         # Disk-required rule (multi-component regime): without a singlesersic,
@@ -659,10 +669,10 @@ def check_feedme_file(
             )
     elif len(components) == 1 and "disk" in names and components[0]["type"] == "sersic":
         warnings.append(
-            "The sole component is a sersic named 'disk' with free n — in the "
+            "The sole component is a sersic named 'disk' — in the "
             "single-component regime it should be named 'singlesersic' (the disk "
-            "name is reserved for the expdisk slot of multi-component models); "
-            "rename it to keep ledger signatures unambiguous."
+            "name is reserved for the sersic n=1-fixed slot of multi-component "
+            "models); rename it to keep ledger signatures unambiguous."
         )
 
     # Branch solution-space restriction (restrict-disk-bulge-bar-agn): Companion,
@@ -681,13 +691,18 @@ def check_feedme_file(
             errors.append(
                 f"Component '{c['name']}' (number {c['number']}) has type 'edgedisk' — "
                 f"the edgedisk slot is {BRANCH_FORBIDDEN_NOTICE}; fit an edge-on-looking "
-                "galaxy with the ordinary expdisk Disk with free q."
+                "galaxy with the ordinary sersic (n=1 fixed) Disk with free q."
             )
     n_expdisk = sum(1 for c in inventory if str(c["type"]).lower() == "expdisk")
-    if n_expdisk > 1:
+    if n_expdisk >= 1:
+        # Hard cut (2026-11-17): the Disk is a sersic with n=1 FIXED; the
+        # legacy expdisk encoding is no longer valid anywhere on this branch
+        # (the OuterDisk/envelope slot is forbidden independently).
         errors.append(
-            f"{n_expdisk} expdisk components found — the OuterDisk/envelope slot (a second "
-            f"expdisk) is {BRANCH_FORBIDDEN_NOTICE}; at most one Disk (expdisk) is allowed."
+            f"{n_expdisk} expdisk component(s) found — expdisk is the LEGACY Disk "
+            f"encoding and is {BRANCH_FORBIDDEN_NOTICE} (the Disk must be a "
+            "`sersic` with n=1 fixed (`5) 1 0`), Re in the `4)` row). Restart "
+            "graphs authored with expdisk disks."
         )
     n_psf = sum(1 for c in inventory if str(c["type"]).lower() == "psf")
     if n_psf > 1:

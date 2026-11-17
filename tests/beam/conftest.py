@@ -14,8 +14,8 @@ def mini_graph(tmp_path, test_data_dir):
     gdir.mkdir()
     feedme = gdir / "_iter1.feedme"
     out = gdir / "galfit.01"
-    shutil.copy(test_data_dir / "NGC1097.feedme", feedme)
-    shutil.copy(test_data_dir / "NGC1097_clean.07", out)
+    shutil.copy(test_data_dir / "NGC1097_sersic.feedme", feedme)
+    shutil.copy(test_data_dir / "NGC1097_clean_sersic.07", out)
     graph = BeamGraph.init(str(gdir), str(feedme), stage1={"morphology": "test"})
     label = graph.record_fit({
         "input_param_file": str(feedme),

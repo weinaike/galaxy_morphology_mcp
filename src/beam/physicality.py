@@ -743,6 +743,57 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                           "residual feature's measured geometry",
             })
 
+    # ---- bar-disk projection size floor (hard; user rule 2026-11-18): a bar
+    # buried inside the disk's central region is not an extended structure.
+    # Project the bar's major axis onto the disk's axes and require it to
+    # clear 15% of the corresponding disk semi-axis:
+    #   max( Re_bar*|sin(dPA)| / (Re_disk*q_disk),  Re_bar*|cos(dPA)| / Re_disk )
+    #   > 0.15,  dPA = PA_bar - PA_disk (deg -> rad via /180*pi)
+    # Both ratios are dimensionless (Re in the same unit, effective radii), so
+    # the check is mode-agnostic (px / arcsec ref band). Repair hints: (1) no
+    # bulge in the model AND bar q > 0.3 -> the component is plausibly a
+    # BULGE (reclassify); (2) reseed the bar's parameters to a physical size/
+    # attitude grounded in the residual evidence; (3) remove(bar).
+    if bar_c:
+        _dsk = by.get("disk") or by.get("edgedisk")
+        _rb2 = _f(bar_c.get("re_effective"))
+        _pb = _f(bar_c.get("pa"))
+        _rd2 = _f(_dsk.get("re_effective")) if _dsk else None
+        _qd = _f(_dsk.get("q")) if _dsk else None
+        _pd = _f(_dsk.get("pa")) if _dsk else None
+        if all(v is not None for v in (_rb2, _pb, _rd2, _qd, _pd)) \
+                and _rd2 > 0 and _qd > 0:
+            theta = math.radians(_pb - _pd)
+            v_minor = _rb2 * abs(math.sin(theta)) / (_rd2 * _qd)
+            v_major = _rb2 * abs(math.cos(theta)) / _rd2
+            _proj = max(v_minor, v_major)
+            if _proj <= 0.15:
+                hints = []
+                if "bulge" not in by and (_f(bar_c.get("q")) or 0.0) > 0.3:
+                    hints.append("no bulge in the model and the bar q > 0.3 — "
+                                 "the component is possibly a BULGE (compact, "
+                                 "only mildly elongated central concentration): "
+                                 "reclassify(bar->bulge) carrying the fitted "
+                                 "light parameters verbatim")
+                hints.append("OR reseed the bar's parameters to make it "
+                             "physical (a larger Re and/or a PA aligned with "
+                             "the measured bar-feature direction, grounded in "
+                             "the residual evidence)")
+                hints.append("OR remove(bar), letting the neighbouring "
+                             "components reabsorb the light")
+                checks.append({
+                    "severity": "hard", "check": "bar_size_floor",
+                    "detail": f"bar too small relative to the disk: "
+                              f"max(Re_bar*|sin(dPA)|/(Re_disk*q_disk)="
+                              f"{v_minor:.3f}, Re_bar*|cos(dPA)|/Re_disk="
+                              f"{v_major:.3f}) = {_proj:.3f} <= 0.15 "
+                              f"(Re_bar={_rb2:g}, Re_disk={_rd2:g}, q_disk="
+                              f"{_qd:g}, dPA={_pb - _pd:g}deg) — the bar is "
+                              "buried inside the disk's central region, not an "
+                              "extended structure (non-physical); repairs: "
+                              + "; ".join(hints),
+                })
+
     # ---- profile priors (hard): lens/outerdisk n
     if lens_c:
         ln = _f(lens_c.get("n"))

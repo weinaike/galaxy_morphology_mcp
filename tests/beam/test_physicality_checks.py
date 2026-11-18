@@ -277,6 +277,58 @@ def test_lens_flat_degeneration_removed():
 
 
 # ------------------------------------------------------------- mu0 order
+def test_bar_size_floor_buried_bar_fires():
+    """User rule 2026-11-18: max(Re_bar·|sin dPA|/(Re_disk·q_disk),
+    Re_bar·|cos dPA|/Re_disk) <= 0.15 -> hard mech-FAIL. A buried bar with
+    no bulge in the model and q > 0.3 carries the bulge-identity hint."""
+    comps = [
+        _comp("disk", "sersic", re=26.3, q=0.844, pa=-30.5, mag=16.4, n=1.0),
+        _comp("bar", q=0.39, pa=-25.9, re=1.86, n=0.5, mag=16.6),
+    ]
+    checks = _checks(comps)
+    assert _has(checks, "bar_size_floor", "hard", "0.070 <= 0.15")
+    assert _has(checks, "bar_size_floor", "hard", "possibly a BULGE")
+    assert _has(checks, "bar_size_floor", "hard", "remove(bar)")
+
+
+def test_bar_size_floor_extended_bar_clean():
+    comps = [
+        _comp("disk", "sersic", re=26.3, q=0.844, pa=-30.5, mag=16.4, n=1.0),
+        _comp("bar", q=0.603, pa=-25.9, re=19.5, n=0.5, mag=16.6),
+        _comp("bulge", q=0.306, pa=-4.2, re=9.4, n=4.5, mag=17.4),
+    ]
+    assert not any(ck == "bar_size_floor" for ck, _ in _checks(comps))
+
+
+def test_bar_size_floor_orthogonal_clears_minor_axis():
+    # Re=3.5 orthogonal to the disk major axis: 3.5/(26.3*0.844)=0.158 > 0.15
+    comps = [
+        _comp("disk", "sersic", re=26.3, q=0.844, pa=0.0, mag=16.4, n=1.0),
+        _comp("bar", q=0.4, pa=90.0, re=3.5, n=0.5, mag=17.0),
+    ]
+    assert not any(ck == "bar_size_floor" for ck, _ in _checks(comps))
+
+
+def test_bar_size_floor_no_bulge_hint_when_bulge_present_or_flat_bar():
+    # bulge present -> the reclassify hint is suppressed
+    comps = [
+        _comp("disk", "sersic", re=26.3, q=0.844, pa=-30.5, mag=16.4, n=1.0),
+        _comp("bar", q=0.20, pa=60.0, re=2.0, n=0.5, mag=17.0),
+        _comp("bulge", q=0.306, pa=-4.2, re=9.4, n=4.5, mag=17.4),
+    ]
+    checks = _checks(comps)
+    assert _has(checks, "bar_size_floor", "hard")
+    assert not _has(checks, "bar_size_floor", "hard", "possibly a BULGE")
+    # thin bar (q <= 0.3) without a bulge: fires, no bulge hint either
+    comps2 = [
+        _comp("disk", "sersic", re=26.3, q=0.844, pa=-30.5, mag=16.4, n=1.0),
+        _comp("bar", q=0.25, pa=-25.9, re=1.86, n=0.5, mag=16.6),
+    ]
+    checks2 = _checks(comps2)
+    assert _has(checks2, "bar_size_floor", "hard")
+    assert not _has(checks2, "bar_size_floor", "hard", "possibly a BULGE")
+
+
 def test_mu0_bulge_disk_inversion():
     # a faint, low-n bulge is DIMMER at the centre than a compact bright disk
     comps = [

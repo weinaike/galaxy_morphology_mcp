@@ -405,6 +405,7 @@ def build_local_state_description(g, state_label: str,
     facts.extend(_disk_re_bottleneck(g, state, inv, triggers, hits))
     facts.extend(_flux_misallocation(g, state, inv))
     facts.extend(_flat_bulge_trigger(g, state, inv, triggers))
+    facts.extend(_small_bulge_trigger(g, state, inv, triggers))
     lines.append("")
     if facts:
         lines.append("Numeric-rule delegations (objective facts; generation decisions are "
@@ -616,6 +617,51 @@ def _flat_bulge_trigger(g, state, inv, triggers) -> list[str]:
             f"{'hit' if n_free or (n is not None and 0.5 < n < 2.5) else 'no'}], "
             f"disk_q={_fmt(dq)} [>0.5: {'hit' if dq is not None and dq > 0.5 else 'no'}] "
             f"=> joint condition {'HOLDS' if holds else 'does not hold'}."]
+
+
+def _small_bulge_trigger(g, state, inv, triggers) -> list[str]:
+    """SMALL-BULGE four-axis reseed trigger (user rule 2026-11-17): a bulge
+    with Re < 3 px AND any non-physical parameter (q < 0.3 flat, q or n
+    pinned at a band bound). Such a core is blanketed by nearby residual
+    contamination — single-axis tunes slide back into the same basin. Facts
+    only; the prompt repair menu maps the up-to-3 parallel hedged
+    remove+add(bulge) reseeds and enqueue arms floor_bulge_reseed."""
+    bulge = next((c for c in inv if c.get("name") == "bulge"), None)
+    if bulge is None:
+        return []
+    re_raw = bulge.get("re_effective", bulge.get("re"))
+    if re_raw is None or float(re_raw) >= 3.0:
+        return []
+    re_eff = _fmt(re_raw)
+    cons = state.get("cons_effective") or {}
+    num = str(bulge.get("number") or "")
+    bq = bulge.get("q")
+    bn = bulge.get("n")
+    pins: list[str] = []
+    if bq is not None and float(bq) < 0.3:
+        pins.append(f"q={_fmt(bq)} < 0.3 (flat)")
+    qband = cons.get(f"{num}.q")
+    if bq is not None and qband:
+        if abs(float(bq) - float(qband[1])) <= 0.02 * max(abs(float(qband[1])), 1e-9):
+            pins.append(f"q={_fmt(bq)} at the q upper bound {_fmt(qband[1])}")
+        if abs(float(bq) - float(qband[0])) <= 0.02 * max(abs(float(qband[0])), 1e-9):
+            pins.append(f"q={_fmt(bq)} at the q lower bound {_fmt(qband[0])}")
+    if bn is not None:
+        hi = float(cons[f"{num}.n"][1]) if cons.get(f"{num}.n") else 8.0
+        lo = float(cons[f"{num}.n"][0]) if cons.get(f"{num}.n") else 0.1
+        if float(bn) >= 0.98 * hi:
+            pins.append(f"n={_fmt(bn)} at the n upper bound {_fmt(hi)}")
+        if float(bn) <= 1.02 * lo + 1e-9:
+            pins.append(f"n={_fmt(bn)} at the n lower bound {_fmt(lo)}")
+    holds = bool(pins)
+    triggers["small_bulge_reseed"] = holds
+    tail = ("HOLDS — generate up to 3 PARALLEL hedged reseed candidates, each the "
+            "remove(bulge)+add(bulge) four-axis rebuild (Re/n/q/PA jointly declared, "
+            "values spread across parameter bins, each physically motivated)"
+            if holds else "does not hold")
+    return [f"SMALL-BULGE four-axis reseed trigger (objective facts): bulge "
+            f"Re={_fmt(re_eff)}px [<3px: hit], non-physical markers: "
+            f"{'; '.join(pins) if pins else 'none'} => trigger {tail}."]
 
 
 # ----------------------------------------------------------------- queue digest

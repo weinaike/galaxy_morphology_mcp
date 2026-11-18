@@ -790,6 +790,21 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                          "cuspier core usually compensates an unfitted "
                                          "central point source; a large-Re high-n wing "
                                          "grabs envelope flux)"})
+            # mirror pin at the LOWER bound (user rule 2026-11-17): a free n
+            # scraping the 0.1 floor wants a flatter-than-physical profile —
+            # the flat-core identity question. For a SMALL bulge (Re < 3 px)
+            # this co-occurs with q flatness and residual contamination; the
+            # prompt repair menu maps it to the four-axis joint reseed
+            # (Re, n, q, PA) via the remove+add(bulge) rebuild.
+            lo = _f(band[0]) if band else 0.1
+            if lo is not None and bn <= 1.02 * lo + 1e-9:
+                checks.append({"severity": "note", "check": "profile_prior",
+                               "detail": f"bulge n={bn:g} at the n lower bound "
+                                          f"{lo:g} (flat-core identity question: the "
+                                          "'bulge' wants a flatter-than-physical "
+                                          "profile; for a small bulge Re < 3 px use "
+                                          "the four-axis joint reseed Re/n/q/PA via "
+                                          "remove+add(bulge))"})
 
     # ---- mu0 ordering (hard; analytic central surface brightness)
     # mb: A_psf is px^2 of the reference band while mu0 differences run on

@@ -212,6 +212,45 @@ Z) 0
 """
 
 
+def test_local_digest_small_bulge_reseed_trigger(tmp_path):
+    from beam.graph import BeamGraph
+
+    gdir = tmp_path / "SMALL"
+    gdir.mkdir()
+    # sersic-disk parent (2026-11-17 encoding); bulge Re=2.2px < 3, q=0.15
+    # flat, free n=8 pinned at the default cap -> hedged-set trigger fires
+    feedme = gdir / "f.feedme"
+    feedme.write_text(_FLAT_FEEDME.replace("0) expdisk", "0) sersic").replace(
+        "4) 12.0 1\n9) 0.9 1",
+        "4) 25.0 1\n5) 1 0\n9) 0.9 1").replace(
+        "4) 3.0 1\n5) 1.2 1\n9) 0.3 1",
+        "4) 2.2 1\n5) 8.0 1\n9) 0.15 1"), encoding="utf-8")
+    graph = BeamGraph.init(str(gdir), str(feedme), stage1={})
+    label = graph.record_fit({
+        "input_param_file": str(feedme), "output_param_file": str(feedme),
+        "image_file": "", "summary_file": "", "round_status_file": "",
+        "fit_statistics": {"bic_eff": 930.0, "convergence": {"flag": "ok"}}})
+    text, triggers = build_local_state_description(graph, label)
+    assert "SMALL-BULGE four-axis reseed trigger" in text
+    assert "HOLDS" in text and "up to 3 PARALLEL" in text
+    assert triggers.get("small_bulge_reseed") is True
+
+
+def test_prims_are_bulge_rebuild_predicate():
+    from beam.enqueue import prims_are_bulge_rebuild
+
+    rebuild = [{"op": "remove", "target": "bulge"},
+               {"op": "add", "structure_name": "bulge", "component_type": "sersic",
+                "re_px": 2.0, "n": 1.5, "q": 0.7, "pa_deg": 30.0, "mag": 18.0}]
+    assert prims_are_bulge_rebuild(rebuild) is True
+    # plain add without the remove is NOT a rebuild
+    assert prims_are_bulge_rebuild(rebuild[1:]) is False
+    # the AGN replacement composite targets agn, not a bulge rebuild
+    assert prims_are_bulge_rebuild([
+        {"op": "remove", "target": "bulge"},
+        {"op": "add", "structure_name": "agn", "component_type": "psf"}]) is False
+
+
 def test_local_digest_signal_b_trajectory(tmp_path):
     from beam.graph import BeamGraph
 

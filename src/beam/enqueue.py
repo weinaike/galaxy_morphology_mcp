@@ -143,6 +143,22 @@ def prims_are_agn_add(primitives: list[dict], parent_re: float | None = None) ->
     return False
 
 
+def prims_are_bulge_rebuild(primitives: list[dict], parent_re: float | None = None) -> bool:
+    """A four-axis bulge reseed (user rule 2026-11-17): the remove(bulge) +
+    add(bulge) rebuild composite — the only form that redeclares
+    Re/n/q/PA/mag jointly in one fit under the 2-primitive cap."""
+    has_rm = has_add = False
+    for p in primitives:
+        if p.get("op") == "remove":
+            tgt = (p.get("target") or p.get("structure_name")
+                   or (p.get("remove") if isinstance(p.get("remove"), str) else "") or "").lower()
+            if tgt == "bulge":
+                has_rm = True
+        if p.get("op") == "add" and (p.get("structure_name") or "").lower() == "bulge":
+            has_add = True
+    return has_rm and has_add
+
+
 # floor flag -> primitive-level predicate, uniform (primitives, parent_re)
 # signature (only disk-Re growth consumes parent_re). parent_re is the Re of
 # the disk slot in the round's OWN parent inventory — required so a
@@ -154,6 +170,7 @@ FLOOR_PREDICATES = {
     "floor_disk_re": prims_are_disk_re_growth,
     "floor_lens_relax_d": prims_are_lens_relax,
     "floor_agn_spike": prims_are_agn_add,
+    "floor_bulge_reseed": prims_are_bulge_rebuild,
 }
 
 
@@ -175,6 +192,10 @@ def _is_lens_relax(cand: Candidate) -> bool:
 
 def _is_agn_add(cand: Candidate) -> bool:
     return prims_are_agn_add(cand.to_plain_primitives())
+
+
+def _is_bulge_rebuild(cand: Candidate) -> bool:
+    return prims_are_bulge_rebuild(cand.to_plain_primitives())
 
 
 def _score_candidate(cand: Candidate, hypo_combo: str, combo_counts: dict[str, int],
@@ -410,6 +431,8 @@ def ingest(graph, candidates: list[Candidate], session_id: str, parent_label: st
             flags["floor_lens_relax_d"] = True
         if _is_agn_add(cand) and triggers.get("central_spike_agn"):
             flags["floor_agn_spike"] = True
+        if _is_bulge_rebuild(cand) and triggers.get("small_bulge_reseed"):
+            flags["floor_bulge_reseed"] = True
 
         direction_key = f"{hypo_combo}|{_primitive_kinds(prims)}"
         prior = [h for h in direction_history

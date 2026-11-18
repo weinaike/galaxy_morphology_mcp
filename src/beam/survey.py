@@ -138,7 +138,7 @@ def _candidate_absence_watchdog(graph, resp, triggers: dict, label: str,
                                 session_id: str) -> list[str]:
     """Log + queue for self-correction every fired trigger whose required
     candidate family is absent without an explicit waiver."""
-    from beam.enqueue import _is_agn_add, _is_bar_direction
+    from beam.enqueue import _is_agn_add, _is_bar_direction, _is_bulge_rebuild
 
     watch = {
         "lens_relax_d": {
@@ -156,6 +156,14 @@ def _candidate_absence_watchdog(graph, resp, triggers: dict, label: str,
             "describe": "an AGN point-core candidate (add(agn, psf) / "
                         "remove(bulge)+add(agn) collapsed-bulge replacement)",
             "waiver_kw": ("agn", "point", "spike"),
+        },
+        "small_bulge_reseed": {
+            "classify": _is_bulge_rebuild,
+            "describe": "four-axis bulge reseed candidates (remove(bulge)+"
+                        "add(bulge, Re/n/q/PA jointly declared)) — up to 3 "
+                        "parallel hedged variants while the trigger holds",
+            "waiver_kw": ("reseed", "joint", "four-axis", "small bulge",
+                          "collapsed", "point"),
         },
     }
     notes: list[str] = []

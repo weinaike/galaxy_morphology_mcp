@@ -402,12 +402,45 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
     _re_b = _f(_b_c.get("re_effective")) if _b_c else None
     _re_d = _f(_d_c.get("re_effective")) if _d_c else None
     if _re_b is not None and _re_d is not None and _re_b > 0.5 * _re_d:
+        # bar-identity repair hint (user rule 2026-11-19): an oversized bulge
+        # whose q falls inside the bar axis-ratio range (<= BAR_Q_HARD_MAX) is
+        # the classic misidentified bar — a FLAT component rivaling the disk
+        # in size is bar-like, not bulge-like (the q prior firing on the
+        # bulge slot is not a disqualifier here: post-reclassify, as a bar,
+        # that q is legal). Repair: reclassify(bulge->bar) carrying the fitted
+        # light verbatim (the code applies the n=0.5-fixed bar mandate);
+        # bundle add(bulge, compact round core) in the SAME candidate when no
+        # AGN holds the compact-core role yet — with an AGN already present
+        # the point core is covered and the reclassify stands alone.
+        _hint = ""
+        _q_b = _f(_b_c.get("q")) if _b_c else None
+        if _q_b is not None and _q_b <= BAR_Q_HARD_MAX:
+            _has_agn = any((c.get("name") or "") == "agn" for c in inv)
+            if _has_agn:
+                _hint = ("; bar-identity repair: reclassify(bulge->bar) — a "
+                         "flat oversized 'bulge' (q within the bar range) "
+                         "rivaling the disk is the classic misidentified bar; "
+                         "the AGN already covers the compact-core role, so "
+                         "the reclassify stands alone (fitted light carried "
+                         "verbatim; the bar n=0.5-fixed mandate applies on "
+                         "transcription, and the resulting bar must clear "
+                         "the bar-disk projection size floor)")
+            else:
+                _hint = ("; bar-identity repair: reclassify(bulge->bar) + "
+                         "add(bulge, compact round core: Re~1-3px, q~0.6-0.8, "
+                         "n free) as ONE candidate — a flat oversized 'bulge' "
+                         "(q within the bar range) rivaling the disk is the "
+                         "classic misidentified bar, and with no AGN the "
+                         "genuine compact core still needs its own component "
+                         "(fitted light carried verbatim; the bar n=0.5-fixed "
+                         "mandate applies on transcription, and the resulting "
+                         "bar must clear the bar-disk projection size floor)")
         checks.append({
             "severity": "hard", "check": "re_ratio",
             "detail": f"re_bulge({_re_b:g}px) > 0.5 * re_disk({_re_d:g}px) — "
                       f"the bulge is oversized relative to the disk (must be "
                       f"at most half the disk's effective radius; expdisk "
-                      f"compared in Re = 1.68*Rs)",
+                      f"compared in Re = 1.68*Rs)" + _hint,
         })
 
     # ---- axis_ratio (hard; all shaped components incl. companions) + priors (note)

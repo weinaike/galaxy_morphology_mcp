@@ -525,3 +525,20 @@ def test_bulge_re_at_most_half_disk():
     assert not _has(ok, "re_ratio")
     # no disk -> never fires
     assert not _has(_checks([_comp("singlesersic", re=5.0)]), "re_ratio")
+    # bar-identity repair hint (user rule 2026-11-19): a flat oversized bulge
+    # (q <= 0.7) with no AGN -> reclassify(bulge->bar) + add compact bulge;
+    # with an AGN already present -> reclassify alone; round bulge (q > 0.7)
+    # -> no bar-identity hint
+    no_agn = _checks([_comp("disk", "expdisk", re=6.0),
+                      _comp("bulge", q=0.35, re=5.5, n=2.0)])
+    assert _has(no_agn, "re_ratio", "hard", "reclassify(bulge->bar)")
+    assert _has(no_agn, "re_ratio", "hard", "add(bulge, compact round core")
+    with_agn = _checks([_comp("disk", "expdisk", re=6.0),
+                        _comp("bulge", q=0.35, re=5.5, n=2.0),
+                        _comp("agn", "psf")])
+    assert _has(with_agn, "re_ratio", "hard", "reclassify stands alone") \
+        or _has(with_agn, "re_ratio", "hard", "the reclassify stands alone")
+    assert "add(bulge, compact round core" not in with_agn[("re_ratio", "hard")]
+    round_bulge = _checks([_comp("disk", "expdisk", re=6.0),
+                           _comp("bulge", q=0.9, re=5.5, n=2.0)])
+    assert "bar-identity repair" not in round_bulge[("re_ratio", "hard")]

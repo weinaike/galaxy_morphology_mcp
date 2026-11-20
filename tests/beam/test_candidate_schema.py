@@ -50,7 +50,8 @@ def codes(issues):
 
 def _validate(cand, parent=PARENT, combo_counts=None, **kw):
     return validate_candidate(
-        cand, parent, combo_counts or {}, 4, 3, [], [], kw.get("ledger", []))
+        cand, parent, combo_counts or {}, 4, 3, [], [], kw.get("ledger", []),
+        central_spike_evidence=kw.get("central_spike_evidence", False))
 
 
 # ------------------------------------------------------------------- schema
@@ -246,14 +247,29 @@ def test_r2_closed_form_warns():
 
 # ------------------------------------------------------------ AGN admission
 def test_agn_admission_rule():
-    # parent bulge Re=2.0: clearly outside the collapse zone -> error
-    parent = [comp("disk", "expdisk", re=13.7), comp("bulge", re=2.0)]
     c = make_cand([{"op": "add", "add": {"structure_name": "agn",
                                          "component_type": "psf"}}])
-    assert "E_AGN_ADMISSION" in codes(_validate(c, parent=parent))
+    # healthy parent bulge (Re=2.0), no machine-verified spike evidence:
+    # WARN, not a hard error — a healthy bulge does not close the door
+    # (KILOGAS_76 fix, 2026-11-20; the declared evidence rides
+    # physical_motivation, retention is arbitrated downstream)
+    parent = [comp("disk", "expdisk", re=13.7), comp("bulge", re=2.0)]
+    issues = _validate(c, parent=parent)
+    assert any(i.code == "E_AGN_ADMISSION" and i.severity == "warn"
+               for i in issues)
+    assert not any(i.code == "E_AGN_ADMISSION" and i.severity == "error"
+                   for i in issues)
+
+    # healthy bulge WITH verified central-spike evidence: clean pass
+    assert "E_AGN_ADMISSION" not in codes(
+        _validate(c, parent=parent, central_spike_evidence=True))
 
     # border zone 0.2-0.5px: competing variant, allowed
     parent = [comp("disk", "expdisk", re=13.7), comp("bulge", re=0.3)]
+    assert "E_AGN_ADMISSION" not in codes(_validate(c, parent=parent))
+
+    # collapsed bulge (<0.2px): mandatory replacement channel, allowed
+    parent = [comp("disk", "expdisk", re=13.7), comp("bulge", re=0.1)]
     assert "E_AGN_ADMISSION" not in codes(_validate(c, parent=parent))
 
 

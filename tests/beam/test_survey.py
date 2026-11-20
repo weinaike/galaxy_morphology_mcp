@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import json
 import os
+import re
 import shutil
 import sys
 from unittest.mock import patch
@@ -138,30 +139,48 @@ AGN_GATED_MD = """Analysis prose.
 """
 
 
-def test_survey_round_verdict_salvage_on_gated_candidates(galaxy, monkeypatch):
-    """KILOGAS_386 A.4 regression (2026-10-17 form): when EVERY candidate is
-    legality-gated (here E_AGN_ADMISSION) the retries exhaust — but the
-    mech-only verdict was already settled AT record_fit, so the round's
-    verdict/best comparability never hung. The salvage machinery is retired;
-    the invariant it protected is now structural."""
-    gdir, label = galaxy
+def test_survey_round_agn_admission_warn_not_block(tmp_path, test_data_dir,
+                                                   monkeypatch):
+    """KILOGAS_76 regression (2026-11-20): add(AGN) on a healthy-bulge parent
+    (bulge Re=12.1 px — no collapse, no border zone) is an admission WARN
+    (declare the central-spike evidence, delta_u<0 within 0-5 px, in
+    physical_motivation), no longer a hard validation error. The former gate
+    made the CLAUDE.md healthy-bulge branch unreachable and burned the retry
+    budget to exhaustion on a legal candidate."""
+    gdir = tmp_path / "SURVEY_AGN"
+    gdir.mkdir()
+    # parent fixture: the NGC1097 files minus the AGN component (block 4) —
+    # a healthy {bulge, disk, bar} model with a free agn slot
+    feedme = (test_data_dir / "NGC1097_sersic.feedme").read_text()
+    feedme = re.sub(r"=+\n\n# Component number: 4\n.*?\n\n(?==+)", "",
+                    feedme, flags=re.S)
+    (gdir / "_iter1.feedme").write_text(feedme)
+    gnn = (test_data_dir / "NGC1097_clean_sersic.07").read_text()
+    gnn = re.sub(r"\n# Component number: 4\n.*? Z\) 0[^\n]*\n", "\n",
+                 gnn, flags=re.S)
+    (gdir / "galfit.01").write_text(gnn)
+    shutil.copy(test_data_dir / "NGC1097_comparison.png", gdir / "cmp.png")
+    shutil.copy(test_data_dir / "NGC1097_summary.md", gdir / "summary.md")
+    graph = BeamGraph.init(str(gdir), str(gdir / "_iter1.feedme"),
+                           stage1={"morphology": "barred spiral"})
+    label = graph.record_fit({
+        "input_param_file": str(gdir / "_iter1.feedme"),
+        "output_param_file": str(gdir / "galfit.01"),
+        "image_file": str(gdir / "cmp.png"),
+        "summary_file": str(gdir / "summary.md"),
+        "round_status_file": str(gdir / "archives" / "x" / "round_status.json"),
+        "fit_statistics": {"bic_eff": 1000.0, "chisq1d_nu": 0.9,
+                           "convergence": {"flag": "ok"}},
+    })
     fake, calls = _mock_dispatch([AGN_GATED_MD])
     monkeypatch.setattr("beam.survey._dispatch", fake)
     r = survey_round(str(gdir), max_retries=1)
-    assert r["status"] == "failure"                    # candidates stay rejected
-    assert r["error"] == "validation retries exhausted"
-    assert any(i["code"] == "E_AGN_ADMISSION" for i in r["issues"])
-    assert len(calls) == 2                             # initial + 1 retry
-    # verdict was settled at record time (record-fit mech verdict: no
-    # mech-hard -> PASS) — no salvage needed, and the failure return no
-    # longer carries verdict fields
-    assert "verdict_salvaged" not in r
+    assert r["status"] == "success", r.get("error")
+    assert len(calls) == 1                    # the WARN burned no retry
+    assert r["enqueued"] and r["enqueued"][0]["tag"] == "agn_add"
     g = BeamGraph.load(str(gdir))
     assert g.state(label).get("verdict", {}).get("verdict") == "PASS"
-    assert g.g.graph.get("best_state") == label        # s* comparable at record
-    entry = [e for e in g.g.graph["decision_log"]
-             if e["kind"] == "survey-validation-exhausted"][-1]
-    assert "verdict_salvaged" not in entry            # machinery retired
+    assert g.g.graph.get("best_state") == label
 
 
 def test_survey_round_missing_artifacts(galaxy, monkeypatch):

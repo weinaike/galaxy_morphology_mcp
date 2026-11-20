@@ -290,7 +290,8 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
                        temp_constraints: list[dict],
                        ledger_signatures: list[dict],
                        stage1_bar_pa: float | None = None,
-                       is_root_opening: bool = False) -> list[Issue]:
+                       is_root_opening: bool = False,
+                       central_spike_evidence: bool = False) -> list[Issue]:
     """Validate one candidate against the solution space + graph state."""
     from beam.signature import (
         apply_primitives_to_inventory,
@@ -642,8 +643,9 @@ def validate_candidate(cand: Candidate, parent_inventory: list[dict],
     # with a 3% relative tolerance)
     issues.extend(_check_re_chain(cand, prims, hypo, aid))
 
-    # ---- AGN admission (bulge-Re-collapse rule)
-    issues.extend(_check_agn_admission(cand, prims, parent_inventory, hypo, aid))
+    # ---- AGN admission (collapse / border / central-spike branches)
+    issues.extend(_check_agn_admission(cand, prims, parent_inventory, hypo, aid,
+                                       central_spike_evidence))
 
     # ---- embedded-companion timing (parent must have bulge or bar)
     issues.extend(_check_companion_timing(cand, prims, parent_inventory, hypo, aid))
@@ -818,7 +820,24 @@ def _check_re_chain(cand: Candidate, prims: list[dict], hypo: list[dict],
 
 
 def _check_agn_admission(cand: Candidate, prims: list[dict], parent_inventory: list[dict],
-                         hypo: list[dict], aid: str) -> list[Issue]:
+                         hypo: list[dict], aid: str,
+                         central_spike_evidence: bool = False) -> list[Issue]:
+    """AGN admission per the CLAUDE.md solution-space table (KILOGAS_76 fix,
+    2026-11-20 — the former Re>0.5 hard error made the healthy-bulge branch
+    unreachable):
+    - bulge Re < 0.2 px  -> collapsed: mandatory replacement channel (the
+      bulge must become the psf/AGN) — admissible;
+    - 0.2-0.5 px         -> border zone: competing psf variant — admissible;
+    - Re > 0.5 px (healthy bulge) -> admissible WITH central-spike evidence
+      (delta_u < 0, data brighter than model, within 0-5 px of the 1D
+      profile, that the bulge cannot absorb — "a healthy bulge does not
+      close the door"); without machine-verified evidence the add passes at
+      WARN severity and must declare the spike in physical_motivation —
+      retention is then arbitrated downstream (Occam delta-BIC > 10 + the
+      physicality verdict), never by this gate;
+    - no bulge at all    -> WARN: justify the point-core evidence in
+      physical_motivation (the singlesersic central-deficit branch or the
+      missing-bulge compensation channel)."""
     issues: list[Issue] = []
     for p in prims:
         if p["op"] == "add" and (p.get("structure_name") or "").lower() == "agn":
@@ -826,18 +845,28 @@ def _check_agn_admission(cand: Candidate, prims: list[dict], parent_inventory: l
             if bulge is None:
                 issues.append(Issue("E_AGN_ADMISSION",
                                     "add(AGN) without a parent bulge: admission requires "
-                                    "the Bulge-Re-collapse rule (Re<0.2px mandatory; "
-                                    "0.2-0.5px competing variant) or clear central-spike "
-                                    "residual evidence — justify in physical_motivation",
+                                    "the singlesersic central-deficit branch or the "
+                                    "missing-bulge compensation channel — justify the "
+                                    "point-core evidence in physical_motivation",
                                     severity="warn", action_id=aid))
-            else:
-                re_eff = bulge.get("re_effective") or bulge.get("re") or 0.0
-                if re_eff > 0.5:
-                    issues.append(Issue("E_AGN_ADMISSION",
-                                        f"add(AGN) while the parent bulge Re={re_eff:g}px "
-                                        "> 0.5px violates the admission rule "
-                                        "(collapse <0.2px / border 0.2-0.5px)",
-                                        action_id=aid))
+                continue
+            re_eff = bulge.get("re_effective") or bulge.get("re") or 0.0
+            if re_eff <= 0.5:
+                # collapsed (<0.2 px, mandatory replacement) or border zone
+                # (0.2-0.5 px, competing variant) — both admissible as-is
+                continue
+            if central_spike_evidence:
+                # healthy bulge + verified central <5 px 1D spike (delta_u<0)
+                continue
+            issues.append(Issue("E_AGN_ADMISSION",
+                                f"add(AGN) while the parent bulge Re={re_eff:g}px > 0.5px "
+                                "(healthy): admission rides the central-spike branch — a "
+                                "delta_u < 0 leftover within 0-5 px of the 1D profile the "
+                                "bulge cannot absorb; declare that evidence in "
+                                "physical_motivation (retention is arbitrated by "
+                                "delta-BIC > 10 and the physicality verdict, not by this "
+                                "gate)",
+                                severity="warn", action_id=aid))
     return issues
 
 
@@ -995,9 +1024,12 @@ def _disambiguate_companion_names(resp: SurveyResponse,
                 taken.add(name)  # two companion adds inside one candidate
 
 
-def validate_survey(resp: SurveyResponse, graph, state_label: str) -> ValidationReport:
+def validate_survey(resp: SurveyResponse, graph, state_label: str,
+                    central_spike_evidence: bool = False) -> ValidationReport:
     """Full-survey validation: per-candidate solution-space checks + survey-level
-    counts/tag-uniqueness/queue_reorder sanity."""
+    counts/tag-uniqueness/queue_reorder sanity. ``central_spike_evidence`` is
+    the machine-verified central-spike reading for the AGN admission gate
+    (this round's Phase-1 assessment / a bulge n pinned at its cap)."""
     issues: list[Issue] = []
     state = graph.state(state_label)
     parent_inventory = state.get("inventory", [])
@@ -1035,7 +1067,8 @@ def validate_survey(resp: SurveyResponse, graph, state_label: str) -> Validation
         issues.extend(validate_candidate(
             cand, parent_inventory, combo_counts, cap, depth, refuted, temp, ledger,
             stage1_bar_pa=stage1_bar_pa,
-            is_root_opening=is_root_opening))
+            is_root_opening=is_root_opening,
+            central_spike_evidence=central_spike_evidence))
         if parent_has_f1 and any(
                 p.get("f1") for p in cand.to_plain_primitives()):
             issues.append(Issue("E_F1_MULTIPLICITY",

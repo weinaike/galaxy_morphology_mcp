@@ -601,7 +601,17 @@ def survey_round(
             feedback = f"E_SCHEMA: {verr}. Fix the field types/shapes per the contract."
             continue
         last_parsed = resp
-        report = _schema_pair(graph.mode)[1](resp, graph, label)
+        # AGN-admission evidence (KILOGAS_76 fix, 2026-11-20): the gate needs
+        # the machine-verified central-spike reading for THIS attempt's own
+        # Phase-1 assessment (+ the bulge-n-at-cap numeric half) — thread it
+        # into the galfit-mode validator only (the mb variant keeps its own
+        # rule engine)
+        _agn_kw = {}
+        if _schema_pair(graph.mode)[1] is validate_survey:
+            _agn_kw["central_spike_evidence"] = (
+                _spike_present_in_analysis(raw_analysis)
+                or _bulge_n_at_cap(graph.state(label)))
+        report = _schema_pair(graph.mode)[1](resp, graph, label, **_agn_kw)
         if report.ok:
             break
         resp = None
@@ -736,7 +746,13 @@ def orchestrator_round(galaxy_dir: str, response_json: str,
     resp, verr = _schema_pair(graph.mode)[0](payload)
     if resp is None:
         return {"status": "failure", "error": f"E_SCHEMA: {verr}"}
-    report = _schema_pair(graph.mode)[1](resp, graph, label)
+    # AGN-admission evidence (KILOGAS_76 fix): no Phase-1 raw text exists in
+    # this arm — the numeric bulge-n-at-cap half still applies; a declared
+    # central spike in physical_motivation rides the gate's WARN branch
+    _agn_kw = {}
+    if _schema_pair(graph.mode)[1] is validate_survey:
+        _agn_kw["central_spike_evidence"] = _bulge_n_at_cap(state)
+    report = _schema_pair(graph.mode)[1](resp, graph, label, **_agn_kw)
     if not report.ok:
         return {"status": "failure", "error": "validation failed (fix the flagged "
                                               "fields and re-call)",

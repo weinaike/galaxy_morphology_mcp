@@ -33,6 +33,11 @@
 #   configuration and injects nothing, keeping the prompt identical to the
 #   baseline runs.
 #
+# SETTINGS (--settings)
+#   Path to a settings JSON file handed to the claude CLI's own --settings
+#   flag (load additional settings from). When the flag is not given, the
+#   default ~/.claude/settings.json is used. The file must exist.
+#
 # NOTE ON PROMPT LANGUAGE
 #   Every prompt fragment this script generates (base argument, arm notes,
 #   beam-width note) is English, and the agent is instructed to write all
@@ -60,6 +65,8 @@
 #   ./batch_galfit_fitting.sh -d /data/sample_1ag  --arm single_agent
 #   # beam-width sensitivity (greedy baseline)
 #   ./batch_galfit_fitting.sh -d /data/sample_w1 --beam-width 1
+#   # custom claude settings file (default: ~/.claude/settings.json)
+#   ./batch_galfit_fitting.sh -d /data/sample --settings /path/to/settings.json
 #
 
 usage() {
@@ -77,6 +84,8 @@ Options:
   --prompt-extra-file <file>  Append free-form extra instructions to the prompt (optional)
   --mcp-config <file>         MCP config file (default: auto-resolved:
                               .mcp.json > newest mcp-local-*.json in project root)
+  --settings <file>           Settings JSON file passed to claude's --settings flag
+                              (default: ~/.claude/settings.json)
   --model <model>             Claude model (default: glm-5.1)
   --target-galaxies <a,b,c>   Process only the named subset (comma-separated; empty = all)
   --fallback-model <model>    Fallback model on overload (optional)
@@ -144,6 +153,8 @@ model="glm-5.1"
 fallback_model=""
 max_budget=""
 mcp_config=""
+settings=~/.claude/settings.json   # claude --settings (tilde expands at assignment)
+settings_explicit=false
 timeout_sec=10800      # per-galaxy timeout (3 h)
 max_retries=10         # max rate-limit rests (each a fixed 18 min wait)
 rl_wait=1080           # fixed rest after each rate-limit hit (seconds; 18 min)
@@ -167,6 +178,8 @@ while [[ $# -gt 0 ]]; do
             prompt_extra_file="$2"; shift 2 ;;
         --mcp-config)
             mcp_config="$2"; shift 2 ;;
+        --settings)
+            settings="$2"; settings_explicit=true; shift 2 ;;
         --model)
             model="$2"; shift 2 ;;
         --target-galaxies|--target_galaxies)
@@ -254,6 +267,17 @@ if [ -z "$mcp_config" ] || [ ! -f "$mcp_config" ]; then
     exit 1
 fi
 
+# Settings file for claude's --settings flag: explicit --settings > the
+# default ~/.claude/settings.json. A missing file is fatal rather than
+# silently launching the agents without the settings the batch relies on.
+if [ ! -f "$settings" ]; then
+    echo "Error: settings file not found: $settings"
+    if [ "$settings_explicit" = false ]; then
+        echo "Pass --settings <file> explicitly, or create the default ~/.claude/settings.json."
+    fi
+    exit 1
+fi
+
 prompt_template="${project_root}/src/prompts/workflow_galfit.md"
 if [ ! -f "$prompt_template" ]; then
     echo "Error: workflow prompt not found: $prompt_template"
@@ -308,6 +332,7 @@ else
 fi
 [ -n "$prompt_extra_file" ] && echo "  Extra instructions file: $prompt_extra_file"
 echo "  MCP config: $mcp_config"
+echo "  Settings: $settings$([ "$settings_explicit" = true ] && echo ' (explicit)' || echo ' (default)')"
 echo "  GPU: $gpu (CUDA_VISIBLE_DEVICES)"
 echo "  Model: $model"
 [ -n "$fallback_model" ] && echo "  Fallback model: $fallback_model"
@@ -488,6 +513,7 @@ PY
             --model "$model"
             --mcp-config "$mcp_config"
             --strict-mcp-config
+            --settings "$settings"
             --verbose
         )
         # First attempt: --resume when resuming a previous session, otherwise

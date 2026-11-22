@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import json
@@ -536,7 +537,23 @@ async def run_galfit(
     - options (List[str], optional): GALFIT command-line options
       - Example: ["-o"] for overwrite mode, ["-v"] for verbose output
 
+    The blocking body (subprocess run + matplotlib rendering, minutes-long)
+    is offloaded to a worker thread via asyncio.to_thread — same fix as
+    run_galfits (restrict-disk-bulge-bar-agn, 2026-11-06): the MCP event
+    loop stays responsive and the client does not time out.
     """
+    return await asyncio.to_thread(
+        _run_galfit_sync,
+        config_file=config_file,
+        options=options,
+    )
+
+
+def _run_galfit_sync(
+    config_file: str,
+    options: List[str] = [],
+) -> dict[str, Any]:
+    """Synchronous GALFIT execution (runs in a worker thread)."""
     galfit_bin = os.getenv("GALFIT_BIN", "galfit")
     config_file = os.path.abspath(config_file)
     options = options or []

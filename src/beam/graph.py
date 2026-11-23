@@ -280,6 +280,8 @@ class BeamGraph:
             "expected_C_prime": candidate.get("expected_C_prime", ""),
             "novelty_claim": candidate.get("novelty_claim", ""),
             "expected_behavior_tag": candidate.get("expected_behavior_tag", ""),
+            # mcts-arm statistics identity (combo|primitive_kinds per parent)
+            "combo_key": candidate.get("combo_key", ""),
             "target_state": None,
             "age_counter": 0,
             "enqueued_at": _now(),
@@ -848,6 +850,49 @@ class BeamGraph:
         if discharged:
             self.commit()
 
+    # ------------------------------------------------------------- mcts arm
+    def mcts_stats(self) -> dict:
+        """Per-direction visit/reward statistics of the mcts ablation arm.
+
+        Keyed ``"<parent>|<combo>|<primitive_kinds>"`` -> {"visits",
+        "total_reward"}; Q(s,a) = total_reward / visits. Shared by the PUCT
+        selection rule (beam.mcts.ucb_reorder) and the reward backprop.
+        """
+        return self.g.graph.setdefault("mcts_stats", {})
+
+    def mcts_state_visits(self, label: str) -> int:
+        """N(s) = 1 + executed children of state ``label`` (PUCT denominator)."""
+        if label not in self.g.nodes:
+            return 1
+        return 1 + sum(1 for _u, v in self.g.out_edges(label)
+                       if self.g.nodes[v].get("global_iter_id", 0) > 0)
+
+    def state_direction_key(self, label: str) -> tuple[str, str] | None:
+        """(parent_label, direction key) of the executed action that produced
+        ``label`` — the statistics identity of the mcts arm. None for the
+        deterministic first fit (no pending record)."""
+        state = self.state(label)
+        parent = state.get("parent")
+        action_id = state.get("action_in") or ""
+        if not parent or not action_id:
+            return None
+        rec = self.g.graph.get("pending", {}).get(action_id)
+        if rec is None:
+            return None
+        combo = rec.get("combo_key") or state.get("combo_key") or "?"
+        from beam.enqueue import _primitive_kinds
+
+        return parent, f"{combo}|{_primitive_kinds(rec.get('primitives', []))}"
+
+    def mcts_update_stats(self, parent: str, direction_key: str,
+                          reward: float) -> dict:
+        """Backprop one shaped reward onto the (parent, direction) statistic."""
+        rec = self.mcts_stats().setdefault(f"{parent}|{direction_key}",
+                                           {"visits": 0, "total_reward": 0.0})
+        rec["visits"] = int(rec.get("visits", 0)) + 1
+        rec["total_reward"] = float(rec.get("total_reward", 0.0)) + float(reward)
+        return dict(rec)
+
     def _inventory_disk_re(self, label: str) -> float | None:
         """Effective Re (px) of the disk/edgedisk slot in a state's fitted
         inventory, for floor_disk_re growth-vs-shrink direction checks.
@@ -895,7 +940,13 @@ class BeamGraph:
             conditions.append("queue_empty")
         if self.n_total() >= n_max_effective:
             conditions.append("budget_exhausted")
-        if int(self.counters().get("stagnation", 0)) >= int(meta.get("stagnation_max", STAGNATION_MAX)):
+        # mcts arm: exploration is governed by the PUCT term — a streak of
+        # non-improving expansions is the search doing its job, not a stuck
+        # beam, so the stagnation stop does not apply there (budget and the
+        # empty frontier remain).
+        mcts_arm = bool((meta.get("ablations") or {}).get("mcts"))
+        if not mcts_arm and int(self.counters().get("stagnation", 0)) >= \
+                int(meta.get("stagnation_max", STAGNATION_MAX)):
             conditions.append("stagnation")
         blockers = self.never_executed_precheck()
         floors = self.floor_blockers()
@@ -953,6 +1004,7 @@ class BeamGraph:
                 if aid in self.g.graph.get("pending", {})
             ],
             "combo_counts": self.combo_counts(),
+            "mcts_stats": dict(self.g.graph.get("mcts_stats", {})),
             "never_executed": self.never_executed_precheck(),
             "refuted": self.g.graph.get("refuted_hypotheses", []),
             "traversal": self.traversal(),

@@ -123,7 +123,11 @@ def beam_init(
                                    "{\"no_verdict_gate\": true} (metric-only best "
                                    "selection, physicality FAIL rounds may take s*), "
                                    "{\"single_agent\": true} (provenance marker: candidates "
-                                   "come from beam_enqueue_candidates, no VLM)"] = "",
+                                   "come from beam_enqueue_candidates, no VLM), "
+                                   "{\"mcts\": true} (paper baseline: deterministic "
+                                   "scripted enumerator + PUCT selection, no VLM and no "
+                                   "perception; drive the loop with mcts_round instead "
+                                   "of survey_round)"] = "",
 ) -> dict[str, Any]:
     """Create (or reset) the beam-search state graph for a galaxy.
 
@@ -516,7 +520,7 @@ def beam_status(
                 f"a settled Physicality Verdict ({', '.join(map(str, unsettled[:6]))}"
                 f"{'…' if len(unsettled) > 6 else ''}) — call survey_round after "
                 "every beam_record_fit (the single_agent arm uses "
-                "beam_enqueue_candidates instead)")
+                "beam_enqueue_candidates; the mcts arm uses mcts_round)")
         if fitted and not snap.get("best_state"):
             warnings.append(
                 "no admissible best state (best_state is null): no verdict-PASS "
@@ -590,5 +594,31 @@ def beam_enqueue_candidates(
         from beam.survey import orchestrator_round
 
         return orchestrator_round(galaxy_dir, response_json, state_label=state_label)
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def mcts_round(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    state_label: Annotated[str, "Round label to expand (e.g. 'A.2'); empty = the "
+                                "most recently executed state"] = "",
+) -> dict[str, Any]:
+    """MCTS ablation arm: one scripted-expansion + PUCT-selection round (no VLM).
+
+    Replaces survey_round in the mechanised loop for runs initialised with
+    beam_init(ablations_json={"mcts": true}). Settles the code-only physicality
+    verdict (mechanical checks merged — no perception anywhere in this arm),
+    backprops the executed edge's shaped reward (BIC_eff improvement +
+    physicality/convergence gating) onto the per-direction statistics, expands
+    the state through the deterministic macro-action enumerator (candidates
+    validated and enqueued through the SAME legality gates as the surveyor —
+    schema, solution-space rules, floors, combo caps, R1/R2 dedup), and
+    re-orders the frontier by the PUCT rule
+    Q(s,a) + c*P(s,a)*sqrt(ln(N(s)+1)/(1+n(s,a))).
+    """
+    try:
+        from beam.mcts import mcts_round as _mcts_round
+
+        return _mcts_round(galaxy_dir, state_label=state_label)
     except Exception as e:
         return {"status": "failure", "error": str(e)}

@@ -44,6 +44,7 @@ from beam.tools import (
     beam_status,
     beam_enqueue_candidates,
     survey_round,
+    mcts_round,
 )
 from starlette.responses import Response, JSONResponse
 from dotenv import load_dotenv
@@ -76,6 +77,7 @@ def _register_tools_and_prompts():
         app.add_tool(beam_status)
         app.add_tool(survey_round)
         app.add_tool(beam_enqueue_candidates)
+        app.add_tool(mcts_round)
         app.add_tool(apply_candidate)
         app.add_tool(beam_export_note)
         app.add_tool(beam_grant_repair_budget)

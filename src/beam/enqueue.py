@@ -457,7 +457,17 @@ def _reorder_queue(graph) -> None:
     the current best path (defect C: an aged candidate from a long-superseded
     parent — e.g. a pre-bar model — outranked fresh repairs and wasted a fit).
     Off-path candidates keep their base score (and any floor flag bonus).
+
+    mcts ablation arm: the queue is the PUCT frontier — ordering switches to
+    the UCB selection rule (beam.mcts.ucb_reorder) computed from per-direction
+    visit/reward statistics; the legality gates and truncation above are
+    unchanged, so both arms share one frontier contract.
     """
+    if (graph.g.graph.get("meta", {}).get("ablations") or {}).get("mcts"):
+        from beam.mcts import ucb_reorder
+
+        ucb_reorder(graph)
+        return
     pending = graph.g.graph.get("pending", {})
     queue = [a for a in graph.g.graph.get("queue", []) if a in pending
              and pending[a].get("status") == "pending"]

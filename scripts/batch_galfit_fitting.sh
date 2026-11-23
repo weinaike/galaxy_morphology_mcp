@@ -20,6 +20,10 @@
 #                    becoming the current best s*.
 #   single_agent     Ablation: the VLM surveyor is disabled; the orchestrator
 #                    itself performs perception and authors candidate actions.
+#   mcts             Paper baseline: the VLM surveyor AND the beam g-ranking
+#                    are replaced by a deterministic scripted macro-action
+#                    enumerator + PUCT selection (mcts_round); candidates still
+#                    pass the same legality gates. No perception anywhere.
 #   The selected arm is passed to beam_init by the agent (per the injected
 #   note below), persisted in the beam-search state graph, and enforced by
 #   server code on every subsequent call — it cannot drift mid-run. Verify a
@@ -58,6 +62,7 @@
 #   ./batch_galfit_fitting.sh -d /data/sample_nogs --arm no_global_state
 #   ./batch_galfit_fitting.sh -d /data/sample_novg --arm no_verdict_gate
 #   ./batch_galfit_fitting.sh -d /data/sample_1ag  --arm single_agent
+#   ./batch_galfit_fitting.sh -d /data/sample_mcts --arm mcts
 #   # beam-width sensitivity (greedy baseline)
 #   ./batch_galfit_fitting.sh -d /data/sample_w1 --beam-width 1
 #
@@ -70,7 +75,7 @@ Options:
   -d, --dir <dir>             Galaxy-set directory (required)
   -g, --gpu <id>              CUDA_VISIBLE_DEVICES (default: 0)
   --arm <name>                Experimental arm: baseline | no_global_state |
-                              no_verdict_gate | single_agent (default: baseline)
+                              no_verdict_gate | single_agent | mcts (default: baseline)
   --beam-width <w>            Beam width; the beam_width note is injected into the
                               prompt only when this flag is given explicitly
                               (default: 5, not injected)
@@ -94,6 +99,8 @@ Experimental arms:
   no_global_state  cross-round state digest withheld from the surveyor
   no_verdict_gate  best-round selection by metrics only (physicality verdict not gating)
   single_agent     VLM surveyor disabled; the orchestrator performs perception itself
+  mcts             paper baseline: scripted macro-action enumerator + PUCT
+                   selection (mcts_round), no VLM / no perception; shared legality gates
 USAGE
 }
 
@@ -205,9 +212,9 @@ if [ ! -d "$search_dir" ]; then
 fi
 
 case "$arm" in
-    baseline|no_global_state|no_verdict_gate|single_agent) ;;
+    baseline|no_global_state|no_verdict_gate|single_agent|mcts) ;;
     *)
-        echo "Error: invalid --arm value: $arm (expected: baseline | no_global_state | no_verdict_gate | single_agent)"
+        echo "Error: invalid --arm value: $arm (expected: baseline | no_global_state | no_verdict_gate | single_agent | mcts)"
         exit 1 ;;
 esac
 
@@ -273,6 +280,8 @@ case "$arm" in
         arm_note='Note: when calling beam_init, pass the parameter ablations_json={"no_verdict_gate": true}.' ;;
     single_agent)
         arm_note='Note: when calling beam_init, pass the parameter ablations_json={"single_agent": true}. During the iterative fitting, after each beam_record_fit call do NOT call survey_round; perform the perception and candidate generation yourself instead: (a) read the comparison PNG, the summary file and the galfit.NN file of the current round yourself; (b) following the same JSON contract as the surveyor, author the physicality verdict and the generated candidates yourself: {"physicality_verdict": {...}, "candidates": [...]}; (c) call beam_enqueue_candidates(galaxy_dir, response_json, state_label) and pass its validation in one go, or, on an E_SCHEMA validation failure, read the returned issues, fix them yourself and call again. All other conventions remain unchanged.' ;;
+    mcts)
+        arm_note='Note: when calling beam_init, pass the parameter ablations_json={"mcts": true}. During the iterative fitting, after each beam_record_fit call do NOT call survey_round; call mcts_round(galaxy_dir, state_label) instead — it settles the code-only physicality verdict, backprops the executed edge reward, expands the state with the deterministic scripted macro-action enumerator, and re-orders the frontier by PUCT; it also returns next_candidate. Then continue the mechanised loop exactly as before: apply_candidate(action_id=next_candidate) -> run_galfit -> beam_record_fit -> mcts_round. Do not read the comparison images for candidate generation in this arm (the enumerator is deliberately perception-free; using visual judgement would contaminate the baseline). Stage 1 (render_original, view_original_image, detect_bar_lopsidedness) still runs as usual so the Stage-1 conclusions are recorded in the graph header. All other conventions remain unchanged.' ;;
 esac
 
 # Beam-width note: injected only when --beam-width is given explicitly.

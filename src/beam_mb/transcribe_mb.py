@@ -654,7 +654,22 @@ class MbTranscriber:
 
     def constrain_text(self) -> str | None:
         """Update_Constraints source binding main-galaxy central components
-        (+ AGN) to the disk anchor; None when K <= 1 and no AGN."""
+        (+ AGN) to the disk anchor, merged with the Mag_<comp>_<band>
+        derivation lines of GalfitS's DEFAULT constrain; None when K <= 1
+        and no AGN.
+
+        GalfitS's galfitS main() REPLACES the default constrain wholesale
+        when --parconstrain is given (``fs`` is overwritten before exec),
+        and read_config_file builds every ``Mag_<comp>_<band>`` as a
+        vary=False expr parameter recomputed ONLY inside that default
+        Update_Constraints (gsutils.py:1279 + the expr translator in
+        read_config_file). Without the merge, every Mag row in the
+        gssummary stays frozen at its per-band seed — identical across
+        components within a band (the seed logNorm formula
+        ``log10|imsum| - logM_seed - log10(Ncomp)`` is component-blind;
+        KILOGAS_216 retrospective, 2026-11-26). When no concentric binding
+        is required we return None: no constrain file is passed, GalfitS
+        runs its own default constrain and derives Mag correctly."""
         central = [c.name for c in self.comps if c.name in CENTRAL_STRUCTURES]
         anchor = next((c.name for c in self.comps if c.name == "disk"), None) \
             or (central[0] if central else None) \
@@ -678,6 +693,25 @@ class MbTranscriber:
                          f"pardictlc['{anchor}_ycen']")
         if not lines:
             return None
+        # --- merged default-constrain content: recompute Mag_<comp>_<band>
+        # for every P-block component x band (N-block AGNs get no Mag
+        # parameter in images-photometry mode). The membership guard keeps
+        # this file safe when the SAME constrain is carried into the
+        # SED/joint stages, where logNorm_<comp>_<band> parameters do not
+        # exist — UC_func reads a plain dict (lmParameters.valuesdict()),
+        # an unguarded lookup would KeyError and crash the fit.
+        lines.append("    # Mag_* derivation merged from GalfitS's default "
+                     "constrain (--parconstrain replaces it wholesale)")
+        for c in self.comps:
+            for iblk in self.doc.images.values():
+                band, magzp = iblk.value(2), iblk.value(10)
+                if not band or not isinstance(magzp, (int, float)):
+                    continue
+                lines.append(
+                    f"    if 'logNorm_{c.name}_{band}' in pardictlc:\n"
+                    f"        pardictlc['Mag_{c.name}_{band}'] = "
+                    f"{float(magzp):g}-2.5*pardictlc['logM_{c.name}']"
+                    f"-2.5*pardictlc['logNorm_{c.name}_{band}']")
         return ("def Update_Constraints(pardictlc):\n"
                 + "\n".join(lines) + "\n")
 

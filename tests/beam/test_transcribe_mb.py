@@ -67,6 +67,45 @@ def test_skeleton_golden(tmp_path, test_data_dir):
     assert "pardictlc['bulge_ycen'] = 1 * pardictlc['disk_ycen']" in text
 
 
+def test_constrain_merges_default_mag_derivation(tmp_path, test_data_dir):
+    """--parconstrain replaces GalfitS's default constrain wholesale, so the
+    emitted file must itself re-derive Mag_<comp>_<band> (a vary=False expr
+    parameter recomputed ONLY inside the default Update_Constraints — frozen
+    at its component-blind seed otherwise; KILOGAS_216 retrospective). The
+    membership guard keeps the same file valid in SED/joint stages where
+    logNorm_<comp>_<band> parameters do not exist."""
+    p = str(test_data_dir / "mb" / "mb_root.lyric")
+    r, _, _ = _t(tmp_path, "_iter2.lyric", p, None, [
+        {"op": "skeleton", "components": [
+            {"structure_name": "disk", "component_type": "sersic",
+             "re_px": 22.85, "q": 0.49, "pa_sky_deg": -54.0,
+             "dx_px": 0.0, "dy_px": 0.0, "panel_band": "decam_g"},
+            {"structure_name": "bulge", "component_type": "sersic",
+             "re_px": 3.0, "q": 0.85, "pa_sky_deg": -54.0,
+             "dx_px": 0.0, "dy_px": 0.0, "panel_band": "decam_g"}]}])
+    text = open(r["constrain"]).read()
+    assert "pardictlc['Mag_disk_decam_g']" in text
+    assert "pardictlc['Mag_bulge_decam_z']" in text
+    ns: dict = {}
+    exec(compile(text, "constrain", "exec"), ns)   # what galfitS main() does
+    uc = ns["Update_Constraints"]
+    # images-photometry pardict: Mag recomputed from the FITTED logNorm
+    pd = {"disk_xcen": 0.38, "disk_ycen": -0.09, "bulge_xcen": 9.9,
+          "bulge_ycen": 9.9, "logM_disk": 9.0, "logM_bulge": 9.0,
+          "logNorm_disk_decam_g": -6.4802,
+          "logNorm_bulge_decam_g": -6.9579}
+    uc(pd)
+    assert pd["bulge_xcen"] == 0.38                 # concentric kept working
+    assert abs(pd["Mag_disk_decam_g"] - 16.2005) < 1e-6
+    assert abs(pd["Mag_bulge_decam_g"] - 17.3948) < 1e-4
+    # images-SED pardict (no logNorm keys): guard skips, no KeyError
+    pd2 = {"disk_xcen": 0.2, "disk_ycen": 0.0, "bulge_xcen": 1.0,
+           "bulge_ycen": 1.0, "logM_disk": 9.3}
+    uc(pd2)
+    assert pd2["bulge_xcen"] == 0.2
+    assert "Mag_disk_decam_g" not in pd2
+
+
 # ------------------------------------------------------------------ add
 def test_add_label_and_membership(tmp_path, test_data_dir):
     p = str(test_data_dir / "mb" / "mb_iter3.lyric")

@@ -838,7 +838,10 @@ def generate_subcomps(lyric_file, gssummary_file):
         for gm in gmodel_list:
             gm.generate_mass_map((ny, nx), transpar=group_transpar)
 
-        for im_idx in group_image_indices:
+        resps_tem = getattr(GSdata, 'subgroup_resps', None)
+        resps_tem = resps_tem[loop_group] if resps_tem is not None else None
+
+        for loopb, im_idx in enumerate(group_image_indices):
             im = GSdata.get_image(im_idx)
             band = im.band
             sky = float(pardict['sky_{0}'.format(band)])
@@ -860,10 +863,39 @@ def generate_subcomps(lyric_file, gssummary_file):
             trans = jnp.array([shifty, shiftx], dtype=jnp.float32)
 
             comp_images, comp_names = [], []
+            # images - SED mode (joint stage) has NO logNorm_<comp>_<band>
+            # parameters: the per-band component flux comes from the SED
+            # (logM x template, band-averaged through the response curve) —
+            # the per-subC path of galaxy.generate_group_image. The old
+            # blanket -7.5 fallback rendered every component at an arbitrary
+            # scale (a compact high-logM bulge shot off the 1D SB-profile
+            # axis; KILOGAS_216 image-SED retrospective, 2026-11-26).
+            _sed_scales: dict = {}     # gm -> {subC_label: per-band scale}
             for gm, key in comp_keys:
                 logN_key = 'logNorm_{0}_{1}'.format(key, band)
-                logN = pardict[logN_key] if logN_key in pardict else -7.5 # TODO: work around with a default value if logN_key doesnot exist. will be fixed later
-                imm0 = (10.0 ** logN) * gm.mass_map[key]                # group-grid component
+                if logN_key in pardict:
+                    flux_scale = 10.0 ** pardict[logN_key]
+                else:
+                    if resps_tem is None:
+                        continue        # no response curves: cannot scale
+                    if gm not in _sed_scales:
+                        wavegrid = GSdata.wavegrid
+                        waveintrin = wavegrid / (1.0 + gm.redshift)
+                        flux_list, sub_labels = gm.fiducial_sed(
+                            waveintrin, pardict=pardict, button=1)
+                        per = {}
+                        for fl, lbl in zip(flux_list, sub_labels):
+                            lm_key = 'logM_{0}'.format(lbl)
+                            if lm_key not in pardict:
+                                continue
+                            unit_flux = fl / 10 ** pardict[lm_key]
+                            per[lbl] = float(gm.generate_SED(
+                                [resps_tem[loopb]], wavegrid, unit_flux)[0])
+                        _sed_scales[gm] = per
+                    flux_scale = _sed_scales[gm].get(key)
+                    if flux_scale is None:
+                        continue        # component not in the SED model
+                imm0 = flux_scale * gm.mass_map[key]                 # group-grid component
                 imm = jax.image.scale_and_translate(imm0, (nyl, nxl), (0, 1), scale, trans, 'cubic')
                 imm = imm / scale0 ** 2                                  # flux conservation
                 imm = jax.scipy.signal.fftconvolve(imm, im.PSF, mode='same')

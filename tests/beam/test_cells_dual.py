@@ -10,10 +10,10 @@ from beam.cells import CellLedger, cells_of, primitives_carry_f1
 from beam.enqueue import ingest
 
 
-def cand(prims, sigma=0.6, tag="t", novelty="new structure", motivation="m"):
+def cand(prims, pred_bic=100.0, tag="t", novelty="new structure", motivation="m"):
     return Candidate(primitives=prims, physical_motivation=motivation,
                      expected_C_prime="c", novelty_claim=novelty,
-                     expected_behavior_tag=tag, local_benefit_sigma=sigma)
+                     expected_behavior_tag=tag, pred_bic=pred_bic)
 
 
 # ------------------------------------------------------------- primitives
@@ -119,7 +119,7 @@ def test_record_fit_purges_same_attractor_queue_entries(mini_graph):
     # at enqueue time its cells are unvisited, so it legitimately queues)
     prims = [{"op": "tune", "tune": {"structure_name": "bulge", "param": "re_px",
                                      "value": 3.0}}]
-    res = ingest(graph, [cand(prims, sigma=0.7, tag="fresh_then_dead")],
+    res = ingest(graph, [cand(prims, pred_bic=90.0, tag="fresh_then_dead")],
                  session_id="s1", parent_label=label)
     assert res.enqueued
     aid = res.enqueued[0]["action_id"]
@@ -189,7 +189,7 @@ def test_floor_exempt_from_cell_dup(mini_graph):
     # fitted n=0.17 bin 0; value 4.0 bin 1 -> NOT dup). Force the dup case
     # instead with a mag-only tune carrying no floor: must be CELL_DUP.
     res_plain = ingest(graph, [
-        cand(_same_attractor_prims(fitted), sigma=0.7, tag="mag_only"),
+        cand(_same_attractor_prims(fitted), pred_bic=90.0, tag="mag_only"),
     ], session_id="s1", parent_label=label)
     assert res_plain.discarded and res_plain.discarded[0]["reason"] == "CELL_DUP"
 
@@ -198,7 +198,7 @@ def test_floor_exempt_from_cell_dup(mini_graph):
         cand(_same_attractor_prims(fitted) +
              [{"op": "tune", "tune": {"structure_name": "bulge", "param": "n",
                                       "toggle": 1, "value": 4.0}}],
-             sigma=0.3, tag="floor_twin"),
+             pred_bic=120.0, tag="floor_twin"),
     ], session_id="s2", parent_label=label)
     assert res_floor.enqueued, res_floor.discarded
     assert any("floor_n_release" in e["flags"] for e in res_floor.enqueued)
@@ -211,14 +211,14 @@ def test_cell_refresh_replaces_unprotected_twin(mini_graph):
     # cross-bin tune so the cell is fresh but reproducible: bulge Re 12 -> 3
     prims = [{"op": "tune", "tune": {"structure_name": "bulge", "param": "re_px",
                                      "value": 3.0}}]
-    res1 = ingest(graph, [cand(prims, sigma=0.5, tag="v1")],
+    res1 = ingest(graph, [cand(prims, pred_bic=100.0, tag="v1")],
                   session_id="s1", parent_label=label)
     assert res1.enqueued
     v1 = res1.enqueued[0]["action_id"]
 
     # the SAME cell proposed again in a later session: the fresher candidate
     # replaces the queued twin (fresh sigma), old one discarded
-    res2 = ingest(graph, [cand(prims, sigma=0.85, tag="v2")],
+    res2 = ingest(graph, [cand(prims, pred_bic=80.0, tag="v2")],
                   session_id="s2", parent_label=label)
     assert res2.enqueued
     v2 = res2.enqueued[0]["action_id"]
@@ -238,7 +238,7 @@ def test_record_fit_idempotent_on_same_action(mini_graph):
     st = graph.state(label)
     prims = [{"op": "tune", "tune": {"structure_name": "bulge", "param": "re_px",
                                      "value": 3.0}}]
-    res = ingest(graph, [cand(prims, sigma=0.7, tag="x")],
+    res = ingest(graph, [cand(prims, pred_bic=90.0, tag="x")],
                  session_id="s1", parent_label=label)
     assert res.enqueued
     aid = res.enqueued[0]["action_id"]
@@ -266,7 +266,7 @@ def test_cell_refresh_protected_twin_shelters(mini_graph):
                    {"op": "tune", "tune": {"structure_name": "bulge",
                                            "param": "n", "toggle": 1,
                                            "value": 4.0}}]
-    res1 = ingest(graph, [cand(floor_prims, sigma=0.5, tag="v1")],
+    res1 = ingest(graph, [cand(floor_prims, pred_bic=100.0, tag="v1")],
                   session_id="s1", parent_label=label)
     assert res1.enqueued and res1.enqueued[0]["flags"]
 
@@ -277,7 +277,7 @@ def test_cell_refresh_protected_twin_shelters(mini_graph):
                    {"op": "tune", "tune": {"structure_name": "bulge",
                                            "param": "n", "toggle": 0,
                                            "value": 4.2}}]
-    res2 = ingest(graph, [cand(plain_prims, sigma=0.9, tag="v2")],
+    res2 = ingest(graph, [cand(plain_prims, pred_bic=70.0, tag="v2")],
                   session_id="s2", parent_label=label)
     assert res2.discarded and res2.discarded[0]["reason"] == "CELL_QUEUED_PROTECTED"
     v1 = res1.enqueued[0]["action_id"]

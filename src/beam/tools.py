@@ -228,14 +228,6 @@ def beam_init(
     n_max: Annotated[int, "Fit budget N_max; 0 = default 7 (+1 reserved F1 arbitration "
                           "fit on the best state, counted outside N_max)"] = 0,
     stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 3"] = 0,
-    ablations_json: Annotated[str, "Optional JSON object selecting the ablation arm for "
-                                   "this run, persisted in graph meta and enforced by "
-                                   "code in every later call: {\"no_global_state\": true} "
-                                   "(withhold the cross-round digest from the surveyor), "
-                                   "{\"no_verdict_gate\": true} (metric-only best "
-                                   "selection, physicality FAIL rounds may take s*), "
-                                   "{\"single_agent\": true} (provenance marker: candidates "
-                                   "come from beam_enqueue_candidates, no VLM)"] = "",
     mode: Annotated[str, "Format mode of this run: 'galfit' (single-band "
                          "feedme; default) or 'galfits' (multi-band .lyric "
                          "— root_feedme then points at the root lyric)"] = "galfit",
@@ -248,9 +240,8 @@ def beam_init(
     and the outer-isophote axis ratio q_iso once (anchors the physicality
     onion flat-disk skip — see measure_outer_iso_q), and persists the graph
     atomically. Stage-1 conclusions are stored for the per-round digest
-    generation. Beam parameters (W / N_max / stagnation_max) and the ablation
-    arm are written to graph meta — the single source of truth every later
-    call reads, so an arm cannot drift mid-run.
+    generation. Beam parameters (W / N_max / stagnation_max) are written to
+    graph meta — the single source of truth every later call reads.
     """
     try:
         from beam.graph import BeamGraph
@@ -319,11 +310,6 @@ def beam_init(
                         "error": "opening_candidates_json must be "
                                  "{\"candidates\": [...]}"}
             stage1["opening_candidates"] = openings
-        ablations = _parse_json(ablations_json, None)
-        if ablations_json and ablations is None:
-            return {"status": "failure", "error": "ablations_json is not valid JSON"}
-        if ablations is not None and not isinstance(ablations, dict):
-            return {"status": "failure", "error": "ablations_json must be a JSON object"}
 
         graph = BeamGraph.init(
             galaxy_dir, root_feedme, stage1=stage1,
@@ -333,7 +319,6 @@ def beam_init(
             beam_width=beam_width or None,
             n_max=n_max or None,
             stagnation_max=stagnation_max or None,
-            ablations=ablations,
             mode=mode,
         )
         meta = graph.g.graph["meta"]
@@ -349,8 +334,7 @@ def beam_init(
             "q_iso_outer": q_iso_outer,
             "q_iso_sma_outer": q_iso_res.get("sma_outer"),
             "config": {k: meta.get(k) for k in
-                       ("W", "N_max", "stagnation_max", "class_caps", "g_min")},
-            "ablations": meta.get("ablations", {}),
+                       ("W", "N_max", "stagnation_max", "class_caps")},
             "warnings": warnings,
             "message": "beam graph initialised; run the first fit (run_galfit on the root "
                        "feedme) and register it with beam_record_fit (action_id empty)",
@@ -438,10 +422,6 @@ def beam_record_fit(
                                           "the round_status_file reference form below"] = "",
     action_id: Annotated[str, "action_id of the executed pending candidate (empty string "
                               "for the deterministic first fit of the root feedme)"] = "",
-    verdict_json: Annotated[str, "Optional JSON of the surveyor Physicality Verdict "
-                                 "({\"verdict\": \"PASS|FAIL\", \"failed_checks\": [...], "
-                                 "\"swap_hint\": \"none|disk_bulge_swap\"}); normally the "
-                                 "verdict arrives via survey_round instead"] = "",
     round_status_file: Annotated[str, "PREFERRED by-reference form: absolute path of the "
                                       "run_galfit archive's round_status.json — every "
                                       "field (input/output paths + fit_statistics) is "
@@ -453,9 +433,10 @@ def beam_record_fit(
 
     Creates the child state (label branch.local_round), parses the fitted
     galfit.NN inventory (names recovered from the input feedme), decodes
-    effective .cons bands, computes zombie flags, updates counters /
-    stagnation / mechanical best (verdict-gated), grounds refuted-hypothesis
-    entries, and commits.
+    effective .cons bands, computes zombie flags, settles the MECHANICAL
+    verdict from the code-computed check table (any hard entry vetoes PASS),
+    updates counters / stagnation / mechanical best (verdict-gated), grounds
+    refuted-hypothesis entries, and commits.
 
     Fail-fast (2026-10-23): a run result missing required fields or carrying
     nonexistent paths is REJECTED (nothing recorded) — the failure names the
@@ -481,9 +462,8 @@ def beam_record_fit(
         err = _validate_run_result(run_result, action_id)
         if err:
             return {"status": "failure", "action_id": action_id, "error": err}
-        verdict = _parse_json(verdict_json, None)
         graph = _load_graph(galaxy_dir)
-        label = graph.record_fit(run_result, action_id=action_id, verdict=verdict)
+        label = graph.record_fit(run_result, action_id=action_id)
         state = graph.state(label)
         # Opening skeletons (Stage-1 proposal): the non-top entries ride the
         # queue as A.1-parented alternates once the FIRST fit exists (A.0 has
@@ -998,8 +978,10 @@ def beam_status(
         snap = graph.snapshot()
         snap["status"] = "success"
         snap["termination"] = graph.termination_check()
-        # verdict-gate health warnings (KILOGAS_231 2026-09-16 incident: a
-        # driver that never settles verdicts bypasses the physicality gate)
+        # mech-verdict health warnings: the verdict settles mechanically at
+        # record_fit time, so an unsettled fitted state means the graph node
+        # was written by hand / repaired mid-flight (a graph lesion) — the
+        # physicality gate would silently miss it
         warnings = []
 
         def _has_fit(s):
@@ -1017,16 +999,15 @@ def beam_status(
         unsettled = [s.get("label") for s in fitted if not _settled(s)]
         if unsettled:
             warnings.append(
-                f"verdict gate bypassed: {len(unsettled)} fitted state(s) without "
-                f"a settled Physicality Verdict ({', '.join(map(str, unsettled[:6]))}"
-                f"{'…' if len(unsettled) > 6 else ''}) — call survey_round after "
-                "every beam_record_fit (the single_agent arm uses "
-                "beam_enqueue_candidates instead)")
+                f"graph lesion: {len(unsettled)} fitted state(s) without a settled "
+                f"mech verdict ({', '.join(map(str, unsettled[:6]))}"
+                f"{'…' if len(unsettled) > 6 else ''}) — the mech verdict settles "
+                "automatically inside beam_record_fit; a state missing it was "
+                "recorded abnormally (repair the graph)")
         if fitted and not snap.get("best_state"):
             warnings.append(
-                "no admissible best state (best_state is null): no verdict-PASS "
-                "round exists yet — locking is forbidden; settle the pending "
-                "states' verdicts first")
+                "no admissible best state (best_state is null): no mech-PASS "
+                "round exists yet — locking is forbidden")
         if warnings:
             snap["warnings"] = warnings
         return snap
@@ -1060,14 +1041,15 @@ def survey_round(
 
     Internally: digests from the state graph -> VLM call (ANALYSIS_MODE
     dispatch) -> JSON extraction -> schema + solution-space validation with
-    structured error feedback and bounded retries -> verdict settled on the
-    state -> legal candidates enqueued (floors/diversity/aging overlay) ->
-    returns the queue snapshot and the next candidate to execute.
+    structured error feedback and bounded retries -> legal candidates
+    enqueued (queue ordered by pred_bic ascending) -> returns the queue
+    snapshot and the next candidate to execute. The physicality verdict is
+    NOT produced here — it settled mechanically at beam_record_fit time.
 
     Round-0 opening mode: state_label='A.0' + opening_image=<rendered
-    original> -> the VLM authors the opening skeleton candidates (no verdict
-    is settled; the top-ranked skeleton becomes the first fit via
-    apply_candidate).
+    original> -> the VLM authors the opening skeleton candidates (the array
+    order is the ranking, encoded mechanically as negative pred_bic; the
+    top-ranked skeleton becomes the first fit via apply_candidate).
     """
     try:
         from beam.survey import survey_round as _survey_round
@@ -1083,31 +1065,3 @@ def survey_round(
     except Exception as e:
         return {"status": "failure", "error": str(e)}
 
-
-def beam_enqueue_candidates(
-    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
-    response_json: Annotated[str, "JSON object following the surveyor contract: "
-                                  "{\"physicality_verdict\": {\"verdict\": \"PASS|FAIL\", "
-                                  "\"failed_checks\": [...], \"swap_hint\": \"none\"}, "
-                                  "\"candidates\": [<candidate objects, 1-4, same shapes "
-                                  "as the beam JSON contract>]} — authored by the "
-                                  "orchestrator (who read the comparison image itself) "
-                                  "in the single-agent ablation arm"],
-    state_label: Annotated[str, "Round label the response refers to (e.g. 'A.2'); "
-                                "empty = the most recently executed state"] = "",
-) -> dict[str, Any]:
-    """Single-agent ablation arm: ingest orchestrator-authored candidates (no VLM).
-
-    Validates the provided JSON with the same schema + solution-space rules
-    and enqueues through the same legality gates (floors / diversity / aging)
-    as survey_round — the two arms differ ONLY in who performs the perception
-    and candidate generation. The verdict is settled on the state with the
-    code-computed mechanical checks merged in (idempotent if already settled
-    via beam_record_fit's verdict_json).
-    """
-    try:
-        from beam.survey import orchestrator_round
-
-        return orchestrator_round(galaxy_dir, response_json, state_label=state_label)
-    except Exception as e:
-        return {"status": "failure", "error": str(e)}

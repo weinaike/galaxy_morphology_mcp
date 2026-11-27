@@ -37,7 +37,7 @@ def make_cand(prims, **kw):
         "physical_motivation": "test",
         "expected_C_prime": "{disk,bulge,bar}",
         "expected_behavior_tag": "t1",
-        "local_benefit_sigma": 0.6,
+        "pred_bic": 900.0,
         "novelty_claim": "new structure {disk,bulge,bar}",
     }
     payload.update(kw)
@@ -57,34 +57,46 @@ def _validate(cand, parent=PARENT, combo_counts=None, **kw):
 # ------------------------------------------------------------------- schema
 def test_parse_survey_response_valid():
     payload = {
-        "physicality_verdict": {"verdict": "PASS", "failed_checks": [], "swap_hint": "none"},
         "candidates": [{
             "primitives": [{"op": "tune", "tune": {"structure_name": "bulge",
                                                    "param": "n", "toggle": 1, "value": 4.0}}],
             "physical_motivation": "m", "expected_C_prime": "{disk,bulge}",
             "novelty_claim": "n free untested", "expected_behavior_tag": "bulge_n_free",
-            "local_benefit_sigma": 0.7,
+            "pred_bic": 850.0,
         }],
     }
     resp, err = parse_survey_response(payload)
     assert err == "" and resp is not None
-    assert resp.physicality_verdict.verdict == "PASS"
     assert resp.candidates[0].primitives[0].tune.param == "n"
+    assert resp.candidates[0].pred_bic == 850.0
 
 
 def test_parse_survey_response_invalid():
+    # no candidates key -> rejected; a verdict-only object no longer parses
     resp, err = parse_survey_response({"physicality_verdict": {"verdict": "MAYBE"}})
     assert resp is None and err
+
+
+def test_parse_survey_response_without_verdict():
+    """The candidates-only shell parses; no physicality_verdict field exists."""
+    payload = {"candidates": [{
+        "primitives": [{"op": "remove", "remove": "bulge"}],
+        "physical_motivation": "m", "expected_C_prime": "c",
+        "expected_behavior_tag": "t", "pred_bic": 900.0}]}
+    resp, err = parse_survey_response(payload)
+    assert resp is not None and err == ""
+    assert not hasattr(resp, "physicality_verdict")
 
 
 def test_candidate_primitive_bounds():
     with pytest.raises(ValidationError):
         Candidate(primitives=[], physical_motivation="m", expected_C_prime="c",
-                  expected_behavior_tag="t", local_benefit_sigma=0.5)
+                  expected_behavior_tag="t", pred_bic=100.0)
     with pytest.raises(ValidationError):
         make_cand([{"op": "remove", "remove": "bar"}] * 3)
-    with pytest.raises(ValidationError):
-        make_cand([{"op": "remove", "remove": "bar"}], local_benefit_sigma=1.5)
+    # pred_bic is an unbounded float (negative values are legal: the
+    # round-0 opening encoding uses i-(K-1))
+    make_cand([{"op": "remove", "remove": "bar"}], pred_bic=-1500.5)
 
 
 # ------------------------------------------------------------------ alphabet
@@ -304,18 +316,17 @@ def test_temporary_constraint_companion_exclusion():
 
 # ------------------------------------------------------------- survey level
 _GOOD_PAYLOAD = {
-    "physicality_verdict": {"verdict": "PASS", "failed_checks": [], "swap_hint": "none"},
     "candidates": [
         {"primitives": [{"op": "tune", "tune": {"structure_name": "bulge",
                                                 "param": "n", "toggle": 1, "value": 4.0}}],
          "physical_motivation": "m", "expected_C_prime": "{disk,bulge}",
          "novelty_claim": "n axis", "expected_behavior_tag": "a",
-         "local_benefit_sigma": 0.6},
+         "pred_bic": 900.0},
         {"primitives": [{"op": "tune", "tune": {"structure_name": "agn",
                                                 "param": "mag", "value": 12.5}}],
          "physical_motivation": "m", "expected_C_prime": "{disk,bulge,agn}",
          "novelty_claim": "mag axis", "expected_behavior_tag": "b",
-         "local_benefit_sigma": 0.5},
+         "pred_bic": 950.0},
     ],
 }
 
@@ -332,9 +343,3 @@ def test_validate_survey_counts_and_tags(mini_graph):
     payload["candidates"][1]["expected_behavior_tag"] = "a"
     dup_tags = SurveyResponse(**payload)
     assert any(i.code == "E_TAG_DUP" for i in validate_survey(dup_tags, graph, label).errors)
-
-    payload = copy.deepcopy(_GOOD_PAYLOAD)
-    payload["candidates"][0]["queue_reorder"] = [{"action_id": "NOPE", "new_rank": 1}]
-    reorder = SurveyResponse(**payload)
-    assert any(i.code == "E_QUEUE_REORDER"
-               for i in validate_survey(reorder, graph, label).errors)

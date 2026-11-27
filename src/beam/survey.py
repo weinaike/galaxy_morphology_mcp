@@ -1,17 +1,16 @@
 """survey_round: the single-function surveyor trigger.
 
 One call per successful fit: builds the digests from the state graph,
-dispatches the configured VLM backend (cc / acp / vlm — same dispatch as
-generate_galfit_beam_actions), extracts and validates the JSON response with
-a bounded retry loop that feeds structured error codes back to the model,
-attaches the Physicality Verdict to the state, enqueues the legal candidates
-(floors / diversity / aging overlay), and returns the queue snapshot with the
-next candidate to execute.
+dispatches the configured VLM backend (cc / acp / vlm — same dispatch),
+extracts and validates the JSON response with a bounded retry loop that
+feeds structured error codes back to the model, enqueues the legal
+candidates (queue ordered by pred_bic ascending), and returns the queue
+snapshot with the next candidate to execute. The physicality verdict is NOT
+produced here — it settled mechanically at beam_record_fit time.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from datetime import datetime
@@ -192,21 +191,12 @@ def _candidate_absence_watchdog(graph, resp, triggers: dict, label: str,
 
 
 def global_desc_for(graph) -> str:
-    """Global-state digest, or the ablation-arm marker when disabled.
-
-    Arm ``no_global_state`` (paper ablation): the cross-round digest is
-    withheld from BOTH prompt occurrences — the surveyor must rely on the
-    image, the parameter summary and the current-round supplement only.
-    """
-    if (graph.g.graph.get("meta", {}).get("ablations") or {}).get("no_global_state"):
-        return ("(disabled for this run — ablation arm no_global_state: the "
-                "cross-round state digest is withheld; judge from the image, "
-                "the parameter summary and the current-round supplement only)")
+    """Global-state digest (the cross-round state description for the prompt)."""
     return build_global_state_description(graph)
 
 
 def _dispatch(system_prompt: str, turns: list[str], image_path: str):
-    """Mirror of generate_galfit_beam_actions' ANALYSIS_MODE dispatch."""
+    """ANALYSIS_MODE dispatch (cc / acp / vlm) for the surveyor call."""
     analysis_mode = os.environ.get("ANALYSIS_MODE", "vlm").lower()
     session_id = ""
     analysis: str | None = None
@@ -225,8 +215,7 @@ def _dispatch(system_prompt: str, turns: list[str], image_path: str):
 
         mega = (
             "You are the surveyor of the mechanised GALFIT beam search. Given the "
-            "fitting results, produce the physicality verdict and 1-4 candidate "
-            "actions as one JSON object.\n\n"
+            "fitting results, produce 1-4 candidate actions as one JSON object.\n\n"
             "During this process you may only use the read_file and write_file tools.\n\n"
             f"[Input image file]: {os.path.abspath(image_path)}\n"
             "(2x3 layout: DATA LOW/HIGH DR | MODEL // RESIDUAL | RESIDUAL ZOOM | 1D SB profile)\n\n"
@@ -270,12 +259,6 @@ def survey_round(
         graph = BeamGraph.load(galaxy_dir)
     except Exception as e:
         return {"status": "failure", "error": f"cannot load beam graph: {e}"}
-
-    if (graph.g.graph.get("meta", {}).get("ablations") or {}).get("single_agent"):
-        return {"status": "failure",
-                "error": "E_ARM: this run is in the single_agent ablation arm — the "
-                         "VLM surveyor is disabled; author the survey response "
-                         "yourself and register it with beam_enqueue_candidates"}
 
     label = state_label or graph.latest_state()
     if not label or label not in graph.g.nodes:
@@ -432,20 +415,19 @@ def survey_round(
                 depth=int(state.get("depth", 1)),
                 queue_digest=queue_digest,
                 directives=directives or ("(round-0 opening — skeleton primitives "
-                                          "only; return physicality_verdict PASS "
-                                          "as a placeholder)" if is_opening
+                                          "only; your array order is the ranking, "
+                                          "the code assigns pred_bic "
+                                          "mechanically from it)" if is_opening
                                           else "(none)"),
             )
             if is_opening:
                 # PREPEND the opening preamble and keep the full standard
-                # turn2 (the JSON contract with the physicality_verdict
-                # wrapper + per-candidate required fields) — mirroring the
-                # galfit composition. A wholesale replacement drops the
-                # contract and the VLM returns bare primitives (real-data
-                # KILOGAS_25: "candidates.0.primitives: Field required").
-                turn2 = (MB_OPENING_TURN2 +
-                         "\n\nReturn physicality_verdict PASS (placeholder — "
-                         "nothing is fitted yet).\n\n" + turn2)
+                # turn2 (the JSON contract with the candidates-only wrapper +
+                # per-candidate required fields) — mirroring the galfit
+                # composition. A wholesale replacement drops the contract and
+                # the VLM returns bare primitives (real-data KILOGAS_25:
+                # "candidates.0.primitives: Field required").
+                turn2 = MB_OPENING_TURN2 + "\n\n" + turn2
         else:
             from tools.beam_actions_galfit import (
                 _build_summary_content_galfit, _galfit_system_message)
@@ -471,8 +453,9 @@ def survey_round(
                 depth=int(state.get("depth", 1)),
                 queue_digest=queue_digest,
                 directives=directives or ("(round-0 opening — skeleton primitives only; "
-                                          "return physicality_verdict PASS as a "
-                                          "placeholder)" if is_opening else "(none)"),
+                                          "your array order is the ranking, the "
+                                          "code assigns pred_bic mechanically "
+                                          "from it)" if is_opening else "(none)"),
             )
         if is_opening and not is_mb:
             turn2 = (
@@ -534,11 +517,13 @@ def survey_round(
                 "does NOT count — that is exactly what a concentrated single "
                 "S\u00e9rsic (n \u2248 2-4) looks like; there singlesersic ranks "
                 "FIRST (the elliptical/concentrated-single hypothesis is the best "
-                "prior) and the multi-component skeletons become the low-\u03c3 "
-                "alternates.\n"
-                "Rank by your posterior sigma (fresh skeleton ~0.5; converging visual "
-                "evidence up to ~0.7; never above 0.9). Return "
-                "physicality_verdict PASS (placeholder — nothing is fitted yet).\n\n"
+                "prior) and the multi-component skeletons become the low-"
+                "confidence alternates.\n"
+                "Order the candidates array by confidence (most promising FIRST) — "
+                "the code assigns pred_bic mechanically from your array order "
+                "(i-(K-1)) and the queue runs ascending, so your top candidate "
+                "executes first; the pred_bic values you declare are ignored in "
+                "this round.\n\n"
                 + turn2)
     except Exception as e:
         return {"status": "failure", "error": f"prompt assembly failed: {e}"}
@@ -566,7 +551,6 @@ def survey_round(
     # ---- bounded VLM + validation loop
     feedback = ""
     resp = None
-    last_parsed = None   # last schema-valid parse — the verdict-salvage source
     session_id = ""
     raw_analysis = ""
     attempts_issues: list[dict] = []
@@ -593,14 +577,13 @@ def survey_round(
         payload, perr = extract_survey_json(raw_analysis)
         if payload is None:
             attempts_issues.append({"code": "E_SCHEMA", "message": perr})
-            feedback = f"E_SCHEMA: {perr}. Return ONE fenced ```json object with the physicality_verdict and candidates keys, nothing else."
+            feedback = f"E_SCHEMA: {perr}. Return ONE fenced ```json object with the candidates key, nothing else."
             continue
         resp, verr = _schema_pair(graph.mode)[0](payload)
         if resp is None:
             attempts_issues.append({"code": "E_SCHEMA", "message": verr})
             feedback = f"E_SCHEMA: {verr}. Fix the field types/shapes per the contract."
             continue
-        last_parsed = resp
         # AGN-admission evidence (KILOGAS_76 fix, 2026-11-20): the gate needs
         # the machine-verified central-spike reading for THIS attempt's own
         # Phase-1 assessment (+ the bulge-n-at-cap numeric half) — thread it
@@ -618,10 +601,8 @@ def survey_round(
         attempts_issues.extend({"code": i.code, "message": i.message} for i in report.errors)
         feedback = report.error_feedback()
     if resp is None:
-        # 2026-10-17: the verdict-salvage machinery is retired — the
-        # mech-only verdict settles at record_fit time, so a survey retry
-        # exhaustion can no longer leave a round verdict-pending (the
-        # KILOGAS_386 failure mode is structurally gone). Candidates stay
+        # the mech-only verdict settles at record_fit time, so a survey retry
+        # exhaustion can never leave a round verdict-pending. Candidates stay
         # discarded (unchanged behaviour).
         graph.log_decision({"kind": "survey-validation-exhausted", "state": label,
                             "session": session_id, "issues": attempts_issues})
@@ -630,19 +611,8 @@ def survey_round(
                 "issues": attempts_issues, "session_id": session_id,
                 "partial_analysis": raw_analysis}
 
-    # ---- settle the verdict on the state (mechanical checks merged in code)
-    vlm_verdict = resp.physicality_verdict.model_dump()
-    if is_opening:
-        # round-0: nothing is fitted — the verdict is a placeholder and is NOT
-        # settled onto the unfitted root A.0 (the physicality gate engages from
-        # the first fitted state on, via its own survey_round)
-        verdict = vlm_verdict
-    else:
-        graph.apply_verdict(label, vlm_verdict)
-        state = graph.state(label)
-        verdict = state.get("verdict") or vlm_verdict  # merged verdict (may mech-veto)
-
-    # ---- archive the raw exchange for audit
+    # ---- archive the raw exchange for audit (no verdict sections — the
+    # mech verdict lives in the graph, rendered from the mech table below)
     out_base = os.path.splitext(os.path.basename(comparison))[0]
     md_path = os.path.join(os.path.dirname(os.path.abspath(comparison)),
                            f"{out_base}_{'opening_' if is_opening else 'survey_'}"
@@ -650,11 +620,7 @@ def survey_round(
     try:
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(f"# survey_round {label} (session {session_id})\n\n"
-                    f"## Verdict (merged: surveyor + mechanical checks)\n"
-                    f"{json.dumps(verdict, indent=1, default=str)}\n\n"
-                    f"## Surveyor verdict (as returned by the VLM)\n"
-                    f"{json.dumps(vlm_verdict, indent=1, default=str)}\n\n"
-                    f"## Mechanical check table (code-computed)\n"
+                    f"## Mechanical check table (code-computed; settles the mech verdict)\n"
                     + "".join(f"- [{m.get('severity')}] {m.get('check')}: {m.get('detail')}\n"
                               for m in (state.get("mech_checks") or []))
                     + f"\n## Raw VLM output\n\n{raw_analysis}\n")
@@ -676,10 +642,9 @@ def survey_round(
     if not is_opening:
         triggers["central_spike_agn"] = _central_spike_agn_trigger(state, raw_analysis)
 
-    # ---- enqueue legal candidates (floors/diversity/aging overlay)
+    # ---- enqueue legal candidates (queue ordered by pred_bic ascending)
     result_ingest = ingest(graph, resp.candidates, session_id=session_id,
                            parent_label=label,
-                           verdict_fail=(verdict.get("verdict") == "FAIL" and not is_opening),
                            numeric_triggers=triggers)
     absence_notes = [] if is_opening else _candidate_absence_watchdog(
         graph, resp, triggers, label, session_id)
@@ -693,15 +658,13 @@ def survey_round(
     return {
         "status": "success",
         "state": label,
-        "verdict": verdict,
         "enqueued": result_ingest.enqueued,
         "discarded": result_ingest.discarded,
-        "protected_directions": result_ingest.protected,
         "numeric_triggers": triggers,
         "absence_notices": absence_notes,
         "queue": [
             {"action_id": aid, **{k: graph.pending_record(aid).get(k)
-                                  for k in ("parent", "sigma", "score",
+                                  for k in ("parent", "pred_bic",
                                             "expected_behavior_tag", "code_flags")}}
             for aid in graph.pending_queue()
         ],
@@ -713,111 +676,3 @@ def survey_round(
         "request_dump": _req_path,
     }
 
-
-def orchestrator_round(galaxy_dir: str, response_json: str,
-                       state_label: str = "") -> dict[str, Any]:
-    """Single-agent ablation arm: validate + ingest an orchestrator-authored
-    SurveyResponse (``{"physicality_verdict": {...}, "candidates": [...]}``,
-    the same JSON contract the surveyor returns) with NO VLM call.
-
-    Everything else is identical to survey_round: the mechanical checks still
-    merge into the verdict, the same legality gates (schema + solution-space
-    rules, floors / diversity / aging) apply, and an audit artefact is
-    archived next to the comparison image — so the two arms differ ONLY in
-    who performs the perception + candidate generation. Validation is
-    single-shot: errors are returned for the orchestrator to fix and re-call.
-    """
-    try:
-        from beam.graph import BeamGraph
-
-        graph = BeamGraph.load(galaxy_dir)
-    except Exception as e:
-        return {"status": "failure", "error": f"cannot load beam graph: {e}"}
-
-    label = state_label or graph.latest_state()
-    if not label or label not in graph.g.nodes:
-        return {"status": "failure", "error": f"state '{label}' not found in the graph"}
-    state = graph.state(label)
-
-    try:
-        payload = json.loads(response_json)
-    except json.JSONDecodeError as e:
-        return {"status": "failure", "error": f"E_SCHEMA: response_json is not valid JSON: {e}"}
-    resp, verr = _schema_pair(graph.mode)[0](payload)
-    if resp is None:
-        return {"status": "failure", "error": f"E_SCHEMA: {verr}"}
-    # AGN-admission evidence (KILOGAS_76 fix): no Phase-1 raw text exists in
-    # this arm — the numeric bulge-n-at-cap half still applies; a declared
-    # central spike in physical_motivation rides the gate's WARN branch
-    _agn_kw = {}
-    if _schema_pair(graph.mode)[1] is validate_survey:
-        _agn_kw["central_spike_evidence"] = _bulge_n_at_cap(state)
-    report = _schema_pair(graph.mode)[1](resp, graph, label, **_agn_kw)
-    if not report.ok:
-        return {"status": "failure", "error": "validation failed (fix the flagged "
-                                              "fields and re-call)",
-                "issues": [{"code": i.code, "message": i.message} for i in report.errors]}
-
-    # verdict + mechanical merge (idempotent if beam_record_fit already set it)
-    vlm_verdict = resp.physicality_verdict.model_dump()
-    graph.apply_verdict(label, vlm_verdict)
-    state = graph.state(label)
-    verdict = state.get("verdict") or vlm_verdict
-
-    # numeric triggers stay code-computed so floors apply identically in both arms
-    _local_desc, triggers = build_local_state_description(graph, label, {})
-
-    session_id = f"orchestrator-{uuid.uuid4().hex[:8]}"
-    comparison = state.get("artifacts", {}).get("comparison_png") or ""
-    md_path = ""
-    if comparison and os.path.exists(comparison):
-        out_base = os.path.splitext(os.path.basename(comparison))[0]
-        md_path = os.path.join(os.path.dirname(os.path.abspath(comparison)),
-                               f"{out_base}_orchestrator_{label}_{uuid.uuid4().hex[:8]}.md")
-        try:
-            with open(md_path, "w", encoding="utf-8") as f:
-                f.write(f"# orchestrator_round {label} (single-agent arm, no VLM)\n\n"
-                        f"## Verdict (merged: orchestrator + mechanical checks)\n"
-                        f"{json.dumps(verdict, indent=1, default=str)}\n\n"
-                        f"## Orchestrator-provided response\n"
-                        f"{json.dumps(payload, indent=1, default=str)}\n\n"
-                        f"## Mechanical check table (code-computed)\n"
-                        + "".join(f"- [{m.get('severity')}] {m.get('check')}: "
-                                  f"{m.get('detail')}\n"
-                                  for m in (state.get("mech_checks") or [])))
-        except OSError:
-            md_path = ""
-
-    result_ingest = ingest(graph, resp.candidates, session_id=session_id,
-                           parent_label=label,
-                           verdict_fail=(verdict.get("verdict") == "FAIL"),
-                           numeric_triggers=triggers)
-    absence_notes = _candidate_absence_watchdog(graph, resp, triggers, label,
-                                                session_id)
-    graph.age_pending()
-    graph.log_decision({"kind": "orchestrator-round", "state": label, "session": session_id,
-                        "enqueued": [e["action_id"] for e in result_ingest.enqueued],
-                        "discarded": result_ingest.discarded})
-    graph.commit()
-
-    return {
-        "status": "success",
-        "state": label,
-        "verdict": verdict,
-        "enqueued": result_ingest.enqueued,
-        "discarded": result_ingest.discarded,
-        "protected_directions": result_ingest.protected,
-        "numeric_triggers": triggers,
-        "absence_notices": absence_notes,
-        "queue": [
-            {"action_id": aid, **{k: graph.pending_record(aid).get(k)
-                                  for k in ("parent", "sigma", "score",
-                                            "expected_behavior_tag", "code_flags")}}
-            for aid in graph.pending_queue()
-        ],
-        "next_candidate": graph.next_action(),
-        "best_state": graph.g.graph.get("best_state"),
-        "termination": graph.termination_check(),
-        "session_id": session_id,
-        "candidates_file": md_path,
-    }

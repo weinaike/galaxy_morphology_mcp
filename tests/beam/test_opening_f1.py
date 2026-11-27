@@ -11,10 +11,8 @@ from beam.graph import BeamGraph
 # ------------------------------------------------------------- F1 reserved
 def test_f1_reserved_once_outside_budget(mini_graph):
     graph, label = mini_graph
-    # settle A.1's verdict so the state becomes best (verdict-gated update)
-    graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": [],
-                                "swap_hint": "none"})
-    assert graph.g.graph.get("best_state") == label  # first fit is best
+    # the mech verdict settled at record time -> first fit is already best
+    assert graph.g.graph.get("best_state") == label
     aid, err = graph.add_f1_reserved(0.08, 246.0)
     assert aid and not err, err
     rec = graph.g.graph["pending"][aid]
@@ -22,7 +20,9 @@ def test_f1_reserved_once_outside_budget(mini_graph):
     assert rec["code_flags"]["f1_reserved"] is True
     assert rec["primitives"][0]["op"] == "remove"      # remove+add rebuild w/ F1
     assert rec["primitives"][1]["f1"]["amplitude"] == 0.08
-    assert graph.next_action() == aid                  # pinned to the head
+    # pred_bic == 0.0 lands the reserved round at the queue head
+    assert rec["pred_bic"] == 0.0
+    assert graph.next_action() == aid
 
     # record the F1 round: counted in n_f1_reserved, NOT n_executed
     n0 = graph.counters().get("n_executed", 0)
@@ -66,14 +66,14 @@ def test_opening_alternates_enqueued_after_first_fit(tmp_path, test_data_dir):
     feedme = gdir / "_iter1.feedme"
     shutil.copy(test_data_dir / "NGC1097_sersic.feedme", feedme)
     openings = {"candidates": [
-        {"inventory": ["disk", "bulge", "bar"], "sigma": 0.5,
+        {"inventory": ["disk", "bulge", "bar"], "pred_bic": 100.0,
          "rationale": "strong bar visual"},                       # rank 1 = root
         # the fixture root also carries an AGN, so the projected alternate is
         # {disk, bulge, agn} — the declared inventory must match the projection
-        {"inventory": ["disk", "bulge", "agn"], "sigma": 0.4,
+        {"inventory": ["disk", "bulge", "agn"], "pred_bic": 110.0,
          "rationale": "bar-less fallback",
          "primitives": [{"op": "remove", "target": "bar"}]},
-        {"inventory": ["disk", "bulge", "bar", "lens"], "sigma": 0.3,
+        {"inventory": ["disk", "bulge", "bar", "lens"], "pred_bic": 120.0,
          "rationale": "declared mismatch",                        # invalid: prim mismatch
          "primitives": [{"op": "remove", "target": "bar"}]},
     ]}
@@ -103,7 +103,7 @@ def test_opening_alternates_enqueued_after_first_fit(tmp_path, test_data_dir):
 
 
 # ---------------------------------------------- VLM-authored opening round
-def _skel(components, tag, sigma):
+def _skel(components, tag, pred_bic):
     return {
         "primitives": [{"op": "skeleton", "skeleton": {"components": components}}],
         "physical_motivation": "opening morphology judgement",
@@ -111,7 +111,7 @@ def _skel(components, tag, sigma):
                                                   for c in components)) + "}",
         "novelty_claim": "untried opening skeleton",
         "expected_behavior_tag": tag,
-        "local_benefit_sigma": sigma,
+        "pred_bic": pred_bic,
     }
 
 
@@ -127,10 +127,9 @@ _D3 = [
 _D2 = [c for c in _D3 if c["structure_name"] in ("disk", "bulge")]
 
 OPENING_MD = """```json
-{"physicality_verdict": {"verdict": "PASS", "failed_checks": [], "swap_hint": "none"},
- "candidates": [
-  """ + json.dumps(_skel(_D3, "skel_barred", 0.65)) + """,
-  """ + json.dumps(_skel(_D2, "skel_bd", 0.5)) + """
+{ "candidates": [
+  """ + json.dumps(_skel(_D3, "skel_barred", 99.0)) + """,
+  """ + json.dumps(_skel(_D2, "skel_bd", 999.0)) + """
  ]}
 ```"""
 
@@ -165,9 +164,11 @@ def test_opening_round_vlm_authored_end_to_end(tmp_path, test_data_dir, monkeypa
 
     g = BeamGraph.load(str(gdir))
     assert (g.state("A.0").get("verdict") or {}).get("verdict") is None
-    # both skeletons are parented A.0 and the 3-component one leads (sigma)
+    # both skeletons are parented A.0; the declared pred_bic values are
+    # IGNORED and replaced by the array-order encoding i-(K-1) (K=2 -> -1, 0)
     q = rr["queue"]
     assert all(e["parent"] == "A.0" for e in q)
+    assert [e["pred_bic"] for e in q] == [-1.0, 0.0]
     assert rr["next_candidate"] == q[0]["action_id"]
     skel = g.opening_skeletons()
     assert skel and skel[0]["inventory"] == ["bar", "bulge", "disk"]

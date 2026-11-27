@@ -44,7 +44,7 @@ def _backend_for(mode: str):
         raise ValueError(f"unknown beam mode {mode!r} (valid: {sorted(_BACKENDS)})")
     return importlib.import_module(mod)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 GRAPH_SUBDIR = "beam_state"
 GRAPH_FILE = "graph.json"
 
@@ -69,7 +69,6 @@ STAGNATION_MAX = 3  # 2026-10-10: 2 -> 3 (user call: at 2 the stop fired before 
 # bins (PA 4x45deg, Re factor-2, q/n bands) instead of arbitrary counts.
 # The 2026-10-14 per-combo 2 -> 3 change is hereby superseded.
 CLASS_CAPS = {"a": 2, "b": 4, "c": 5}
-G_MIN = 0.3
 REFUTE_DBIC = 10.0
 # verifier-FAIL repair budget: bounded grant, cumulative cap (fits)
 REPAIR_BUDGET_CAP = 4
@@ -116,7 +115,6 @@ class BeamGraph:
              temporary_constraints: list[dict] | None = None,
              beam_width: int | None = None, n_max: int | None = None,
              stagnation_max: int | None = None,
-             ablations: dict | None = None,
              mode: str = "galfit") -> "BeamGraph":
         backend = _backend_for(mode)
         g = nx.DiGraph()
@@ -132,13 +130,7 @@ class BeamGraph:
             "N_max": int(n_max) if n_max else N_MAX,
             "stagnation_max": int(stagnation_max) if stagnation_max else STAGNATION_MAX,
             "class_caps": dict(CLASS_CAPS),
-            "g_min": G_MIN,
         }
-        # Ablation arm (paper): persisted in the graph so every later call
-        # (survey_round / record_fit / enqueue) reads the SAME arm — no drift,
-        # and the artefact itself documents which variant produced it.
-        if ablations:
-            g.graph["meta"]["ablations"] = {k: bool(v) for k, v in dict(ablations).items()}
         g.graph["stage1"] = stage1 or {}
         g.graph["temporary_constraints"] = temporary_constraints or []
         g.graph["queue"] = []            # ordered action_ids (pending)
@@ -293,8 +285,8 @@ class BeamGraph:
                     parent_label: str) -> str:
         """Register a validated candidate as a pending action. Returns action_id.
 
-        ``candidate`` keys: sigma, expected_behavior_tag, expected_C_prime,
-        novelty_claim, primitives, code_flags (optional), surveyor_rank.
+        ``candidate`` keys: pred_bic, expected_behavior_tag, expected_C_prime,
+        novelty_claim, primitives, code_flags (optional).
         """
         pending = self.g.graph.setdefault("pending", {})
         action_id = candidate.get("action_id") or f"{parent_label}-c{len(pending) + 1}"
@@ -308,10 +300,8 @@ class BeamGraph:
             "primitives": candidate.get("primitives", []),
             "source_session": source_session,
             "source_round": parent_label,
-            "sigma": float(candidate.get("sigma", 0.0) or 0.0),
-            "surveyor_rank": candidate.get("surveyor_rank"),
+            "pred_bic": float(candidate.get("pred_bic", 0.0) or 0.0),
             "code_flags": candidate.get("code_flags", {}),
-            "score": candidate.get("score"),
             "status": "pending",
             "discard_reason": None,
             "expected_C_prime": candidate.get("expected_C_prime", ""),
@@ -394,14 +384,13 @@ class BeamGraph:
         primitives = [{"op": "remove", "target": name},
                       {"op": "add", **add_params}]
         aid = self.add_pending({
-            "action_id": action_id, "sigma": 0.5,
+            "action_id": action_id, "pred_bic": 0.0,
             "expected_behavior_tag": "f1_arbitration",
             "expected_C_prime": f"{best}+F1", "novelty_claim":
                 "Stage-3 reserved F1 arbitration on the current best state",
             "primitives": primitives,
-            "code_flags": {"f1_reserved": True}, "score": 0.95,
+            "code_flags": {"f1_reserved": True},
         }, source_session="f1-arbitration", parent_label=best)
-        self.g.graph["pending"][aid]["surveyor_rank_pin"] = 1
         self.log_decision({"kind": "f1-reserved-enqueue", "action_id": aid,
                            "parent": best, "amplitude": float(amplitude),
                            "phase_deg": float(phase_deg)})
@@ -480,15 +469,14 @@ class BeamGraph:
         primitives = [{"op": "remove", "target": "disk"},
                       {"op": "add", **add_params}]
         aid = self.add_pending({
-            "action_id": action_id, "sigma": 0.5,
+            "action_id": action_id, "pred_bic": 0.0,
             "expected_behavior_tag": "f1_arbitration",
             "expected_C_prime": f"{best}+sersic_f", "novelty_claim":
                 "Stage-3 reserved F1 arbitration (disk -> sersic_f, m=1) on "
                 "the current best state",
             "primitives": primitives,
-            "code_flags": {"f1_reserved": True}, "score": 0.95,
+            "code_flags": {"f1_reserved": True},
         }, source_session="f1-arbitration", parent_label=best)
-        self.g.graph["pending"][aid]["surveyor_rank_pin"] = 1
         self.log_decision({"kind": "f1-reserved-enqueue", "action_id": aid,
                            "parent": best, "amplitude": float(amplitude),
                            "phase_deg": float(phase_deg),
@@ -501,7 +489,7 @@ class BeamGraph:
         """The round-0 opening skeleton candidates (VLM-authored), in queue
         order: pending records whose primitives carry a ``skeleton`` op
         (parented the unfitted root A.0). Returns
-        [{action_id, inventory, sigma, rationale, status}]."""
+        [{action_id, inventory, pred_bic, rationale, status}]."""
         out: list[dict] = []
         for aid in self.pending_queue():
             rec = self.g.graph.get("pending", {}).get(aid)
@@ -517,7 +505,7 @@ class BeamGraph:
                 "action_id": aid,
                 "inventory": sorted((c.get("structure_name") or "?").lower()
                                     for c in comps),
-                "sigma": rec.get("sigma"),
+                "pred_bic": rec.get("pred_bic"),
                 "rationale": rec.get("expected_behavior_tag", ""),
                 "status": rec.get("status"),
             })
@@ -532,7 +520,7 @@ class BeamGraph:
                     "action_id": aid,
                     "inventory": sorted((c.get("structure_name") or "?").lower()
                                         for c in comps),
-                    "sigma": rec.get("sigma"),
+                    "pred_bic": rec.get("pred_bic"),
                     "rationale": rec.get("expected_behavior_tag", ""),
                     "status": rec.get("status"),
                 })
@@ -560,6 +548,11 @@ class BeamGraph:
         cands = openings.get("candidates")
         if not isinstance(cands, list):
             cands = []
+        # the list order is the VLM's ranking: encode it mechanically as
+        # i-(K-1) (rank 1 of K=3 -> -2, rank 2 -> -1, ...) — the same
+        # normalisation enqueue.ingest applies to round-0 skeleton batches.
+        # Rank 1 was fitted as the first fit and is not enqueued here.
+        K = len(cands)
         for i, cand in list(enumerate(cands))[1:]:
             prims = cand.get("primitives") or []
             declared = {(n or "").lower() for n in (cand.get("inventory") or [])}
@@ -584,7 +577,7 @@ class BeamGraph:
                 continue
             aid = self.add_pending({
                 "action_id": cand.get("action_id") or f"open-alt-{i}",
-                "sigma": float(cand.get("sigma", 0.4) or 0.4),
+                "pred_bic": float(i - (K - 1)) if K > 0 else 0.0,
                 "expected_behavior_tag": cand.get("rationale",
                                                   f"opening alternate #{i}")[:80],
                 "expected_C_prime": "+".join(sorted(hypo_names)),
@@ -592,7 +585,6 @@ class BeamGraph:
                                  "(untried, proposed at Stage 1)",
                 "primitives": prims,
                 "code_flags": {"opening_alternate": True},
-                "score": float(cand.get("sigma", 0.4) or 0.4),
             }, source_session="opening", parent_label=first_state)
             result.append({"action_id": aid, "rank": i,
                            "inventory": sorted(hypo_names)})
@@ -605,13 +597,16 @@ class BeamGraph:
 
     # ---------------------------------------------------------- record fit
     def record_fit(self, run_result: dict, action_id: str = "",
-                   verdict: dict | None = None,
                    parent_label: str | None = None) -> str:
         """Register a successful fit as a new state node; update counters/best.
 
         ``run_result`` is the run_galfit success dict (input_param_file,
         output_param_file, image_file, summary_file, round_status_file,
         fit_statistics). ``action_id`` empty = the deterministic first fit.
+
+        The physicality verdict is settled HERE, mechanically, from the
+        code-computed mech table (``_settle_mech_verdict``): any hard entry
+        vetoes PASS. No VLM verdict path exists.
 
         A pending record carrying ``code_flags.f1_reserved`` (the Stage-3
         F1 arbitration round on the best state) is counted in the separate
@@ -699,7 +694,7 @@ class BeamGraph:
             "inventory": fitted_inv or input_inv,
             "input_inventory": input_inv,
             "metrics": metrics,
-            "verdict": None,  # settled by apply_verdict (idempotence guard keys on it)
+            "verdict": None,  # settled by _settle_mech_verdict (idempotence guard keys on it)
             "zombies": zombies,
             "depth": int(parent.get("depth", 0)) + 1,
             "archive_dir": archive_dir,
@@ -712,8 +707,7 @@ class BeamGraph:
         })
         self.g.add_edge(parent_label, label, action_id=action_id or f"{parent_label}-firstfit")
 
-        # deterministic numeric checks (physicality defect A: the numeric half
-        # of the verdict is mechanical; the VLM keeps the visual half)
+        # deterministic numeric checks (the whole verdict is mechanical)
         try:
             from beam.physicality import compute_mech_checks
 
@@ -735,7 +729,7 @@ class BeamGraph:
         # ledger; then queued candidates whose projected cells EQUAL y's
         # attractor cells are purged (same-basin re-entries — they would
         # re-converge to y's attractor and burn a fit). Protected entries
-        # (code_flags / surveyor_rank_pin) are never preempted; the reserved
+        # (code_flags) are never preempted; the reserved
         # F1 round is exempt from registration entirely.
         if not f1_reserved:
             try:
@@ -795,65 +789,61 @@ class BeamGraph:
             self.g.graph["meta"]["f1"] = {"used": True, "state": label,
                                           "parent": parent_label, "at": _now()}
 
-        if verdict is not None:
-            self.apply_verdict(label, verdict, parent_label=parent_label)
-        elif any(c.get("severity") == "hard" for c in mech):
-            # 2026-10-17 VLM-verdict retirement: the verdict is MECH-ONLY and
-            # settles HERE (record time), no longer waiting for survey_round
-            # (138-galaxy replay: 99.6% of VWE verdicts echoed the mech table
-            # verbatim; the 4 divergences were superseded-round FAILs, zero
-            # outcome change). Mech-hard entry vetoes PASS; swap_hint derives
-            # from the mech re_chain entry ({disk,bulge} exact inversion —
-            # the two free Sersics swapped; the hint's required repair is a
-            # RECLASSIFY bijection, never a bare label swap).
-            _names = {(c.get("name") or "").lower()
-                      for c in (fitted_inv or input_inv or [])}
-            _re_chain = any(c.get("check") == "re_chain"
-                           and "bulge" in str(c.get("detail", ""))
-                           and "disk" in str(c.get("detail", ""))
-                           and "bar" not in str(c.get("detail", ""))
-                           and "lens" not in str(c.get("detail", ""))
-                           for c in mech)
-            _hint = "disk_bulge_swap" if (_re_chain
-                                         and _names >= {"disk", "bulge"}
-                                         and not (_names & {"bar", "lens"})) else "none"
-            self.apply_verdict(label, {"verdict": "FAIL", "failed_checks": [],
-                                       "swap_hint": _hint},
-                               parent_label=parent_label)
-        else:
-            self.apply_verdict(label, {"verdict": "PASS", "failed_checks": [],
-                                       "swap_hint": "none"},
-                               parent_label=parent_label)
+        # ---- the verdict is MECH-ONLY and settles HERE (record time).
+        # Any hard mech entry vetoes PASS; swap_hint derives from the mech
+        # re_chain entry ({disk,bulge} exact inversion — the two free
+        # Sersics swapped; the hint's required repair is a RECLASSIFY
+        # bijection, never a bare label swap).
+        self._settle_mech_verdict(label, mech,
+                                  fitted_inv or input_inv or [],
+                                  parent_label=parent_label)
         self.commit()
         return label
 
-    def apply_verdict(self, label: str, verdict: dict,
-                      parent_label: str | None = None) -> None:
-        """Attach the surveyor's Physicality Verdict to a fitted state and
-        settle best/refutation bookkeeping (verdict-gated).
+    def _settle_mech_verdict(self, label: str, mech: list[dict],
+                             inventory: list[dict],
+                             parent_label: str | None = None) -> None:
+        """Construct the state's verdict from the mech table alone and settle
+        best/refutation bookkeeping (verdict-gated). Idempotent per state.
 
-        Called by survey_round after parsing the verdict (the natural order is
-        fit -> beam_record_fit -> survey_round); beam_record_fit may also pass
-        the verdict directly. Stagnation settles exactly once per state.
-
-        The mechanical check table (computed at record_fit time) is merged
-        here: any hard entry vetoes PASS (``mech_veto``), mechanical entries
-        are appended to ``failed_checks`` prefixed ``[mech-hard]/[mech-note]``,
-        and the surveyor's original verdict is preserved in ``verdict_vlm``.
+        FAIL when any mech entry has severity 'hard' (``mech_veto``);
+        ``failed_checks`` carries the mech entries prefixed
+        ``[mech-hard]/[mech-note]``. There is no VLM verdict and no
+        ``verdict_vlm`` attribute.
         """
         state = self.state(label)
         if (state.get("verdict") or {}).get("verdict") in {"PASS", "FAIL"}:
             return  # already settled — idempotent
-        from beam.physicality import merge_verdict
-
-        original = dict(verdict)
-        verdict, vetoed = merge_verdict(state.get("mech_checks") or [], verdict)
-        if vetoed:
-            self.g.nodes[label]["verdict_vlm"] = original
+        hard = [m for m in (mech or []) if m.get("severity") == "hard"]
+        notes = [m for m in (mech or []) if m.get("severity") != "hard"]
+        if hard:
+            _names = {(c.get("name") or "").lower() for c in (inventory or [])}
+            _re_chain = any(c.get("check") == "re_chain"
+                            and "bulge" in str(c.get("detail", ""))
+                            and "disk" in str(c.get("detail", ""))
+                            and "bar" not in str(c.get("detail", ""))
+                            and "lens" not in str(c.get("detail", ""))
+                            for c in mech)
+            hint = "disk_bulge_swap" if (_re_chain
+                                         and _names >= {"disk", "bulge"}
+                                         and not (_names & {"bar", "lens"})) else "none"
+            verdict = {
+                "verdict": "FAIL",
+                "mech_veto": True,
+                "failed_checks": [f"[mech-hard] {m['detail']}" for m in hard]
+                                 + [f"[mech-note] {m['detail']}" for m in notes],
+                "swap_hint": hint,
+            }
+        else:
+            verdict = {
+                "verdict": "PASS",
+                "failed_checks": [f"[mech-note] {m['detail']}" for m in notes],
+                "swap_hint": "none",
+            }
         self.g.nodes[label]["verdict"] = verdict
         self._update_best_and_refutations(label,
-                                           parent_label or state.get("parent"),
-                                           verdict)
+                                          parent_label or state.get("parent"),
+                                          verdict)
         self.commit()
 
     def _update_best_and_refutations(self, label: str, parent_label: str,
@@ -861,11 +851,6 @@ class BeamGraph:
         state = self.state(label)
         metrics = state.get("metrics", {})
         verdict_pass = not (verdict and verdict.get("verdict") == "FAIL")
-        # ablation arm no_verdict_gate: metric-only best selection — FAIL
-        # rounds may take s* (verdicts are still recorded, so post-hoc
-        # analysis can identify unphysical selections)
-        if (self.g.graph.get("meta", {}).get("ablations") or {}).get("no_verdict_gate"):
-            verdict_pass = True
 
         # mechanical best update: verdict-gated, BIC-first (the sub-converged
         # gate was RETIRED 2026-10-21 together with the flag itself — every
@@ -887,7 +872,7 @@ class BeamGraph:
         else:
             self.counters()["stagnation"] = int(self.counters().get("stagnation", 0)) + 1
 
-        # refuted-hypothesis gating: FAIL-verdict rounds ground a physicality
+        # refuted-hypothesis gating: mech-FAIL rounds ground a physicality
         # refutation; BIC-worse PASS rounds ground a bic refutation
         if verdict and verdict.get("verdict") == "FAIL":
             self.g.graph.setdefault("refuted_hypotheses", []).append({
@@ -895,7 +880,7 @@ class BeamGraph:
                 "action": state.get("action_in"),
                 "tag": (self.g.graph["pending"].get(state.get("action_in"), {})
                         or {}).get("expected_behavior_tag", ""),
-                "evidence": f"physicality FAIL: {verdict.get('failed_checks')}",
+                "evidence": f"mech FAIL: {verdict.get('failed_checks')}",
                 "reason": "physicality_fail",
                 "reopening": "a repair candidate restoring the onion structure",
             })
@@ -1044,11 +1029,10 @@ class BeamGraph:
         Stale eviction (KILOGAS_73 austerity rerun: A.1-c4 sat age=8 at the
         queue head while add_agn_core from a superseded parent survived 3
         rounds and burned fit 7): a pending candidate that is >3 rounds old,
-        carries NO code_flags/pin (floors, opening skeletons and the reserved
+        carries NO code_flags (floors, opening skeletons and the reserved
         F1 are exempt) and whose parent lies OFF the current best path is
         discarded — at a 7-fit budget queue slots are too scarce for zombie
-        directions. (The aging BONUS stays on-path only; off-path entries no
-        longer accumulate value with age.)
+        directions.
         """
         for rec in self.g.graph.get("pending", {}).values():
             if rec.get("status") == "pending":
@@ -1058,7 +1042,7 @@ class BeamGraph:
             rec = self.g.graph.get("pending", {}).get(aid)
             if not rec or rec.get("status") != "pending":
                 continue
-            if rec.get("code_flags") or rec.get("surveyor_rank_pin"):
+            if rec.get("code_flags"):
                 continue
             if rec.get("parent") in on_path:
                 continue
@@ -1406,12 +1390,13 @@ class BeamGraph:
         }
 
     def next_action(self) -> str | None:
-        """Queue head, or the highest-ranked floor candidate during suspension.
+        """Queue head, or the first floor candidate during suspension.
 
         While the stagnation stop is suspended by unexecuted mandatory floors,
-        the next action to execute is the queue's highest-scored floor entry
-        (not the plain queue head), so the mandatory direction is discharged
-        first and the stop takes effect immediately afterwards.
+        the next action to execute is the queue's first floor-flagged entry
+        in queue order (not necessarily the plain queue head), so the
+        mandatory direction is discharged first and the stop takes effect
+        immediately afterwards.
         """
         q = self.pending_queue()
         if not q:
@@ -1430,15 +1415,14 @@ class BeamGraph:
         meta = self.g.graph.get("meta", {})
         return {
             "config": {k: meta.get(k) for k in
-                       ("W", "N_max", "stagnation_max", "class_caps", "g_min")},
-            "ablations": meta.get("ablations", {}),
+                       ("W", "N_max", "stagnation_max", "class_caps")},
             "best_state": best,
             "best_metrics": self.state(best).get("metrics", {}) if best else None,
             "best_combo": self.state(best).get("combo_key") if best else None,
             "counters": dict(c, n_total=self.n_total(), budget_left=self.budget_left()),
             "queue": [
                 {**{k: self.g.graph["pending"][aid].get(k)
-                    for k in ("action_id", "parent", "sigma", "score",
+                    for k in ("action_id", "parent", "pred_bic",
                               "expected_behavior_tag", "code_flags", "age_counter")},
                  "off_best_path": self.g.graph["pending"][aid].get("parent") not in on_path}
                 for aid in self.pending_queue()

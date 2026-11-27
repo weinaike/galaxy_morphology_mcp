@@ -14,8 +14,6 @@ BM = {"decam_g": {"pixscale": 0.262, "fwhm_px": 4.58, "region": [1, 746, 1, 746]
       "decam_z": {"pixscale": 0.262, "fwhm_px": 3.93, "region": [1, 746, 1, 746]}}
 
 VLM_JSON = json.dumps({
-    "physicality_verdict": {"verdict": "PASS", "failed_checks": [],
-                            "swap_hint": None},
     "candidates": [{
         "action_id": "", "primitives": [
             {"op": "tune", "target": "bar",
@@ -25,7 +23,7 @@ VLM_JSON = json.dumps({
         "expected_C_prime": "{disk,bulge,bar}",
         "novelty_claim": "cross-cell bar re-seed",
         "expected_behavior_tag": "tune_bar_re",
-        "local_benefit_sigma": 0.6,
+        "pred_bic": 90.0,
     }],
 })
 
@@ -182,8 +180,6 @@ def test_full_opening_round_mb_mocked_vlm(tmp_path, test_data_dir, monkeypatch):
     opening_png.write_bytes(b"png")
 
     opening_json = json.dumps({
-        "physicality_verdict": {"verdict": "PASS",
-                                "failed_checks": [], "swap_hint": None},
         "candidates": [
             {"action_id": "", "primitives": [{"op": "skeleton", "components": [
                 {"structure_name": "disk", "re_px": 23.0, "q": 0.55,
@@ -195,7 +191,7 @@ def test_full_opening_round_mb_mocked_vlm(tmp_path, test_data_dir, monkeypatch):
              "physical_motivation": "extended disk + round centre, g panel",
              "expected_C_prime": "{disk,bulge}", "novelty_claim": "opening",
              "expected_behavior_tag": "skeleton_disk_bulge",
-             "local_benefit_sigma": 0.5},
+             "pred_bic": 100.0},
             {"action_id": "", "primitives": [{"op": "skeleton", "components": [
                 {"structure_name": "singlesersic", "re_px": 18.0, "q": 0.6,
                  "pa_sky_deg": -55.0, "dx_px": 0.0, "dy_px": 0.0,
@@ -203,7 +199,7 @@ def test_full_opening_round_mb_mocked_vlm(tmp_path, test_data_dir, monkeypatch):
              "physical_motivation": "smooth single-component alternative",
              "expected_C_prime": "{singlesersic}", "novelty_claim": "opening",
              "expected_behavior_tag": "skeleton_singlesersic",
-             "local_benefit_sigma": 0.4},
+             "pred_bic": 110.0},
         ],
     })
 
@@ -223,8 +219,9 @@ def test_full_opening_round_mb_mocked_vlm(tmp_path, test_data_dir, monkeypatch):
     # the contract and the VLM returned primitives without the wrapper)
     t2 = captured["turns"][1]
     assert "OPENING ROUND" in t2
-    assert "physicality_verdict" in t2 and "primitives" in t2
-    assert "local_benefit_sigma" in t2 and "panel_band" in t2
+    assert "primitives" in t2 and "panel_band" in t2
+    assert "pred_bic" in t2                       # the new ranking field
+    assert "physicality_verdict" not in t2        # the verdict key is gone
     assert captured["image"] == str(opening_png)
     nxt = res.get("next_candidate")
     assert nxt, res.get("candidates")
@@ -262,12 +259,12 @@ def test_mb_f1_reserved_slot_end_to_end(tmp_path, test_data_dir, monkeypatch):
     graph, gdir = _mb_graph(tmp_path, test_data_dir)
     best = graph.latest_state()
     # iter3's mech table carries hard entries (starved bulge/bar floors):
-    # record_fit's fail-safe already auto-settled a FAIL verdict, and
-    # apply_verdict is idempotent — reset BOTH to make the state
-    # best-eligible for this test
+    # record_fit auto-settled a FAIL verdict — reset and re-settle a clean
+    # mech table so the state becomes best-eligible for this test
     graph.g.nodes[best]["mech_checks"] = []
     graph.g.nodes[best]["verdict"] = None
-    graph.apply_verdict(best, {"verdict": "PASS", "failed_checks": []})
+    graph._settle_mech_verdict(best, [], [],
+                               parent_label=graph.g.nodes[best].get("parent"))
     assert graph.g.graph["best_state"] == best
 
     aid, why = graph.add_f1_reserved(0.07, 128.0)
@@ -313,7 +310,8 @@ def test_mb_f1_phase_normalisation(tmp_path, test_data_dir):
     best = graph.latest_state()
     graph.g.nodes[best]["mech_checks"] = []
     graph.g.nodes[best]["verdict"] = None
-    graph.apply_verdict(best, {"verdict": "PASS", "failed_checks": []})
+    graph._settle_mech_verdict(best, [], [],
+                               parent_label=graph.g.nodes[best].get("parent"))
 
     aid, why = graph.add_f1_reserved(0.07, 230.0)     # 230 == 50 (mod 180)
     assert aid, why
@@ -332,7 +330,6 @@ def test_mb_f1_phase_normalisation(tmp_path, test_data_dir):
     from beam_mb.candidate_schema_mb import parse_survey_response_mb
     for phase in (-30.0, 150.0):
         resp, err = parse_survey_response_mb({
-            "physicality_verdict": {"verdict": "PASS"},
             "candidates": [{"action_id": "c", "primitives": [
                 {"op": "remove", "target": "disk"},
                 {"op": "add", "structure_name": "disk",
@@ -343,5 +340,5 @@ def test_mb_f1_phase_normalisation(tmp_path, test_data_dir):
                 "physical_motivation": "m",
                 "expected_C_prime": "{disk,bulge}",
                 "expected_behavior_tag": "t",
-                "local_benefit_sigma": 0.5}]})
+                "pred_bic": 100.0}]})
         assert resp is not None, err

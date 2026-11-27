@@ -34,17 +34,9 @@ Requirement: grounded in the image only; no speculation; every length carries it
 **Orchestrator directives (binding when present)**:
 {directives}
 
-## Phase 1.5: physicality verdict
+## Mech check table (authoritative, code-settled)
 
-The numeric half of the verdict is **computed by code** — the "Mechanical physicality check table" in the current-round supplement is AUTHORITATIVE. It covers: Re-chain inversion (arcsec, 3% tolerance), axis-ratio limits (bar q > 0.7 / < 0.15 hard; q < 0.05 thin-line; q > 1), Re degeneracy vs the PSF, concentricity (arcsec), μ0 ordering (reference band), flux existence floors (bulge < 3% / bar < 5% hard; bar outside 10–40% note) and bar_identity (compact-bar note). Its checks run on the arcsec canonical inventory; your numbers stay px+band. Do not reclassify, contradict, soften or omit those entries; the code merges them into the final verdict (a hard entry vetoes PASS regardless of what you return).
-
-Your verdict covers the **visual half** — judge the main-galaxy central components on the Model/Residual panels:
-1. Nested onion: inner 2·Re ellipses inside the adjacent outer ones (inversion, tips poking out, or crossing = FAIL evidence — compare ellipses on the panel, not only legend numbers).
-2. Visual degeneracy: two components producing the same image feature.
-3. Anything you cannot ground in the panels or the supplement stays out of failed_checks.
-Soft signals go in failed_checks with a `[note]` prefix and are NOT a FAIL. Borderline → lean PASS.
-
-`swap_hint`: always `none` — identity-inversion hints are derived by code; the required repair is a RECLASSIFY candidate, never a bare label swap.
+The "Mechanical physicality check table" in the current-round supplement is AUTHORITATIVE and settles the round's verdict BY ITSELF at record time — any `[hard]` entry makes the round mech-FAIL and bars it from s*. It covers: Re-chain inversion (arcsec, 3% tolerance), axis-ratio limits (bar q > 0.7 / < 0.15 hard; q < 0.05 thin-line; q > 1), Re degeneracy vs the PSF, concentricity (arcsec), μ0 ordering (reference band), flux existence floors (bulge < 3% / bar < 5% hard; bar outside 10–40% note) and bar_identity (compact-bar note). Its checks run on the arcsec canonical inventory; your numbers stay px+band. You do not return a verdict — but the mech table's repair menu (below) is binding for your candidate choices whenever a `[hard]` entry fired. Identity-inversion `swap_hint`s are derived by code; the required repair is a RECLASSIFY candidate, never a bare label swap.
 
 ## Phase 2: candidate generation (the JSON contract)
 
@@ -52,7 +44,6 @@ Output ONE fenced ```json object:
 
 ```json
 {{
-  "physicality_verdict": {{"verdict": "PASS|FAIL", "failed_checks": ["..."], "swap_hint": null}},
   "candidates": [
     {{
       "action_id": "",
@@ -61,11 +52,15 @@ Output ONE fenced ```json object:
       "expected_C_prime": "{disk,bulge,bar}",
       "novelty_claim": "<what is new vs the state ledger>",
       "expected_behavior_tag": "add_bar|tune_bar_re|remove_bulge|...",
-      "local_benefit_sigma": 0.5
+      "pred_bic": 912.4
     }}
   ]
 }}
 ```
+
+**Field notes**:
+- `pred_bic` (float, unbounded): your estimate of the **realistically attainable BIC_eff after fitting this candidate's direction**, grounded in the digest's BIC facts (parent BIC, current best, dBIC history). The queue is ordered **ascending by pred_bic** (most promising = smallest) and only the ORDER matters — keep the relative order across your candidates honest; a near-certain worsening direction gets a clearly larger value.
+- **Round-0 opening only**: write pred_bic as `-(K-1), ..., -1, 0` following your array order (most promising first) — the code ignores your values and assigns them mechanically from the array position; your ARRAY ORDER is the ranking.
 
 **Primitive menu (multi-band)**:
 - add: `{{"op": "add", "structure_name": "bulge|bar|disk|agn", "component_type": "sersic", "re_px": <float>, "q": <float>, "pa_sky_deg": <float>, "dx_px": <float>, "dy_px": <float>, "panel_band": "<band>"}}` — n is code-mandated (disk 1 fixed, bar 0.5 fixed, bulge FREE from creation with prior 4; you may add `"n": <float>` for bulge/lens-free slots). Positions are centre-relative (dx right, dy up) in the panel_band's pixels. AGN adds the N-block point source (no re/q/PA needed — dx/dy/panel_band suffice).
@@ -80,7 +75,7 @@ Output ONE fenced ```json object:
 
 **Hard limits**: Re total order disk > bar > bulge (3% tolerance, pre-checked on your declared values); bar q prior < 0.4 (hard cap 0.7); bulge q ≥ 0.3; PA free (sky-PA); every px value must carry the band you measured it on.
 
-**Candidate-count discipline**: 1–2 in the round-0 opening; 2–3 at depth 2; 2–4 deeper. On verdict=FAIL at least one candidate must repair failed_checks (the mech-repair menu: **flux floors / component collapse → REPAIR FIRST, remove only as last resort** (see the Collapse-Repair Priority Rule below); Re-chain inversion → RECLASSIFY the pair; bar_identity → reclassify(bar→bulge) alone, add(bar) larger-Re ONLY on residual evidence; μ0 inversion → mag reapportionment or identity reclassification).
+**Candidate-count discipline**: 1–2 in the round-0 opening; 2–3 at depth 2; 2–4 deeper. When the mech check table carries `[hard]` failures, at least one candidate must repair them (the mech-repair menu: **flux floors / component collapse → REPAIR FIRST, remove only as last resort** (see the Collapse-Repair Priority Rule below); Re-chain inversion → RECLASSIFY the pair; bar_identity → reclassify(bar→bulge) alone, add(bar) larger-Re ONLY on residual evidence; μ0 inversion → mag reapportionment or identity reclassification).
 
 **Collapse-Repair Priority Rule (hard; KILOGAS_110 retrospective)**: when a mech-hard entry fires on a component (bulge q < 0.3, bar q < 0.15, bulge/bar flux floor violations), the ROUND'S TOP repair candidate must be a **tune that REPAIRS the collapsed component** — never a bare remove. The collapse is usually a SEEDING problem (initial Re too small or too large relative to neighbours), not evidence the component does not exist; deleting it on the first failure forecloses the correct decomposition (KILOGAS_110: bulge seed Re=0.92" vs disk Re=6.0" collapsed to a needle; the repair chose remove(bulge)+add(bar); {disk,bulge,bar} was never fitted — the expert's answer).
 

@@ -12,14 +12,13 @@ from beam.signature import apply_primitives_to_inventory
 
 
 def _resp(cands):
-    return {"physicality_verdict": {"verdict": "PASS", "failed_checks": [],
-                                    "swap_hint": "none"}, "candidates": cands}
+    return {"candidates": cands}
 
 
-def _cand(prims, tag="rc", sigma=0.6):
+def _cand(prims, tag="rc", pred_bic=900.0):
     return {"primitives": prims, "physical_motivation": "good light, wrong labels",
             "expected_C_prime": "c", "novelty_claim": "identity reassignment",
-            "expected_behavior_tag": tag, "local_benefit_sigma": sigma}
+            "expected_behavior_tag": tag, "pred_bic": pred_bic}
 
 
 def _swap_prims():
@@ -237,7 +236,7 @@ def test_digest_dbic_fact(graph3):
 
     g, label = graph3
     # child with better BIC
-    aid = g.add_pending({"action_id": "x", "sigma": 0.6, "score": 0.6,
+    aid = g.add_pending({"action_id": "x", "pred_bic": 90.0, "score": 0.6,
                          "primitives": [], "expected_behavior_tag": "t"},
                         "s", label)
     child = g.record_fit({

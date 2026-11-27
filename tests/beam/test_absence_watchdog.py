@@ -35,7 +35,7 @@ def _cand(*prims, motivation="residuals motivate X"):
     return Candidate(
         action_id="X.1-c1", primitives=list(prims),
         physical_motivation=motivation, expected_C_prime="{disk}",
-        expected_behavior_tag="t1", local_benefit_sigma=0.5)
+        expected_behavior_tag="t1", pred_bic=100.0)
 
 
 def _lens_tune(re_band=None):

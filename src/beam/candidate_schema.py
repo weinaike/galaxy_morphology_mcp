@@ -1,12 +1,18 @@
 """Candidate JSON schema (pydantic) + solution-space validation rule engine.
 
-The surveyor returns ONE fenced JSON object per call:
+The surveyor returns ONE fenced JSON object per call (no verdict — the
+physicality verdict is settled mechanically from the mech table at
+beam_record_fit time):
 
-    {"physicality_verdict": {"verdict": "PASS|FAIL", "failed_checks": [...],
-                             "swap_hint": "none|disk_bulge_swap"},
-     "candidates": [ {action_id?, primitives[1..2], physical_motivation,
+    {"candidates": [ {action_id?, primitives[1..2], physical_motivation,
                       expected_C_prime, novelty_claim, expected_behavior_tag,
-                      local_benefit_sigma, queue_reorder?}, ... ]}
+                      pred_bic}, ... ]}
+
+``pred_bic`` is the surveyor's estimate of the realistically attainable
+BIC_eff after fitting this candidate's direction (queue order = ascending
+pred_bic; only the ordering matters). In the round-0 opening batch the code
+ignores the declared values and encodes the array order mechanically as
+i-(K-1).
 
 Validation runs the solution-space rules (closed alphabet, multiplicity,
 Re-chain adjacency, SingleSersic conversion bundling, F1 target, psf param
@@ -150,11 +156,6 @@ Primitive = Annotated[
 ]
 
 
-class QueueReorder(BaseModel):
-    action_id: str
-    new_rank: int = Field(ge=1)
-
-
 class Candidate(BaseModel):
     action_id: str = ""                         # code assigns when empty
     primitives: list[Primitive] = Field(min_length=1, max_length=2)
@@ -162,21 +163,13 @@ class Candidate(BaseModel):
     expected_C_prime: str
     novelty_claim: str = ""
     expected_behavior_tag: str
-    local_benefit_sigma: float = Field(ge=0.0, le=1.0)
-    queue_reorder: list[QueueReorder] | None = None
+    pred_bic: float                             # predicted attainable BIC_eff (queue = ascending)
 
     def to_plain_primitives(self) -> list[dict]:
         return [p.to_plain() for p in self.primitives]
 
 
-class Verdict(BaseModel):
-    verdict: Literal["PASS", "FAIL"]
-    failed_checks: list[str] = []
-    swap_hint: str | None = None
-
-
 class SurveyResponse(BaseModel):
-    physicality_verdict: Verdict
     candidates: list[Candidate] = Field(min_length=1, max_length=4)
 
 
@@ -1027,7 +1020,7 @@ def _disambiguate_companion_names(resp: SurveyResponse,
 def validate_survey(resp: SurveyResponse, graph, state_label: str,
                     central_spike_evidence: bool = False) -> ValidationReport:
     """Full-survey validation: per-candidate solution-space checks + survey-level
-    counts/tag-uniqueness/queue_reorder sanity. ``central_spike_evidence`` is
+    counts/tag-uniqueness sanity. ``central_spike_evidence`` is
     the machine-verified central-spike reading for the AGN admission gate
     (this round's Phase-1 assessment / a bulge n pinned at its cap)."""
     issues: list[Issue] = []
@@ -1077,7 +1070,7 @@ def validate_survey(resp: SurveyResponse, graph, state_label: str,
                                 "not propose another F1-carrying primitive",
                                 action_id=cand.action_id))
 
-    # survey-level: candidate counts per depth, tag uniqueness, queue_reorder sanity
+    # survey-level: candidate counts per depth, tag uniqueness
     if is_root_opening:
         lo, hi = 1, 3   # the round-0 opening survey returns 1-3 ranked skeletons
     else:
@@ -1097,17 +1090,4 @@ def validate_survey(resp: SurveyResponse, graph, state_label: str,
         issues.append(Issue("E_TAG_DUP",
                             "expected_behavior_tag values must be pairwise distinct",
                             severity="error"))
-    pending = graph.g.graph.get("pending", {})
-    floor_flagged = {aid for aid, r in pending.items()
-                     if r.get("status") == "pending" and r.get("code_flags")}
-    for cand in resp.candidates:
-        for qr in cand.queue_reorder or []:
-            if qr.action_id not in pending or pending[qr.action_id].get("status") != "pending":
-                issues.append(Issue("E_QUEUE_REORDER",
-                                    f"queue_reorder references unknown/non-pending "
-                                    f"action_id {qr.action_id}", action_id=cand.action_id))
-            elif qr.action_id in floor_flagged:
-                issues.append(Issue("E_QUEUE_REORDER",
-                                    f"queue_reorder may not demote floor-protected "
-                                    f"candidate {qr.action_id}", action_id=cand.action_id))
     return ValidationReport(issues)

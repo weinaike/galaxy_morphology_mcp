@@ -6,15 +6,15 @@ import json
 import re
 
 _FENCED_RE = re.compile(r"```(?:json|JSON)?\s*\n(.*?)```", re.DOTALL)
-_MARKER = "physicality_verdict"
+_MARKER = "candidates"
 
 
 def extract_survey_json(text: str) -> tuple[dict | None, str]:
     """Return (payload, "") on success or (None, reason).
 
-    Strategy: (1) fenced code blocks containing the marker key, in order;
-    (2) brace-balanced substrings containing the marker (for unfenced JSON
-    embedded in prose). Never a whole-body regex.
+    Strategy: (1) fenced code blocks containing the marker key ("candidates"),
+    in order; (2) brace-balanced substrings containing the marker (for
+    unfenced JSON embedded in prose). Never a whole-body regex.
     """
     if not text or not text.strip():
         return None, "empty VLM output"

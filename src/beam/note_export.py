@@ -53,7 +53,7 @@ def build_working_note(g, galaxy_dir: str) -> str:
         # new flow: the opening skeletons are VLM survey candidates in the
         # graph (skeleton primitives parented A.0)
         ocands = [{"inventory": o.get("inventory", []),
-                   "sigma": o.get("sigma"),
+                   "pred_bic": o.get("pred_bic"),
                    "rationale": f"{o.get('rationale', '')} [{o.get('status', '')}]"}
                   for o in g.opening_skeletons()]
     if isinstance(ocands, list) and ocands:
@@ -61,7 +61,7 @@ def build_working_note(g, galaxy_dir: str) -> str:
         for i, c in enumerate(ocands[:4]):
             if isinstance(c, dict):
                 lines.append(f"    {i + 1}. {'+'.join(c.get('inventory', []) or ['?'])} "
-                             f"(σ={_fmt(c.get('sigma'))}) — {str(c.get('rationale', ''))[:100]}")
+                             f"(pred_bic={_fmt(c.get('pred_bic'))}) — {str(c.get('rationale', ''))[:100]}")
     lines.append("  - standalone bar/lopsidedness detection retired (2026-10-09): "
                  "component existence is settled by residual-driven trial and error "
                  "in the fit")
@@ -76,10 +76,7 @@ def build_working_note(g, galaxy_dir: str) -> str:
     lines.append("## Beam-state snapshot (overwritten after each round; do not append)")
     lines.append(f"- Beam config: W={meta.get('W', 5)}, N_max={meta.get('N_max', 15)}, "
                  f"stagnation_max={meta.get('stagnation_max', 5)}, "
-                 f"class_caps={meta.get('class_caps', {})}, g_min={meta.get('g_min', 0.3)}")
-    if meta.get("ablations"):
-        lines.append(f"- **Ablation arm (paper)**: {meta['ablations']} — this run is NOT the "
-                     f"main configuration; keep the flag set for the whole run")
+                 f"class_caps={meta.get('class_caps', {})}")
     lines.append("### Current best s*")
     if best:
         s = g.state(best)
@@ -89,23 +86,23 @@ def build_working_note(g, galaxy_dir: str) -> str:
         lines.append(f"- reduced_χ² / BIC: chisq1d_nu={_fmt(m.get('chisq1d_nu'))} / "
                      f"BIC_eff={_fmt(m.get('bic_eff'))} (BIC convention: bic_eff first)")
         v = s.get("verdict") or {}
-        lines.append(f"- VLM physicality verdict: {v.get('verdict', '(pending)')}"
+        lines.append(f"- Mech verdict: {v.get('verdict', '(pending)')}"
                      + (f" ({'; '.join(v.get('failed_checks', []))[:200]})"
                         if v.get("failed_checks") else ""))
         lines.append(f"- Corresponding archives directory: {s.get('archive_dir')}")
         lines.append(f"- Corresponding feedme: {(s.get('artifacts', {}) or {}).get('feedme')}")
     else:
-        lines.append("- (no PASS state settled yet)")
+        lines.append("- (no mech-PASS state settled yet)")
     lines.append("")
-    lines.append("### Current priority queue Q (by effective score, at most W entries)")
-    lines.append("| rank | action_id | parent | action tag | σ | g | flags | age |")
-    lines.append("|---|---|---|---|---|---|---|---|")
+    lines.append("### Current priority queue Q (by pred_bic ascending, at most W entries)")
+    lines.append("| rank | action_id | parent | action tag | pred_bic | flags | age |")
+    lines.append("|---|---|---|---|---|---|---|")
     for i, aid in enumerate(g.pending_queue(), start=1):
         rec = pending.get(aid) or {}
         flags = ",".join(sorted(k for k, v in (rec.get("code_flags") or {}).items() if v)) or "-"
         lines.append(f"| {i} | {aid} | {rec.get('parent')} | "
-                     f"{rec.get('expected_behavior_tag')} | {_fmt(rec.get('sigma'), 3)} | "
-                     f"{_fmt(rec.get('score'), 3)} | {flags} | {rec.get('age_counter', 0)} |")
+                     f"{rec.get('expected_behavior_tag')} | {_fmt(rec.get('pred_bic'), 3)} | "
+                     f"{flags} | {rec.get('age_counter', 0)} |")
     lines.append("")
     lines.append("### Global fit counters")
     lines.append(f"- n = {g.n_total()} / {meta.get('N_max', 15)} (executed "
@@ -228,21 +225,16 @@ def _round_section(lines: list[str], g, lbl: str, a: dict, pending: dict) -> Non
                  f"chi2_nu={_fmt(m.get('chi2_nu'))} / BIC_eff={_fmt(m.get('bic_eff'))}")
     if a.get("zombies"):
         lines.append(f"- Zombies: {', '.join(a['zombies'])}")
-    verdict_txt = v.get("verdict", "(pending survey)")
+    verdict_txt = v.get("verdict", "(pending settle)")
     fc = v.get("failed_checks") or []
     if verdict_txt == "FAIL":
         veto = " [mechanical veto: code-side hard check]" if v.get("mech_veto") else ""
-        vlm_original = a.get("verdict_vlm") or {}
-        if v.get("mech_veto") and vlm_original:
-            veto += (f" (surveyor originally said {vlm_original.get('verdict')}"
-                     + (f": {'; '.join(str(x) for x in vlm_original.get('failed_checks', []))}"
-                        if vlm_original.get("failed_checks") else "") + ")")
-        lines.append(f"- **Physicality verdict: FAIL (physicality veto — barred from "
+        lines.append(f"- **Mech verdict: FAIL (barred from "
                      f"s\\*)**{veto}: {'; '.join(str(x) for x in fc)}")
     else:
         notes = [str(x) for x in fc
                  if str(x).startswith(("[note]", "[mech-note]"))]
-        lines.append(f"- VLM physicality verdict: {verdict_txt}"
+        lines.append(f"- Mech verdict: {verdict_txt}"
                      + (f" (notes: {'; '.join(notes)})" if notes else ""))
     # candidates generated from this round + their fate
     children = [(aid, r) for aid, r in pending.items()
@@ -252,7 +244,8 @@ def _round_section(lines: list[str], g, lbl: str, a: dict, pending: dict) -> Non
         for aid, r in children:
             fate.append(f"{aid}[{r.get('expected_behavior_tag')}→{r.get('status')}"
                         + (f":{r.get('discard_reason')}" if r.get("discard_reason") else "")
-                        + (f", g={_fmt(r.get('score'), 3)}" if r.get("score") else "") + "]")
+                        + (f", pred_bic={_fmt(r.get('pred_bic'), 3)}"
+                           if r.get("pred_bic") is not None else "") + "]")
         lines.append("- survey candidates and fate: " + ", ".join(fate))
     lines.append("")
 

@@ -14,8 +14,7 @@ from beam.survey import survey_round
 from beam.tools import apply_candidate, beam_init, beam_record_fit, beam_status
 
 VALID_MD = """```json
-{"physicality_verdict": {"verdict": "PASS", "failed_checks": [], "swap_hint": "none"},
- "candidates": [
+{ "candidates": [
   {"primitives": [{"op": "tune", "tune": {"structure_name": "bulge", "param": "n",
                                           "toggle": 1, "value": 2.0,
                                           "cons_bounds": {"n": [0.5, 8.0]}}}],
@@ -23,7 +22,7 @@ VALID_MD = """```json
    "expected_C_prime": "{disk,bulge,bar,agn}",
    "novelty_claim": "n free axis untested",
    "expected_behavior_tag": "bulge_n_free",
-   "local_benefit_sigma": 0.55}
+   "pred_bic": 95.0}
  ]}
 ```
 """
@@ -125,7 +124,7 @@ def test_apply_discards_on_class_a_conflict(galaxy, monkeypatch):
     # inject a pending candidate whose tune target does not exist
     g = BeamGraph.load(str(galaxy))
     aid = g.add_pending(
-        {"sigma": 0.5, "expected_behavior_tag": "bad",
+        {"pred_bic": 100.0, "expected_behavior_tag": "bad",
          "primitives": [{"op": "tune", "tune": {"structure_name": "lens",
                                                 "param": "q", "value": 0.8}}]},
         source_session="s", parent_label="A.1")
@@ -167,7 +166,7 @@ def test_apply_candidate_rechecks_class_cap(galaxy):
     cls = skeleton_class(g.state("A.1")["inventory"])
     cap = int(g.g.graph["meta"]["class_caps"][cls])
     for i in range(cap):
-        g.add_pending({"sigma": 0.4,
+        g.add_pending({"pred_bic": 110.0,
                        "primitives": [{"op": "tune", "structure_name": "bulge",
                                        "param": "q", "value": 0.7, "toggle": 1}],
                        "expected_behavior_tag": f"filler{i}"},
@@ -188,7 +187,7 @@ def test_apply_candidate_rechecks_class_cap(galaxy):
 
     # a pending candidate landing on the exhausted class (enqueued late,
     # bypassing survey validation, e.g. a stale floor-flagged entry)
-    g2.add_pending({"action_id": "stale-floor", "sigma": 0.3,
+    g2.add_pending({"action_id": "stale-floor", "pred_bic": 120.0,
                     "code_flags": {"floor_n_release": True},
                     "primitives": [{"op": "tune", "structure_name": "bulge",
                                     "param": "n", "value": 4.0, "toggle": 1}],
@@ -224,7 +223,7 @@ def test_apply_candidate_rechecks_cell_dup_input_side(galaxy):
     g.g.graph[CellLedger.GRAPH_KEY] = led.to_dict()
     # the stale sibling stays pending (its cells were fresh at enqueue
     # before the twin ran)
-    aid_stale = g.add_pending({"action_id": "stale-cell", "sigma": 0.4,
+    aid_stale = g.add_pending({"action_id": "stale-cell", "pred_bic": 110.0,
                                "primitives": prims,
                                "expected_behavior_tag": "stale"},
                               source_session="s1", parent_label="A.1")

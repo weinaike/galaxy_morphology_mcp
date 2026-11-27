@@ -24,12 +24,11 @@ def seeded_graph(mini_graph):
                                                       "param": "n", "toggle": 1,
                                                       "value": 2.0}}],
                   physical_motivation="m", expected_C_prime="c", novelty_claim="n axis",
-                  expected_behavior_tag="n_free", local_benefit_sigma=0.5),
+                  expected_behavior_tag="n_free", pred_bic=100.0),
         Candidate(primitives=[{"op": "remove", "remove": "agn"}],
                   physical_motivation="m", expected_C_prime="c", novelty_claim="new",
-                  expected_behavior_tag="rm_agn", local_benefit_sigma=0.3),
+                  expected_behavior_tag="rm_agn", pred_bic=120.0),
     ], session_id="sess-1", parent_label=label)
-    graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": ["[note] x"], "swap_hint": "none"})
     graph.commit()
     return graph
 
@@ -52,20 +51,23 @@ def test_working_note_template_sections(seeded_graph, tmp_path):
     # stage-1: detection retired (2026-10-09); the header states the retirement
     # (legacy graphs with a detect block would render the zero-evidence wording)
     assert "detection retired" in text
-    # 2026-10-17 mech-only verdict: settled at record time (PASS);
-    # VLM-verdict notes are retired — mech notes land via the record merge
-    assert "PASS" in text
+    # mech-only verdict: settled at record time (PASS)
+    assert "Mech verdict: PASS" in text
+    # the queue table carries the pred_bic column (ordering key)
+    assert "pred_bic" in text
 
 
-def test_working_note_fail_verdict_marked(seeded_graph, tmp_path):
-    seeded_graph.apply_verdict("A.1", {"verdict": "FAIL",
-                                       "failed_checks": ["[hard] inversion"],
-                                       "swap_hint": "disk_bulge_swap"})  # no-op: settled
+def test_working_note_mech_fail_verdict_marked(mini_graph, tmp_path):
+    """A mech-FAIL state renders the mech-veto wording; no VLM narrative."""
+    graph, label = mini_graph
+    graph.g.nodes[label]["verdict"] = {
+        "verdict": "FAIL", "mech_veto": True,
+        "failed_checks": ["[mech-hard] bar q=0.9"], "swap_hint": "none"}
     gdir = tmp_path / "NOTE2"
     gdir.mkdir()
-    text = build_working_note(seeded_graph, str(gdir))
-    # A.1 was settled PASS earlier; idempotence keeps it
-    assert "VLM physicality verdict: PASS" in text
+    text = build_working_note(graph, str(gdir))
+    assert "Mech verdict: FAIL" in text and "mechanical veto" in text
+    assert "[mech-hard] bar q=0.9" in text
 
 
 def test_beam_export_note_tool(seeded_graph, tmp_path):

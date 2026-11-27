@@ -204,7 +204,7 @@ def _family_ledger(g) -> str:
     ledger. Per class header: attempt count + best BIC. Per attempt line:
     label, <-parent label, inventory, INPUT params -> OUTPUT params (the
     fitted deltas vs parent — the same-basin saturation pattern becomes
-    visible), dBIC_eff vs parent, chi2/A_psf, BIC_eff, verdict, tags.
+    visible), dBIC_eff vs parent, chi2/A_psf, BIC_eff, mech verdict, tags.
     Twin rounds (kept fit with |dBIC| < 1.0) are marked, not repeated.
     """
     _meta = g.g.graph.get("meta", {})
@@ -389,8 +389,9 @@ def build_local_state_description(g, state_label: str,
     lines.append("")
     if mech:
         lines.append("Mechanical physicality check table (computed by code; AUTHORITATIVE "
-                     "— do not reclassify, contradict or omit these entries in your "
-                     "verdict; they are already counted by the code-side merge):")
+                     "— it settles the mech verdict by itself: any [hard] entry makes "
+                     "the round mech-FAIL and barred from s*; do not contradict or "
+                     "omit these entries in your assessment):")
         for m in mech:
             lines.append(f"  - [{m.get('severity')}] {m.get('check')}: {m.get('detail')}")
     else:
@@ -674,10 +675,11 @@ def build_queue_digest(g) -> str:
             continue
         flags = ",".join(sorted(k for k, v in (rec.get("code_flags") or {}).items() if v))
         rows.append(f"  {i}. {aid} (parent {rec.get('parent')}, tag={rec.get('expected_behavior_tag')}, "
-                    f"sigma={_fmt(rec.get('sigma'), 3)}, score={_fmt(rec.get('score'), 3)}, "
+                    f"pred_bic={_fmt(rec.get('pred_bic'), 3)}, "
                     f"age={rec.get('age_counter', 0)}, flags=[{flags or '-'}])")
     if not rows:
         return "(queue empty — no pending candidates)"
-    header = ("Pending queue (ordered by effective score; floor-protected entries carry "
-              "flags and may not be demoted in queue_reorder):")
+    header = ("Pending queue (ordered by ascending pred_bic — the surveyor's predicted "
+              "attainable BIC_eff; code-flagged entries (floors/opening/F1) carry "
+              "flags and are shielded from truncation, never reordered):")
     return header + "\n" + "\n".join(rows)

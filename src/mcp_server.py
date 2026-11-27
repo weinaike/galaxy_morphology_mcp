@@ -20,7 +20,7 @@ from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
-from tools.beam_actions_galfit import generate_galfit_beam_actions, check_feedme_file
+from tools.beam_actions_galfit import check_feedme_file
 from tools.re_ordering_check import check_re_ordering
 from tools.fourier_mode_analysis import fourier_mode_analysis
 from tools.bar_lopsidedness_detection import (
@@ -42,7 +42,6 @@ from beam.tools import (
     beam_repair_artifacts,
     beam_set_constraint,
     beam_status,
-    beam_enqueue_candidates,
     survey_round,
 )
 from starlette.responses import Response, JSONResponse
@@ -68,7 +67,6 @@ def _register_tools_and_prompts():
         app.add_prompt(workflow_galfit)
         app.add_prompt(workflow_galfit_s1)
         app.add_tool(detect_bar_lopsidedness)
-        app.add_tool(generate_galfit_beam_actions)
         app.add_tool(check_feedme_file)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 
@@ -91,9 +89,9 @@ def _register_tools_and_prompts():
     # dispatch inside beam_init/graph/apply): registered whenever EITHER
     # fitter is available. (2026-11-03 real-data fix: they used to live in
     # the GALFIT_BIN block, so GALFITS_BIN-only sessions had no beam tools.)
-    # Retired alongside: generate_beam_actions and
-    # detect_galfits_bar_lopsidedness (the detection-driven mb flow —
-    # candidates now come solely from survey_round's VLM).
+    # Retired alongside: generate_beam_actions,
+    # detect_galfits_bar_lopsidedness and generate_galfit_beam_actions
+    # (candidates now come solely from survey_round's VLM).
     if has_galfit or has_galfits:
         app.add_tool(beam_init)
         app.add_tool(beam_record_fit)
@@ -102,7 +100,6 @@ def _register_tools_and_prompts():
         app.add_tool(beam_enqueue_f1)
         app.add_tool(beam_status)
         app.add_tool(survey_round)
-        app.add_tool(beam_enqueue_candidates)
         app.add_tool(apply_candidate)
         app.add_tool(beam_export_note)
         app.add_tool(beam_grant_repair_budget)

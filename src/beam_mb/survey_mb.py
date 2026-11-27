@@ -100,6 +100,9 @@ MB_OPENING_TURN2 = (
     "dy_px from your panel reading and name the panel_band of every "
     "measurement; positions are centre-relative (dx right, dy up). "
     "Structural parameters are shared across bands — declare each "
-    "component ONCE, measured on your best panel. The top-ranked "
-    "candidate becomes the first fit."
+    "component ONCE, measured on your best panel. Order the candidates "
+    "array by confidence (most promising FIRST): your array order is the "
+    "ranking — the code assigns pred_bic mechanically from it (i-(K-1)) "
+    "and the queue runs ascending, so your top candidate becomes the "
+    "first fit; the pred_bic values you declare are ignored in this round."
 )

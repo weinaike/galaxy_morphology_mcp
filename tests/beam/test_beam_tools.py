@@ -56,8 +56,7 @@ def test_beam_init_record_status_roundtrip(galaxy):
     assert (galaxy / "beam_state" / "graph.json").exists()
     assert r["psf_fwhm_px"] is not None  # measured from the fixture PSF
 
-    rr = beam_record_fit(str(galaxy), json.dumps(_run_result(galaxy)),
-                         verdict_json=json.dumps({"verdict": "PASS"}))
+    rr = beam_record_fit(str(galaxy), json.dumps(_run_result(galaxy)))
     assert rr["status"] == "success"
     assert rr["new_state"] == "A.1"
     assert rr["is_best"] is True
@@ -77,19 +76,20 @@ def test_beam_init_missing_paths(tmp_path):
 
 
 def test_beam_record_fit_auto_fails_on_mech_hard(galaxy):
-    """KILOGAS_231 incident regression: a driver that never settles verdicts
-    (no survey_round, no verdict_json) must not bypass the physicality gate —
-    a state carrying mech-hard entries is auto-settled FAIL at record time."""
+    """KILOGAS_231 incident regression: the mech verdict settles at record
+    time — a state carrying mech-hard entries is auto-settled FAIL with no
+    survey involvement; it can never take s*."""
     # make the fixture bar round (q=0.85 > 0.8 cap) so a hard mech check surely fires
     fitted = galaxy / "galfit.01"
     fitted.write_text(fitted.read_text().replace("9) 0.3699", "9) 0.8500"),
                       encoding="utf-8")
     beam_init(str(galaxy), str(galaxy / "_iter1.feedme"))
     res = json.dumps(_run_result(galaxy))
-    rr = beam_record_fit(str(galaxy), res)  # no verdict_json
+    rr = beam_record_fit(str(galaxy), res)
     st = beam_status(str(galaxy))
     node = next(s for s in st["states"] if s["label"] == "A.1")
     assert node["verdict"] == "FAIL"
+    assert node["mech_veto"] is True
     assert rr["is_best"] is False
     assert st["best_state"] is None
     assert any("no admissible best state" in w for w in st.get("warnings", []))
@@ -108,7 +108,7 @@ def test_beam_mark_failure(galaxy):
     from beam.graph import BeamGraph
 
     g = BeamGraph.load(str(galaxy))
-    aid = g.add_pending({"sigma": 0.5, "primitives": [{"op": "remove", "target": "bar"}]},
+    aid = g.add_pending({"pred_bic": 100.0, "primitives": [{"op": "remove", "target": "bar"}]},
                         source_session="s", parent_label="A.1")
     g.commit()
     r = beam_mark_failure(str(galaxy), aid, "galfit_timeout")

@@ -1,15 +1,20 @@
-"""Tests for physicality.py (deterministic checks + verdict merge) and the
-KILOGAS_319 shakedown fixes B/C/D (repair budget, best-path aging gate,
-temporary-constraint lifecycle)."""
+"""Tests for physicality.py (deterministic checks + the record-time mech
+verdict settle) and the KILOGAS_319 shakedown fixes B/C/D (repair budget,
+best-path bookkeeping, temporary-constraint lifecycle)."""
 
 import pytest
 
+from beam.candidate_schema import Candidate
 from beam.digest import build_local_state_description
-from beam.enqueue import _reorder_queue, ingest
+from beam.enqueue import ingest
 from beam.graph import BeamGraph
-from beam.physicality import compute_mech_checks, merge_verdict
+from beam.physicality import compute_mech_checks
 
-from tests.beam.test_vlm_enqueue import cand  # Candidate factory
+
+def cand(prims, pred_bic=100.0, tag="t", novelty="new", motivation="m"):
+    return Candidate(primitives=prims, physical_motivation=motivation,
+                     expected_C_prime="c", novelty_claim=novelty,
+                     expected_behavior_tag=tag, pred_bic=pred_bic)
 
 
 def _comp(name, re, q=0.8, x=100.0, y=100.0, ctype="sersic", mag=18.0, n=1.0,
@@ -171,46 +176,26 @@ def test_zombie_is_note_only(mini_graph):
     assert not _by(_hards(checks), "zombie")
 
 
-# ------------------------------------------------------------------- merge
-def test_merge_verdict_hard_vetoes_pass():
-    mech = [{"severity": "hard", "check": "axis_ratio", "detail": "bar q=0.7"}]
-    merged, vetoed = merge_verdict(mech, {"verdict": "PASS", "failed_checks": []})
-    assert vetoed and merged["verdict"] == "FAIL" and merged["mech_veto"] is True
-    assert merged["failed_checks"][0].startswith("[mech-hard] bar q=0.7")
-
-
-def test_merge_verdict_notes_keep_pass():
-    mech = [{"severity": "note", "check": "zombie", "detail": "companion"}]
-    merged, vetoed = merge_verdict(mech, {"verdict": "PASS", "failed_checks": ["[note] x"]})
-    assert not vetoed and merged["verdict"] == "PASS"
-    assert merged["failed_checks"] == ["[note] x", "[mech-note] companion"]
-
-
-def test_merge_verdict_appends_to_vlm_fail():
-    mech = [{"severity": "hard", "check": "containment", "detail": "disk 2*Re"}]
-    merged, vetoed = merge_verdict(
-        mech, {"verdict": "FAIL", "failed_checks": ["[hard] visual onion"]})
-    assert vetoed and merged["verdict"] == "FAIL"
-    assert merged["failed_checks"][0] == "[hard] visual onion"
-    assert merged["failed_checks"][1].startswith("[mech-hard]")
-
-
-# ------------------------------------------------- graph integration (defect A)
-def test_apply_verdict_mech_veto_blocks_best(mini_graph):
-    # 2026-10-17: the mech veto settles at record_fit time. Simulate the
-    # mech-hard-at-record scenario: clear the already-settled verdict, then
-    # apply_verdict with a mech-hard table and a PASS input — the merge
-    # must veto to FAIL and block s*.
+# ------------------------------------------- record-time mech verdict settle
+def test_mech_veto_blocks_best(mini_graph):
+    # 2026-10-17 VLM-verdict retirement: the mech-only verdict settles at
+    # record_fit time. Simulate the mech-hard-at-record scenario: clear the
+    # already-settled verdict, then settle from a mech-hard table — FAIL +
+    # mech_veto, no verdict_vlm attribute, s* blocked.
     graph, label = mini_graph
     graph.g.nodes[label]["verdict"] = None   # un-settle (was auto-settled)
     graph.g.nodes[label]["mech_checks"] = [
         {"severity": "hard", "check": "axis_ratio", "detail": "bar q=0.9"}]
     graph.g.graph["best_state"] = None  # simulate: no prior best
-    graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": []})
+    graph._settle_mech_verdict(
+        label, graph.g.nodes[label]["mech_checks"],
+        graph.g.nodes[label].get("inventory") or [],
+        parent_label=graph.g.nodes[label].get("parent"))
     v = graph.state(label)["verdict"]
     assert v["verdict"] == "FAIL" and v["mech_veto"] is True
-    # the surveyor's original verdict is preserved verbatim
-    assert graph.state(label)["verdict_vlm"] == {"verdict": "PASS", "failed_checks": []}
+    assert any(fc.startswith("[mech-hard] bar q=0.9") for fc in v["failed_checks"])
+    # no VLM verdict exists — no verdict_vlm attribute is ever written
+    assert "verdict_vlm" not in graph.g.nodes[label]
     assert graph.g.graph.get("best_state") is None
 
 
@@ -230,7 +215,7 @@ def test_digest_renders_authoritative_mech_table(mini_graph):
 # --------------------------------------------------- repair budget (defect B)
 def test_mark_failure_does_not_bump_stagnation(mini_graph):
     graph, label = mini_graph
-    graph.add_pending({"action_id": "x", "sigma": 0.5, "score": 0.5,
+    graph.add_pending({"action_id": "x", "pred_bic": 100.0,
                        "primitives": []}, "s1", label)
     before = graph.counters().get("stagnation", 0)
     graph.mark_failed("x", "crash")
@@ -265,53 +250,43 @@ def test_repair_budget_migration_for_old_graphs(mini_graph):
     assert g2.budget_left() == g2.g.graph["meta"]["N_max"] - g2.n_total()
 
 
-# ------------------------------------------------- best-path aging (defect C)
-def _add_pending(graph, parent, aid, score, age):
-    graph.add_pending({"action_id": aid, "sigma": 0.6, "score": score,
+# ------------------------------------------ best-path bookkeeping (defect C)
+def _add_pending(graph, parent, aid, pred_bic, age=0):
+    graph.add_pending({"action_id": aid, "pred_bic": pred_bic,
                        "primitives": []}, "s", parent)
     graph.g.graph["pending"][aid]["age_counter"] = age
 
 
-def test_aging_bonus_only_on_best_path(mini_graph):
+def test_best_path_follows_record_time_best(mini_graph):
     graph, label = mini_graph
-    # second state off the best branch: A.2 with parent A.0
-    a2 = graph.record_fit({
+    # second state off the best branch: A.2 with parent A.0 (BIC-worse)
+    graph.record_fit({
         "input_param_file": graph.state(label)["artifacts"]["feedme"],
         "output_param_file": graph.state(label)["artifacts"]["galfit_nn"],
         "image_file": "cmp.png", "summary_file": "s.md",
         "round_status_file": "r.json",
         "fit_statistics": {"bic_eff": 2000.0, "convergence": {"flag": "ok"}},
     }, parent_label="A.0")
-    # 2026-10-17: record-time verdict settling means best_state exists (A.1
+    # record-time verdict settling means best_state exists (A.1
     # auto-PASS at record); the best path follows it, not the latest chain
+    assert graph.g.graph["best_state"] == label
     assert graph.best_path_labels() == {"A.1", "A.0"}
 
-    # A.1 is the record-time-settled best; the on-path candidate (parented
-    # A.1) has the lower base score but wins via the aging bonus; the
-    # off-path candidate (parented A.2) has the higher base score, no bonus
-    _add_pending(graph, "A.1", "on_path", 0.50, age=10)   # eff 0.50 + 0.10
-    _add_pending(graph, "A.2", "off_path", 0.55, age=10)  # eff 0.55 (no bonus)
-    _reorder_queue(graph)
-    assert graph.pending_queue()[0] == "on_path"
-
-    # best stays A.1 under the new contract (auto-settled at record; the
-    # explicit applies are idempotent no-ops): the on-path candidate keeps
-    # the aging bonus and stays first; the off-path A.2-parented one
-    # cannot take it over despite the higher base score
-    graph.apply_verdict("A.2", {"verdict": "FAIL", "failed_checks": []})
-    graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": []})
-    assert graph.g.graph["best_state"] == label  # A.1 (record-time best)
-    _reorder_queue(graph)
-    assert graph.pending_queue()[0] == "on_path"  # aging follows the best path
+    # the queue is ordered by pred_bic ALONE: no aging bonus, no on-path
+    # lift — the smaller pred_bic leads regardless of its parent's path
+    _add_pending(graph, "A.2", "off_path", 90.0)
+    _add_pending(graph, "A.1", "on_path", 120.0)
+    assert graph.pending_queue()[0] == "off_path"
 
 
 def test_snapshot_flags_off_best_path(mini_graph):
     graph, label = mini_graph
-    _add_pending(graph, "A.0", "root_child", 0.6, age=0)
+    _add_pending(graph, "A.0", "root_child", 100.0)
     snap = graph.snapshot()
     entry = next(q for q in snap["queue"] if q["action_id"] == "root_child")
     # latest state is A.1 -> path {A.1, A.0}: parent A.0 IS on the path
     assert entry["off_best_path"] is False
+    assert "pred_bic" in entry
 
 
 # ------------------------------------------- constraint lifecycle (defect D)
@@ -324,12 +299,12 @@ def test_set_constraint_add_blocks_and_remove_allows(mini_graph):
     prims = [{"op": "add", "add": {"structure_name": "companion",
                                    "component_type": "sersic", "re_px": 2.0,
                                    "x_px": 200.0, "y_px": 100.0}}]
-    res = ingest(graph, [cand(prims, sigma=0.7, tag="comp_add")],
+    res = ingest(graph, [cand(prims, pred_bic=100.0, tag="comp_add")],
                  session_id="s1", parent_label=label)
     assert res.discarded and res.discarded[0]["reason"] == "E_TEMP_CONSTRAINT"
 
     graph.set_temporary_constraint("remove", "companion exclusion")
-    res = ingest(graph, [cand(prims, sigma=0.7, tag="comp_add2")],
+    res = ingest(graph, [cand(prims, pred_bic=100.0, tag="comp_add2")],
                  session_id="s1", parent_label=label)
     assert not any(d["reason"] == "E_TEMP_CONSTRAINT" for d in res.discarded)
     assert any(e["tag"] == "comp_add2" for e in res.enqueued)
@@ -349,7 +324,7 @@ def test_set_constraint_add_is_idempotent(mini_graph):
 # --------------------------------------- floor suspension (KILOGAS_296 A.2-c1)
 def _add_floor(graph, parent, aid):
     return graph.add_pending(
-        {"action_id": aid, "sigma": 0.2, "score": 0.5,
+        {"action_id": aid, "pred_bic": 200.0,
          "code_flags": {"floor_n_release": True},
          "primitives": [{"op": "tune", "tune": {"structure_name": "bulge",
                                                 "param": "n", "toggle": 1}}]},
@@ -363,7 +338,7 @@ def _hit_stagnation(graph):
 
 def test_stagnation_suspended_by_pending_floor(mini_graph):
     graph, label = mini_graph
-    graph.add_pending({"action_id": "plain_head", "sigma": 0.5, "score": 0.9,
+    graph.add_pending({"action_id": "plain_head", "pred_bic": 100.0,
                        "primitives": []}, "s1", label)
     _add_floor(graph, label, "floor_nrel")  # queue position 2, below the head
     _hit_stagnation(graph)
@@ -377,8 +352,7 @@ def test_stagnation_suspended_by_pending_floor(mini_graph):
 
 def test_floor_suspension_lifts_after_execution(mini_graph):
     graph, label = mini_graph
-    graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": []})  # settle best
-    graph.add_pending({"action_id": "plain_tail", "sigma": 0.5, "score": 0.4,
+    graph.add_pending({"action_id": "plain_tail", "pred_bic": 300.0,
                        "primitives": []}, "s1", label)  # keep the queue non-empty
     aid = _add_floor(graph, label, "floor_nrel")
     _hit_stagnation(graph)
@@ -389,7 +363,7 @@ def test_floor_suspension_lifts_after_execution(mini_graph):
         "image_file": "cmp.png", "summary_file": "s.md",
         "round_status_file": "r.json",
         "fit_statistics": {"bic_eff": 2000.0, "convergence": {"flag": "ok"}},
-    }, action_id=aid, verdict={"verdict": "PASS"})  # BIC-worse PASS: stagnation stays
+    }, action_id=aid)  # BIC-worse mech-PASS: stagnation stays
     term = graph.termination_check()
     assert term["suspended_by_floor"] is False and term["floor_blockers"] == []
     assert term["stop"] is True and "stagnation" in term["conditions"]
@@ -407,7 +381,7 @@ def test_budget_exhaustion_beats_floor(mini_graph):
 
 def test_stagnation_stop_without_floor_unchanged(mini_graph):
     graph, label = mini_graph
-    graph.add_pending({"action_id": "plain_head", "sigma": 0.5, "score": 0.9,
+    graph.add_pending({"action_id": "plain_head", "pred_bic": 100.0,
                        "code_flags": {"diversity": True},
                        "primitives": []}, "s1", label)
     _hit_stagnation(graph)

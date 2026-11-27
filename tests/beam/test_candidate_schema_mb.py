@@ -35,11 +35,10 @@ def _mb_graph(tmp_path, test_data_dir):
 
 def _payload(prims, tag="t1"):
     return {
-        "physicality_verdict": {"verdict": "PASS", "failed_checks": []},
         "candidates": [{
             "action_id": "c1", "primitives": prims,
             "physical_motivation": "m", "expected_C_prime": "{disk,bulge,bar}",
-            "expected_behavior_tag": tag, "local_benefit_sigma": 0.5,
+            "expected_behavior_tag": tag, "pred_bic": 100.0,
         }],
     }
 
@@ -194,7 +193,7 @@ def test_apply_and_record_end_to_end(tmp_path, test_data_dir):
         "fit_statistics": {"bic": 546297.625, "reduced_chisq": 0.5885},
     })
     aid = graph.add_pending({
-        "action_id": "mb-e2e-1", "sigma": 0.5,
+        "action_id": "mb-e2e-1", "pred_bic": 100.0,
         "expected_behavior_tag": "tune_bar",
         "expected_C_prime": "{disk,bulge,bar}",
         "novelty_claim": "grow bar", "score": 0.7,

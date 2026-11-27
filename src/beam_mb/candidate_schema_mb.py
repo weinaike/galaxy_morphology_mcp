@@ -15,9 +15,10 @@ contract (docs/design_mb_beam.md §4):
 * AGN is the N block (``structure_name: "agn"``, the psf avatar);
 * no mag seeding channel exists (logNorm auto-initialises inside GalfitS).
 
-The Candidate / Verdict / SurveyResponse shells are byte-compatible with
-the galfit contract so survey.py's dispatch only swaps the parse+validate
-pair.
+The Candidate / SurveyResponse shells are byte-compatible with the galfit
+contract (candidates-only, no physicality_verdict — the verdict settles
+mechanically at beam_record_fit time; ``pred_bic`` orders the queue
+ascending) so survey.py's dispatch only swaps the parse+validate pair.
 """
 
 from __future__ import annotations
@@ -134,11 +135,6 @@ MbPrimitive = Union[MbAddPrimitive, MbRemovePrimitive, MbTunePrimitive,
                     MbSkeletonPrimitive, MbReclassifyPrimitive]
 
 
-class MbQueueReorder(BaseModel):
-    action_id: str
-    rank: int = Field(ge=1, le=5)
-
-
 class MbCandidate(BaseModel):
     action_id: str = ""
     primitives: list[MbPrimitive] = Field(min_length=1, max_length=2)
@@ -146,8 +142,7 @@ class MbCandidate(BaseModel):
     expected_C_prime: str
     novelty_claim: str = ""
     expected_behavior_tag: str
-    local_benefit_sigma: float = Field(ge=0.0, le=1.0)
-    queue_reorder: Optional[list[MbQueueReorder]] = None
+    pred_bic: float
 
     def to_plain_primitives(self) -> list[dict]:
         out = []
@@ -161,14 +156,7 @@ class MbCandidate(BaseModel):
         return out
 
 
-class MbVerdict(BaseModel):
-    verdict: Literal["PASS", "FAIL"]
-    failed_checks: list[str] = []
-    swap_hint: Optional[str] = None
-
-
 class MbSurveyResponse(BaseModel):
-    physicality_verdict: MbVerdict
     candidates: list[MbCandidate] = Field(min_length=1, max_length=4)
 
 
@@ -490,11 +478,6 @@ def validate_mb_survey(resp: MbSurveyResponse, graph,
                                        is_root_opening, aid)
         report.issues.extend(issues)
         tags.append(cand.expected_behavior_tag)
-        if cand.queue_reorder:
-            for qr in cand.queue_reorder:
-                if qr.action_id == aid:
-                    report.add("E_QUEUE_REORDER",
-                               "a candidate cannot reorder itself", aid)
     dup_tags = {t for t in tags if tags.count(t) > 1}
     if dup_tags:
         report.add("E_TAG_DUPLICATE",

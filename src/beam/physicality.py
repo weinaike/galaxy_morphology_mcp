@@ -10,12 +10,11 @@ Contract:
 * ``compute_mech_checks(graph, state)`` returns ``[{"severity": "hard"|"note",
   "check": ..., "detail": ...}, ...]`` — deterministic, file-backed facts only
   (fitted inventory, effective .cons bands via the provenance-aware bound-hit
-  scanner, graph meta). Visual judgements stay with the surveyor VLM.
-* ``merge_verdict(state, vlm_verdict)`` merges the mechanical table into the
-  surveyor verdict: any ``hard`` entry forces FAIL (``mech_veto``), mechanical
-  entries are prefixed ``[mech-hard]`` / ``[mech-note]`` and appended after
-  the surveyor's verbatim ``failed_checks``; the original VLM verdict is
-  preserved in ``verdict_vlm``.
+  scanner, graph meta).
+* the state's verdict is settled from this table ALONE
+  (``BeamGraph._settle_mech_verdict``, at record_fit time): any ``hard``
+  entry forces FAIL (``mech_veto``); entries are prefixed ``[mech-hard]`` /
+  ``[mech-note]`` into ``failed_checks``. No VLM verdict exists.
 
 Check set (each grounded in a KILOGAS_319 round where the VLM applied it):
   re_chain        hard  central Re total order re_disk > re_lens > re_bar >
@@ -959,31 +958,11 @@ def compute_mech_checks(graph, state: dict) -> list[dict]:
                                  "(zombie flag — dedup criterion only)"})
 
     # ---- administrative disable filter (GALMCP_DISABLE_MECH_CHECKS): drop
-    # the configured families before anything consumes the table (merge,
-    # record_fit fail-safe, prompt digest).
+    # the configured families before anything consumes the table (the
+    # record-time mech verdict settle, prompt digest).
     disabled = _disabled_checks()
     if disabled:
         checks = [c for c in checks
                   if c.get("severity") not in disabled.get(c.get("check"), ())]
 
     return checks
-
-
-def merge_verdict(mech_checks: list[dict], vlm_verdict: dict) -> tuple[dict, bool]:
-    """Merge the mechanical table into the surveyor verdict.
-
-    Returns ``(merged_verdict, vetoed)``. The surveyor's own checks are kept
-    verbatim and prepended-by-authority: mechanical hard entries force FAIL.
-    """
-    hard = [m for m in mech_checks if m.get("severity") == "hard"]
-    notes = [m for m in mech_checks if m.get("severity") != "hard"]
-    merged = dict(vlm_verdict)
-    mech_lines = ([f"[mech-hard] {m['detail']}" for m in hard]
-                  + [f"[mech-note] {m['detail']}" for m in notes])
-    if mech_lines:
-        merged["failed_checks"] = list(vlm_verdict.get("failed_checks") or []) + mech_lines
-    vetoed = bool(hard)
-    if vetoed:
-        merged["verdict"] = "FAIL"
-        merged["mech_veto"] = True
-    return merged, vetoed

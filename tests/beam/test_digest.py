@@ -319,7 +319,7 @@ def test_queue_digest_lists_flags(mini_graph):
         {"op": "tune", "tune": {"structure_name": "bulge", "param": "n",
                                 "toggle": 1, "value": 4.0}}],
         physical_motivation="m", expected_C_prime="c", novelty_claim="n axis",
-        expected_behavior_tag="n_free", local_benefit_sigma=0.2)],
+        expected_behavior_tag="n_free", pred_bic=130.0)],
         session_id="s1", parent_label=label)
     digest = build_queue_digest(graph)
     assert "n_free" in digest
@@ -337,7 +337,8 @@ def test_survey_prompt_loaders_render():
         local_state_description="LS_TEST", branch_id="A", parent_label="A.4",
         depth=3, queue_digest="QD_TEST", directives="DIR_TEST")
     for marker in ("SUM_TEST", "GS2", "LS_TEST", "QD_TEST", "DIR_TEST",
-                   "physicality_verdict", "E_RE_CHAIN"):
+                   "pred_bic", "E_RE_CHAIN"):
         assert marker in cg, f"missing {marker}"
-    # str.replace rendering leaves no braces mishandled: the JSON example intact
-    assert '"physicality_verdict"' in cg
+    # candidates-only JSON shell: no verdict key anywhere in the contract
+    assert "physicality_verdict" not in cg
+    assert '"pred_bic"' in cg

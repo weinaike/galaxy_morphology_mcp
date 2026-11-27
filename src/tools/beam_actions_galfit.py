@@ -1,21 +1,16 @@
 """
-Beam Search candidate-action generator for GALFIT single-band fitting.
+Beam-search support for GALFIT single-band fitting.
 
-Mirrors the dispatch structure of the GalfitS `beam_actions.py` but operates on
-GALFIT artefacts: the input `feedme` (structure + `# STRUCTURE:` naming
-comments), the fitted parameter file (`galfit.NN`, where GALFIT drops the
-naming comments — names are recovered by block order from the paired feedme)
-and the markdown summary written by `run_galfit`. All sizes/positions are in
-pixels on both the VLM side and the feedme side — no unit conversion anywhere.
-
-Also provides `check_feedme_file`, the lightweight structural validator used by
+Provides `check_feedme_file`, the lightweight structural validator used by
 the beam-search orchestrator before every `run_galfit` call (the single-band
-counterpart of the GalfitS `check_lyric_file` gate).
+counterpart of the GalfitS `check_lyric_file` gate), plus the
+`_galfit_system_message` / `_build_summary_content_galfit` prompt helpers
+reused by beam.survey. The legacy `generate_galfit_beam_actions` tool was
+retired — candidate generation lives solely in survey_round's VLM.
 """
 
 import os
 import re
-import uuid
 from typing import Annotated, Any
 
 import dotenv
@@ -32,10 +27,8 @@ dotenv.load_dotenv()
 # expdisk encoding is no longer valid) / Bulge / Bar / AGN (psf) / singlesersic
 # (+ F1 + fixed sky) are legal on this branch. Companion, Lens, OuterDisk
 # (envelope / 2nd disk) and edgedisk are outside the solution space. Enforced
-# mechanically here (check_feedme_file rejects them; the returned VLM markdown
-# is scanned for forbidden candidate actions and annotated) in addition to the
-# prompt-level Restricted Action Space note in
-# beam_action_generation_prompt_galfit.md.
+# mechanically here (check_feedme_file rejects them) in addition to the
+# prompt-level Restricted Action Space note in beam_survey_prompt_galfit.md.
 BRANCH_ALLOWED_COMPONENTS = "disk(sersic n=1 fixed)/bulge/bar/agn(psf)/singlesersic (+F1, fixed sky)"
 BRANCH_FORBIDDEN_NOTICE = (
     "outside the solution space on branch restrict-disk-bulge-bar-agn "
@@ -45,45 +38,6 @@ _FORBIDDEN_NAME_PREFIXES = (
     "companion", "comp", "secondary", "satellite",
     "lens", "outerdisk", "outer_disk", "outer", "envelope",
 )
-# Candidate action patterns targeting a forbidden component. Only scanned in the
-# candidates section of the returned Markdown (after the "# Beam Action
-# Candidates" heading), never in the Phase-1 visual description (diagnostic
-# mentions of lens-type bumps / companion-type blobs stay legal there).
-_FORBIDDEN_ACTION_RE = re.compile(
-    r"add\s*\(\s*(?:an?\s+)?(lens|companion|outerdisk|outer[-_ ]?disk|edgedisk|edge[-_ ]?on[-_ ]?disk)"
-    r"|tune\s*\(\s*(companion|lens|outerdisk|outer[-_ ]?disk|edgedisk)"
-    r"|(?:→|->)\s*edgedisk"
-    r"|split\s*(?:→|->)\s*bar\+lens"
-    r"|bar\+lens\s+split",
-    re.IGNORECASE,
-)
-
-
-def _scan_forbidden_candidates(markdown_text: str) -> list[str]:
-    """Return trimmed candidate-declaration lines that target a forbidden component.
-
-    Scans only the section after the ``# Beam Action Candidates`` heading (or, if
-    that heading is missing, after the first ``## Candidate`` heading) so that
-    Phase-1 diagnostic descriptions of lens/companion residual features do not
-    produce false positives.
-    """
-    if not markdown_text:
-        return []
-    m = re.search(r"(?m)^#\s+Beam Action Candidates", markdown_text)
-    if m:
-        tail = markdown_text[m.end():]
-    else:
-        m2 = re.search(r"(?m)^##\s+Candidate\b", markdown_text)
-        if not m2:
-            return []
-        tail = markdown_text[m2.end():]
-    hits: list[str] = []
-    for line in tail.splitlines():
-        if _FORBIDDEN_ACTION_RE.search(line):
-            hits.append(line.strip())
-    return hits
-
-
 # The shared system message (residual_analysis_message.md) is written for the
 # GalfitS multi-band flow and mandates a true sky-PA convention ("north = 0°,
 # align on the compass"). The single-band beam flow adopts the N=+Y contract
@@ -208,222 +162,6 @@ def _build_summary_content_galfit(
             out.append(stats)
 
     return "\n".join(out)
-
-
-def generate_galfit_beam_actions(
-    feedme_file: Annotated[str, "Absolute path to the parent state's input feedme file (carries the '# STRUCTURE:' component names)"],
-    fitted_param_file: Annotated[str, "Absolute path to the parent state's fitted parameter file (galfit.NN, e.g. the archived output_param_file returned by run_galfit)"],
-    comparison_file: Annotated[str, "Absolute path to the 2x3 comparison PNG produced by the parent state's run_galfit call"],
-    summary_file: Annotated[str, "Absolute path to the markdown summary produced by the parent state's run_galfit call (only its statistics table is parsed; may be empty)"] = "",
-    global_state_description: Annotated[str, "Cross-round stable facts for the stateless VLM, distilled by the orchestrator from the beam graph (graph digest, NOT the raw graph). Fixed schema per workflow_galfit.md 'Generation spec for global_state_description / local_state_description': [Meta (pixel contract)]/[Stage-1 conclusions]/[State ledger (px)]/[Rollback edges]/[Verified basins]/[Refuted hypotheses]/[Budget]. Keep <= ~50 lines."] = "",
-    local_state_description: Annotated[str, "Current-round objective description: parent component inventory C + key params, bound-hit parameters (⚠️ + values vs .cons bounds), residual features, identity anomalies, and orchestrator numeric-rule delegations (disk-Re bottleneck / flux-misallocation signals / flat-bulge trigger values). Must NOT suggest candidate directions."] = "",
-    branch_id: Annotated[str, "Current beam branch identifier (e.g. 'A', 'B'). Used in candidate action_ids."] = "A",
-    parent_label: Annotated[str, "Parent round label inside the branch (e.g. 'A.3'). Used in candidate action_ids."] = "",
-    depth: Annotated[int, "Depth of the parent state in the search tree. 1 = after the first fit on the input feedme. Controls candidate count via the prompt: depth=1 → 1-2 candidates (phase-one driven), depth=2 → 2-3, depth>=3 → 2-4."] = 1,
-) -> dict[str, Any]:
-    """Generate depth-aware candidate composite actions for GALFIT Beam Search.
-
-    Called by the orchestrator agent after each successful ``run_galfit`` fit.
-    The output is a structured Markdown list of candidates (with a leading
-    ``## Physicality Verdict`` block); the agent performs semantic deduplication
-    and global heuristic ranking (per workflow_galfit.md "Deduplication and Ranking") before
-    enqueuing into the priority queue of width W=5.
-
-    Unlike the GalfitS variant there is **no unit conversion**: the VLM reads
-    pixels off the comparison PNG and those same pixel values are written
-    verbatim into the child feedme.
-
-    Returns
-    -------
-    dict with keys:
-        - status: "success" | "failure"
-        - candidates: str (the VLM-generated Markdown, only on success)
-        - candidates_file: str | None (path to the saved .md file)
-        - branch_id, parent_label, depth: echoed back for traceability
-        - error: str (only on failure)
-    """
-    # ── Validate inputs ───────────────────────────────────────────────
-    for path, label in [
-        (feedme_file, "Feedme file"),
-        (fitted_param_file, "Fitted parameter file"),
-        (comparison_file, "Comparison file"),
-    ]:
-        if not os.path.exists(path):
-            return {"status": "failure", "error": f"{label} not found: {path}"}
-    if summary_file and not os.path.exists(summary_file):
-        return {"status": "failure", "error": f"Summary file not found: {summary_file}"}
-
-    # ── Build parameter summary (names from feedme, values from galfit.NN)
-    summary_content = _build_summary_content_galfit(feedme_file, fitted_param_file,
-                                                    summary_file)
-    if not summary_content:
-        return {"status": "failure",
-                "error": f"Failed to parse components from fitted param file: {fitted_param_file}"}
-
-    # ── Build system message (residual analysis system message with the PA
-    #    clause patched to the N=+Y contract + GALFIT component specification)
-    system_message = _galfit_system_message()
-    component_spec = prompt.get_component_specification_galfit()
-    if component_spec:
-        system_message = system_message + "\n\n" + component_spec
-
-    # ── Build two-turn prompts from the galfit beam prompt phases ────
-    turn1 = prompt.get_galfit_beam_visual_extraction(
-        global_state_description=global_state_description,
-    )
-    turn2 = prompt.get_galfit_beam_candidate_generation(
-        summary_content=summary_content,
-        global_state_description=global_state_description,
-        local_state_description=local_state_description,
-        branch_id=branch_id,
-        parent_label=parent_label,
-        depth=depth,
-    )
-
-    # ── Dispatch to the configured analysis backend ───────────────────
-    analysis_mode = os.environ.get("ANALYSIS_MODE", "vlm").lower()
-    session_id = ""
-    analysis: str | None = None
-    error: str | None = None
-
-    if analysis_mode == "cc":
-        if not os.environ.get("CLAUDECODE_API_KEY"):
-            return {"status": "failure",
-                    "error": "ANALYSIS_MODE=cc requires CLAUDECODE_API_KEY to be set"}
-        from .cc_analysis import run_component_analysis_cc
-        session_id = str(uuid.uuid4())
-        analysis, error = run_component_analysis_cc(
-            system_prompt=system_message,
-            analysis_prompts=[turn1, turn2],
-            session_id=session_id,
-        )
-
-    elif analysis_mode == "acp":
-        from .acp_analysis import run_component_analysis_acp
-        # ACP uses a single mega-prompt concatenating all phases.
-        mega = (
-            "You are the candidate-action generator for the GALFIT single-band beam search. "
-            "Given the GALFIT fitting results, produce the physicality verdict and 2-4 "
-            "candidate composite actions through a two-phase chain of thought.\n\n"
-            "During this process you may only use the read_file and write_file tools and no others.\n\n"
-            f"[Input image file]: {os.path.abspath(comparison_file)}\n"
-            "(2x3 layout: DATA LOW/HIGH DR | MODEL // RESIDUAL | RESIDUAL ZOOM | 1D SB profile)\n\n"
-            "After reading the file above with read_file, carry out the following 2 phases in order. "
-            "In Phase 1 you must remain strictly objective.\n\n"
-            f"{turn1}\n\n{turn2}"
-        )
-        analysis, session_id, error = run_component_analysis_acp(
-            system_prompt=system_message,
-            analysis_prompts=[mega],
-        )
-
-    else:
-        # vlm mode: multi-turn via OpenAI SDK
-        from .openai_analysis import run_openai_analysis
-        deferred_system = os.environ.get("VLM_DEFERRED_SYSTEM", "0") == "1"
-        analysis, session_id, error, _timing = run_openai_analysis(
-            system_prompt=system_message,
-            analysis_prompts=[turn1, turn2],
-            image_path=os.path.abspath(comparison_file),
-            deferred_system=deferred_system,
-        )
-
-    if error:
-        result: dict[str, Any] = {"status": "failure", "error": error}
-        if session_id:
-            result["session_id"] = session_id
-        if analysis:
-            result["partial_analysis"] = analysis
-        return result
-
-    assert analysis is not None, "analysis must not be None when error is None"
-
-    # ── Branch solution-space restriction guard ─────────────────────────
-    # The VLM is prompt-restricted to disk/bulge/bar/AGN(+F1/singlesersic), but
-    # slip-throughs happen: annotate any returned candidate that targets a
-    # forbidden component (Companion/Lens/OuterDisk/edgedisk) so the
-    # orchestrator discards it whole instead of transcribing it.
-    forbidden_hits = _scan_forbidden_candidates(analysis)
-    if forbidden_hits:
-        restriction_note = (
-            "\n\n---\n"
-            "# ⚠ Solution-space restriction (branch restrict-disk-bulge-bar-agn)\n"
-            "The candidate action(s) below target a component that is "
-            f"{BRANCH_FORBIDDEN_NOTICE}. The orchestrator MUST discard these candidates "
-            "whole — do NOT transcribe, modify or execute them — and log them in the "
-            "cross-branch decision log as a 'solution-space restriction discard':\n"
-            + "\n".join(f"- {line}" for line in forbidden_hits)
-            + "\n"
-        )
-        analysis = analysis + restriction_note
-
-    # ── Persist the candidate list alongside other fitting artefacts ─
-    base_name = os.path.splitext(os.path.basename(comparison_file))[0]
-    if session_id:
-        out_file = os.path.join(
-            os.path.dirname(comparison_file),
-            f"{base_name}_beam_actions_{branch_id}_{session_id}.md",
-        )
-    else:
-        out_file = os.path.join(
-            os.path.dirname(comparison_file),
-            f"{base_name}_beam_actions_{branch_id}.md",
-        )
-    try:
-        with open(out_file, "w", encoding="utf-8") as f:
-            f.write(analysis)
-        print(f"[beam_actions_galfit] candidates saved to: {out_file}")
-    except OSError as e:
-        print(f"[beam_actions_galfit] warning: failed to save candidates file: {e}")
-        out_file = None
-
-    # ── Hand-off note for the orchestrator agent ──────────────────────
-    handoff = (
-        "\n\n---\n"
-        "# Candidate-enqueue rules (orchestrator's responsibility)\n"
-        "- First parse the `## Physicality Verdict` block at the top of the returned Markdown "
-        "(verdict / failed_checks / swap_hint): a parent state with verdict=FAIL must not take part "
-        "in s* updates (workflow_galfit.md Step e physicality gate), and protected recovery "
-        "candidates must be generated per the Recovery Protocol for Non-Physical Results; when "
-        "swap_hint=disk_bulge_swap, confirm the candidates include the disk <-> bulge "
-        "RECLASSIFY repair (bijection map; bare label swaps are forbidden). Record the verdict block verbatim in the graph state; do not rewrite it.\n"
-        "- Apply semantic deduplication to every candidate (compare against the (s_j, a_j) already "
-        "in Q; if equivalent, keep the one with the higher g).\n"
-        "- Equivalence criteria (all three must hold):\n"
-        "  1) expected_C' is equivalent in physical identity (bulge/bar naming swaps allowed, etc.);\n"
-        "  2) expected parameters agree within the tolerance bands (Re ±20%, n ±0.5, q ±0.1, "
-        "PA ±10° (N=+Y contract), mag ±0.5);\n"
-        "  3) expected_behavior_tag is identical.\n"
-        "- Graph-search cycle detection (before semantic dedup, sharing the same signature criteria "
-        "as the in-Q dedup): besides comparing against Q, compare against the **execution history** — "
-        "(R1) transcribe the candidate into the canonical form of a hypothetical feedme (structure × "
-        "free/fixed configuration × `.cons` bound bands × initial-value bands, all in px) and compare "
-        "with the **input ledger**; equivalence within the bands -> discard (rerunning the same input "
-        "yields no new information); (R2) for closed-form transitions (remove-only / parameter revert "
-        "/ bound restoration), the resulting state can be projected exactly — compare the projected "
-        "signature with the **result ledger** (zombie-aware: states differing only by [zombie] "
-        "components are equivalent); exact hit -> do not enqueue (zero-cost rollback); structure-only "
-        "match -> tag '[suspected near-duplicate]' (score 0 on the degeneracy-penalty dimension). "
-        "Check every candidate's novelty_claim against the ledgers: a candidate equivalent in "
-        "structure with no new parameter axis is dropped entirely.\n"
-        "- Score each survivor on the six dimensions (residual-improvement potential, physical "
-        "plausibility, path diversity, degeneracy penalty, historical consistency, BIC threshold), "
-        "each 0-1, and take the weighted average as g: path diversity carries weight x2, the rest x1 "
-        "(diversity is judged mainly against the globally executed candidates, secondarily against "
-        "the elements in Q; repeated directions on the same component structure / parameter axis "
-        "score low on this dimension); sort by g descending and truncate to W=5 when enqueuing into Q.\n"
-        "- A candidate's σ is advisory only and is not used directly for ranking.\n"
-    )
-
-    return {
-        "status": "success",
-        "candidates": analysis + handoff,
-        "candidates_file": out_file,
-        "branch_id": branch_id,
-        "parent_label": parent_label,
-        "depth": depth,
-        "session_id": session_id,
-    }
 
 
 def _validate_cons_file(cons_file: str) -> tuple[list[str], list[str]]:

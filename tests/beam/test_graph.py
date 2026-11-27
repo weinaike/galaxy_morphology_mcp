@@ -60,37 +60,33 @@ def test_init_creates_root_and_persists(galaxy):
     assert g2.state("A.0")["combo_key"] == "agn+bar+bulge+disk"
 
 
-def test_init_beam_params_and_ablation_arm_persist(galaxy):
-    """Ablation arm (paper): beam params + arm flags live in graph meta and
-    survive persistence — every later call reads the same arm."""
+def test_init_beam_params_persist(galaxy):
+    """Beam params live in graph meta and survive persistence."""
     g = BeamGraph.init(str(galaxy), str(galaxy / "_iter1.feedme"), stage1={},
-                       beam_width=3, n_max=7, stagnation_max=2,
-                       ablations={"no_global_state": True, "single_agent": True})
+                       beam_width=3, n_max=7, stagnation_max=2)
     m = g.g.graph["meta"]
     assert (m["W"], m["N_max"], m["stagnation_max"]) == (3, 7, 2)
-    assert m["ablations"] == {"no_global_state": True, "single_agent": True}
+    assert "ablations" not in m and "g_min" not in m
 
     g2 = BeamGraph.load(str(galaxy))
     m2 = g2.g.graph["meta"]
     assert (m2["W"], m2["N_max"], m2["stagnation_max"]) == (3, 7, 2)
-    assert m2["ablations"]["no_global_state"] is True
     snap = g2.snapshot()
     assert snap["config"]["W"] == 3 and snap["config"]["N_max"] == 7
-    assert snap["ablations"]["no_global_state"] is True
+    assert "ablations" not in snap
 
 
-def test_snapshot_config_defaults_without_ablations(galaxy):
+def test_snapshot_config_defaults(galaxy):
     g = _init(galaxy)
     snap = g.snapshot()
-    assert snap["ablations"] == {}
-    assert snap["config"]["W"] == 5 and snap["config"]["g_min"] == 0.3  # 2026-10-10: W back to 5 (hedge slot)
+    assert snap["config"]["W"] == 5  # 2026-10-10: W back to 5 (hedge slot)
+    assert "g_min" not in snap["config"]
 
 
 # -------------------------------------------------------------- record fit
 def test_record_first_fit_sets_best(galaxy):
     g = _init(galaxy)
-    label = g.record_fit(_run_result(galaxy, bic_eff=1000.0),
-                         verdict={"verdict": "PASS"})
+    label = g.record_fit(_run_result(galaxy, bic_eff=1000.0))
     assert label == "A.1"
     s = g.state("A.1")
     assert s["parent"] == "A.0" and s["depth"] == 1
@@ -110,22 +106,20 @@ def test_verdict_settles_after_record(galaxy):
     label = g.record_fit(_run_result(galaxy, bic_eff=1000.0))
     assert (g.state(label).get("verdict") or {}).get("verdict") == "PASS"
     assert g.g.graph["best_state"] == "A.1"  # s* updated at record time
-    g.apply_verdict(label, {"verdict": "FAIL"})  # idempotent: no-op
-    assert g.g.graph["best_state"] == "A.1"
+    assert "verdict_vlm" not in g.g.nodes[label]
     assert g.counters()["stagnation"] == 0
 
 
 def test_record_fit_worse_bic_refutes_and_stagnates(galaxy):
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
-    g.add_pending({"sigma": 0.6, "expected_behavior_tag": "bar_add",
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))
+    g.add_pending({"pred_bic": 90.0, "expected_behavior_tag": "bar_add",
                    "expected_C_prime": "{disk,bulge,bar,agn}",
                    "primitives": [{"op": "add", "structure_name": "bar",
                                    "component_type": "sersic"}]},
                   source_session="s1", parent_label="A.1")
     aid = g.pending_queue()[0] if g.pending_queue() else list(g.g.graph["pending"])[0]
-    label = g.record_fit(_run_result(galaxy, bic_eff=1050.0), action_id=aid,
-                         verdict={"verdict": "PASS"})
+    label = g.record_fit(_run_result(galaxy, bic_eff=1050.0), action_id=aid)
     assert label == "A.2"
     assert g.g.graph["best_state"] == "A.1"  # no best update
     assert g.counters()["stagnation"] == 1
@@ -135,38 +129,26 @@ def test_record_fit_worse_bic_refutes_and_stagnates(galaxy):
     assert aid not in g.pending_queue()
 
 
-def test_record_fit_fail_verdict_never_best(galaxy):
+def test_record_fit_mech_hard_never_best(galaxy):
+    """A mech-hard round has a better BIC but must NOT take s*: the verdict
+    gate is unconditional (the no_verdict_gate ablation arm is retired)."""
+    from unittest.mock import patch
+
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
-    g.add_pending({"sigma": 0.5, "expected_behavior_tag": "lens_add",
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))
+    g.add_pending({"pred_bic": 100.0, "expected_behavior_tag": "lens_add",
                    "primitives": [{"op": "add", "structure_name": "lens",
                                    "component_type": "sersic"}]},
                   source_session="s2", parent_label="A.1")
     aid = list(g.g.graph["pending"])[0]
-    g.record_fit(_run_result(galaxy, bic_eff=900.0), action_id=aid,
-                 verdict={"verdict": "FAIL", "failed_checks": ["re_inversion"], "swap_hint": "none"})
-    # better BIC but FAIL verdict: must NOT take the best
+    hard_mech = [{"severity": "hard", "check": "re_chain",
+                  "detail": "re_bulge=5px exceeds re_disk=4px"}]
+    with patch("beam.physicality.compute_mech_checks", return_value=hard_mech):
+        g.record_fit(_run_result(galaxy, bic_eff=900.0), action_id=aid)
+    # better BIC but mech-FAIL verdict: must NOT take the best
     assert g.g.graph["best_state"] == "A.1"
-    assert any(r["reason"] == "physicality_fail" for r in g.g.graph["refuted_hypotheses"])
-
-
-def test_no_verdict_gate_ablation_arm(galaxy):
-    """Arm no_verdict_gate (paper): metric-only best selection — a FAIL round
-    with better BIC takes s*, but the verdict is still recorded verbatim."""
-    g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
-    g.g.graph["meta"]["ablations"] = {"no_verdict_gate": True}
-    g.add_pending({"sigma": 0.5, "expected_behavior_tag": "lens_add",
-                   "primitives": [{"op": "add", "structure_name": "lens",
-                                   "component_type": "sersic"}]},
-                  source_session="s2", parent_label="A.1")
-    aid = list(g.g.graph["pending"])[0]
-    label = g.record_fit(_run_result(galaxy, bic_eff=900.0), action_id=aid,
-                         verdict={"verdict": "FAIL", "failed_checks": ["re_inversion"],
-                                  "swap_hint": "none"})
-    assert g.g.graph["best_state"] == label          # FAIL took s* under the arm
-    assert g.state(label)["verdict"]["verdict"] == "FAIL"  # verdict still recorded
-    assert g.counters()["stagnation"] == 0           # best update reset stagnation
+    assert any(r["reason"] == "physicality_fail" and r["evidence"].startswith("mech FAIL")
+               for r in g.g.graph["refuted_hypotheses"])
 
 
 def test_subconverged_retired_round_treated_normally(galaxy):
@@ -174,15 +156,14 @@ def test_subconverged_retired_round_treated_normally(galaxy):
     legacy convergence flag is a normal round — no quarantine, counts toward
     the budget, eligible for s*, and grounds refutations on its numbers."""
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
-    g.add_pending({"sigma": 0.5, "expected_behavior_tag": "bulge_n_free",
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))
+    g.add_pending({"pred_bic": 100.0, "expected_behavior_tag": "bulge_n_free",
                    "primitives": [{"op": "tune", "structure_name": "bulge",
                                    "param": "n", "value": 4.0, "toggle": 1}]},
                   source_session="s3", parent_label="A.1")
     aid = list(g.g.graph["pending"])[0]
     label = g.record_fit(
         _run_result(galaxy, bic_eff=1200.0, conv_flag="sub-converged"), action_id=aid)
-    g.apply_verdict(label, {"verdict": "PASS"})
     assert g.counters()["n_executed"] == 2               # budget counts it
     kinds = [e["kind"] for e in g.g.graph["decision_log"]]
     assert "sub-converged-quarantine" not in kinds
@@ -195,7 +176,7 @@ def test_subconverged_retired_round_treated_normally(galaxy):
 def test_mark_failed_and_discarded(galaxy):
     g = _init(galaxy)
     g.record_fit(_run_result(galaxy, bic_eff=1000.0))
-    g.add_pending({"sigma": 0.4, "primitives": [{"op": "add", "structure_name": "agn",
+    g.add_pending({"pred_bic": 110.0, "primitives": [{"op": "add", "structure_name": "agn",
                                                  "component_type": "psf"}]},
                   source_session="s", parent_label="A.1")
     aid = g.pending_queue()[0] if g.pending_queue() else list(g.g.graph["pending"])[0]
@@ -203,7 +184,7 @@ def test_mark_failed_and_discarded(galaxy):
     assert g.pending_record(aid)["status"] == "failed"
     assert g.counters()["n_failed"] == 1 and g.n_total() == 2
     stag0 = g.counters()["stagnation"]
-    g.add_pending({"sigma": 0.9, "primitives": []}, source_session="s", parent_label="A.1")
+    g.add_pending({"pred_bic": 70.0, "primitives": []}, source_session="s", parent_label="A.1")
     aid2 = list(g.g.graph["pending"])[-1]
     g.mark_discarded(aid2, "R1_LEDGER_EQUIVALENT")
     assert g.pending_record(aid2)["status"] == "discarded"
@@ -259,7 +240,7 @@ def test_combo_counts_and_never_executed_precheck(galaxy):
     out = galaxy / "galfit.02"
     out.write_text(LENS_FEEDME, encoding="utf-8")
     for i in range(2):
-        g.add_pending({"sigma": 0.7, "combo_key": combo,
+        g.add_pending({"pred_bic": 80.0, "combo_key": combo,
                        "primitives": [{"op": "add", "structure_name": "lens",
                                        "component_type": "sersic"}]},
                       source_session=f"s{i}", parent_label="A.1")
@@ -279,7 +260,7 @@ def test_combo_counts_and_never_executed_precheck(galaxy):
 def test_rollback_edges_detected(galaxy):
     g = _init(galaxy)
     g.record_fit(_run_result(galaxy, bic_eff=1000.0))
-    g.add_pending({"sigma": 0.3, "primitives": [{"op": "remove", "target": "bar"}]},
+    g.add_pending({"pred_bic": 120.0, "primitives": [{"op": "remove", "target": "bar"}]},
                   source_session="s", parent_label="A.1")
     aid = list(g.g.graph["pending"])[0]
     g.record_fit(_run_result(galaxy, bic_eff=1005.0), action_id=aid)
@@ -291,10 +272,8 @@ def test_rollback_edges_detected(galaxy):
 def test_corrupt_json_falls_back_to_bak(galaxy):
     """``.bak`` holds the previous revision; corruption recovers to it."""
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0),
-                 verdict={"verdict": "PASS"})             # bak <- A.0-only rev
-    g.record_fit(_run_result(galaxy, bic_eff=995.0),
-                 verdict={"verdict": "PASS"})             # bak <- A.1 rev
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))             # bak <- A.0-only rev
+    g.record_fit(_run_result(galaxy, bic_eff=995.0))             # bak <- A.1 rev
     graph_file = galaxy / "beam_state" / "graph.json"
     graph_file.write_text("{corrupted", encoding="utf-8")
     g2 = BeamGraph.load(str(galaxy))
@@ -317,18 +296,16 @@ def test_traversal_orders_states_and_crashes(galaxy):
     """Execution-ordered walk: root first, states by iter id, crashes (no
     node) interleaved at their consumed iter position."""
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0),
-                 verdict={"verdict": "PASS"})              # A.1, iter 1
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))              # A.1, iter 1
     # simulate an applied-then-crashed candidate at iter 2 (apply_candidate
     # consumes the iter id into the counters before the fit runs)
-    g.add_pending({"action_id": "crashy", "sigma": 0.5, "score": 0.5,
+    g.add_pending({"action_id": "crashy", "pred_bic": 100.0, "score": 0.5,
                    "primitives": [], "expected_behavior_tag": "boom"}, "s1", "A.1")
     rec = g.g.graph["pending"]["crashy"]
     rec["iter_id"] = 2
     g.counters()["global_iter_id"] = 2
     g.mark_failed("crashy", "gaussj: Singular Matrix-2")
-    g.record_fit(_run_result(galaxy, bic_eff=990.0),
-                 verdict={"verdict": "PASS"})              # A.2, iter 3
+    g.record_fit(_run_result(galaxy, bic_eff=990.0))              # A.2, iter 3
 
     t = g.traversal()
     assert [e["iter"] for e in t] == [0, 1, 2, 3]
@@ -346,9 +323,9 @@ def test_combo_counts_include_legacy_subconverged(galaxy):
     """2026-10-21 sub-converged retirement: cap accounting counts every
     executed round (valid_only excludes ONLY the reserved F1 round)."""
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))
     combo = g.state("A.1")["combo_key"]
-    g.add_pending({"sigma": 0.4,
+    g.add_pending({"pred_bic": 110.0,
                    "primitives": [{"op": "tune", "structure_name": "bulge",
                                    "param": "n", "value": 2.0, "toggle": 1}]},
                   source_session="s", parent_label="A.1")
@@ -366,10 +343,10 @@ def test_floor_discharge_after_execution(galaxy):
     SAME floor hypothesis (2026-10-21: any executed round discharges it —
     the sub-converged exception is retired)."""
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))
     n_release = [{"op": "tune", "structure_name": "bulge",
                   "param": "n", "value": 4.0, "toggle": 1}]
-    g.add_pending({"sigma": 0.3, "code_flags": {"floor_n_release": True},
+    g.add_pending({"pred_bic": 120.0, "code_flags": {"floor_n_release": True},
                    "primitives": n_release},
                   source_session="s", parent_label="A.1")
     floor_aid = g.pending_queue()[0]
@@ -377,7 +354,7 @@ def test_floor_discharge_after_execution(galaxy):
 
     # an executed round on the same combo with the same predicate discharges
     # the floor — even one whose input stats carry a legacy sub-converged flag
-    g.add_pending({"sigma": 0.3, "primitives": n_release},
+    g.add_pending({"pred_bic": 120.0, "primitives": n_release},
                   source_session="s2", parent_label="A.1")
     exec_aid = g.pending_queue()[-1]
     g.record_fit(_run_result(galaxy, bic_eff=1005.0, conv_flag="sub-converged"),
@@ -398,7 +375,7 @@ def test_floor_disk_re_discharge_requires_growth(galaxy):
     the disk Re past its own parent's value — a shrink tune must leave the
     floor armed (parent_re=None would weaken the predicate to any re tune)."""
     g = _init(galaxy)
-    g.record_fit(_run_result(galaxy, bic_eff=1000.0), verdict={"verdict": "PASS"})
+    g.record_fit(_run_result(galaxy, bic_eff=1000.0))
     disk = next(c for c in g.state("A.1")["inventory"]
                 if c.get("name") in {"disk", "edgedisk"})
     # effective Re (the raw inventory stores Rs for expdisk/edgedisk)
@@ -414,14 +391,14 @@ def test_floor_disk_re_discharge_requires_growth(galaxy):
         return [{"op": "tune", "structure_name": "disk",
                  "param": "re_px", "value": value, "toggle": 1}]
 
-    g.add_pending({"sigma": 0.4, "code_flags": {"floor_disk_re": True},
+    g.add_pending({"pred_bic": 110.0, "code_flags": {"floor_disk_re": True},
                    "primitives": re_tune(re0 * 1.3)},
                   source_session="s", parent_label="A.1")
     floor_aid = g.pending_queue()[0]
     assert g.floor_blockers() == [floor_aid]
 
     # valid executed round that SHRANK the disk Re: floor must stay armed
-    g.add_pending({"sigma": 0.4, "primitives": re_tune(re0 * 0.7)},
+    g.add_pending({"pred_bic": 110.0, "primitives": re_tune(re0 * 0.7)},
                   source_session="s2", parent_label="A.1")
     shrink_aid = g.pending_queue()[-1]
     g.record_fit(_run_result(galaxy, bic_eff=1005.0), action_id=shrink_aid)
@@ -435,7 +412,7 @@ def test_floor_disk_re_discharge_requires_growth(galaxy):
     if is_exp:
         rs0 = float(disk.get("re"))
         window_val = rs0 * 1.3          # between Rs and Re = Rs*1.68
-        g.add_pending({"sigma": 0.4, "primitives": re_tune(window_val)},
+        g.add_pending({"pred_bic": 110.0, "primitives": re_tune(window_val)},
                       source_session="s2b", parent_label="A.1")
         window_aid = g.pending_queue()[-1]
         g.record_fit(_run_result(galaxy, bic_eff=1006.0), action_id=window_aid)
@@ -443,7 +420,7 @@ def test_floor_disk_re_discharge_requires_growth(galaxy):
             "a tune inside (Rs, Re) is a true shrink — floor must stay armed"
 
     # valid executed round that GREW the disk Re: floor discharged
-    g.add_pending({"sigma": 0.4, "primitives": re_tune(re0 * 1.3)},
+    g.add_pending({"pred_bic": 110.0, "primitives": re_tune(re0 * 1.3)},
                   source_session="s3", parent_label="A.1")
     grow_aid = g.pending_queue()[-1]
     g.record_fit(_run_result(galaxy, bic_eff=1002.0), action_id=grow_aid)

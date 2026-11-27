@@ -20,7 +20,7 @@ def _resp_with_add(name: str, x: float = 114.0, y: float = 93.0) -> Candidate:
         primitives=[AddPrimitive(op="add", add=AddParams(
             structure_name=name, component_type="psf", mag=19.5, x_px=x, y_px=y))],
         physical_motivation="test", expected_C_prime="{disk,companion}",
-        expected_behavior_tag="add_companion", local_benefit_sigma=0.6)
+        expected_behavior_tag="add_companion", pred_bic=90.0)
 
 
 def test_second_companion_add_is_renamed():
@@ -29,7 +29,6 @@ def test_second_companion_add_is_renamed():
                "toggles": {}}]
     cand = _resp_with_add("companion")
     resp = parse_survey_response({
-        "physicality_verdict": {"verdict": "PASS"},
         "candidates": [c.model_dump(exclude_none=True) for c in [cand]]})[0]
     _disambiguate_companion_names(resp, parent)
     add = resp.candidates[0].primitives[0].add
@@ -41,7 +40,6 @@ def test_first_companion_add_unchanged():
     parent = [{"name": "disk", "type": "expdisk"}]
     cand = _resp_with_add("companion")
     resp = parse_survey_response({
-        "physicality_verdict": {"verdict": "PASS"},
         "candidates": [c.model_dump(exclude_none=True) for c in [cand]]})[0]
     _disambiguate_companion_names(resp, parent)
     assert resp.candidates[0].primitives[0].add.structure_name == "companion"
@@ -51,7 +49,6 @@ def test_companion2_collision_takes_companion3():
     parent = [{"name": "companion"}, {"name": "companion2"}]
     cand = _resp_with_add("companion")
     resp = parse_survey_response({
-        "physicality_verdict": {"verdict": "PASS"},
         "candidates": [c.model_dump(exclude_none=True) for c in [cand]]})[0]
     _disambiguate_companion_names(resp, parent)
     assert resp.candidates[0].primitives[0].add.structure_name == "companion3"
@@ -66,9 +63,8 @@ def test_non_companion_duplicate_not_renamed():
             structure_name="bulge", component_type="sersic",
             mag=18.0, re_px=2.0, x_px=128, y_px=129))],
         physical_motivation="t", expected_C_prime="{disk,bulge}",
-        expected_behavior_tag="dup_bulge", local_benefit_sigma=0.5)
+        expected_behavior_tag="dup_bulge", pred_bic=100.0)
     resp = parse_survey_response({
-        "physicality_verdict": {"verdict": "PASS"},
         "candidates": [c.model_dump(exclude_none=True) for c in [cand]]})[0]
     _disambiguate_companion_names(resp, parent)
     assert resp.candidates[0].primitives[0].add.structure_name == "bulge"

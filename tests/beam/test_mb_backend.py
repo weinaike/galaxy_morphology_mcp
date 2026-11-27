@@ -174,7 +174,6 @@ def test_mb_record_fit_full_path(tmp_path, test_data_dir):
     assert any(m["check"] == "flux_share" and m["severity"] == "hard" for m in mech)
     # a VLM PASS verdict is mech-vetoed (existence floor) — best stays unset
     assert graph.g.graph["best_state"] is None
-    graph.apply_verdict(label, {"verdict": "PASS", "failed_checks": []})
     assert graph.state(label)["verdict"]["verdict"] == "FAIL"
     assert graph.state(label)["verdict"].get("mech_veto") is True
     assert graph.g.graph["best_state"] is None

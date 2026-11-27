@@ -1,26 +1,23 @@
 """End-to-end (mocked VLM) tests for survey_round: happy path, retry path,
-retry exhaustion, and FastMCP registration. Plus the single-agent ablation
-arm (orchestrator_round) and the no_global_state digest arm."""
+retry exhaustion, and FastMCP registration. No verdict is returned by the
+survey — the mech verdict settles at record_fit time."""
 
 import asyncio
 import importlib
-import json
-import os
-import re
 import shutil
 import sys
+import re
 from unittest.mock import patch
 
 import pytest
 
 from beam.graph import BeamGraph
-from beam.survey import global_desc_for, orchestrator_round, survey_round
+from beam.survey import global_desc_for, survey_round
 
 
 VALID_MD = """Analysis prose.
 ```json
-{"physicality_verdict": {"verdict": "PASS", "failed_checks": ["[note] areas similar"], "swap_hint": "none"},
- "candidates": [
+{"candidates": [
   {"primitives": [{"op": "tune", "tune": {"structure_name": "bulge", "param": "n",
                                           "toggle": 1, "value": 2.0,
                                           "cons_bounds": {"n": [0.5, 8.0], "re": null, "q": null, "center_window": null}}}],
@@ -28,13 +25,13 @@ VALID_MD = """Analysis prose.
    "expected_C_prime": "{disk,bulge,bar,agn}",
    "novelty_claim": "equiv A.1 but n free axis untested",
    "expected_behavior_tag": "bulge_n_free",
-   "local_benefit_sigma": 0.55}
+   "pred_bic": 950.0}
  ]}
 ```
 """
 
 INVALID_MD = "I forgot the JSON, sorry."
-SCHEMA_BAD_MD = '```json\n{"physicality_verdict": {"verdict": "MAYBE"}}\n```'
+SCHEMA_BAD_MD = '```json\n{"candidates": []}\n```'
 
 
 @pytest.fixture
@@ -76,18 +73,20 @@ def test_survey_round_happy_path(galaxy, monkeypatch):
     monkeypatch.setattr("beam.survey._dispatch", fake)
     r = survey_round(str(gdir))
     assert r["status"] == "success", r.get("error")
-    assert r["verdict"]["verdict"] == "PASS"
-    assert r["best_state"] == label  # verdict settled the best
+    assert "verdict" not in r                 # the survey returns no verdict
+    assert r["best_state"] == label           # mech verdict settled at record
     assert len(r["enqueued"]) == 1
     entry = r["enqueued"][0]
     assert "floor_n_release" in entry["flags"]
     assert r["next_candidate"] == entry["action_id"]
     assert r["queue"][0]["expected_behavior_tag"] == "bulge_n_free"
+    assert r["queue"][0]["pred_bic"] == pytest.approx(950.0)
     assert r["candidates_file"] and "survey" in r["candidates_file"]
-    # the archive md contains the raw exchange
+    # the archive md contains the raw exchange + the mech table, no verdict
     with open(r["candidates_file"], encoding="utf-8") as f:
         md = f.read()
-    assert "physicality_verdict" in md and "Analysis prose" in md
+    assert "Mechanical check table" in md and "Analysis prose" in md
+    assert "Verdict" not in md
     assert calls[0]["feedback"] is False
 
 
@@ -125,15 +124,14 @@ def test_survey_round_retry_exhaustion(galaxy, monkeypatch):
 
 AGN_GATED_MD = """Analysis prose.
 ```json
-{"physicality_verdict": {"verdict": "PASS", "failed_checks": [], "swap_hint": "none"},
- "candidates": [
+{"candidates": [
   {"primitives": [{"op": "add", "add": {"structure_name": "agn", "component_type": "psf",
                                         "mag": 17.5, "x_px": 752.60, "y_px": 740.30}}],
    "physical_motivation": "central positive residual spike",
    "expected_C_prime": "{disk,bulge,agn}",
    "novelty_claim": "agn axis untested",
    "expected_behavior_tag": "agn_add",
-   "local_benefit_sigma": 0.6}
+   "pred_bic": 940.0}
  ]}
 ```
 """
@@ -210,80 +208,16 @@ def test_fastmcp_registration_includes_survey():
             tools = asyncio.run(mcp_server.app.list_tools())
             names = {t.name for t in tools}
             assert "survey_round" in names
-            assert "beam_enqueue_candidates" in names
+            assert "beam_enqueue_candidates" not in names
+            assert "generate_galfit_beam_actions" not in names
         finally:
             if "src" in sys.path:
                 sys.path.remove("src")
 
 
-# ------------------------------------- single-agent ablation arm (no VLM)
-VALID_PAYLOAD = {
-    "physicality_verdict": {"verdict": "PASS",
-                            "failed_checks": ["[note] areas similar"],
-                            "swap_hint": "none"},
-    "candidates": [{
-        "primitives": [{"op": "tune", "tune": {
-            "structure_name": "bulge", "param": "n", "toggle": 1, "value": 2.0,
-            "cons_bounds": {"n": [0.5, 8.0], "re": None, "q": None,
-                            "center_window": None}}}],
-        "physical_motivation": "quadrupole residuals persist at PA~45",
-        "expected_C_prime": "{disk,bulge,bar,agn}",
-        "novelty_claim": "equiv A.1 but n free axis untested",
-        "expected_behavior_tag": "bulge_n_free",
-        "local_benefit_sigma": 0.55,
-    }],
-}
-
-
-def test_orchestrator_round_happy(galaxy):
-    gdir, label = galaxy
-    r = orchestrator_round(str(gdir), json.dumps(VALID_PAYLOAD))
-    assert r["status"] == "success", r.get("error")
-    assert r["verdict"]["verdict"] == "PASS"
-    assert r["best_state"] == label          # verdict settled the best
-    assert len(r["enqueued"]) == 1           # same ingest gates as survey_round
-    assert "floor_n_release" in r["enqueued"][0]["flags"]
-    assert r["session_id"].startswith("orchestrator-")
-    assert r["candidates_file"] and "orchestrator" in r["candidates_file"]
-    g = BeamGraph.load(str(gdir))
-    kinds = [e["kind"] for e in g.g.graph["decision_log"]]
-    assert "orchestrator-round" in kinds
-
-
-def test_orchestrator_round_invalid_payload(galaxy):
-    gdir, _ = galaxy
-    r = orchestrator_round(str(gdir),
-                           '{"physicality_verdict": {"verdict": "MAYBE"}}')
-    assert r["status"] == "failure" and "E_SCHEMA" in r["error"]
-    g = BeamGraph.load(str(gdir))
-    assert not g.pending_queue()             # nothing enqueued on failure
-
-
-def test_orchestrator_round_bad_json(galaxy):
-    gdir, _ = galaxy
-    r = orchestrator_round(str(gdir), "{not json")
-    assert r["status"] == "failure" and "E_SCHEMA" in r["error"]
-
-
-# ------------------------------------- no_global_state ablation arm
-def test_global_desc_for_blanks_under_ablation(galaxy):
+# ------------------------------------- global digest (always present)
+def test_global_desc_for_renders_digest(galaxy):
     gdir, _ = galaxy
     g = BeamGraph.load(str(gdir))
     normal = global_desc_for(g)
-    assert "Pixel contract" in normal          # digest present by default
-    g.g.graph["meta"]["ablations"] = {"no_global_state": True}
-    disabled = global_desc_for(g)
-    assert "no_global_state" in disabled and "withheld" in disabled
-    assert "Pixel contract" not in disabled
-
-
-# ------------------------------------- single_agent ablation arm
-def test_survey_round_blocked_under_single_agent_arm(galaxy):
-    gdir, _ = galaxy
-    g = BeamGraph.load(str(gdir))
-    g.g.graph["meta"]["ablations"] = {"single_agent": True}
-    g.commit()
-    out = survey_round(str(gdir))          # must fail before any VLM dispatch
-    assert out["status"] == "failure"
-    assert "E_ARM" in out["error"]
-    assert "beam_enqueue_candidates" in out["error"]
+    assert "Pixel contract" in normal          # digest present unconditionally

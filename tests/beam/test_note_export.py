@@ -100,3 +100,35 @@ def test_registration_includes_export_note_and_prompts():
         finally:
             if "src" in sys.path:
                 sys.path.remove("src")
+
+
+def test_registration_galfits_env_includes_galfits_s1_prompt():
+    """GALFITS_BIN-only session registers workflow_galfits(_s1) but not the
+    single-band s1 arm. Runs in a SUBPROCESS: a second in-process
+    importlib.reload of mcp_server (as the galfit test above performs)
+    trips a pydantic generic-model re-creation KeyError, unrelated to the
+    registration logic under test."""
+    import json
+    import os
+    import subprocess
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    code = (
+        "import asyncio, json, sys\n"
+        "sys.path.insert(0, 'src')\n"
+        "import mcp_server\n"
+        "prompts = asyncio.run(mcp_server.app.list_prompts())\n"
+        "print(json.dumps([p.name for p in prompts]))\n"
+    )
+    with patch.dict("os.environ", {"GALFITS_BIN": "/usr/bin/true"}):
+        proc = subprocess.run(
+            [sys.executable, "-c", code], cwd=str(repo_root),
+            env=dict(os.environ), capture_output=True, text=True,
+        )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    pnames = set(json.loads(proc.stdout.strip().splitlines()[-1]))
+    assert "workflow_galfits" in pnames
+    assert "workflow_galfits_s1" in pnames
+    assert "workflow_galfit_s1" not in pnames  # single-band arm not
+    # registered in a GALFITS_BIN-only session

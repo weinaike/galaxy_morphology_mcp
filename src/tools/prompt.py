@@ -144,3 +144,18 @@ workflow_galfit_s1 = _make_templated_prompt(
     md_file="workflow_galfit_s1.md",
     params={"argument": _REQUIRED, "expert_components": _REQUIRED},
 )
+
+workflow_galfits_s1 = _make_templated_prompt(
+    name="workflow_galfits_s1",
+    title="GalfitS S1 Workflow (Expert-Guided)",
+    description=(
+        "Expert-guided multi-band galaxy morphology fitting workflow. "
+        "Receives an astronomer-specified component composition, injects it "
+        "as a hard search-space constraint into the multi-band beam engine "
+        "(mode=\"galfits\"), locks the best image fit, then runs the SED "
+        "and joint image-SED fitting stages on the locked model. "
+        "Usage: `workflow_galfits_s1 <lyric_file> <expert_components>`"
+    ),
+    md_file="workflow_galfits_s1.md",
+    params={"argument": _REQUIRED, "expert_components": _REQUIRED},
+)

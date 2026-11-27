@@ -30,7 +30,7 @@ from tools.bar_lopsidedness_detection import (
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix, re_pix2arcsec
-from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1
+from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1, workflow_galfits_s1
 from beam.tools import (
     apply_candidate,
     beam_export_note,
@@ -85,6 +85,7 @@ def _register_tools_and_prompts():
         app.add_tool(check_re_ordering)
         app.add_tool(pixel2arcsec_offset)
         app.add_prompt(workflow_galfits)
+        app.add_prompt(workflow_galfits_s1)
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
 
     # Beam engine tools — format-neutral since the multi-band port (mode

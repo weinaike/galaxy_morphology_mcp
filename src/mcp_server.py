@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-独立的MCP服务端启动器
-支持 stdio 和 streamable-http 两种传输模式
+Standalone MCP server launcher.
+Supports both stdio and streamable-http transports.
 """
 
 import sys
@@ -20,22 +20,35 @@ from tools.run_galfit import run_galfit
 from tools.run_galfits import run_galfits, run_galfits_image_fitting, run_galfits_sed_fitting, run_galfits_image_sed_fitting
 
 from tools.residual_analysis import component_analysis, analyze_multiband_components
-from tools.beam_actions import generate_beam_actions
+from tools.beam_actions_galfit import generate_galfit_beam_actions, check_feedme_file
 from tools.re_ordering_check import check_re_ordering
 from tools.fourier_mode_analysis import fourier_mode_analysis
 from tools.bar_lopsidedness_detection import (
     detect_bar_lopsidedness,
     detect_bar_lopsidedness_from_isophote_tables,
-    detect_galfits_bar_lopsidedness,
 )
 from tools.view_original_image import view_original_image
 from tools.render_original import render_original
 from tools.pix2radec import pix2radec, re_arcsec2pix, re_pix2arcsec
-from tools.prompt import workflow_galfit, workflow_galfits
+from tools.prompt import workflow_galfit, workflow_galfits, workflow_galfit_s1
+from beam.tools import (
+    apply_candidate,
+    beam_export_note,
+    beam_enqueue_f1,
+    beam_grant_repair_budget,
+    beam_init,
+    beam_mark_failure,
+    beam_record_fit,
+    beam_repair_artifacts,
+    beam_set_constraint,
+    beam_status,
+    beam_enqueue_candidates,
+    survey_round,
+)
 from starlette.responses import Response, JSONResponse
 from dotenv import load_dotenv
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -53,7 +66,10 @@ def _register_tools_and_prompts():
         app.add_tool(run_galfit)
         app.add_tool(component_analysis)
         app.add_prompt(workflow_galfit)
+        app.add_prompt(workflow_galfit_s1)
         app.add_tool(detect_bar_lopsidedness)
+        app.add_tool(generate_galfit_beam_actions)
+        app.add_tool(check_feedme_file)
         logger.info("Registered GALFIT tools (GALFIT_BIN is set)")
 
     if has_galfits:
@@ -61,9 +77,7 @@ def _register_tools_and_prompts():
         app.add_tool(run_galfits_image_fitting)
         app.add_tool(run_galfits_sed_fitting)
         app.add_tool(run_galfits_image_sed_fitting)
-        app.add_tool(detect_galfits_bar_lopsidedness)
         app.add_tool(analyze_multiband_components)
-        app.add_tool(generate_beam_actions)
         app.add_tool(check_lyric_file)
         app.add_tool(pix2radec)
         app.add_tool(re_arcsec2pix)
@@ -72,6 +86,28 @@ def _register_tools_and_prompts():
         app.add_tool(pixel2arcsec_offset)
         app.add_prompt(workflow_galfits)
         logger.info("Registered GalfitS tools (GALFITS_BIN is set)")
+
+    # Beam engine tools — format-neutral since the multi-band port (mode
+    # dispatch inside beam_init/graph/apply): registered whenever EITHER
+    # fitter is available. (2026-11-03 real-data fix: they used to live in
+    # the GALFIT_BIN block, so GALFITS_BIN-only sessions had no beam tools.)
+    # Retired alongside: generate_beam_actions and
+    # detect_galfits_bar_lopsidedness (the detection-driven mb flow —
+    # candidates now come solely from survey_round's VLM).
+    if has_galfit or has_galfits:
+        app.add_tool(beam_init)
+        app.add_tool(beam_record_fit)
+        app.add_tool(beam_repair_artifacts)
+        app.add_tool(beam_mark_failure)
+        app.add_tool(beam_enqueue_f1)
+        app.add_tool(beam_status)
+        app.add_tool(survey_round)
+        app.add_tool(beam_enqueue_candidates)
+        app.add_tool(apply_candidate)
+        app.add_tool(beam_export_note)
+        app.add_tool(beam_grant_repair_budget)
+        app.add_tool(beam_set_constraint)
+        logger.info("Registered beam engine tools (GALFIT_BIN or GALFITS_BIN is set)")
 
     # Shared tools — always available
     app.add_tool(view_original_image)
@@ -160,11 +196,11 @@ def _galfits_readiness() -> dict[str, Any]:
     }
 
 def setup_http_routes():
-    """配置 HTTP 路由 (仅用于 streamable-http 模式)"""
+    """Set up HTTP routes (streamable-http mode only)."""
 
     @app.custom_route("/health", methods=["GET"])
     async def health_check(request) -> Response:
-        """健康检查端点"""
+        """Health-check endpoint."""
         configured, resolved, ok = _galfit_readiness()
         galfits = _galfits_readiness()
 
@@ -208,7 +244,7 @@ def setup_http_routes():
 
     @app.custom_route("/api/tools", methods=["GET"])
     async def list_available_tools(request) -> Response:
-        """列出所有可用的工具"""
+        """List all registered tools."""
         tools = await app.list_tools()
         return JSONResponse({
             "tools": [
@@ -223,20 +259,19 @@ def setup_http_routes():
 
 
 def run_stdio_mode():
-    """运行 stdio 模式 (用于本地 MCP 客户端连接)"""
+    """Run in stdio mode (for local MCP clients)."""
     logger.info("Starting Galaxy Morphology MCP Server in STDIO mode...")
     
     app.run(transport='stdio')
 
 
 def run_http_mode(host='0.0.0.0', port=38507, path='/mcp'):
-    """运行 HTTP 模式 (用于远程/网络访问)"""
+    """Run in HTTP mode (for remote/network access)."""
     setup_http_routes()
 
     app.settings.host = host
     app.settings.port = port
     app.settings.streamable_http_path = path
-    app.settings.stateless_http = True
 
     # Configure transport security to allow all hosts for remote access
     # Get allowed hosts from environment variable or allow all
@@ -268,7 +303,7 @@ def run_http_mode(host='0.0.0.0', port=38507, path='/mcp'):
 
 
 def main(argv: list[str] | None = None) -> None:
-    # 设置当前目录到 sys.path，确保 tools/ 可被导入（脚本方式/console_script 都适用）
+    # Put this directory on sys.path so tools/ is importable (script and console_script alike)
     current_dir = os.path.dirname(os.path.abspath(__file__))
     if current_dir not in sys.path:
         sys.path.insert(0, current_dir)
@@ -302,13 +337,13 @@ def main(argv: list[str] | None = None) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  # stdio 模式 (本地 MCP 客户端)
+  # stdio mode (local MCP client)
   python mcp_server.py --transport stdio
 
-  # HTTP 模式 (远程访问)
+  # HTTP mode (remote access)
   python mcp_server.py --transport http --port 8080
 
-  # HTTP 模式，自定义路径
+  # HTTP mode with a custom path
   python mcp_server.py --transport http --host 127.0.0.1 --port 9000 --path /mcp-endpoint
         '''
     )
@@ -317,26 +352,26 @@ Examples:
         '--transport', '-t',
         choices=['stdio', 'http'],
         default='stdio',
-        help='传输模式: stdio (本地) 或 http (远程网络访问)，默认: stdio'
+        help='Transport: stdio (local) or http (remote network access); default: stdio'
     )
 
     parser.add_argument(
         '--host', '-H',
         default='0.0.0.0',
-        help='HTTP 模式监听地址，默认: 0.0.0.0'
+        help='HTTP mode listen address; default: 0.0.0.0'
     )
 
     parser.add_argument(
         '--port', '-p',
         type=int,
         default=38507,
-        help='HTTP 模式监听端口，默认: 38507'
+        help='HTTP mode listen port; default: 38507'
     )
 
     parser.add_argument(
         '--path', '-P',
         default='/mcp',
-        help='HTTP 模式 MCP 协议路径，默认: /mcp'
+        help='HTTP mode MCP protocol path; default: /mcp'
     )
 
     args = parser.parse_args(argv)

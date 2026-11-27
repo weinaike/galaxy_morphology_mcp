@@ -1,11 +1,14 @@
-"""detect_bar_lopsidedness — MCP 接口适配层
+"""detect_bar_lopsidedness — MCP interface adapter layer.
 
-为已有的 bar_lopsidedness 管线包一层 MCP 友好接口: 输入单波段 GALFIT
-feedme + survey, 返回 JSON (是否含 Bar / Lopsidedness)。
+Wraps the existing bar/lopsidedness pipeline in an MCP-friendly interface:
+input is a single-band GALFIT feedme plus a survey label; output is JSON
+(whether a Bar / Lopsidedness is detected).
 
-忠实于原实现: 三步等照度拟合、棒检测四步验证、偏侧双方法 AND 全部调用
-管线原函数, 阈值 / PSF / 判据原样不变。唯一因接口变化而做的是像素尺度从
-image WCS 读取 
+Faithful to the original implementation: the three-stage isophote fit, the
+four-step bar-detection validation, and the dual-method lopsidedness AND
+logic all call the original pipeline functions with thresholds / PSF /
+criteria unchanged. The only interface-driven change is that the pixel
+scale is read from the image WCS. 
 """
 
 import os
@@ -17,7 +20,7 @@ import numpy as np
 import pandas as pd
 from astropy.io import fits
 
-# 核心算法 (自包含, 迁移自管线包, 见 bar_lopsidedness_core.py)
+# Core algorithm (self-contained, ported from the pipeline package; see bar_lopsidedness_core.py)
 from .bar_lopsidedness_core import (
     fit_isophotes,
     detect_bar,
@@ -34,15 +37,15 @@ from .parse_feedme import parse_feedme
 warnings.filterwarnings('ignore')
 
 
-# ---- 原实现参数 (忠实, 值复制自管线, 标注来源) ----
-# 来源: bar_lopsidedness_pipeline_scripts_.../src/run_batch.py:26 (CGS_Z0_CRITERIA)
+# ---- Parameters from the original implementation (verbatim copies, source noted) ----
+# Source: bar_lopsidedness_pipeline_scripts_.../src/run_batch.py:26 (CGS_Z0_CRITERIA)
 CGS_Z0_CRITERIA = {
     'e_max_threshold': 0.365,
     'pa_stability': 29.04,
     'e_drop': 0.324,
     'pa_change_outer': 74.78,
 }
-# 来源: run_lopsidedness.analyze_center_offset_v2 内部硬编码 PSF FWHM
+# Source: PSF FWHM hardcoded inside run_lopsidedness.analyze_center_offset_v2
 PSF_FWHM_ARCSEC = {
     'JWST': 0.067,
     'SDSS': 1.3,
@@ -50,7 +53,7 @@ PSF_FWHM_ARCSEC = {
 
 
 def _to_jsonable(obj: Any) -> Any:
-    """递归把 numpy 类型转成 JSON 可序列化的 Python 类型 (NaN -> None)。"""
+    """Recursively convert numpy types into JSON-serializable Python types (NaN -> None)."""
     if isinstance(obj, dict):
         return {k: _to_jsonable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -72,7 +75,7 @@ def _to_jsonable(obj: Any) -> Any:
 
 
 def _round(v: Any, ndigits: int) -> Any:
-    """标量四舍五入; None/NaN -> None (保持输出整洁)。"""
+    """Round a scalar; None/NaN -> None (keeps the output tidy)."""
     try:
         f = float(v)
     except (TypeError, ValueError):
@@ -264,7 +267,7 @@ def detect_bar_lopsidedness(
 
     survey_uc = str(survey).upper()
 
-    # 1) 解析 feedme -> image(A) / mask(F) / fit_region(H)
+    # 1) Parse the feedme -> image (A) / mask (F) / fit region (H)
     paths = parse_feedme(feedme_file)
     image_path = paths.get("input", "")
     mask_path = paths.get("mask", "")
@@ -284,17 +287,17 @@ def detect_bar_lopsidedness(
     except Exception as e:
         return {"status": "failure", "error": f"Failed to load/crop image: {e}"}
 
-    # 3) 像素尺度从 WCS 读 (唯一接口适配)
+    # 3) Pixel scale read from the WCS (the only interface-driven change)
     try:
         _meta = extract_fits_metadata(image_path)
         pixscale = float(_meta[1])
     except Exception as e:
         return {"status": "failure", "error": f"Failed to read WCS pixel scale: {e}"}
 
-    # band_or_survey 决定 compute_mu 表面亮度零点: SDSS/'r' -> SDSS, 否则 JWST
+    # band_or_survey selects the surface-brightness zeropoint for compute_mu: SDSS/'r' -> SDSS, otherwise JWST
     band_or_survey = 'r' if survey_uc == 'SDSS' else 'F200W'
 
-    # 4) 三步等照度拟合 (纯函数, 原算法)
+    # 4) Three-stage isophote fit (pure functions, original algorithm)
     try:
         _df_s1, df_s2, df_s3, _info = fit_isophotes(
             image, mask, pixscale, band_or_survey
@@ -437,7 +440,7 @@ def TEST_detect_galfits_bar_lopsidedness():
     print(result)
 
 if __name__ == '__main__':
-    # 手动冒烟测试入口: python -m tools.bar_lopsidedness_detection <feedme> <survey>
+    # Manual smoke-test entry point: python -m tools.bar_lopsidedness_detection <feedme> <survey>
     # import json as _json
     # _feedme = sys.argv[1] if len(sys.argv) > 1 else ""
     # _survey = sys.argv[2] if len(sys.argv) > 2 else "JWST"

@@ -1,17 +1,19 @@
-"""bar_lopsidedness_core — 自包含的棒/偏侧性检测核心算法
+"""bar_lopsidedness_core — self-contained bar / lopsidedness detection core.
 
-迁移自 bar_lopsidedness_pipeline_scripts_20260609_structured/src/ (config.py /
-run_isophote.py / run_bar_detection.py / run_lopsidedness.py), 算法逐字保持一致,
-仅剥离文件 IO、目录约定与脚本入口, 使 MCP 工具不依赖那个带日期戳的外部脚本包。
+Ported from bar_lopsidedness_pipeline_scripts_20260609_structured/src/ (config.py /
+run_isophote.py / run_bar_detection.py / run_lopsidedness.py); the algorithm is kept
+verbatim. Only file IO, directory conventions and the script entry points were
+stripped so the MCP tools do not depend on that date-stamped external package.
 
-公开 API:
+Public API:
   - fit_isophotes(image, mask, pixscale, band_or_survey) -> (df_s1, df_s2, df_s3, info)
   - detect_bar(df_isophote, criteria=None) -> dict
   - analyze_dolfi_a1(df_s3, a1_threshold=0.1) -> dict
   - analyze_center_offset_v2(df_s2, pixscl, survey, band_label) -> dict
 
-所有阈值/常量/PSF 处理与原管线一致 (CGS z=0 棒阈值、Dolfi A1>0.1、
-center-offset |r|>0.5 & p<0.05 & dr_norm>0.01、PSF FWHM jwst=0.067/sdss=1.3)。
+All thresholds/constants/PSF handling match the original pipeline (CGS z=0 bar
+criteria, Dolfi A1>0.1, center-offset |r|>0.5 & p<0.05 & dr_norm>0.01, PSF FWHM
+jwst=0.067/sdss=1.3).
 """
 
 import numpy as np
@@ -26,19 +28,20 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 
 # ============================================================
-# 常量 (迁移自 config.py)
+# Constants (ported from config.py)
 # ============================================================
 
-# --- 表面亮度零点 ---
+# --- Surface-brightness zeropoints ---
 PIXSCL_SDSS = 0.396                              # SDSS r-band
 SB_ZP_JWST = 20.472                              # MJy/sr -> mag/arcsec^2
 SB_ZP_SDSS_OFFSET = 2.5 * np.log10(PIXSCL_SDSS**2) + 22.5  # ≈ 20.496
 
 
 def compute_mu(intensity, band_or_survey):
-    """计算表面亮度 mag/arcsec^2 (迁移自 config.compute_mu)。
+    """Compute surface brightness in mag/arcsec^2 (ported from config.compute_mu).
 
-    band_or_survey 为 'SDSS'/'R' 时用 SDSS 零点, 否则按 JWST (MJy/sr) 处理。
+    Uses the SDSS zeropoint when band_or_survey is 'SDSS'/'R', otherwise the
+    JWST (MJy/sr) calibration.
     """
     band_upper = band_or_survey.upper()
     if band_upper == 'SDSS' or band_upper == 'R':
@@ -46,27 +49,27 @@ def compute_mu(intensity, band_or_survey):
     return -2.5 * np.log10(intensity) + SB_ZP_JWST
 
 
-# --- isophote 拟合参数 ---
-FIT_STEP = 0.2          # SMA 步长 (pixels)
-FIT_MAXGERR = 0.5       # 最大谐波振幅误差
-FIT_MINSMA = 1          # 最小 SMA (pixels)
-SIGMA_THRESHOLD = 1.0   # 背景阈值 (sigma 倍数) 用于确定外边界
-BG_EDGE_FRAC = 0.10     # 背景估计: 边缘区域比例
-CENTER_OFFSET_MAX = 3   # 中心偏移阈值 (pixels)
+# --- Isophote-fitting parameters ---
+FIT_STEP = 0.2          # SMA step (pixels)
+FIT_MAXGERR = 0.5       # maximum harmonic amplitude error
+FIT_MINSMA = 1          # minimum SMA (pixels)
+SIGMA_THRESHOLD = 1.0   # background threshold (in sigma) used to set the outer boundary
+BG_EDGE_FRAC = 0.10     # background estimate: edge-region fraction
+CENTER_OFFSET_MAX = 3   # centre-offset threshold (pixels)
 SMA0_BASE_FACTOR = 0.5  # sma0 = max(3, round(A_IMAGE * factor))
 
-# --- 棒检测参数 ---
+# --- Bar-detection parameters ---
 BAR_PEAK_PROMINENCE = 0.05
 BAR_PEAK_DISTANCE = 3      # indices
 BAR_PEAK_WIDTH = 1         # indices
 BAR_MAX_PEAKS_TEST = 2
 BAR_PA_STABILITY_RANGE = 5  # indices before peak
 
-# --- 偏侧性参数 ---
-A1_THRESHOLD = 0.1        # A1 = I1/I0 阈值 (Dolfi 环带均值)
-CO_MIN_DR_NORM = 0.01     # 归一化径向偏移变化下限
+# --- Lopsidedness parameters ---
+A1_THRESHOLD = 0.1        # A1 = I1/I0 threshold (Dolfi ring-average)
+CO_MIN_DR_NORM = 0.01     # lower limit on the normalized radial-offset change
 
-# 棒检测默认判据 (z-independent 保守值; 实际调用方传 CGS z=0)
+# Default bar criteria (conservative z-independent values; callers pass the CGS z=0 set)
 DEFAULT_CRITERIA = {
     'e_max_threshold': 0.2,
     'pa_stability': 20.0,
@@ -76,11 +79,11 @@ DEFAULT_CRITERIA = {
 
 
 # ============================================================
-# Isophote 拟合 (迁移自 run_isophote.py, 剥离 load/save)
+# Isophote fitting (ported from run_isophote.py, load/save stripped)
 # ============================================================
 
 def estimate_background(image, mask=None):
-    """从图像边缘估计背景。"""
+    """Estimate the background from the image edges."""
     ny, nx = image.shape
     edge = int(min(nx, ny) * BG_EDGE_FRAC)
 
@@ -105,7 +108,7 @@ def estimate_background(image, mask=None):
 
 
 def determine_center(image, mask=None):
-    """确定拟合中心: 正像素 flux-weighted centroid; 偏离图像中心 > CENTER_OFFSET_MAX 则用图像中心。"""
+    """Determine the fitting centre: flux-weighted centroid of positive pixels; fall back to the image centre when the offset exceeds CENTER_OFFSET_MAX."""
     ny, nx = image.shape
     img_cx, img_cy = (nx - 1) / 2.0, (ny - 1) / 2.0
 
@@ -132,7 +135,7 @@ def determine_center(image, mask=None):
 
 
 def get_initial_params(image, mask=None):
-    """从图像获取初始拟合参数 (flux-weighted centroid + 二阶矩)。"""
+    """Derive initial fitting parameters from the image (flux-weighted centroid + second moments)."""
     ny, nx = image.shape
     cx, cy = determine_center(image, mask)
 
@@ -168,13 +171,13 @@ def get_initial_params(image, mask=None):
 
 
 def make_sma0_list(base_sma, cutout_half):
-    """生成多个 sma0 候选。"""
+    """Generate several sma0 candidates."""
     cap = cutout_half - 2
     return sorted(set(min(s, cap) for s in [base_sma, base_sma + 5, base_sma + 10]))
 
 
 def step1_free_fit(masked_image, geometry, maxsma):
-    """Step 1: 自由拟合 (无外边界)。"""
+    """Step 1: free fit (no outer boundary)."""
     ellipse = Ellipse(masked_image, geometry)
     try:
         return ellipse.fit_image(
@@ -187,7 +190,7 @@ def step1_free_fit(masked_image, geometry, maxsma):
 
 
 def find_maxsma(iso_result, bg_std):
-    """从 Step 1 结果确定外边界。"""
+    """Determine the outer boundary from the Step-1 result."""
     if iso_result is None or len(iso_result) < 3:
         return None
 
@@ -202,7 +205,7 @@ def find_maxsma(iso_result, bg_std):
 
 
 def step2_bounded_fit(masked_image, geometry, maxsma):
-    """Step 2: 有界重拟合 (自由中心)。"""
+    """Step 2: bounded refit (free centre)."""
     ellipse = Ellipse(masked_image, geometry)
     try:
         return ellipse.fit_image(
@@ -215,7 +218,7 @@ def step2_bounded_fit(masked_image, geometry, maxsma):
 
 
 def calculate_fixed_center(iso_result):
-    """从 Step 2 结果计算固定中心 (knee-point detection)。返回 ((x0,y0), ok)。"""
+    """Compute the fixed centre from the Step-2 result (knee-point detection). Returns ((x0,y0), ok)."""
     if iso_result is None or len(iso_result) < 5:
         return None, False
 
@@ -247,7 +250,7 @@ def calculate_fixed_center(iso_result):
 
 
 def step3_fixed_center_fit(masked_image, geometry, maxsma):
-    """Step 3: 固定中心拟合。"""
+    """Step 3: fixed-centre fit."""
     ellipse = Ellipse(masked_image, geometry)
     try:
         return ellipse.fit_image(
@@ -260,7 +263,7 @@ def step3_fixed_center_fit(masked_image, geometry, maxsma):
 
 
 def extract_isophote_table(iso_result, pixscl, band_or_survey):
-    """从 IsophoteList 提取结果为 DataFrame。"""
+    """Extract an IsophoteList into a DataFrame."""
     if iso_result is None or len(iso_result) == 0:
         return pd.DataFrame()
 
@@ -269,7 +272,7 @@ def extract_isophote_table(iso_result, pixscl, band_or_survey):
         if iso.intens <= 0 or not iso.valid:
             continue
 
-        # m=1 Fourier 振幅 (用于 lopsidedness)
+        # m=1 Fourier amplitude (used for lopsidedness)
         a1, b1 = np.nan, np.nan
         try:
             angles = iso.sample.values[0]    # azimuthal angles
@@ -279,7 +282,7 @@ def extract_isophote_table(iso_result, pixscl, band_or_survey):
         except Exception:
             pass
 
-        # m=2 Fourier 振幅
+        # m=2 Fourier amplitude
         a2, b2 = np.nan, np.nan
         try:
             angles = iso.sample.values[0]
@@ -296,7 +299,7 @@ def extract_isophote_table(iso_result, pixscl, band_or_survey):
             'int_err': iso.int_err,
             'eps': iso.eps,
             'eps_err': iso.ellip_err if hasattr(iso, 'ellip_err') else np.nan,
-            'pa_deg': np.degrees(iso.pa) - 90,   # 天文 PA: CCW from North
+            'pa_deg': np.degrees(iso.pa) - 90,   # astronomical PA: CCW from North
             'pa_err_deg': np.degrees(iso.pa_err) if hasattr(iso, 'pa_err') else np.nan,
             'x0_pix': iso.x0,
             'y0_pix': iso.y0,
@@ -318,34 +321,35 @@ def extract_isophote_table(iso_result, pixscl, band_or_survey):
 
     df = pd.DataFrame(records)
     if len(df) > 0:
-        # 规范化 PA 到 [-90, 90]
+        # Normalize PA to [-90, 90]
         df['pa_deg'] = ((df['pa_deg'] + 90) % 180) - 90
     return df
 
 
 def fit_isophotes(image, mask, pixscale, band_or_survey='F200W'):
-    """三步 isophote 拟合的纯函数 (无文件 IO)。
+    """Pure function for the three-stage isophote fit (no file IO).
 
     Parameters
     ----------
     image : 2D array
-        科学图像 (原始数据单位)。
+        Science image (native data units).
     mask : 2D bool array or None
-        True = 坏像素。
+        True marks bad pixels.
     pixscale : float
-        像素尺度 (arcsec/pixel)。
+        Pixel scale (arcsec/pixel).
     band_or_survey : str
-        传给 compute_mu() 决定表面亮度零点 ('SDSS'/'R' → SDSS, 否则 JWST)。
+        Passed to compute_mu() to select the surface-brightness zeropoint
+        ('SDSS'/'R' -> SDSS, otherwise JWST).
 
     Returns
     -------
     (df_s1, df_s2, df_s3, info) : tuple
-        三步等照度表 + 诊断 dict。
+        The three isophote tables plus a diagnostics dict.
     """
     ny, nx = image.shape
     dim = min(nx, ny)
 
-    # 背景估计与扣除
+    # Background estimate and subtraction
     bg_mean, bg_std = estimate_background(image, mask)
     image_bgsub = image - bg_mean
 
@@ -355,7 +359,7 @@ def fit_isophotes(image, mask, pixscale, band_or_survey='F200W'):
     else:
         masked_image = image_bgsub
 
-    # 初始参数
+    # Initial parameters
     cx, cy, eps0, pa0_rad, sma0_base = get_initial_params(image_bgsub, mask)
     sma0_list = make_sma0_list(sma0_base, dim // 2)
 
@@ -382,7 +386,7 @@ def fit_isophotes(image, mask, pixscale, band_or_survey='F200W'):
         if iso_step2 is not None and len(iso_step2) >= 3:
             break
 
-    # 如果 step2 失败, 尝试增大椭率
+    # If step 2 fails, retry with a larger ellipticity
     if iso_step2 is None or len(iso_step2) < 3:
         eps_retry = min(eps0 + 0.1, 0.9)
         geometry_retry = EllipseGeometry(cx, cy, sma=sma0_list[0], eps=eps_retry, pa=pa0_rad)
@@ -392,7 +396,7 @@ def fit_isophotes(image, mask, pixscale, band_or_survey='F200W'):
             if iso_step2 is not None and len(iso_step2) >= 3:
                 break
 
-    # ---- 确定固定中心 ----
+    # ---- Determine the fixed centre ----
     fixed_center, center_ok = calculate_fixed_center(iso_step2)
     if fixed_center is None:
         fixed_center = (cx, cy)
@@ -414,7 +418,7 @@ def fit_isophotes(image, mask, pixscale, band_or_survey='F200W'):
     step3_ok = iso_step3 is not None and n_step3 >= 3
     iso_final = iso_step3 if step3_ok else iso_step2
 
-    # ---- 提取结果 ----
+    # ---- Extract results ----
     df_s1 = extract_isophote_table(iso_step1, pixscale, band_or_survey)
     df_s2 = extract_isophote_table(iso_step2, pixscale, band_or_survey)
     df_s3 = extract_isophote_table(iso_final, pixscale, band_or_survey)
@@ -433,7 +437,7 @@ def fit_isophotes(image, mask, pixscale, band_or_survey='F200W'):
 
 
 # ============================================================
-# 棒检测 (迁移自 run_bar_detection.py)
+# Bar detection (ported from run_bar_detection.py)
 # ============================================================
 
 def normalize_pa(pa_deg):
@@ -447,9 +451,9 @@ def unwrap_pa(pa_deg):
 
 
 def detect_bar(df_isophote, criteria=None):
-    """棒检测 (ellipse method), 基于 Step 3 固定中心等照度。
+    """Bar detection (ellipse method) based on the Step-3 fixed-centre isophotes.
 
-    返回 dict: bar_detected, classification, peak_idx, peak_sma_arcsec/pix,
+    Returns dict: bar_detected, classification, peak_idx, peak_sma_arcsec/pix,
     e_max, inner_idx/sma, outer_idx/sma, bar_pa_mean, bar_pa_var,
     bar_length_arcsec, failure_reason。
     """
@@ -579,11 +583,11 @@ def detect_bar(df_isophote, criteria=None):
 
 
 # ============================================================
-# 偏侧性 (迁移自 run_lopsidedness.py)
+# Lopsidedness (ported from run_lopsidedness.py)
 # ============================================================
 
 def compute_fourier_amplitudes(df):
-    """计算 A1 = I1/I0, A2 = I2/I0, 及 m=1 相位 phi1 (deg)。"""
+    """Compute A1 = I1/I0, A2 = I2/I0 and the m=1 phase phi1 (deg)."""
     df = df.copy()
     df['I1_I0'] = np.sqrt(df['a1']**2 + df['b1']**2) / df['intensity']
     df['I2_I0'] = np.sqrt(df['a2']**2 + df['b2']**2) / df['intensity']
@@ -592,7 +596,7 @@ def compute_fourier_amplitudes(df):
 
 
 def compute_radii_from_sbp(df):
-    """从累积光度剖面计算 R50, R90 (arcsec)。"""
+    """Compute R50, R90 (arcsec) from the cumulative luminosity profile."""
     sma = df['sma_arcsec'].values
     intensity = df['intensity'].values
 
@@ -617,10 +621,11 @@ def compute_radii_from_sbp(df):
 
 
 def analyze_dolfi_a1(df_s3, a1_threshold=A1_THRESHOLD):
-    """偏侧方法 1: Dolfi et al. (2025) Fourier A1。
+    """Lopsidedness method 1: Dolfi et al. (2025) Fourier A1.
 
-    计算 R50 < r < 1.4*R90 环带内 A1 均值; > a1_threshold 则判为偏侧。
-    同时返回该环带的 m=1 相位均值 phi1 (deg, 环形平均)。
+    Averages A1 over the R50 < r < 1.4*R90 radial band; lopsided if the mean
+    exceeds a1_threshold. Also returns the m=1 phase mean phi1 (deg, circular
+    average) over that band.
     """
     df_s3 = compute_fourier_amplitudes(df_s3)
     A1 = df_s3['I1_I0'].values
@@ -649,7 +654,7 @@ def analyze_dolfi_a1(df_s3, a1_threshold=A1_THRESHOLD):
 
     a1_mean_annulus = float(np.mean(A1[mask])) if n_iso > 0 else np.nan
     if n_iso > 0:
-        # 环形平均: 用单位向量的 atan2, 避免 ±180° 跳变
+        # Circular average: atan2 of unit vectors to avoid the +/-180 deg wrap
         phi_rad = np.radians(phi1[mask])
         phi1_mean_annulus = float(np.degrees(np.arctan2(
             np.mean(np.sin(phi_rad)), np.mean(np.cos(phi_rad))
@@ -673,11 +678,12 @@ def analyze_dolfi_a1(df_s3, a1_threshold=A1_THRESHOLD):
 
 
 def analyze_center_offset_v2(df_s2, pixscl, survey, band_label):
-    """偏侧方法 2: 中心偏移线性趋势 (Step 2 自由中心)。
+    """Lopsidedness method 2: centre-offset linear trend (Step-2 free centre).
 
-    从 PSF FWHM 起, x/y 中心 vs SMA 线性回归; 两轴均 |r|>0.5 且 p<0.05,
-    且归一化径向偏移变化 > CO_MIN_DR_NORM, 则判为偏侧。
-    band_label 参数保留以兼容原签名 (函数内未使用)。
+    From the PSF FWHM outward, linearly regresses the x/y centres against SMA;
+    lopsided if both axes satisfy |r|>0.5 and p<0.05 and the normalized
+    radial-offset change exceeds CO_MIN_DR_NORM.
+    The band_label argument is kept only for signature compatibility (unused).
     """
     x0 = df_s2['x0_pix'].values
     y0 = df_s2['y0_pix'].values
@@ -706,7 +712,7 @@ def analyze_center_offset_v2(df_s2, pixscl, survey, band_label):
     dr = np.sqrt(dx**2 + dy**2)
     r_out = sma[-1]
 
-    # PSF FWHM in arcsec (原硬编码)
+    # PSF FWHM in arcsec (as originally hardcoded)
     if survey == 'jwst':
         psf_fwhm_arcsec = 0.067  # F200W
     else:

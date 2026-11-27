@@ -107,3 +107,18 @@ docs/superpowers/
 gadotti_data/
 logs/
 output/
+
+# local runtime artifacts (never commit)
+src/start*.sh
+src/nohup.out
+src/service/test.py
+src/tools/tmp/
+src/tools/*.bak
+mcp-local-*.json
+
+# survey_round debug dumps written next to the comparison image during
+# test runs (tests pass fixture paths as image_file) — runtime debris
+tests/test_data/**/*_survey_*
+# orphaned legacy fixtures (superseded by NGC1097_* copies in beam conftest)
+tests/test_data/galfit.01
+tests/test_data/galfit.02

@@ -1,0 +1,1113 @@
+"""MCP tool wrappers for the mechanised beam search (stage-1 set).
+
+The orchestrator protocol (workflow_galfit):
+
+    beam_init -> run_galfit(first fit) -> beam_record_fit -> survey_round ->
+    apply_candidate(action_id from survey's next_candidate) -> run_galfit ->
+    beam_record_fit -> survey_round -> ... -> beam_status/termination
+
+beam tools never run GALFIT themselves; they only maintain the state graph.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from typing import Annotated, Any
+
+
+def _parse_json(value, default):
+    if value is None or value == "":
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
+
+
+def _load_graph(galaxy_dir: str):
+    from beam.graph import BeamGraph
+
+    return BeamGraph.load(galaxy_dir)
+
+
+def measure_outer_iso_q(feedme: str) -> dict:
+    """Measure the outer-isophote axis ratio (q_iso) of the ORIGINAL image.
+
+    Anchors physicality's onion flat-disk skip (beam.physicality): a fitted
+    disk q < 0.3 is only a legitimate edge-on regime when the image itself is
+    that flat — the fitter's own q must never corroborate itself. Reuses the
+    photutils isophote machinery of the 1D SB profile (fixed-centre, fixed-PA
+    Step-2 fit); q_iso = median(1 - eps) over the outer 40% of the valid
+    isophotes' semi-major range. Best-effort: failures return {"q_iso": None,
+    "error": ...} and the caller falls back to the legacy skip behaviour.
+    """
+    out: dict = {"q_iso": None, "sma_outer": None, "n_isophotes": 0, "error": None}
+    try:
+        import numpy as np
+        from astropy.io import fits
+
+        from tools.parse_feedme import parse_feedme
+        from tools.sb_profile import fit_data_isophotes
+
+        header = parse_feedme(feedme)
+        img_path = header.get("input")
+        if not img_path or not os.path.exists(img_path):
+            out["error"] = f"image not found: {img_path}"
+            return out
+        data = np.asarray(fits.getdata(img_path), dtype=float)
+        if data.ndim != 2:
+            out["error"] = "image is not 2D"
+            return out
+        mask = None
+        mask_path = header.get("mask")
+        if mask_path and os.path.exists(mask_path):
+            m = fits.getdata(mask_path)
+            if m is not None and np.asarray(m).shape == data.shape:
+                mask = np.asarray(m) > 0
+        region = header.get("fit_region")
+        if region and len(region) == 4:
+            xmin, xmax, ymin, ymax = (int(v) for v in region)
+            if 0 < xmin < xmax <= data.shape[1] and 0 < ymin < ymax <= data.shape[0]:
+                data = data[ymin - 1:ymax, xmin - 1:xmax]
+                if mask is not None:
+                    mask = mask[ymin - 1:ymax, xmin - 1:xmax]
+        isos = fit_data_isophotes(data, mask=mask, auto_sky=False)
+        if isos is None:
+            out["error"] = "isophote fit failed"
+            return out
+        valid = [iso for iso in isos if iso.valid and iso.sma and iso.sma > 0]
+        if not valid:
+            out["error"] = "no valid isophotes"
+            return out
+        sma_max = max(float(iso.sma) for iso in valid)
+        band = [iso for iso in valid if iso.sma >= 0.6 * sma_max]
+        use = band if len(band) >= 3 else valid[-1:]
+        qs = [min(max(1.0 - float(iso.eps), 0.05), 1.0) for iso in use]
+        out["q_iso"] = float(np.median(qs))
+        out["sma_outer"] = sma_max
+        out["n_isophotes"] = len(valid)
+    except Exception as e:  # best-effort anchor; never fail beam_init on it
+        out["error"] = str(e)
+    return out
+
+
+def _mb_root_meta(root_lyric: str) -> dict:
+    """Multi-band root-lyric gate + per-band measurement table for beam_init.
+
+    Validates via check_lyric_file (static gate) AND the LyricDoc strict
+    invariants (no dangling bands/components/nuclei — the historical
+    KILOGAS band-drop pathology fails here), then measures per band the
+    PSF (FWHM_px / A_psf_px2 via compute_psf_area) and the pixel scale
+    (image WCS), returning {bands: {band: {...}}} plus best-effort
+    warnings. Structural problems return {"status": "failure", ...}.
+    """
+    warnings: list[str] = []
+    try:
+        from tools.modify_lyric import check_lyric_file
+    except Exception as e:  # pragma: no cover - import env
+        return {"status": "failure", "error": f"check_lyric_file unavailable: {e}"}
+    check = check_lyric_file(root_lyric)
+    if check.get("status") == "failure":
+        return {"status": "failure",
+                "error": f"check_lyric_file rejected the root lyric: "
+                         f"{check.get('message', '')[:400]}"}
+    try:
+        from beam_mb.lyric_doc import parse_lyric_doc
+        doc = parse_lyric_doc(root_lyric)
+        errs = doc.strict_invariant_errors()
+        if errs:
+            return {"status": "failure",
+                    "error": f"root lyric violates the strict invariants: "
+                             f"{'; '.join(errs)[:400]}"}
+    except Exception as e:
+        return {"status": "failure",
+                "error": f"LyricDoc parse failed: {e}"}
+
+    from tools.extract_summary_galfit import compute_psf_area
+
+    def _path_of(v):
+        """Extract the file path from an I-block row value. Lyric image/
+        psf/mask/sigma rows hold BARE unquoted paths inside brackets
+        (``Ia1) [/abs/path.fits, 0]``) — ast.literal_eval rejects them, so
+        the tokenizer stores the raw bracketed string; split it manually.
+        (A path containing a comma would break this — none exist in the
+        corpora.)"""
+        if isinstance(v, (list, tuple)) and v:
+            return str(v[0])
+        if isinstance(v, str):
+            s = v.strip()
+            if s.startswith("[") and s.endswith("]"):
+                inner = s[1:-1].split(",")[0].strip()
+                return inner.strip("'\"")
+            return s.strip("'\"")
+        return None
+
+    def _resolve(path, base_dir):
+        """Lyric I-blocks carry absolute paths from their originating
+        machine (e.g. /media/data/...); remap to the galaxy dir by basename
+        when the recorded path is stale."""
+        if not path:
+            return path
+        if os.path.exists(path):
+            return path
+        cand = os.path.join(base_dir, os.path.basename(path))
+        return cand if os.path.exists(cand) else path
+
+    base_dir = os.path.dirname(os.path.abspath(root_lyric))
+    bands: dict[str, dict] = {}
+    for lbl in (doc.atlas.value(2) if doc.atlas else []) or []:
+        img = doc.images.get(lbl)
+        band = str(img.value(2)) if img else lbl
+        entry: dict = {"label": lbl}
+        psf_file = _resolve(_path_of(img.value(4)) if img else None, base_dir)
+        if psf_file and os.path.exists(psf_file):
+            res = compute_psf_area(psf_file)
+            if res:
+                entry["fwhm_px"] = res[0]
+                entry["a_psf_px2"] = res[1]
+            else:
+                warnings.append(f"PSF fit failed for band {band}")
+        else:
+            warnings.append(f"PSF file missing for band {band}: {psf_file!r}")
+        image_file = _resolve(_path_of(img.value(1)) if img else None,
+                              base_dir)
+        if image_file and os.path.exists(image_file):
+            try:
+                from astropy.io import fits
+                from astropy.wcs import WCS
+                from astropy.wcs.utils import proj_plane_pixel_scales
+
+                with fits.open(image_file) as hdul:
+                    hdr = hdul[0].header
+                    shape = list(hdul[0].data.shape[-2:])
+                scales = proj_plane_pixel_scales(WCS(hdr))
+                entry["pixscale"] = float(abs(scales[0]) * 3600.0)
+                entry["region"] = [1.0, float(shape[1]), 1.0, float(shape[0])]
+            except Exception as e:
+                warnings.append(f"WCS/pixscale failed for band {band}: {e}")
+        else:
+            warnings.append(f"image file missing for band {band}: {image_file!r}")
+        bands[band] = entry
+    return {"status": "success", "bands": bands, "warnings": warnings}
+
+
+def beam_init(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory "
+                               "(the beam graph is created at <galaxy_dir>/beam_state/graph.json)"],
+    root_feedme: Annotated[str, "Absolute path of the root feedme (usually "
+                                "_iter1.feedme, carrying # STRUCTURE: names and the "
+                                "verbatim sky block); fitted as the first state"],
+    stage1_morphology: Annotated[str, "Stage-1 VLM morphology judgement (free text; "
+                                     "recorded verbatim in the graph header for digest)"] = "",
+    stage1_bar_lop_json: Annotated[str, "DEPRECATED 2026-10-09 (detection retired from the "
+                                       "flow; kept for backward compatibility — stored "
+                                       "verbatim, never re-read)"] = "",
+    opening_candidates_json: Annotated[str, "Optional JSON of the Stage-1 opening proposal: "
+                                            "{\"candidates\": [{\"inventory\": [\"disk\","
+                                            "\"bulge\",\"bar\"], \"sigma\": 0.5, "
+                                            "\"rationale\": \"...\"}, {\"inventory\": "
+                                            "[\"disk\",\"bulge\"], \"sigma\": 0.4, "
+                                            "\"rationale\": \"...\", \"primitives\": "
+                                            "[{\"op\": \"remove\", \"target\": \"bar\"}]}]}. "
+                                            "Rank 1 = the root feedme you already wrote; "
+                                            "every further entry needs primitives RELATIVE "
+                                            "to it (usually a single remove) and is "
+                                            "auto-enqueued after the first fit"] = "",
+    temporary_constraints_json: Annotated[str, "Optional JSON list of session-scoped user "
+                                              "directives, e.g. [{\"issued\": \"2026-09-04\", "
+                                              "\"text\": \"companion exclusion\", "
+                                              "\"forbid_structures\": [\"companion\"], "
+                                              "\"active\": true}]"] = "",
+    beam_width: Annotated[int, "Beam width W (queue truncation size); 0 = default 5 "
+                               "(2026-10-10: back to 5 — the hedged-search runner-up "
+                               "needs a queue slot). Paper sensitivity study: W=1 is "
+                               "the greedy best-first baseline"] = 0,
+    n_max: Annotated[int, "Fit budget N_max; 0 = default 7 (+1 reserved F1 arbitration "
+                          "fit on the best state, counted outside N_max)"] = 0,
+    stagnation_max: Annotated[int, "Stagnation stop threshold; 0 = default 3"] = 0,
+    ablations_json: Annotated[str, "Optional JSON object selecting the ablation arm for "
+                                   "this run, persisted in graph meta and enforced by "
+                                   "code in every later call: {\"no_global_state\": true} "
+                                   "(withhold the cross-round digest from the surveyor), "
+                                   "{\"no_verdict_gate\": true} (metric-only best "
+                                   "selection, physicality FAIL rounds may take s*), "
+                                   "{\"single_agent\": true} (provenance marker: candidates "
+                                   "come from beam_enqueue_candidates, no VLM)"] = "",
+    mode: Annotated[str, "Format mode of this run: 'galfit' (single-band "
+                         "feedme; default) or 'galfits' (multi-band .lyric "
+                         "— root_feedme then points at the root lyric)"] = "galfit",
+) -> dict[str, Any]:
+    """Create (or reset) the beam-search state graph for a galaxy.
+
+    Parses the root feedme into the root state A.0, validates it via
+    check_feedme_file (whose warnings are returned, not fatal), measures the
+    PSF once (FWHM / A_psf feed the default Re floor and the digest [Meta])
+    and the outer-isophote axis ratio q_iso once (anchors the physicality
+    onion flat-disk skip — see measure_outer_iso_q), and persists the graph
+    atomically. Stage-1 conclusions are stored for the per-round digest
+    generation. Beam parameters (W / N_max / stagnation_max) and the ablation
+    arm are written to graph meta — the single source of truth every later
+    call reads, so an arm cannot drift mid-run.
+    """
+    try:
+        from beam.graph import BeamGraph
+
+        if not os.path.isdir(galaxy_dir):
+            return {"status": "failure", "error": f"galaxy dir not found: {galaxy_dir}"}
+        if not os.path.exists(root_feedme):
+            return {"status": "failure", "error": f"root feedme not found: {root_feedme}"}
+
+        psf_fwhm_px = a_psf_px2 = None
+        warnings: list[str] = []
+        bands_meta: dict = {}
+        q_iso_res: dict = {}
+        q_iso_outer = None
+        mode = (mode or "galfit").lower()
+
+        if mode == "galfits":
+            mb = _mb_root_meta(root_feedme)
+            if mb.get("status") == "failure":
+                return mb
+            warnings = list(mb.get("warnings", []))
+            bands_meta = mb.get("bands", {})
+            # conservative single anchors for the shared floor formulas:
+            # the widest PSF (largest FWHM in arcsec-equivalent terms governs
+            # the Re floor) and the reference (first) band's A_psf
+            fwhms = [b.get("fwhm_px") for b in bands_meta.values()
+                     if b.get("fwhm_px")]
+            psf_fwhm_px = max(fwhms) if fwhms else None
+            ref = next(iter(bands_meta.values()), None)
+            a_psf_px2 = (ref or {}).get("a_psf_px2")
+        else:
+            try:
+                from tools.beam_actions_galfit import check_feedme_file
+
+                check = check_feedme_file(root_feedme)
+                warnings = list(check.get("warnings", []))
+                if check.get("status") == "failure":
+                    errors = check.get("errors") or [check.get("error", "unknown")]
+                    return {"status": "failure", "error": "check_feedme_file rejected the feedme",
+                            "errors": errors, "warnings": warnings}
+                psf_fwhm_px = check.get("psf_fwhm_px")
+                a_psf_px2 = check.get("a_psf_px2")
+            except Exception as e:  # PSF measurement is best-effort
+                warnings.append(f"check_feedme_file/PSF measurement failed: {e}")
+
+            # Outer-isophote anchor q_iso (onion flat-disk skip corroboration);
+            # best-effort — a failed measurement leaves the legacy skip behaviour
+            q_iso_res = measure_outer_iso_q(root_feedme)
+            q_iso_outer = q_iso_res.get("q_iso")
+            if q_iso_outer is None and q_iso_res.get("error"):
+                warnings.append(f"outer-isophote anchor measurement failed: "
+                                f"{q_iso_res['error']}")
+
+        stage1 = {
+            "morphology": stage1_morphology,
+            "detect_bar_lopsidedness": _parse_json(stage1_bar_lop_json, {}),
+        }
+        openings = _parse_json(opening_candidates_json, None)
+        if opening_candidates_json and openings is None:
+            return {"status": "failure",
+                    "error": "opening_candidates_json is not valid JSON"}
+        if openings is not None:
+            if not isinstance(openings, dict) or not isinstance(
+                    openings.get("candidates"), list):
+                return {"status": "failure",
+                        "error": "opening_candidates_json must be "
+                                 "{\"candidates\": [...]}"}
+            stage1["opening_candidates"] = openings
+        ablations = _parse_json(ablations_json, None)
+        if ablations_json and ablations is None:
+            return {"status": "failure", "error": "ablations_json is not valid JSON"}
+        if ablations is not None and not isinstance(ablations, dict):
+            return {"status": "failure", "error": "ablations_json must be a JSON object"}
+
+        graph = BeamGraph.init(
+            galaxy_dir, root_feedme, stage1=stage1,
+            psf_fwhm_px=psf_fwhm_px, a_psf_px2=a_psf_px2,
+            q_iso_outer=q_iso_outer,
+            temporary_constraints=_parse_json(temporary_constraints_json, []),
+            beam_width=beam_width or None,
+            n_max=n_max or None,
+            stagnation_max=stagnation_max or None,
+            ablations=ablations,
+            mode=mode,
+        )
+        meta = graph.g.graph["meta"]
+        if bands_meta:
+            meta["bands"] = bands_meta
+            graph.commit()
+        return {
+            "status": "success",
+            "graph_file": graph.path,
+            "root_state": "A.0",
+            "psf_fwhm_px": psf_fwhm_px,
+            "a_psf_px2": a_psf_px2,
+            "q_iso_outer": q_iso_outer,
+            "q_iso_sma_outer": q_iso_res.get("sma_outer"),
+            "config": {k: meta.get(k) for k in
+                       ("W", "N_max", "stagnation_max", "class_caps", "g_min")},
+            "ablations": meta.get("ablations", {}),
+            "warnings": warnings,
+            "message": "beam graph initialised; run the first fit (run_galfit on the root "
+                       "feedme) and register it with beam_record_fit (action_id empty)",
+        }
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+# fields record_fit needs; used by the by-reference form and fail-fast checks
+_RUN_RESULT_REQUIRED = ("input_param_file", "output_param_file", "image_file",
+                        "summary_file", "round_status_file")
+
+
+def _run_result_from_round_status(round_status_file: str) -> dict[str, Any]:
+    """Build a run_result dict BY REFERENCE from the runner's archived
+    round_status.json (2026-10-23 incident: hand-transcribing the run_galfit
+    return dropped input_param_file and mangled a PNG path — the orchestrator
+    passes a path, never values). Key-sniffed across runners: run_galfit
+    writes inputs.feedme / outputs.output_param; run_galfits writes
+    inputs.lyric / outputs.summary_files (a .gssummary list) — the engine
+    contract is format-neutral (input_param_file / output_param_file)."""
+    with open(round_status_file, encoding="utf-8") as f:
+        rs = json.load(f)
+    inputs = rs.get("inputs") or {}
+    outputs = rs.get("outputs") or {}
+    fit_stats = rs.get("fit_statistics") or {}
+    if isinstance(outputs, list):
+        # some run_galfits versions write outputs as a flat path list —
+        # sniff the mb artifacts out of it by extension/name
+        outputs_list = outputs
+        summary_files = [p for p in outputs_list if str(p).endswith(".gssummary")]
+        outputs = {}
+        if summary_files:
+            outputs["summary_files"] = summary_files
+        comps = [p for p in outputs_list if "all_bands_comparison" in str(p)]
+        if comps:
+            outputs["comparison"] = comps[0]
+    else:
+        summary_files = outputs.get("summary_files") or []
+    return {
+        "input_param_file": inputs.get("feedme") or inputs.get("lyric", ""),
+        "output_param_file": outputs.get("output_param")
+        or (summary_files[0] if summary_files else ""),
+        "image_file": outputs.get("comparison")
+        or outputs.get("comparison_png", ""),
+        "summary_file": outputs.get("summary")
+        or (summary_files[0] if summary_files else ""),
+        "round_status_file": round_status_file,
+        "fit_statistics": fit_stats,
+    }
+
+
+def _validate_run_result(run_result: dict, action_id: str) -> str | None:
+    """Fail-fast record validation: required fields present and their paths
+    exist. Returns an error string or None. The error is returned (not
+    raised) WITH the action_id so the orchestrator can immediately re-record
+    by reference — the fit already ran and must not be lost."""
+    missing = [k for k in _RUN_RESULT_REQUIRED
+               if not run_result.get(k)]
+    if missing:
+        return (f"E_RECORD_INCOMPLETE: run result is missing {missing} — the state was "
+                f"NOT recorded. Re-record by reference: beam_record_fit(galaxy_dir, "
+                f"action_id={action_id or '<action_id>'}, round_status_file=<archived "
+                f"round_status.json path>)")
+    nonexistent = [k for k in _RUN_RESULT_REQUIRED
+                   if not os.path.exists(run_result.get(k, ""))]
+    if nonexistent:
+        return (f"E_RECORD_PATH_INVALID: paths do not exist: "
+                f"{ {k: run_result[k] for k in nonexistent} } — the state was NOT "
+                f"recorded. Re-record by reference (round_status_file=...) instead of "
+                f"hand-copying paths")
+    if not run_result.get("fit_statistics"):
+        return "E_RECORD_INCOMPLETE: fit_statistics block is empty — the state was NOT recorded"
+    return None
+
+
+def beam_record_fit(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    run_galfit_result_json: Annotated[str, "JSON-serialised return dict of a successful "
+                                          "run_galfit call (needs input_param_file, "
+                                          "output_param_file, image_file, summary_file, "
+                                          "round_status_file, fit_statistics). Pass the "
+                                          "run_galfit return VERBATIM (json.dumps of the "
+                                          "whole dict) — never hand-type fields; prefer "
+                                          "the round_status_file reference form below"] = "",
+    action_id: Annotated[str, "action_id of the executed pending candidate (empty string "
+                              "for the deterministic first fit of the root feedme)"] = "",
+    verdict_json: Annotated[str, "Optional JSON of the surveyor Physicality Verdict "
+                                 "({\"verdict\": \"PASS|FAIL\", \"failed_checks\": [...], "
+                                 "\"swap_hint\": \"none|disk_bulge_swap\"}); normally the "
+                                 "verdict arrives via survey_round instead"] = "",
+    round_status_file: Annotated[str, "PREFERRED by-reference form: absolute path of the "
+                                      "run_galfit archive's round_status.json — every "
+                                      "field (input/output paths + fit_statistics) is "
+                                      "read from the archive, making transcription "
+                                      "errors structurally impossible. When given, "
+                                      "run_galfit_result_json is ignored"] = "",
+) -> dict[str, Any]:
+    """Register a successful fit as a new state node in the beam graph.
+
+    Creates the child state (label branch.local_round), parses the fitted
+    galfit.NN inventory (names recovered from the input feedme), decodes
+    effective .cons bands, computes zombie flags, updates counters /
+    stagnation / mechanical best (verdict-gated), grounds refuted-hypothesis
+    entries, and commits.
+
+    Fail-fast (2026-10-23): a run result missing required fields or carrying
+    nonexistent paths is REJECTED (nothing recorded) — the failure names the
+    action_id and the by-reference re-record path. A fitted inventory whose
+    component names are bare type names (expdisk/sersic — the input feedme
+    carried no `# STRUCTURE:` names) is likewise rejected at record time,
+    instead of poisoning later survey rounds.
+    """
+    try:
+        if round_status_file:
+            if not os.path.exists(round_status_file):
+                return {"status": "failure", "action_id": action_id,
+                        "error": f"E_RECORD_PATH_INVALID: round_status_file does not "
+                                 f"exist: {round_status_file}"}
+            run_result = _run_result_from_round_status(round_status_file)
+        else:
+            run_result = _parse_json(run_galfit_result_json, None)
+            if not isinstance(run_result, dict) or not run_result.get("fit_statistics"):
+                return {"status": "failure",
+                        "error": "run_galfit_result_json is not a valid run_galfit return "
+                                 "dict; prefer the by-reference form "
+                                 "(round_status_file=<archive>/round_status.json)"}
+        err = _validate_run_result(run_result, action_id)
+        if err:
+            return {"status": "failure", "action_id": action_id, "error": err}
+        verdict = _parse_json(verdict_json, None)
+        graph = _load_graph(galaxy_dir)
+        label = graph.record_fit(run_result, action_id=action_id, verdict=verdict)
+        state = graph.state(label)
+        # Opening skeletons (Stage-1 proposal): the non-top entries ride the
+        # queue as A.1-parented alternates once the FIRST fit exists (A.0 has
+        # no galfit.NN to warm-start from, so the alternates parent the fit).
+        opening_alternates = []
+        if not action_id and int(graph.counters().get("n_executed", 0)) == 1:
+            opening_alternates = graph.enqueue_opening_alternates(label)
+        return {
+            "status": "success",
+            "new_state": label,
+            "metrics": state.get("metrics"),
+            "zombies": state.get("zombies"),
+            "combo_key": state.get("combo_key"),
+            "is_best": state.get("is_best"),
+            "best_state": graph.g.graph.get("best_state"),
+            "counters": graph.counters(),
+            "f1": graph.g.graph.get("meta", {}).get("f1"),
+            "opening_alternates": opening_alternates,
+            "termination": graph.termination_check(),
+        }
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_repair_artifacts(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    state_label: Annotated[str, "Label of the recorded state to repair (e.g. 'A.1')"],
+    round_status_file: Annotated[str, "Absolute path of the run_galfit archive's "
+                                      "round_status.json for that round — all fields "
+                                      "are read from the archive by reference"],
+) -> dict[str, Any]:
+    """Repair a recorded state's artifacts/inventories BY REFERENCE (2026-10-23).
+
+    For a state whose record was corrupted (missing input_param_file, bare
+    type-name inventories, dangling artifact paths) — where the record-time
+    idempotency guard correctly refuses a re-record — this rebuilds ONLY the
+    derived record fields (artifacts, input_inventory, inventory, signature,
+    combo_key, cons_effective, zombies, archive_dir) from the archive.
+    Metrics, verdict, best-state and counters are never touched. When the
+    reference feedme still yields bare type names, the repair is refused
+    (fix the feedme's # STRUCTURE: names first).
+    """
+    try:
+        if not os.path.exists(round_status_file):
+            return {"status": "failure",
+                    "error": f"round_status_file does not exist: {round_status_file}"}
+        run_result = _run_result_from_round_status(round_status_file)
+        err = _validate_run_result(run_result, "")
+        if err:
+            return {"status": "failure", "error": err}
+        graph = _load_graph(galaxy_dir)
+        out = graph.repair_state_artifacts(state_label, run_result)
+        graph.commit()
+        return {"status": "success", **out,
+                "message": "artifacts/inventories rebuilt by reference; metrics, "
+                           "verdict, best and counters untouched"}
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_mark_failure(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    action_id: Annotated[str, "action_id of the candidate whose fit failed "
+                              "(tool error / no comparison image / no summary)"],
+    reason: Annotated[str, "Short failure reason (tool error, timeout, "
+                           "check_feedme_file rejection, ...)"] = "",
+    archive_dir: Annotated[str, "Optional crash-forensics archive directory "
+                                "returned by a failed run_galfit call "
+                                "(archive_dir field) — stored on the failed "
+                                "record and the decision log"] = "",
+) -> dict[str, Any]:
+    """Record a failed fit (b.5 branch): marks the edge failed, bumps counters."""
+    try:
+        graph = _load_graph(galaxy_dir)
+        graph.mark_failed(action_id, reason or "unspecified",
+                          archive_dir=archive_dir or "")
+        graph.commit()
+        return {"status": "success", "action_id": action_id,
+                "counters": graph.counters(), "termination": graph.termination_check()}
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_enqueue_f1(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    amplitude: Annotated[float, "m=1 amplitude warm start (fourier_mode_analysis's "
+                                "am; a low-confidence 0.02 is a valid start — the "
+                                "amp/phase are free parameters the fit re-optimises)"],
+    phase_deg: Annotated[float, "m=1 phase warm start in degrees (fourier_mode_analysis's "
+                                "theta_m; N=+Y convention, written verbatim into the "
+                                "F1) row)"],
+) -> dict[str, Any]:
+    """Stage-3 reserved F1 arbitration (the "+1" of the "7+1" budget).
+
+    Creates the F1 candidate on the CURRENT BEST state — no VLM call, the
+    primitive pair (disk remove+add rebuild carrying the F1 row) is built from
+    the best state's fitted disk. Runs at most ONCE per run (also refused when
+    the best state already carries an F1 row): execute it, compare the fitted
+    BIC against the pre-F1 best, keep the F1-bearing round only when the BIC
+    improves; the F1 round is never re-run. The fit is counted in
+    ``n_f1_reserved`` (outside N_max) and is exempt from the combo-cap gates.
+
+    Typical sequence: fourier_mode_analysis on the best round's comparison
+    image (initial-value advisor) -> beam_enqueue_f1(am, theta_m) ->
+    apply_candidate -> run_galfit -> beam_record_fit -> BIC comparison.
+    """
+    try:
+        graph = _load_graph(galaxy_dir)
+        aid, err = graph.add_f1_reserved(float(amplitude), float(phase_deg))
+        if aid is None:
+            return {"status": "failure", "error": err}
+        return {
+            "status": "success",
+            "action_id": aid,
+            "parent": graph.g.graph.get("best_state"),
+            "queue_head": graph.next_action(),
+            "message": "next: apply_candidate(action_id=...) -> run_galfit -> "
+                       "beam_record_fit; the fit is counted outside N_max "
+                       "(n_f1_reserved) and settles retention by the BIC "
+                       "comparison against the pre-F1 best",
+        }
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def _apply_candidate_mb(graph, action_id: str, rec: dict, parent: dict,
+                        galaxy_dir: str) -> dict:
+    """The galfits-mode apply path: mb projection for the R0 re-check,
+    transcribe_mb for the child lyric (+ .constrain), check_lyric_file as
+    the structural gate. Mirrors the galfit tail's contract (iter_id
+    consumption, in-flight marking, decision log)."""
+    try:
+        from beam_mb.candidate_schema_mb import project_mb_inventory
+        from beam_mb.lyric_doc import parse_lyric_doc
+        from beam_mb.transcribe_mb import transcribe_mb
+
+        meta = graph.g.graph.get("meta", {})
+        bands_meta = meta.get("bands", {}) or {}
+        prims = rec.get("primitives", [])
+        is_skeleton = any(p.get("op") == "skeleton" for p in prims)
+        artifacts = parent.get("artifacts", {})
+        p_lyric = artifacts.get("lyric")
+        p_gss = artifacts.get("gssummary")
+        missing = [k for k, v in (("lyric", p_lyric),
+                                  ("gssummary", p_gss if not is_skeleton
+                                   else p_lyric))
+                   if not v or not os.path.exists(v)]
+        if missing:
+            return {"status": "failure",
+                    "error": f"parent state {rec['parent']} lacks artefacts "
+                             f"{missing}"}
+
+        # R0 re-check at dequeue (shared discipline, mb projection)
+        f1_reserved = bool((rec.get("code_flags") or {}).get("f1_reserved"))
+        if not f1_reserved:
+            hypo = project_mb_inventory(parent.get("inventory", []), prims,
+                                        bands_meta)
+            from beam.cells import CellLedger, skeleton_class
+            from beam.graph import CLASS_CAPS
+
+            cls = skeleton_class(hypo)
+            if graph.class_attempt_counts().get(cls, 0) >= CLASS_CAPS[cls]:
+                graph.mark_discarded(
+                    action_id,
+                    f"CLASS_EXHAUSTED: class {cls} reached {CLASS_CAPS[cls]} "
+                    f"attempts (apply-time R0 re-check)")
+                graph.log_decision({"kind": "class-cap-discard",
+                                    "action_id": action_id, "class": cls,
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "class": cls,
+                        "message": "skeleton class hit its attempt cap after "
+                                   "enqueue — candidate discarded"}
+            if not any(k.startswith("floor_")
+                       for k in (rec.get("code_flags") or {})) \
+                    and CellLedger.from_graph(graph).is_dup(hypo, False):
+                graph.mark_discarded(
+                    action_id, "CELL_DUP (apply-time R0 re-check)")
+                graph.log_decision({"kind": "enqueue-discard",
+                                    "action_id": action_id,
+                                    "reason": "CELL_DUP (apply-time re-check)",
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": "every component cell already visited "
+                                   "after enqueue — candidate discarded"}
+            from beam.enqueue import _temp_constraint_violation
+            _viol = _temp_constraint_violation(graph, prims)
+            if _viol:
+                graph.mark_discarded(action_id, f"E_TEMP_CONSTRAINT: {_viol}")
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": f"{_viol} — candidate discarded"}
+
+        c = graph.counters()
+        iter_id = int(c.get("global_iter_id", 0)) + 1
+        out_lyric = os.path.join(galaxy_dir, f"_iter{iter_id}.lyric")
+        result = transcribe_mb(p_lyric, p_gss if not is_skeleton else None,
+                               prims, out_lyric, bands_meta=bands_meta)
+        if result.get("status") != "success":
+            graph.mark_discarded(action_id,
+                                 "E_TRANSCRIBE: " + result.get("error", ""))
+            graph.commit()
+            return {"status": "failure",
+                    "error": "transcription rejected the candidate",
+                    "detail": result.get("error"),
+                    "errors": result.get("errors"),
+                    "action_id": action_id}
+
+        c["global_iter_id"] = iter_id
+        rec["iter_id"] = iter_id
+        rec["status"] = "applied"
+        graph._drop_from_queue(action_id)
+        graph.log_decision({
+            "kind": "apply-candidate", "action_id": action_id,
+            "iter_id": iter_id, "lyric": out_lyric,
+            "constrain": result.get("constrain"),
+            "notes": result.get("notes", [])})
+        graph.commit()
+        constrain = result.get("constrain")
+        extra = f', constrain_file={constrain}' if constrain else ""
+        return {
+            "status": "success", "action_id": action_id, "iter_id": iter_id,
+            "lyric": out_lyric, "constrain": constrain,
+            "inventory": result.get("inventory"),
+            "agn_blocks": result.get("agn_blocks", []),
+            "notes": result.get("notes", []),
+            "message": "next: run_galfits_image_fitting("
+                       f"config_file={out_lyric}, extra_args="
+                       f"['--fit_method','ES']{', --parconstrain ' + os.path.basename(constrain) if constrain else ''})"
+                       f"{extra}, then beam_record_fit(action_id=..., "
+                       "run_galfits_result_json=...)",
+        }
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def apply_candidate(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    action_id: Annotated[str, "action_id of the pending candidate to transcribe "
+                              "(from survey_round's next_candidate / queue)"],
+) -> dict[str, Any]:
+    """Mechanically transcribe a pending candidate into the next round's input.
+
+    Parent feedme (structure template) + parent galfit.NN (warm-start backfill)
+    + the candidate's primitives -> ``_iter{n}.feedme`` + ``iter{n}.cons``
+    (concentric offset chain + default bound set + candidate tightenings),
+    validated by check_feedme_file. The global iter id is consumed here
+    (write time) and reused by beam_record_fit. On success, call
+    ``run_galfit(config_file=<feedme>)`` and register the result with
+    ``beam_record_fit(action_id=<action_id>)``.
+
+    Status values: ``success`` (feedme written, run the fit), ``failure``
+    (fatal; nothing was consumed), ``discarded`` (normal non-fatal outcome —
+    the candidate died at a dequeue-time legality gate, e.g. the apply-time
+    class-cap / cell-dup re-check; treat it as "continue with the next
+    queue entry", NOT as an error).
+    """
+    try:
+        from beam.transcribe import transcribe
+
+        graph = _load_graph(galaxy_dir)
+        rec = graph.g.graph.get("pending", {}).get(action_id)
+        if rec is None:
+            return {"status": "failure", "error": f"unknown action_id {action_id}"}
+        if rec.get("status") != "pending":
+            return {"status": "failure",
+                    "error": f"candidate {action_id} is '{rec.get('status')}', not pending"}
+
+        parent = graph.state(rec["parent"])
+        artifacts = parent.get("artifacts", {})
+        if graph.mode == "galfits":
+            return _apply_candidate_mb(graph, action_id, rec, parent,
+                                       galaxy_dir)
+        p_feedme = artifacts.get("feedme")
+        p_nn = artifacts.get("galfit_nn")
+        # round-0 opening skeletons are applied on the unfitted root A.0 —
+        # there is no galfit.NN to warm-start from (the skeleton declares
+        # every initial value); only the parent feedme is required
+        is_skeleton = any(p.get("op") == "skeleton" for p in rec.get("primitives", []))
+        missing = [k for k, v in (("feedme", p_feedme),
+                                  ("galfit_nn", p_nn if not is_skeleton else p_feedme))
+                   if not v or not os.path.exists(v)]
+        if missing:
+            return {"status": "failure",
+                    "error": f"parent state {rec['parent']} lacks artefacts {missing}"}
+
+        meta = graph.g.graph.get("meta", {})
+
+        # R0 re-check at dequeue time (Plate0295 incident 2026-09-17): the
+        # candidate was validated at enqueue, but rounds may have executed
+        # since — a pending record enqueued when its skeleton class or its
+        # parameter cells were fresh must not run after the class exhausted
+        # its budget or every component cell filled (2026-10-17 finalized
+        # scheme; 2026-10-20 dual registration). Floor flags exempt the
+        # CELL re-check (mandated-retention channels) but not the class
+        # cap. Sole exception for both: the reserved F1 arbitration round
+        # (f1_reserved — it targets the best state by construction and
+        # rides on top of N_max precisely to be spent once).
+        f1_reserved = bool((rec.get("code_flags") or {}).get("f1_reserved"))
+        from beam.signature import apply_primitives_to_inventory
+
+        hypo_inv, _err = apply_primitives_to_inventory(
+            parent.get("inventory", []), rec.get("primitives", []))
+        if hypo_inv is not None and not f1_reserved:
+            from beam.cells import (CellLedger, primitives_carry_f1,
+                                    skeleton_class)
+            from beam.graph import CLASS_CAPS
+            cls = skeleton_class(hypo_inv)
+            if graph.class_attempt_counts().get(cls, 0) >= CLASS_CAPS[cls]:
+                graph.mark_discarded(
+                    action_id,
+                    f"CLASS_EXHAUSTED: class {cls} reached {CLASS_CAPS[cls]} "
+                    f"attempts (apply-time R0 re-check)")
+                graph.log_decision({"kind": "class-cap-discard",
+                                    "action_id": action_id, "class": cls,
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "class": cls,
+                        "message": "skeleton class hit its attempt cap after "
+                                   "enqueue — candidate discarded; continue "
+                                   "with the next queue entry"}
+            if not any(k.startswith("floor_")
+                       for k in (rec.get("code_flags") or {})) \
+                    and CellLedger.from_graph(graph).is_dup(
+                        hypo_inv,
+                        primitives_carry_f1(rec.get("primitives") or [])):
+                graph.mark_discarded(
+                    action_id, "CELL_DUP (apply-time R0 re-check)")
+                graph.log_decision({"kind": "enqueue-discard",
+                                    "action_id": action_id,
+                                    "reason": "CELL_DUP (apply-time re-check)",
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": "every component cell already visited "
+                                   "after enqueue — candidate discarded; "
+                                   "continue with the next queue entry"}
+            # constraint re-check (2026-10-23): a constraint registered after
+            # this candidate was enqueued (an expert-T restriction or a user
+            # exclusion) must bind at dequeue too — add/tune/skeleton/
+            # reclassify of a forbidden structure never executes
+            from beam.enqueue import _temp_constraint_violation
+            _viol = _temp_constraint_violation(graph, rec.get("primitives") or [])
+            if _viol:
+                graph.mark_discarded(action_id, f"E_TEMP_CONSTRAINT: {_viol}")
+                graph.log_decision({"kind": "temporary-constraint-discard",
+                                    "action_id": action_id, "detail": _viol,
+                                    "stage": "apply"})
+                graph.commit()
+                return {"status": "discarded", "action_id": action_id,
+                        "message": f"{_viol} — candidate discarded; "
+                                   "continue with the next queue entry"}
+
+        region = meta.get("fit_region")
+        # Class-B mag prior for adds without a declared magnitude:
+        # ~1.5 mag fainter than the parent's brightest component.
+        mags = [c.get("mag") for c in parent.get("inventory", []) if c.get("mag") is not None]
+        hint = (min(mags) + 1.5) if mags else None
+
+        c = graph.counters()
+        iter_id = int(c.get("global_iter_id", 0)) + 1
+        out_feedme = os.path.join(galaxy_dir, f"_iter{iter_id}.feedme")
+        out_cons = os.path.join(galaxy_dir, f"iter{iter_id}.cons")
+
+        result = transcribe(
+            p_feedme, p_nn, rec.get("primitives", []), out_feedme, out_cons,
+            psf_fwhm_px=meta.get("psf_fwhm_px"),
+            fit_region=tuple(region) if region else None,
+            default_mag_hint=hint)
+        if not result.ok:
+            graph.mark_discarded(action_id, "E_TRANSCRIBE: " + "; ".join(result.notes))
+            graph.commit()
+            return {"status": "failure", "error": "transcription rejected the candidate "
+                                                  "(Class-A conflict)",
+                    "notes": result.notes, "action_id": action_id}
+
+        # structural gate (mandatory before any fit)
+        from tools.beam_actions_galfit import check_feedme_file
+        check = check_feedme_file(out_feedme)
+        if check.get("status") != "success":
+            errors = check.get("errors") or [check.get("error", "unknown")]
+            graph.mark_discarded(action_id, "E_CHECK_FEEDME: " + "; ".join(str(e) for e in errors))
+            graph.commit()
+            return {"status": "failure", "error": "check_feedme_file rejected the output",
+                    "errors": errors, "feedme": out_feedme, "cons": out_cons,
+                    "action_id": action_id}
+
+        # consume the iter id, pin it on the record and mark it in-flight
+        c["global_iter_id"] = iter_id
+        rec["iter_id"] = iter_id
+        rec["status"] = "applied"   # in-flight: awaiting run_galfit + beam_record_fit
+        graph._drop_from_queue(action_id)
+        graph.log_decision({"kind": "apply-candidate", "action_id": action_id,
+                            "iter_id": iter_id, "feedme": out_feedme,
+                            "notes": result.notes})
+        graph.commit()
+        return {
+            "status": "success",
+            "action_id": action_id,
+            "iter_id": iter_id,
+            "feedme": out_feedme,
+            "cons": out_cons,
+            "component_numbers": result.numbers,
+            "check_warnings": check.get("warnings", []),
+            "notes": result.notes,
+            "message": "next: run_galfit(config_file=<feedme>), then "
+                       "beam_record_fit(action_id=..., run_galfit_result_json=...)",
+        }
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_export_note(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+) -> dict[str, Any]:
+    """Regenerate working_note.md from the state graph (ON-DEMAND audit export).
+
+    The graph is the single source of truth; the note follows the §Multi-Branch
+    working_note template (header + overwrite snapshot + ledgers + branch
+    rounds + failure archive + decision log) purely as a human-readable /
+    paper-trail export. Per-round maintenance is RETIRED (2026-10-21); call
+    this only when an audit render is explicitly wanted.
+    """
+    try:
+        from beam.note_export import export_working_note
+
+        graph = _load_graph(galaxy_dir)
+        path = export_working_note(graph, galaxy_dir)
+        return {"status": "success", "working_note": path}
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_grant_repair_budget(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    rounds: Annotated[int, "Extra fits to grant (clamped to the remaining cumulative "
+                           "cap of 4)"] = 2,
+    reason: Annotated[str, "Why the grant is made (verbatim into the decision log; "
+                           "the user's instruction / the failed lock check — this "
+                           "tool is USER-DIRECTED ONLY, never agent-initiated)"] = "",
+) -> dict[str, Any]:
+    """Grant bounded extra fits after a failed lock check (defect B fix).
+
+    The Stage-3 repair path ('fix per blocking issues, refit, re-audit') is
+    otherwise dead when N_max is exhausted. Cumulative grants are capped;
+    crash rounds no longer count toward stagnation, so a repair loop keeps
+    moving while repair budget remains.
+
+    USER-DIRECTED ONLY (2026-10-28): the orchestrating agent must not call
+    this on its own judgement — empirically 0/5 agent-initiated grants
+    (precheck exploration, F1-repair chases) ever improved the best
+    (KILOGAS_108/291/95/426/172); a never-executed inventory at budget
+    exhaustion is NOT a grant reason. Reserved for the user's explicit
+    instruction (e.g. a requested reclassify exploration).
+    """
+    try:
+        graph = _load_graph(galaxy_dir)
+        rb = graph.grant_repair_budget(rounds, reason or "unspecified")
+        graph.commit()
+        return {"status": "success", "repair_budget": rb,
+                "termination": graph.termination_check(),
+                "message": "repair budget granted; resume the main loop "
+                           "(survey_round for repair candidates if the queue is empty)"}
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_set_constraint(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    action: Annotated[str, "'add' to activate a session-scoped user constraint, "
+                           "'remove' to deactivate it (by text)"],
+    text: Annotated[str, "Constraint identifier/description, e.g. 'companion exclusion' "
+                         "(unique key; add is idempotent on it, remove matches it)"],
+    forbid_structures_json: Annotated[str, "JSON array of structure names the constraint "
+                                           "forbids in candidate generation, e.g. "
+                                           "[\"companion\"] (add only)"] = "[]",
+    issued: Annotated[str, "Issue date (YYYY-MM-DD; defaults to today)"] = "",
+) -> dict[str, Any]:
+    """Add or revoke a temporary user constraint (defect D fix).
+
+    Enforced at enqueue time: add/tune candidates touching a forbidden
+    structure are discarded with E_TEMP_CONSTRAINT and logged. Without this
+    registration an ACTIVE user constraint (e.g. companion exclusion) is
+    invisible to the code and companion candidates enter the queue freely.
+    """
+    try:
+        graph = _load_graph(galaxy_dir)
+        forbid = _parse_json(forbid_structures_json, [])
+        if not isinstance(forbid, list):
+            return {"status": "failure",
+                    "error": "forbid_structures_json must be a JSON array of names"}
+        out = graph.set_temporary_constraint(action, text,
+                                             forbid_structures=[str(s) for s in forbid],
+                                             issued=issued)
+        graph.commit()
+        return {"status": "success", "action": action, "text": text,
+                "active_constraints": out["active"]}
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_status(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+) -> dict[str, Any]:
+    """Full beam-state snapshot: best state, queue (with code flags), counters,
+    combo counts, refuted hypotheses, never-executed blockers, termination."""
+    try:
+        graph = _load_graph(galaxy_dir)
+        snap = graph.snapshot()
+        snap["status"] = "success"
+        snap["termination"] = graph.termination_check()
+        # verdict-gate health warnings (KILOGAS_231 2026-09-16 incident: a
+        # driver that never settles verdicts bypasses the physicality gate)
+        warnings = []
+
+        def _has_fit(s):
+            return (s.get("bic") is not None
+                    or (s.get("metrics") or {}).get("bic_eff") is not None)
+
+        fitted = [s for s in snap.get("states", []) if _has_fit(s)]
+
+        def _settled(s):
+            v = s.get("verdict")
+            if isinstance(v, dict):
+                return bool(v.get("verdict"))
+            return bool(v)  # snapshot form: verdict is a plain string
+
+        unsettled = [s.get("label") for s in fitted if not _settled(s)]
+        if unsettled:
+            warnings.append(
+                f"verdict gate bypassed: {len(unsettled)} fitted state(s) without "
+                f"a settled Physicality Verdict ({', '.join(map(str, unsettled[:6]))}"
+                f"{'…' if len(unsettled) > 6 else ''}) — call survey_round after "
+                "every beam_record_fit (the single_agent arm uses "
+                "beam_enqueue_candidates instead)")
+        if fitted and not snap.get("best_state"):
+            warnings.append(
+                "no admissible best state (best_state is null): no verdict-PASS "
+                "round exists yet — locking is forbidden; settle the pending "
+                "states' verdicts first")
+        if warnings:
+            snap["warnings"] = warnings
+        return snap
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def survey_round(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    state_label: Annotated[str, "Round label to survey (e.g. 'A.2'); empty = the "
+                                "most recently executed state"] = "",
+    local_injections_json: Annotated[str, "Optional JSON of current-round visual "
+                                          "assessments the code cannot see "
+                                          "({outer_residual_sign, central_spike, "
+                                          "two_peaked_original, embedded_hotspot, "
+                                          "orchestrator_note})"] = "{}",
+    directives: Annotated[str, "Optional orchestrator hard-constraint directives "
+                               "carried verbatim into the prompt (repair restarts, "
+                               "Occam validation, ...)"] = "",
+    max_retries: Annotated[int, "Bounded validation-retry budget (default 2)"] = 2,
+    opening_image: Annotated[str, "Round-0 OPENING survey only (state_label='A.0'): "
+                                  "absolute path of the rendered original PNG "
+                                  "(render_original's output). The surveyor reads "
+                                  "the ORIGINAL image (no model/residual panels) "
+                                  "and returns 1-3 ranked opening skeleton "
+                                  "candidates (skeleton primitives, alphabet "
+                                  "singlesersic XOR {disk,bulge,bar}) seeded from "
+                                  "the input-feedme reference parameters"] = "",
+) -> dict[str, Any]:
+    """Run ONE surveyor round on a fitted state (single-function VLM trigger).
+
+    Internally: digests from the state graph -> VLM call (ANALYSIS_MODE
+    dispatch) -> JSON extraction -> schema + solution-space validation with
+    structured error feedback and bounded retries -> verdict settled on the
+    state -> legal candidates enqueued (floors/diversity/aging overlay) ->
+    returns the queue snapshot and the next candidate to execute.
+
+    Round-0 opening mode: state_label='A.0' + opening_image=<rendered
+    original> -> the VLM authors the opening skeleton candidates (no verdict
+    is settled; the top-ranked skeleton becomes the first fit via
+    apply_candidate).
+    """
+    try:
+        from beam.survey import survey_round as _survey_round
+
+        return _survey_round(
+            galaxy_dir,
+            state_label=state_label,
+            local_injections=_parse_json(local_injections_json, {}),
+            directives=directives,
+            max_retries=max_retries,
+            opening_image=opening_image,
+        )
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}
+
+
+def beam_enqueue_candidates(
+    galaxy_dir: Annotated[str, "Absolute path of the galaxy home directory"],
+    response_json: Annotated[str, "JSON object following the surveyor contract: "
+                                  "{\"physicality_verdict\": {\"verdict\": \"PASS|FAIL\", "
+                                  "\"failed_checks\": [...], \"swap_hint\": \"none\"}, "
+                                  "\"candidates\": [<candidate objects, 1-4, same shapes "
+                                  "as the beam JSON contract>]} — authored by the "
+                                  "orchestrator (who read the comparison image itself) "
+                                  "in the single-agent ablation arm"],
+    state_label: Annotated[str, "Round label the response refers to (e.g. 'A.2'); "
+                                "empty = the most recently executed state"] = "",
+) -> dict[str, Any]:
+    """Single-agent ablation arm: ingest orchestrator-authored candidates (no VLM).
+
+    Validates the provided JSON with the same schema + solution-space rules
+    and enqueues through the same legality gates (floors / diversity / aging)
+    as survey_round — the two arms differ ONLY in who performs the perception
+    and candidate generation. The verdict is settled on the state with the
+    code-computed mechanical checks merged in (idempotent if already settled
+    via beam_record_fit's verdict_json).
+    """
+    try:
+        from beam.survey import orchestrator_round
+
+        return orchestrator_round(galaxy_dir, response_json, state_label=state_label)
+    except Exception as e:
+        return {"status": "failure", "error": str(e)}

@@ -106,6 +106,6 @@ def view_original_image(
 
     return {
         "status": "success",
-        "classification": classification + '\n该结果仅供参考，实际成分需要结合残差图和拟合结果进行综合判断。',
+        "classification": classification + '\nThis classification is for reference only; the actual component inventory must be judged jointly with the residual image and the fitting results.',
         "classification_file": output_file
     }

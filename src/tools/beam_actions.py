@@ -164,7 +164,7 @@ def generate_beam_actions(
         # vlm mode: multi-turn via OpenAI SDK
         from .openai_analysis import run_openai_analysis
         deferred_system = os.environ.get("VLM_DEFERRED_SYSTEM", "0") == "1"
-        analysis, session_id, error = run_openai_analysis(
+        analysis, session_id, error, _timing = run_openai_analysis(
             system_prompt=system_message,
             analysis_prompts=[turn1, turn2],
             image_path=os.path.abspath(comparison_file),

@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import shutil
 import subprocess
 import hashlib
@@ -10,6 +11,7 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.io import fits
@@ -20,23 +22,42 @@ import glob
 from .extract_summary_galfit import extract_summary_from_galfit
 from .parse_feedme import parse_feedme, parse_components
 from .render_original import render_asinh_panel, draw_re_ellipses, effective_re
-from .sb_profile import render_sb_profile
+from .sb_profile import render_sb_profile, component_color, assign_component_colors
+from .fit_event_publisher import existing_artifacts, publish_fit_round
+
+
+# modified by zl: serialize GALFIT round metadata for status files and service events.
+def _json_safe(value: Any) -> Any:
+    """Convert numpy/path-like values into JSON-serializable Python objects."""
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    return value
 
 # Residual-zoom panel geometry (mirrors v2 layout in rerender_comparisons.py)
-ZOOM_HALF_MIN_PX = 12       # 放大框半宽下限，防止 Re 过小时框退化
-ZOOM_RE_FACTOR = 2.5        # 半宽 = 2.5×Re，即全宽 5×Re
-ZOOM_SIGMA_RANGE = 10       # 放大图色标 ±10σ，与主残差图一致
-CENTER_CLUSTER_PX = 3.0     # 距场心同一目标簇的容差：同心多成分(盘+核+棒)归为一簇
+ZOOM_HALF_MIN_PX = 12       # lower bound on the zoom-box half-width, avoids a degenerate box for tiny Re
+ZOOM_RE_FACTOR = 2.5        # half-width = 2.5*Re, i.e. full box width 5*Re
+ZOOM_SIGMA_RANGE = 10       # zoom color scale +/-10 sigma, same as the main residual panel
+CENTER_CLUSTER_PX = 3.0     # tolerance for clustering targets around the field center: concentric multi-components (disk+nucleus+bar) form one cluster
 
 
 def observed_reff(data: np.ndarray, mask: np.ndarray,
                   ixc: float, iyc: float) -> float:
-    """原图实测圆形半光半径 R_e,obs [pix]（掩膜内、去天光）。
+    """Observed circular half-light radius R_e,obs [pix] of the original image (masked, sky-subtracted).
 
-    作为放大框尺寸的稳健基准：不依赖任一成分的拟合 Re，规避
-    PSF(Re=0)/坍缩 bulge 把框压到下限，也与成分标签解耦。
-    半光半径由「以拟合中心为圆心的圆形通量增长曲线」取半光得到；
-    返回 0.0 表示无法测定（像素不足/总通量非正），调用方据此回落。
+    Used as a robust baseline for the zoom-box size: it depends on no single
+    component's fitted Re (so a PSF (Re=0) or a collapsed bulge cannot shrink
+    the box to the lower bound) and is decoupled from component labels.
+    The half-light radius is taken from the circular flux-growth curve centred
+    on the fitted centre. Returns 0.0 when it cannot be measured (too few
+    pixels / non-positive total flux); callers fall back accordingly.
     """
     good = np.isfinite(data) & (mask == 0)
     if int(good.sum()) < 50:
@@ -149,6 +170,7 @@ def create_comparison_png(
     param_file: str | None = None,
     comp_images: list | None = None,
     comp_types: list | None = None,
+    name_file: str | None = None,
 ) -> tuple[str | None, dict | None]:
     """Create a scientific comparison plot (2×3 layout).
 
@@ -229,7 +251,16 @@ def create_comparison_png(
 
         components = None
         if param_file and os.path.exists(param_file):
-            components = parse_components(param_file)
+            # name_file = paired input feedme: galfit.NN files drop the
+            # "# STRUCTURE:" naming comments, names are recovered by block order.
+            components = parse_components(param_file, name_file=name_file)
+            # Per-instance semantic colors shared by every palette consumer
+            # (model-panel 2·Re ellipses, legend, 1D SB-profile curves) so the
+            # VLM can attribute each contour and read fitted parameters off
+            # the model panel directly — mirrors the GalfitS comparison layout.
+            for comp, color in zip(components,
+                                   assign_component_colors([c["name"] for c in components])):
+                comp["color"] = color
 
         # Layout 2×3:
         # Row 0 = DATA LOW DR | DATA HIGH DR | MODEL
@@ -278,10 +309,44 @@ def create_comparison_png(
                                fit_region=fit_region)
         else:
             ax2.text(0.5, 0.5, 'No Model', ha='center', va='center', transform=ax2.transAxes)
+        # Color-coded parameter legend (mirrors the GalfitS model panel): one
+        # dashed line per component in the same semantic color as its 2·Re
+        # ellipse and 1D SB-profile curve, listing name Mag Re(px) n q PA so
+        # the VLM can attribute every contour and read off fitted parameters.
+        # Re is the true effective radius (expdisk: 1.68·Rs) matching the
+        # ellipse geometry; PA follows the feedme convention (Y axis = 0° CCW,
+        # treated as sky-PA under this workflow's N=+Y contract).
+        if model_data is not None and components:
+            from .render_original import is_agn_point_core
+            legend_handles = []
+            for i, comp in enumerate(components):
+                parts = [f"{comp.get('name', '?')}"]
+                for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
+                                              ('re', 'Re', '.1f', 'px'),
+                                              ('n', 'n', '.2f', ''),
+                                              ('ba', 'q', '.2f', ''),
+                                              ('pa', 'PA', '.0f', '°')):
+                    v = comp.get(key)
+                    if key == 're' and v is not None:
+                        v = effective_re(comp)
+                    parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
+                c = comp.get('color') or component_color(comp.get('name'), i)
+                if is_agn_point_core(comp):
+                    # AGN point core: on-panel marker is a '+' (drawn by
+                    # draw_re_ellipses) — the legend swatch mirrors it so
+                    # panel and legend read as the same mark
+                    legend_handles.append(Line2D(
+                        [0], [0], color=c, lw=0, marker='+', markersize=10,
+                        markeredgewidth=1.0, label=' '.join(parts)))
+                else:
+                    legend_handles.append(Line2D(
+                        [0], [0], color=c, lw=2, ls='--', label=' '.join(parts)))
+            ax2.legend(handles=legend_handles, loc='upper left', fontsize=11,
+                       frameon=True, fancybox=True, framealpha=0.8)
         ax2.set_title(
             "GALFIT Model\n"
             "Same asinh stretch as original (99.5th pctl)\n"
-            "2*$R_e$ contours of component [cyan]", fontsize=10, pad=10)
+            "2*$R_e$ contours [color per component, see legend]", fontsize=10, pad=10)
         stamp(ax2, 'MODEL')
         ax2.set_xlabel('X (pixels)', fontsize=12)
         ax2.tick_params(labelleft=False)
@@ -332,11 +397,15 @@ def create_comparison_png(
             cbar.ax.tick_params(labelsize=9)
             cbar.set_label('Residual (σ)', fontsize=9)
 
-        # ── 放大框几何 ──
-        # 定心：目标星系 = 距拟合区域几何中心最近者（伴星系虽亮但偏置，会被排除）；
-        #       同心多成分（盘+核+棒，位置几乎重合）归为同一目标簇，取最亮为代表。
-        # 尺寸：原图实测半光半径 R_e,obs（掩膜内、去天光、圆形增长曲线），规避
-        #       PSF(Re=0)/坍缩 bulge 框过小，并与成分标签解耦。半宽 = max(2.5×R_e,obs, 下限)。
+        # ── Zoom-box geometry ──
+        # Centering: target galaxy = the component nearest the fit-region geometric
+        #            centre (a companion may be bright but offset, so it is excluded);
+        #            concentric multi-components (disk+nucleus+bar, nearly coincident)
+        #            form one target cluster, represented by the brightest member.
+        # Size: observed half-light radius R_e,obs of the original image (masked,
+        #       sky-subtracted, circular growth curve), avoiding a too-small box for
+        #       a PSF (Re=0) or collapsed bulge, and decoupled from component labels.
+        #       Half-width = max(2.5*R_e,obs, lower bound).
         ctr_x, ctr_y = (xmin + xmax) / 2, (ymin + ymax) / 2
         cands = [c for c in components or [] if c.get("type") != "sky"]
         if cands:
@@ -353,17 +422,20 @@ def create_comparison_png(
             re_fit = 0
         re_obs = observed_reff(original_data, mask, cx - xmin, cy - ymin) or re_fit
         half = max(ZOOM_RE_FACTOR * re_obs, ZOOM_HALF_MIN_PX)
-        # 上限：拟合区域短边的 1/4，保证放大图至少有 2 倍放大率
-        # （R_e 很大时 5×R_e 会接近全幅，放大失去意义）
+        # Cap: 1/4 of the fit-region short side, keeping at least 2x magnification
+        # (for very large R_e, 5*R_e approaches the full frame and zooming loses meaning)
         half = min(half, (xmax - xmin) / 4, (ymax - ymin) / 4)
         zx0 = max(xmin, cx - half); zx1 = min(xmax, cx + half)
         zy0 = max(ymin, cy - half); zy1 = min(ymax, cy + half)
         if im3 is not None:
             ax3.add_patch(Rectangle((zx0, zy0), zx1 - zx0, zy1 - zy0,
                                     fill=False, ec="lime", ls="--", lw=1.8))
-            # Disk (expdisk) 2·Re contour (Re = 1.68·Rs) overlaid for direct
-            # model↔residual comparison; only the disk, per the request.
-            disk_comps = [c for c in (components or []) if c.get("type") == "expdisk"]
+            # Disk 2·Re contour overlaid for direct model↔residual comparison;
+            # only the disk, per the request. Selection by NAME (disk) or
+            # legacy expdisk type (draw_re_ellipses converts Rs→Re internally).
+            disk_comps = [c for c in (components or [])
+                          if c.get("type") == "expdisk"
+                          or (c.get("name") or "").lower() == "disk"]
             draw_re_ellipses(ax3, disk_comps, edgecolor="cyan")
 
         # === Row 1, Col 1: Residual Zoom (±10σ, independent axes) ===
@@ -381,8 +453,9 @@ def create_comparison_png(
             ax_zoom.imshow(mask_overlay[iy0:iy1 + 1, ix0:ix1 + 1],
                            origin='lower', extent=zoom_extent, interpolation='nearest')
 
-            # 中心饱和补救：色标外（>±10σ）的纯色块会吞掉几何信息，
-            # 叠加对数间隔的高 σ 等值线还原饱和区内部形态。
+            # Central-saturation remedy: solid color blocks beyond the scale (>+/-10 sigma)
+            # swallow geometric information; overlay logarithmically spaced high-sigma
+            # contours to recover the morphology inside saturated regions.
             contour_note = ""
             zoom_abs = np.abs(zoom[np.isfinite(zoom)])
             maxabs = zoom_abs.max() if zoom_abs.size else 0
@@ -454,9 +527,10 @@ def create_comparison_png(
         plt.close(fig)
 
 
+# modified by zl: emit round_status.json and optional fit events while preserving the original API.
 async def run_galfit(
     config_file: Annotated[str, "absolute path to the GALFIT configuration file"],
-    options: Annotated[List[str], "options that control how galfit runs"] = []
+    options: Annotated[List[str], "options that control how galfit runs"] = [],
 ) -> dict[str, Any]:
     """Execute GALFIT single-band fitting with the given configuration file.
 
@@ -488,6 +562,46 @@ async def run_galfit(
     # Use config file directory as working directory so fit.log is created there
     working_dir = os.path.dirname(os.path.abspath(config_file))
 
+    def _archive_crash(stage: str, error: str, full_output_text: str = "") -> str:
+        """Crash forensics (KILOGAS_221 retrospective): a crashed/diverged
+        round gets the SAME timestamped archive treatment as a successful
+        one — console.log (the divergence evidence: mag blow-ups, q pins,
+        singular-matrix messages), the exact input feedme + .cons copies,
+        and any fit.log GALFIT managed to write — so the crash ledger's
+        claims stay machine-checkable instead of living only in the
+        orchestrator's reason string. Returns the archive dir path."""
+        try:
+            ws_dir = working_dir
+            ar_dir = os.path.join(
+                ws_dir, "archives",
+                "%s.%s" % (datetime.datetime.now().strftime("%Y%m%dT%H%M%S"),
+                           hashlib.md5(config_file.encode("utf-8")).hexdigest()[:8]))
+            os.makedirs(ar_dir, exist_ok=True)
+            if full_output_text:
+                with open(os.path.join(ar_dir, "console.log"), "w",
+                          encoding="utf-8") as f:
+                    f.write(full_output_text)
+            shutil.copy(config_file, ar_dir)
+            _cons = config_paths.get("constraint") or ""
+            if _cons and _cons.lower() != "none":
+                _cons_path = _cons if os.path.isabs(_cons) else \
+                    os.path.join(working_dir, _cons)
+                if os.path.exists(_cons_path):
+                    shutil.copy(_cons_path, ar_dir)
+            fit_log_path = os.path.join(working_dir, "fit.log")
+            if os.path.exists(fit_log_path):
+                shutil.move(fit_log_path, ar_dir)
+            with open(os.path.join(ar_dir, "round_status.json"), "w",
+                      encoding="utf-8") as f:
+                json.dump({"stage": stage, "status": "galfit_crashed",
+                           "error": error,
+                           "inputs": {"feedme": os.path.join(ar_dir,
+                                                             os.path.basename(config_file))}},
+                          f, indent=1, default=str)
+            return ar_dir
+        except Exception:
+            return ""
+
     try:
         proc = subprocess.run(
             command,
@@ -501,6 +615,8 @@ async def run_galfit(
         return {
             "status": "failure",
             "error": "GALFIT execution timed out after 5 minutes",
+            "archive_dir": _archive_crash("galfit_timeout",
+                                          "GALFIT execution timed out after 5 minutes"),
         }
     except FileNotFoundError:
         return {
@@ -516,6 +632,9 @@ async def run_galfit(
             "status": "failure",
             "error": f"GALFIT failed with return code {proc.returncode}",
             "log": full_output,
+            "archive_dir": _archive_crash("galfit_crashed",
+                                          f"GALFIT failed with return code {proc.returncode}",
+                                          full_output),
         }
 
     # Get output file path from parsed config
@@ -524,6 +643,10 @@ async def run_galfit(
         return {
             "status": "failure",
             "error": "Could not find output file path in config",
+            "log": full_output,
+            "archive_dir": _archive_crash("galfit_crashed",
+                                          "Could not find output file path in config",
+                                          full_output),
         }
 
     # Check if output file exists
@@ -532,6 +655,9 @@ async def run_galfit(
             "status": "failure",
             "error": f"GALFIT output file not created: {output_file}",
             "log": full_output,
+            "archive_dir": _archive_crash("galfit_crashed",
+                                          f"GALFIT output file not created: {output_file}",
+                                          full_output),
         }
 
     # Identify the latest galfit.[0-9]* file for parameter extraction
@@ -552,18 +678,28 @@ async def run_galfit(
     comp_images = comp_data[0] if comp_data else None
     comp_types = comp_data[1] if comp_data else None
 
-    # Use latest_galfit (fitted parameters) for component parameters in plot
+    # Use latest_galfit (fitted parameters) for component parameters in plot;
+    # config_file doubles as the name source (galfit.NN drops "# STRUCTURE:")
     comparison_png_path, statistics_1d = create_comparison_png(output_file, sigma_file, mask_file, fit_region,
                                                 param_file=param_file_for_plot,
-                                                comp_images=comp_images, comp_types=comp_types)
+                                                comp_images=comp_images, comp_types=comp_types,
+                                                name_file=config_file)
 
     # Identify constraint file
     constraint_file = config_paths.get("constraint") or None
 
+    # PSF file for A_psf / BIC_eff computation
+    psf_file = config_paths.get("psf") or None
+
     # Extract summary information
     summary, fit_stats = extract_summary_from_galfit(output_file, config_file,
                                                      statistics_1d=statistics_1d,
-                                                     constraint_file=constraint_file)
+                                                     constraint_file=constraint_file,
+                                                     psf_file=psf_file)
+
+    # Convergence-quality check RETIRED (2026-10-21): the sub-converged flag
+    # was removed from the workflow (cell filter covers same-basin re-entry;
+    # budget-free sub-converged rounds cost extra fits).
 
     # Cleanup the workspace
     ws_dir = os.path.dirname(output_file)
@@ -574,8 +710,10 @@ async def run_galfit(
     with open(console_log_path, "w", encoding="utf-8") as f:
         f.write(full_output)
     fit_log_path = os.path.join(working_dir, "fit.log")
+    archived_fit_log_path = None
     if os.path.exists(fit_log_path):
         shutil.move(fit_log_path, ar_dir)
+        archived_fit_log_path = os.path.join(ar_dir, os.path.basename(fit_log_path))
     if os.path.exists(output_file):        
         shutil.move(output_file, ar_dir)
         output_file = os.path.join(ar_dir, os.path.basename(output_file))
@@ -587,17 +725,47 @@ async def run_galfit(
         summary = os.path.join(ar_dir, os.path.basename(summary))    
 
     # Archive constraint file if referenced in config
+    archived_constraint_file = None
     if constraint_file and os.path.exists(constraint_file):
         shutil.copy(constraint_file, ar_dir)
+        archived_constraint_file = os.path.join(ar_dir, os.path.basename(constraint_file))
 
+    archived_galfit_file = None
     if matched_galfit_files:
         shutil.copy(latest_galfit, ar_dir)
+        archived_galfit_file = os.path.join(ar_dir, os.path.basename(latest_galfit))
     shutil.copy(config_file, ar_dir)
+    archived_config_file = os.path.join(ar_dir, os.path.basename(config_file))
     # Archive subcomps FITS if it was generated
     subcomps_file = os.path.join(working_dir, "subcomps.fits")
     if os.path.exists(subcomps_file):
         shutil.move(subcomps_file, ar_dir)
 
+    round_status_path = os.path.join(ar_dir, "round_status.json")
+    round_status = {
+        "stage": "galfit_finished",
+        "status": "success",
+        "inputs": {"feedme": archived_config_file, "constraint": archived_constraint_file},
+        "outputs": {
+            "model": output_file,
+            "comparison": comparison_png_path,
+            "summary": summary,
+            "output_param": archived_galfit_file,
+            "console_log": console_log_path,
+            "fit_log": archived_fit_log_path,
+            "subcomps": os.path.join(ar_dir, "subcomps.fits") if os.path.exists(os.path.join(ar_dir, "subcomps.fits")) else None,
+        },
+        "fit_statistics": _json_safe(fit_stats),
+    }
+    with open(round_status_path, "w", encoding="utf-8") as f:
+        json.dump(_json_safe(round_status), f, ensure_ascii=False, indent=2)
+    publish_fit_round({
+        "event": "fit_round_finished", "fitter": "galfit", "status": "success",
+        "round_id": os.path.basename(ar_dir), "archive_dir": ar_dir,
+        "round_status_file": round_status_path,
+        "artifacts": existing_artifacts(round_status["outputs"].values()),
+        "fit_statistics": _json_safe(fit_stats),
+    })
     stats_lines = ""
 
     chisq1d_nu = fit_stats.get("chisq1d_nu")
@@ -605,6 +773,9 @@ async def run_galfit(
     chi2_nu = fit_stats.get("chi2_nu")
     bic = fit_stats.get("bic")
     sky_value = fit_stats.get("sky_value")
+    bic_eff = fit_stats.get("bic_eff")
+    a_psf = fit_stats.get("a_psf")
+    psf_fwhm = fit_stats.get("psf_fwhm")
 
     if chisq1d_nu is not None:
         stats_lines += f"-2D χ²/ν (reduced chi-squared): {chi2_nu:.6f}\n"
@@ -613,6 +784,9 @@ async def run_galfit(
         stats_lines += f"-1D BIC: {bic1d:.4f}\n"
     if sky_value is not None:
         stats_lines += f"-1D Sky Background: {sky_value:.6f}\n"
+    if bic_eff is not None:
+        stats_lines += f"-PSF FWHM: {psf_fwhm:.4f} px; A_psf: {a_psf:.4f} px²\n"
+        stats_lines += f"-BIC_eff (χ²/A_psf + k·ln(N/A_psf)): {bic_eff:.4f}\n"
 
     message = (
         "GALFIT completed successfully.\n"
@@ -627,10 +801,12 @@ async def run_galfit(
     return {
         "status": "success",
         "message": message,
-        "input_param_file": config_file,
-        "output_param_file": latest_galfit,  
+        "input_param_file": archived_config_file,
+        "output_param_file": archived_galfit_file,
         "optimized_fits_file": output_file,      
         "image_file": comparison_png_path,
         "summary_file": summary,
         "console_log_file": console_log_path,
+        "round_status_file": round_status_path,
+        "fit_statistics": _json_safe(fit_stats),
     }

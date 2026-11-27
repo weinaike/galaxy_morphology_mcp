@@ -134,6 +134,33 @@ class Prompts(metaclass=SingletonMeta):
             template = template.replace("{" + key + "}", str(value) if value is not None else "")
         return template
 
+    # --- Beam Search candidate generation phases (GALFIT single-band) ---
+    # Stored in beam_action_generation_prompt_galfit.md with the same markers:
+    # _first = visual extraction, candidate_generation = candidate output spec
+
+    def _bag_galfit_phases(self):
+        return self._read_phases("beam_action_generation_prompt_galfit.md")
+
+    def get_galfit_beam_visual_extraction(self, global_state_description=""):
+        template = self._bag_galfit_phases()["_first"]
+        for key, value in [("global_state_description", global_state_description)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
+
+    def get_galfit_beam_candidate_generation(self, summary_content,
+                                             global_state_description="",
+                                             local_state_description="",
+                                             branch_id="", parent_label="", depth=1):
+        template = self._bag_galfit_phases()["candidate_generation"]
+        for key, value in [("summary_content", summary_content),
+                            ("global_state_description", global_state_description),
+                            ("local_state_description", local_state_description),
+                            ("branch_id", branch_id),
+                            ("parent_label", parent_label),
+                            ("depth", depth)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
+
     # --- Best-round comparison prompt (visual-residual primary, metrics reference) ---
 
     def get_round_comparison_prompt(self, best_round_label, current_round_label,
@@ -145,5 +172,63 @@ class Prompts(metaclass=SingletonMeta):
             best_reference=best_reference,
             current_reference=current_reference,
         )
+
+    # --- Surveyor (mechanised beam search, GALFIT single-band) ---
+    # Stored in beam_survey_prompt_galfit.md with the same phase markers:
+    # _first = visual extraction, candidate_generation = verdict + JSON contract
+
+    def _survey_galfit_phases(self):
+        return self._read_phases("beam_survey_prompt_galfit.md")
+
+    def get_survey_visual_extraction(self, global_state_description=""):
+        template = self._survey_galfit_phases()["_first"]
+        return template.replace("{global_state_description}",
+                                str(global_state_description or ""))
+
+    def get_survey_candidate_generation(self, summary_content,
+                                        global_state_description="",
+                                        local_state_description="",
+                                        branch_id="", parent_label="", depth=1,
+                                        queue_digest="", directives=""):
+        template = self._survey_galfit_phases()["candidate_generation"]
+        for key, value in [("summary_content", summary_content),
+                            ("global_state_description", global_state_description),
+                            ("local_state_description", local_state_description),
+                            ("branch_id", branch_id),
+                            ("parent_label", parent_label),
+                            ("depth", depth),
+                            ("queue_digest", queue_digest),
+                            ("directives", directives)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
+
+    # --- Surveyor (mechanised beam search, GalfitS multi-band) ---
+    # beam_survey_prompt_galfits.md, same phase markers and placeholder
+    # names as the galfit variant — survey.py swaps the pair by mode.
+
+    def _survey_galfits_phases(self):
+        return self._read_phases("beam_survey_prompt_galfits.md")
+
+    def get_survey_visual_extraction_mb(self, global_state_description=""):
+        template = self._survey_galfits_phases()["_first"]
+        return template.replace("{global_state_description}",
+                                str(global_state_description or ""))
+
+    def get_survey_candidate_generation_mb(self, summary_content,
+                                           global_state_description="",
+                                           local_state_description="",
+                                           branch_id="", parent_label="", depth=1,
+                                           queue_digest="", directives=""):
+        template = self._survey_galfits_phases()["candidate_generation"]
+        for key, value in [("summary_content", summary_content),
+                           ("global_state_description", global_state_description),
+                           ("local_state_description", local_state_description),
+                           ("branch_id", branch_id),
+                           ("parent_label", parent_label),
+                           ("depth", depth),
+                           ("queue_digest", queue_digest),
+                           ("directives", directives)]:
+            template = template.replace("{" + key + "}", str(value) if value is not None else "")
+        return template
 
 prompts = Prompts()

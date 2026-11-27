@@ -1,0 +1,125 @@
+# target: KILOGAS_110
+# config file: /home/jiangbo/galaxy_morphology_mcp/galfits/kilogas_mb/KILOGAS_110/_iter3.lyric
+# fitting mode: images - photometry
+# fiting method: ES
+# chisq: 545940.375
+# free parameters (k): 26
+# dof (N - k): 927736.0
+# reduced chisq: 0.5884652137756348
+# BIC: 546297.625
+# fitting time: 0.9059706528981527 mins
+############# data summary ############## 
+# image atals: img_list
+#    image number: 0  band: decam_g  chisq: [185775.5]  dof: [299470.]  reduced chisq: [0.6203476]
+#    image number: 1  band: decam_r  chisq: [182138.6]  dof: [296580.]  reduced chisq: [0.6141297]
+#    image number: 2  band: decam_z  chisq: [178026.28]  dof: [331712.]  reduced chisq: [0.5366893]
+############ fitting summary ############ 
+# num_generations: 5000  popsize: 10 
+# free parameters:
+pname    best_value
+csx_decam_g    -1.8212
+csy_decam_g    -2.0579
+csx_decam_r    -1.9032
+csy_decam_r    -1.9783
+csx_decam_z    -1.9161
+csy_decam_z    -1.9373
+logNorm_disk_decam_g    -6.5196
+logNorm_disk_decam_r    -6.2333
+logNorm_disk_decam_z    -6.0154
+disk_xcen    -0.2616
+disk_ycen    0.2404
+disk_Re    6.2057
+disk_ang    -54.6316
+disk_axrat    0.4967
+logNorm_bulge_decam_g    -8.6084
+logNorm_bulge_decam_r    -8.0316
+logNorm_bulge_decam_z    -7.6797
+bulge_Re    0.1310
+bulge_ang    120.5541
+bulge_axrat    0.6000
+logNorm_bar_decam_g    -9.2138
+logNorm_bar_decam_r    -7.8430
+logNorm_bar_decam_z    -7.3938
+bar_Re    2.0960
+bar_ang    129.8365
+bar_axrat    0.1500
+# fixed parameters:
+# pname    fixed_value
+sky_decam_g    0.0000
+sky_decam_r    0.0000
+sky_decam_z    0.0000
+disk_f_cont_bin1    -2.0000
+disk_f_cont_bin2    -2.0000
+disk_f_cont_bin3    -2.0000
+disk_f_cont_bin4    -2.0000
+disk_f_cont_bin5    -2.0000
+disk_Z_value    0.0100
+disk_Av_value    0.7000
+disk_sigma    100.0000
+logM_disk    9.0000
+logU_disk    -2.0000
+AVbump_disk    3.0000
+logMdust_disk    8.1400
+Umin_disk    1.0000
+qPAH_disk    1.0000
+alphad_disk    1.0000
+gammad_disk    0.1000
+Mag_disk_decam_g    16.2989
+Mag_disk_decam_r    15.5833
+Mag_disk_decam_z    15.0386
+disk_n    1.0000
+bulge_f_cont_bin1    -2.0000
+bulge_f_cont_bin2    -2.0000
+bulge_f_cont_bin3    -2.0000
+bulge_f_cont_bin4    -2.0000
+bulge_f_cont_bin5    -2.0000
+bulge_Z_value    0.0100
+bulge_Av_value    0.7000
+bulge_sigma    100.0000
+logM_bulge    9.0000
+logU_bulge    -2.0000
+AVbump_bulge    3.0000
+logMdust_bulge    8.1400
+Umin_bulge    1.0000
+qPAH_bulge    1.0000
+alphad_bulge    1.0000
+gammad_bulge    0.1000
+Mag_bulge_decam_g    21.5211
+Mag_bulge_decam_r    20.0790
+Mag_bulge_decam_z    19.1993
+bulge_xcen    -0.2616
+bulge_ycen    0.2404
+bulge_n    4.0000
+bar_f_cont_bin1    -2.0000
+bar_f_cont_bin2    -2.0000
+bar_f_cont_bin3    -2.0000
+bar_f_cont_bin4    -2.0000
+bar_f_cont_bin5    -2.0000
+bar_Z_value    0.0100
+bar_Av_value    0.7000
+bar_sigma    100.0000
+logM_bar    9.0000
+logU_bar    -2.0000
+AVbump_bar    3.0000
+logMdust_bar    8.1400
+Umin_bar    1.0000
+qPAH_bar    1.0000
+alphad_bar    1.0000
+gammad_bar    0.1000
+Mag_bar_decam_g    23.0344
+Mag_bar_decam_r    19.6074
+Mag_bar_decam_z    18.4844
+bar_xcen    -0.2616
+bar_ycen    0.2404
+bar_n    0.5000
+z_a    0.0527
+scale_a    1.0594
+r0_a    0.0000
+rt_a    3.0000
+v0_a    150.0000
+vc_a    0.0000
+LineSigma_a    50.0000
+logsfr_disk    0.3010
+logsfr_bulge    0.3010
+logsfr_bar    0.3010
+######################################### 

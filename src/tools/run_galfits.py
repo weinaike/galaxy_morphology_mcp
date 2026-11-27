@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import shlex
@@ -21,12 +22,14 @@ from typing import Any, Annotated, List, Dict, Tuple
 from .pix2radec import suppress_stdout_stderr
 from .render_original import render_asinh_panel, draw_compass, sky_direction_vectors
 from .sb_profile import render_sb_profile, component_color, assign_component_colors
+from .fit_event_publisher import existing_artifacts, publish_fit_round
 from .parse_lyric import (
     parse_image_infos_from_lyric,
     parse_region_info_from_lyric,
     extract_component_attributes,
     generate_subcomps
 )
+
 
 WORKFLOW_OUTPUT_DIR_RE = re.compile(r"^\d{8}_\d{6}_.+(?:_iter\d+)?$")
 
@@ -448,11 +451,22 @@ def create_multiband_comparison_png(
         comp_imgs, comp_names = [], []
         if all_subcomps and band in all_subcomps:
             comp_imgs, comp_names = all_subcomps[band]['comp_images'], all_subcomps[band]['comp_names']
-        comp_names = [name.split("_")[-1] for name in comp_names]  # Remove galaxy prefix from names  
+        comp_names = [name.split("_")[-1] for name in comp_names]  # Remove galaxy prefix from names
         name2type = {comp["name"]: comp["type"] for comp in components}
         comp_types = [name2type[name] for name in comp_names]
         components_dict = {comp["name"]: comp for comp in components}
         components_sorted = [components_dict[name] for name in comp_names]
+        # The subcomps.fits name list carries GALAXY components only
+        # (GalfitS's gmodel_list; the AGN lives in psfmodel_list — gsfit
+        # gsfitter splits them), so psf components from the attribute
+        # extractor are appended here or the model panel '+' crosshair and
+        # the legend would silently drop them (KILOGAS_25 iter7).
+        _listed = set(comp_names)
+        for comp in components:
+            if (comp.get("type") or "").lower() == "psf" \
+                    and comp["name"] not in _listed:
+                components_sorted.append(comp)
+                comp_types.append(comp["type"])
         # Per-instance colors shared by every palette consumer of this band
         # (model-panel 2·Re ellipses, legend, 1D SB-profile curves): repeated
         # types — companion2/companion3 — get distinct variant hues instead of
@@ -606,16 +620,36 @@ def create_multiband_comparison_png(
             legend_handles = []
             for i, comp in enumerate(components_sorted):
                 parts = [f"{comp.get('name', '?')}"]
-                for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
-                                              ('re', 'Re', '.1f', 'px'),
-                                              ('n', 'n', '.2f', ''),
-                                              ('ba', 'q', '.2f', ''),
-                                              ('sky_pa', 'PA(sky)', '.0f', '°')):
-                    v = comp.get(key)
-                    parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
-                legend_handles.append(Line2D(
-                    [0], [0], color=comp.get('color') or component_color(comp.get('name'), i),
-                    lw=2, ls='--', label=' '.join(parts)))
+                if (comp.get('type') or '').lower() == 'psf':
+                    # Point source (the N-block AGN): no Re/n/q/PA exist —
+                    # show its per-band luminosity instead of a '--' row
+                    parts.append('psf')
+                    _ll = next((v for k, v in comp.items()
+                                if k.startswith('logL_') and v is not None), None)
+                    if _ll is not None:
+                        parts.append(f'logL={_ll:.2f}')
+                else:
+                    for key, disp, spec, unit in (('mag', 'Mag', '.2f', ''),
+                                                  ('re', 'Re', '.1f', 'px'),
+                                                  ('n', 'n', '.2f', ''),
+                                                  ('ba', 'q', '.2f', ''),
+                                                  ('sky_pa', 'PA(sky)', '.0f', '°')):
+                        v = comp.get(key)
+                        parts.append(f"{disp}={format(v, spec) if v is not None else '--'}{unit}")
+                _c = comp.get('color') or component_color(comp.get('name'), i)
+                if (comp.get('type') or '').lower() == 'psf':
+                    # the AGN is drawn as a '+' crosshair on the panel — its
+                    # legend symbol must MATCH (a dash line lied about the
+                    # geometry); the light legend frame needs no white
+                    # underlay (that exists for the dark Greys_r panel only)
+                    legend_handles.append(Line2D(
+                        [0], [0], color=_c, ls='None', marker='+',
+                        markersize=16, markeredgewidth=2.8,
+                        label=' '.join(parts)))
+                else:
+                    legend_handles.append(Line2D(
+                        [0], [0], color=_c,
+                        lw=2, ls='--', label=' '.join(parts)))
             leg = ax2.legend(handles=legend_handles, loc='upper left', fontsize=11,
                              frameon=True, fancybox=True, framealpha=0.8)
             model_legends.append(leg)
@@ -795,6 +829,41 @@ def create_multiband_comparison_png(
 
     return png_filename, component_attr_file
 
+# modified by zl: emit multi-band round status and optional service events without API callbacks.
+def _discover_parconstrain(config_file: str) -> str | None:
+    """Auto-discover the concentric .constrain for a .lyric config.
+
+    The image-fitting configs (_iter{n}.lyric) sit next to their transcriber-
+    written iter{n}.constrain; the SED-generated joint configs
+    (<base>_for_image_sed_fitting.lyric) live in a FRESH output workplace
+    with no sibling constrain — the correct file is the source round's
+    iter{n}.constrain in the galaxy dir. Discovery is STRICTLY round-matched
+    (same-dir iter{n}.constrain -> galaxy-root iter{n}.constrain -> same-dir
+    <stem>.constrain -> de-suffixed stem): a stem carrying iter{n} never
+    falls through to ANOTHER round's file — a K<=1 round (the transcriber
+    wrote no constrain) attaches nothing rather than borrowing a binding
+    that does not belong to it."""
+    import re as _re
+
+    cfg = os.path.abspath(config_file)
+    d, stem = os.path.split(os.path.splitext(cfg)[0])
+    gal = d
+    if os.path.basename(os.path.dirname(d)) == "output":
+        gal = os.path.dirname(os.path.dirname(d))
+    cands: list[str] = []
+    m = _re.search(r"iter(\d+)", stem)
+    if m:
+        cands.append(os.path.join(d, f"iter{m.group(1)}.constrain"))
+        cands.append(os.path.join(gal, f"iter{m.group(1)}.constrain"))
+    cands.append(os.path.join(d, stem + ".constrain"))
+    cands.append(os.path.join(
+        d, stem.replace("_for_image_sed_fitting", "") + ".constrain"))
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    return None
+
+
 async def run_galfits(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],
     timeout_sec: Annotated[int, "timeout in seconds"] = 3600,
@@ -805,7 +874,31 @@ async def run_galfits(
     """Execute GalfitS (multi-band) with the given config file.
 
     Runs GalfitS as a subprocess and returns discovered artifacts (summary + PNGs) and logs.
+
+    The blocking body (subprocess + matplotlib rendering) is offloaded to a
+    worker thread via asyncio.to_thread — the MCP event loop stays responsive
+    so protocol-level keepalives fire and the client does not time out on
+    long joint fits (jwst/1398: 7-min subprocess + 2-min PNG render used to
+    starve the loop and the response was never delivered, 2026-11-06).
     """
+    return await asyncio.to_thread(
+        _run_galfits_sync,
+        config_file=config_file,
+        timeout_sec=timeout_sec,
+        extra_args=extra_args,
+        read_summary=read_summary,
+        prior_file=prior_file,
+    )
+
+
+def _run_galfits_sync(
+    config_file: str,
+    timeout_sec: int = 3600,
+    extra_args: list[str] | None = None,
+    read_summary: str | None = None,
+    prior_file: str | None = None,
+) -> dict[str, Any]:
+    """Synchronous GalfitS execution (runs in a worker thread)."""
 
     if not config_file or not os.path.exists(config_file):
         return {"status": "failure", "error": f"Config file not found: {config_file}"}
@@ -858,6 +951,20 @@ async def run_galfits(
 
     if extra_args:
         cmd.extend([str(x) for x in extra_args])
+
+    # Concentric-constrain auto-attachment (2026-11-04, real-data fix: the
+    # image-SED joint phase forgot --parconstrain — the SED-generated config
+    # has no sibling constrain and the orchestrator had to remember the
+    # source round's file by hand). Explicit --parconstrain in extra_args
+    # wins; otherwise discover the matching .constrain (absolute path) and
+    # attach it. Nothing is attached when no file exists (K<=1 rounds carry
+    # no concentric binding).
+    if not any(str(a) == "--parconstrain"
+               or str(a).startswith("--parconstrain=")
+               for a in cmd):
+        _pc = _discover_parconstrain(config_file)
+        if _pc:
+            cmd.extend(["--parconstrain", _pc])
 
     # Add --prior for mass/size constraints
     if prior_file:
@@ -947,6 +1054,25 @@ async def run_galfits(
     # Parse gssummary for structured statistics
     summary_stats = _parse_gssummary(summary_files[0]) if summary_files else {}
 
+    artifact_paths = existing_artifacts([
+        summary_files, imagefit_pngs, comparison_png, sedmodel_pngs, result_fits,
+        constrain_files, params_files, log_path,
+    ])
+    round_status_path = os.path.join(workplace_dir, "round_status.json")
+    with open(round_status_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "stage": "galfits_finished",
+            "status": "success",
+            "inputs": {"lyric": os.path.join(workplace_dir, os.path.basename(config_file))},
+            "outputs": artifact_paths,
+            "fit_statistics": summary_stats,
+        }, f, ensure_ascii=False, indent=2)
+    publish_fit_round({
+        "event": "fit_round_finished", "fitter": "galfits", "status": "success",
+        "round_id": os.path.basename(workplace_dir), "archive_dir": workplace_dir,
+        "round_status_file": round_status_path, "artifacts": artifact_paths,
+        "fit_statistics": summary_stats,
+    })
     return {
         "status": "success",
         "message": f"GalfitS completed successfully for {config_file}. Output files:\n"
@@ -971,6 +1097,7 @@ async def run_galfits(
         "bic": summary_stats.get("bic"),
         "per_band_chisq": summary_stats.get("per_band_chisq", {}),
         "parameters": summary_stats.get("parameters", {}),
+        "round_status_file": round_status_path,
     }
 
 async def run_galfits_image_fitting(
@@ -994,7 +1121,26 @@ async def run_galfits_sed_fitting(
     Execute GalfitS (multi-band) with the given config file for sed fitting.
     It runs GalfitS as a subprocess and returns a new lyric file that will be used for combined image and sed fitting.
     The image_fitting_workplace is used to provide the necessary image fitting results for the sed fitting step.
+
+    The blocking body (PureSEDFitting spawns per-component GalfitS
+    subprocesses, minutes-long) is offloaded via asyncio.to_thread — same
+    fix as run_galfits (2026-11-06 jwst/1398): the MCP event loop stays
+    responsive and the client does not time out.
     """
+    return await asyncio.to_thread(
+        _run_galfits_sed_fitting_sync,
+        config_file=config_file,
+        image_fitting_workplace=image_fitting_workplace,
+        extra_args=extra_args,
+    )
+
+
+def _run_galfits_sed_fitting_sync(
+    config_file: str,
+    image_fitting_workplace: str,
+    extra_args: list[str] | None = None,
+) -> dict[str, Any]:
+    """Synchronous SED fitting (runs in a worker thread)."""
     from .galfits_fitting import PureSEDFitting
     #from src.tools.galfits_fitting import PureSEDFitting
 
@@ -1006,6 +1152,20 @@ async def run_galfits_sed_fitting(
         galaxy_dir = os.path.dirname(output_parent)
     else:
         galaxy_dir = config_dir
+    # Hard gate (2026-11-04, real-data fix): the analysis report is the
+    # normative deliverable of the image-fitting phase (workflow 步骤 5 —
+    # downstream automation parses its skeleton/JSON). SED fitting must not
+    # start before it exists; refuse with a pointer to the report contract.
+    if not glob(os.path.join(galaxy_dir, "analysis_report_*.md")):
+        return {
+            "status": "failure",
+            "error": (
+                "no analysis_report_<galaxy>.md in the galaxy directory — the "
+                "image-fitting phase is not closed. Write the report FIRST "
+                "(workflow_galfits 步骤 5: lock check + physical-meaning "
+                "review + Occam + the five-header skeleton + trailing JSON "
+                "block), then re-call run_galfits_sed_fitting."),
+        }
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_base = os.path.join(galaxy_dir, "output")
     os.makedirs(output_base, exist_ok=True)
@@ -1024,10 +1184,24 @@ async def run_galfits_sed_fitting(
             "status": "failure",
             "message": f"SED fitting in the workplace {workplace_dir} failed: {res.get('message', 'Unknown error')}"
         }
+    # Proactively carry the source round's concentric constrain into the
+    # joint-fit workplace (2026-11-04): the image-SED joint config is
+    # structurally the SAME model (SED fitting does not rename components),
+    # so the best state's .constrain is reused verbatim — copied next to
+    # the generated lyric under its original name, so the joint run
+    # discovers it as a sibling (and explicit --parconstrain still wins).
+    _src_constrain = _discover_parconstrain(config_file)
+    _carried = ""
+    if _src_constrain:
+        _dst = os.path.join(workplace_dir, os.path.basename(_src_constrain))
+        shutil.copy(_src_constrain, _dst)
+        _carried = _dst
     return {
         "status": "success",
-        "message": f"SED fitting completed successfully. New lyric file for image-sed fitting generated: {new_lyric_file}"
-    }    
+        "message": f"SED fitting completed successfully. New lyric file for image-sed fitting generated: {new_lyric_file}",
+        "new_lyric_file": new_lyric_file,
+        "constrain_carried": _carried,
+    }
 
 async def run_galfits_image_sed_fitting(
     config_file: Annotated[str, "the path to the GalfitS (.lyric) configuration file"],

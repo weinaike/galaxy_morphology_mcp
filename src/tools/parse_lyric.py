@@ -412,6 +412,7 @@ def extract_component_attributes(
 
     # 解析图像元数据
     wcs = None
+    _delta_ang = 0.0   # pixel-frame rotation; only nonzero via the FITS path
     if fits_file is not None:
         _shape, _pixsc, _x0, _y0, _delta_ang, _wcs = extract_fits_metadata(
             fits_file, ra=ra, dec=dec)
@@ -445,12 +446,16 @@ def extract_component_attributes(
         'width', 'alpha_rc', 'theta_out', 'm', 'am',
         'theta_m', 'i_arm',
     }
+    # longest-suffix-first: 'disk_theta_m' must resolve against 'theta_m'
+    # (prefix 'disk'), not against 'm' (spurious prefix 'disk_theta' — the
+    # real KILOGAS_25 iter7 attribute file carries that ghost row)
+    _suffixes_by_len = sorted(_known_suffixes, key=len, reverse=True)
     comp_names = set()
     for key in params:
         if key.startswith('logM_'):
             comp_names.add(key[5:])
         else:
-            for suf in _known_suffixes:
+            for suf in _suffixes_by_len:
                 if key.endswith('_' + suf):
                     prefix = key[:-(len(suf) + 1)]
                     if prefix:
@@ -546,6 +551,40 @@ def extract_component_attributes(
                 comp_attrs['i_arm'] = float(p('i_arm')) 
 
         result.append(comp_attrs)
+
+    # ---- AGN (N-block) components — suffix-first naming, invisible to the
+    # galaxy-comp harvest above: gssummary keys are ``xcen_<Na1>`` /
+    # ``ycen_<Na1>`` / ``<Na1>_<band>_logL`` / ``Ni_<Na1>_<atlas>`` (the AGN
+    # lives in the fitter's psfmodel_list, not gmodel_list — real-data
+    # KILOGAS_25 iter7: the AGN row was missing from component_attributes).
+    # Point source: x/y only (+ per-band logL); no re/n/ba/pa, mag=None
+    # (logL is a luminosity, not a magnitude — conversion needs the SED
+    # chain and stays out of this rendering).
+    import re as _re
+    _agn_names = []
+    for key in params:
+        m = _re.match(r'^xcen_(\w+)$', key)
+        if m and not any(key.endswith('_' + s) for s in _known_suffixes):
+            if m.group(1) not in _agn_names:
+                _agn_names.append(m.group(1))
+    for agn_name in _agn_names:
+        xcen_arcsec = float(params.get(f'xcen_{agn_name}', 0.0) or 0.0)
+        ycen_arcsec = float(params.get(f'ycen_{agn_name}', 0.0) or 0.0)
+        if wcs is not None and ra is not None and dec is not None:
+            x_pix, y_pix = wcs.all_world2pix(
+                ra + xcen_arcsec / 3600., dec + ycen_arcsec / 3600., 1)
+        else:
+            x_pix = x0 - xcen_arcsec / pixsc
+            y_pix = y0 + ycen_arcsec / pixsc
+        agn_attrs = {
+            'name': agn_name, 'type': 'psf',
+            'x': float(x_pix), 'y': float(y_pix), 'mag': None,
+            're': None, 're_arcsec': None, 'n': None, 'ba': None,
+            'pa': None, 'sky_pa': None,
+        }
+        if band is not None and params.get(f'{agn_name}_{band}_logL') is not None:
+            agn_attrs[f'logL_{band}'] = float(params[f'{agn_name}_{band}_logL'])
+        result.append(agn_attrs)
 
     return result
 
@@ -799,7 +838,10 @@ def generate_subcomps(lyric_file, gssummary_file):
         for gm in gmodel_list:
             gm.generate_mass_map((ny, nx), transpar=group_transpar)
 
-        for im_idx in group_image_indices:
+        resps_tem = getattr(GSdata, 'subgroup_resps', None)
+        resps_tem = resps_tem[loop_group] if resps_tem is not None else None
+
+        for loopb, im_idx in enumerate(group_image_indices):
             im = GSdata.get_image(im_idx)
             band = im.band
             sky = float(pardict['sky_{0}'.format(band)])
@@ -821,10 +863,39 @@ def generate_subcomps(lyric_file, gssummary_file):
             trans = jnp.array([shifty, shiftx], dtype=jnp.float32)
 
             comp_images, comp_names = [], []
+            # images - SED mode (joint stage) has NO logNorm_<comp>_<band>
+            # parameters: the per-band component flux comes from the SED
+            # (logM x template, band-averaged through the response curve) —
+            # the per-subC path of galaxy.generate_group_image. The old
+            # blanket -7.5 fallback rendered every component at an arbitrary
+            # scale (a compact high-logM bulge shot off the 1D SB-profile
+            # axis; KILOGAS_216 image-SED retrospective, 2026-11-26).
+            _sed_scales: dict = {}     # gm -> {subC_label: per-band scale}
             for gm, key in comp_keys:
                 logN_key = 'logNorm_{0}_{1}'.format(key, band)
-                logN = pardict[logN_key] if logN_key in pardict else -7.5 # TODO: work around with a default value if logN_key doesnot exist. will be fixed later
-                imm0 = (10.0 ** logN) * gm.mass_map[key]                # group-grid component
+                if logN_key in pardict:
+                    flux_scale = 10.0 ** pardict[logN_key]
+                else:
+                    if resps_tem is None:
+                        continue        # no response curves: cannot scale
+                    if gm not in _sed_scales:
+                        wavegrid = GSdata.wavegrid
+                        waveintrin = wavegrid / (1.0 + gm.redshift)
+                        flux_list, sub_labels = gm.fiducial_sed(
+                            waveintrin, pardict=pardict, button=1)
+                        per = {}
+                        for fl, lbl in zip(flux_list, sub_labels):
+                            lm_key = 'logM_{0}'.format(lbl)
+                            if lm_key not in pardict:
+                                continue
+                            unit_flux = fl / 10 ** pardict[lm_key]
+                            per[lbl] = float(gm.generate_SED(
+                                [resps_tem[loopb]], wavegrid, unit_flux)[0])
+                        _sed_scales[gm] = per
+                    flux_scale = _sed_scales[gm].get(key)
+                    if flux_scale is None:
+                        continue        # component not in the SED model
+                imm0 = flux_scale * gm.mass_map[key]                 # group-grid component
                 imm = jax.image.scale_and_translate(imm0, (nyl, nxl), (0, 1), scale, trans, 'cubic')
                 imm = imm / scale0 ** 2                                  # flux conservation
                 imm = jax.scipy.signal.fftconvolve(imm, im.PSF, mode='same')

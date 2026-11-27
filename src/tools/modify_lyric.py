@@ -290,7 +290,7 @@ LYRIC_SECTION_SCHEMA = {
     'S': (True, 5),     # Spectrum: Sx1 file, Sx2 flux factor, Sx3 windows, Sx4 hires, Sx5 lsf (optional)
     'A': (True, 7),     # Atlas: Ax1 name ... Ax7 reference images
     'N': (True, 27),    # Nuclei/AGN: Nx1 ... Nx27
-    'P': (True, 32),    # Profile: Px1 name, Px2 type ... Px32
+    'P': (True, 36),    # Profile: Px1 name, Px2 type ... Px36 (33-36: zezhong dust/nebular)
     'G': (True, 7),     # Galaxy: Gx1 name ... Gx7 narrow-line components
     'F': (True, 8),     # Foreground star: Fx1 name ... Fx8 use-SED
 }

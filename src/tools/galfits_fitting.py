@@ -2,6 +2,7 @@ import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 
 from typing import Annotated, Optional, List
+import ast
 import glob
 import numpy as np
 from galfits import gsutils
@@ -143,7 +144,90 @@ def calculate_profile_fluxes(config_lyric, workplace, prior_path=None):
 
     return fluxes
 
-def generate_pure_sed_fitting_lyric(*, profile_name, mock_profile_root, bands, band_fits_pairs, z_fit, ebv=0.1):
+# SED pass-through P-block rows copied verbatim from the parent lyric into the
+# pure-SED mock (structural rows 3-8 are NOT copied: the mock fits a fresh
+# single component; rows 17-25 are reserved for other SFH types and stay absent).
+SED_PASS_THROUGH_ROWS = (9, 10, 11, 12, 13, 14, 15, 16, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36)
+
+def extract_parent_sed_rows(config_lyric_text: str, profile_name: str) -> dict:
+    """Collect the SED pass-through rows of one component from the parent lyric.
+
+    Returns a dict {row_index: value_text} with the raw value text (everything
+    after `P<label>N)`), to be re-emitted verbatim under the mock's own label
+    'a'. An unknown profile (or a parent without P blocks) yields {} so the
+    generator falls back to its built-in defaults.
+    """
+    try:
+        label = search_profile_label_by_name(config_lyric_text, profile_name)
+    except ValueError:
+        return {}
+    pattern = re.compile(rf'^P{re.escape(label)}(\d+)\)\s*(.+)$', re.MULTILINE)
+    rows = {int(m.group(1)): m.group(2).strip() for m in pattern.finditer(config_lyric_text)}
+    return {idx: rows[idx] for idx in SED_PASS_THROUGH_ROWS if idx in rows}
+
+# Pa27 semantic shift between GalfitS versions (verified 2026-11-12,
+# KILOGAS_325 SED stage): the legacy comment "Pa27: 0=full SED" is stale.
+# zezhong's galaxy.py maps 0 -> (1,0,0) "stellar only", and its
+# fiducial_sed(button=2) never appends the stellar-only branch (the append is
+# a TODO there), so cal_model_image returns an EMPTY zred_list and
+# standard_display crashes on zred_list[0] (both sedfitter — pure-SED stage —
+# and imagefitter_SED_allconst — joint image-SED stage share this path).
+# Value 1 -> (0,1,0) is FLUX-IDENTICAL under zezhong (fc = fc_att +
+# sed_mode[2]*fc_duste; index 2 is 0 for both values) and yields a non-empty
+# f_subs. We therefore rewrite 0 -> 1 in every lyric we hand to GalfitS for
+# SED work; values 2/3/'T'/'Z' pass through untouched. GalfitS itself cannot
+# be patched here (upstream-maintained checkouts).
+def _normalize_pa27_value(value_text: str) -> str:
+    return "1" if value_text.strip() in ("0", "0.0") else value_text
+
+def normalize_pa27_zezhong(lyric_text: str) -> str:
+    """Rewrite every P-block Pa27 row from 0 (legacy 'full') to 1.
+
+    Applied on OUR side at the two consumption points: the pure-SED mock
+    write (value level) and the joint image-SED lyric handoff (text level).
+    """
+    return re.sub(r"^(P[a-z]27\)\s*)0(?:\.0*)?\s*$", r"\g<1>1", lyric_text, flags=re.MULTILINE)
+
+# Rows the pure-SED mock fits FREELY (vary=1) in the original generator design.
+# The image-stage lyric freezes every SED row (vary=0, anti-degeneracy), so a
+# verbatim copy would leave the mock with ZERO free parameters and crash the
+# optimizer — these rows get their vary flag forced back to 1 on copy.
+MOCK_FREE_ROWS = {9, 11, 12, 14, 26}
+
+def _apply_mock_vary(value_text: str, vary: int):
+    """Re-flag the vary element of a copied 5-tuple row (nested lists included).
+
+    Returns the re-serialized value text, or None when the text is not a
+    parseable 5-tuple structure (bare words like 'bins'/'0', the Pa10 age list)
+    or a band is degenerate (min == max on a freed row) — the caller then
+    falls back to the built-in default.
+    """
+    try:
+        parsed = ast.literal_eval(value_text)
+    except (ValueError, SyntaxError):
+        return None
+
+    found = {"tuple": False}
+
+    def walk(node):
+        if isinstance(node, list) and len(node) == 5 and all(isinstance(v, (int, float)) for v in node):
+            if vary and not node[1] < node[2]:
+                raise ValueError("degenerate band on a freed row")
+            found["tuple"] = True
+            return list(node[:4]) + [vary]
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        return node
+
+    try:
+        result = walk(parsed)
+    except ValueError:
+        return None
+    if not found["tuple"]:
+        return None  # not a 5-tuple structure (bare word / Pa10 age list)
+    return str(result)
+
+def generate_pure_sed_fitting_lyric(*, profile_name, mock_profile_root, bands, band_fits_pairs, z_fit, ebv=0.1, parent_sed_rows=None):
     original_fits = band_fits_pairs[bands[0]][1].strip("[]").split(",")[0].strip() # can any of these bands be used ?
     header = fits.getheader(original_fits) 
     shape = fits.getdata(original_fits).shape 
@@ -205,21 +289,43 @@ def generate_pure_sed_fitting_lyric(*, profile_name, mock_profile_root, bands, b
         filp.write('Pa6) [2,0.5,6,0.1,0]\n') # Sersic index
         filp.write('Pa7) [0,-90,90,1,0]\n') # position angle (PA) [degrees: Up=0, Left=90]
         filp.write('Pa8) [0.8,0.5,1,0.01,0]\n') # axis ratio (b/a) [0.1=round, 1=flat]
-        filp.write(f'Pa9) [[-2,-8,0,0.1,1],[-2,-8,0,0.1,1],[-2,-8,0,0.1,1],[-2,-8,0,0.1,1],[-2,-8,0,0.1,1]]\n') # contemporary log star formation fraction         ## sfr
-        filp.write(f'Pa10) [{round(age_list[0],2)}, {round(age_list[1],2)}, {round(age_list[2], 2)}, {round(age_list[3],2)}, {round(age_list[4],2)}, {round(age_list[5],2)}]\n') # burst stellar age [Gyr]          ## age 
-        filp.write('Pa11) [[0.001,0.001,0.04,0.001,1]]\n') # metallicity [Z=0.02=Solar]
-        filp.write('Pa12) [[0.7,0,5.1,0.1,1]]\n') # Av dust extinction [mag]
-        filp.write('Pa13) [100,40,200,1,0]\n') # stellar velocity dispersion
-        filp.write('Pa14) [9,6,12,0.1,1]\n') # log stellar mass
-        filp.write('Pa15) bins \n') # star formation history type: burst/conti                    ## change to bins 
-        filp.write('Pa16) [-2,-4,-2,0.1,0]\n') # logU nebular ionization parameter
-        filp.write('Pa26) [3,0,5,0.1,1]\n') # amplitude of the 2175A bump on extinction curve
-        filp.write('Pa27) 0\n') # SED model, 0: full; 1: stellar only; 2: nebular only; 3: dust only
-        filp.write('Pa28) [8.14,4.5,10,0.1,0]\n') # log dust mass
-        filp.write('Pa29) [1.0, 0.1, 50, 0.1, 0]\n') # Umin, minimum radiation field
-        filp.write('Pa30) [1.0, 0.47, 7.32, 0.1, 0]\n') # qPAH, mass fraction of PAH
-        filp.write('Pa31) [1.0, 1.0, 3.0, 0.1, 0]\n') # alpha, powerlaw slope of U
-        filp.write('Pa32) [0.1, 0, 1.0, 0.1, 0]\n\n') # gamma, fraction illuminated by star forming region
+
+        # SED pass-through rows: the parent lyric's values win (copied verbatim,
+        # including Pa33-36), built-in defaults only for rows the parent lacks.
+        parent_sed_rows = parent_sed_rows or {}
+        sed_defaults = {
+            9: '[[-2,-8,0,0.1,1],[-2,-8,0,0.1,1],[-2,-8,0,0.1,1],[-2,-8,0,0.1,1],[-2,-8,0,0.1,1]]', # contemporary log star formation fraction
+            10: f'[{round(age_list[0],2)}, {round(age_list[1],2)}, {round(age_list[2], 2)}, {round(age_list[3],2)}, {round(age_list[4],2)}, {round(age_list[5],2)}]', # burst stellar age [Gyr]
+            11: '[[0.001,0.001,0.04,0.001,1]]', # metallicity [Z=0.02=Solar]
+            12: '[[0.7,0,5.1,0.1,1]]', # Av dust extinction [mag]
+            13: '[100,40,200,1,0]', # stellar velocity dispersion
+            14: '[9,6,12,0.1,1]', # log stellar mass
+            15: 'bins', # star formation history type: burst/conti
+            16: '[-2,-4,-2,0.1,0]', # logU nebular ionization parameter
+            26: '[3,0,5,0.1,1]', # amplitude of the 2175A bump on extinction curve
+            27: '0', # SED model, 0: full; 1: stellar only; 2: nebular only; 3: dust only
+            28: '[8.14,4.5,10,0.1,0]', # log dust mass
+            29: '[1.0, 0.1, 50, 0.1, 0]', # Umin, minimum radiation field
+            30: '[1.0, 0.47, 7.32, 0.1, 0]', # qPAH, mass fraction of PAH
+            31: '[1.0, 1.0, 3.0, 0.1, 0]', # alpha, powerlaw slope of U
+            32: '[0.1, 0, 1.0, 0.1, 0]', # gamma, fraction illuminated by star forming region
+            33: '[[0.004,0.0001,0.04,0.001,0]]', # nebular metallicity (Zneb)
+            34: '[0.3,0,4,1,0]', # dust2, diffuse dust optical depth
+            35: '[1,0,2,0.3,0]', # dust_ratio, extra extinction towards young stars
+            36: '[-0.7,-1,0.4,0.1,0]', # dust_index, power-law slope of Calzetti-like attenuation
+        }
+        for idx in SED_PASS_THROUGH_ROWS:
+            value = parent_sed_rows.get(idx, sed_defaults[idx])
+            if idx in MOCK_FREE_ROWS and idx in parent_sed_rows:
+                # keep the parent's init/min/max/step but restore the mock's
+                # free-vary design (the image stage freezes these rows)
+                value = _apply_mock_vary(value, vary=1) or sed_defaults[idx]
+            if idx == 27:
+                # legacy '0 = full' is a display-crashing stellar-only mode
+                # under the zezhong mapping — see the PA27 note above
+                value = _normalize_pa27_value(value)
+            filp.write(f'Pa{idx}) {value}\n')
+        filp.write('\n')
 
         # Galaixes
         filp.write("# Galaxy A\n")
@@ -232,7 +338,7 @@ def generate_pure_sed_fitting_lyric(*, profile_name, mock_profile_root, bands, b
         filp.write('Ga7) 1\n\n') # number of components for narrow lines
 
 def generate_mock_files_for_pure_sed(
-    fluxes, mock_root, z_fit, band_fits_pairs
+    fluxes, mock_root, z_fit, band_fits_pairs, config_lyric_text=None
 ):
     os.makedirs(mock_root, exist_ok=True)
     for galaxy_name in fluxes.keys():
@@ -241,18 +347,26 @@ def generate_mock_files_for_pure_sed(
             mock_profile_root = os.path.join(mock_root, galaxy_name, profile_name)
             os.makedirs(mock_profile_root, exist_ok=True)
 
-            # creates a fits file for each band 
+            # creates a fits file for each band
             for band, (flux, flux_err) in fluxes[galaxy_name][profile_name].items():
                 output_fits = os.path.join(mock_profile_root, band + ".fits")
                 gsutils.photometry_to_img(flux, flux_err, z_fit, output_fits, band, unit='mJy')
 
-            # creates a pure_sed.lyric file for current profile/component    
+            # carries the component's SED pass-through rows (incl. Pa33-36)
+            # from the parent lyric into the pure-SED mock
+            parent_sed_rows = (
+                extract_parent_sed_rows(config_lyric_text, profile_name)
+                if config_lyric_text else None
+            )
+
+            # creates a pure_sed.lyric file for current profile/component
             generate_pure_sed_fitting_lyric(
                 profile_name=profile_name,
                 mock_profile_root=mock_profile_root,
                 bands=list(fluxes[galaxy_name][profile_name].keys()),
                 band_fits_pairs=band_fits_pairs,
-                z_fit=z_fit
+                z_fit=z_fit,
+                parent_sed_rows=parent_sed_rows
             )
         
 def guess_mass(
@@ -278,7 +392,10 @@ def guess_mass(
             mock_root = str(mock_root)
         mock_root = mock_root + "/" if not mock_root.endswith("/") else mock_root
 
-        generate_mock_files_for_pure_sed(fluxes=fluxes, mock_root=mock_root, z_fit=z_fit, band_fits_pairs=band_fits_pairs)
+        with open(config_lyric, encoding="utf-8") as f:
+            config_lyric_text = f.read()
+
+        generate_mock_files_for_pure_sed(fluxes=fluxes, mock_root=mock_root, z_fit=z_fit, band_fits_pairs=band_fits_pairs, config_lyric_text=config_lyric_text)
 
         return {
             "status": "success",
@@ -599,7 +716,15 @@ def PureSEDFitting(lyric_file, workplace, new_lyric_file, mock_root=None, args=[
     result = update_lyric_with_gssummaries(lyric_file, mock_root, new_lyric_file)
     if result["status"] != "success":
         return result
-    
+
+    # The joint image-SED stage consumes this lyric next; its
+    # imagefitter_SED_allconst display path has the same empty-zred_list
+    # crash on Pa27=0 (see the PA27 note above), so normalize the handoff.
+    with open(new_lyric_file, encoding="utf-8") as f:
+        joint_lyric_text = f.read()
+    with open(new_lyric_file, "w", encoding="utf-8") as f:
+        f.write(normalize_pa27_zezhong(joint_lyric_text))
+
     return {"status": "success", "message": "pure sed fitting success"}
 
 if __name__ == '__main__':

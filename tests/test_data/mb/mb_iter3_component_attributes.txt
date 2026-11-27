@@ -1,0 +1,28 @@
+# Note that the spatial units of x, y and effective radius Re are converted from arcseconds to image pixels. Meanwhile, the reference datum for the position angle (PA) is adjusted: originally measured clockwise from celestial north, the PA in the pixel coordinate system is instead defined relative to the positive y-axis of the image, with angles increasing counterclockwise.
+
+Component Attributes by Band
+
+- Band: decam_g
+    - Component disk:
+        type:sersic  x:357.4901  y:357.3901  mag:16.2989  re:23.6859  re_arcsec:6.2057  n:1.0000  ba:0.4967  pa:125.3684  sky_pa:-54.6316
+    - Component bulge:
+        type:sersic  x:357.4901  y:357.3901  mag:21.5211  re:0.5000  re_arcsec:0.1310  n:4.0000  ba:0.6000  pa:-59.4459  sky_pa:120.5541
+    - Component bar:
+        type:sersic  x:357.4901  y:357.3901  mag:23.0344  re:8.0000  re_arcsec:2.0960  n:0.5000  ba:0.1500  pa:-50.1635  sky_pa:129.8365
+
+- Band: decam_r
+    - Component disk:
+        type:sersic  x:357.4901  y:357.3901  mag:15.5833  re:23.6859  re_arcsec:6.2057  n:1.0000  ba:0.4967  pa:125.3684  sky_pa:-54.6316
+    - Component bulge:
+        type:sersic  x:357.4901  y:357.3901  mag:20.0790  re:0.5000  re_arcsec:0.1310  n:4.0000  ba:0.6000  pa:-59.4459  sky_pa:120.5541
+    - Component bar:
+        type:sersic  x:357.4901  y:357.3901  mag:19.6074  re:8.0000  re_arcsec:2.0960  n:0.5000  ba:0.1500  pa:-50.1635  sky_pa:129.8365
+
+- Band: decam_z
+    - Component disk:
+        type:sersic  x:357.4901  y:357.3901  mag:15.0386  re:23.6859  re_arcsec:6.2057  n:1.0000  ba:0.4967  pa:125.3684  sky_pa:-54.6316
+    - Component bulge:
+        type:sersic  x:357.4901  y:357.3901  mag:19.1993  re:0.5000  re_arcsec:0.1310  n:4.0000  ba:0.6000  pa:-59.4459  sky_pa:120.5541
+    - Component bar:
+        type:sersic  x:357.4901  y:357.3901  mag:18.4844  re:8.0000  re_arcsec:2.0960  n:0.5000  ba:0.1500  pa:-50.1635  sky_pa:129.8365
+
